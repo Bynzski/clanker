@@ -96,6 +96,7 @@ export interface WorkspaceState {
   /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
 
+  hydrateWorkspaceShells: (workspaces: WorkspaceTab[], activeWorkspaceId: string | null) => void;
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'> & { id?: string }) => void;
   selectWorkspace: (id: string, terminalId?: string) => void;
   moveWorkspace: (workspaceId: string, targetWorkspaceId: string) => void;

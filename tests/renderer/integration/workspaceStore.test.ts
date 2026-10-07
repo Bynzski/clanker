@@ -5,9 +5,6 @@ import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout'
 import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
-import { persistWorkspaceLayout } from '../../../src/renderer/lib/workspaceLayoutStorage';
-import { persistWorkspaceTabOrder } from '../../../src/renderer/lib/workspaceTabOrder';
-import { readStoredNotesVisible } from '../../../src/renderer/lib/notesStorage';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -122,41 +119,6 @@ describe('workspace lifecycle', () => {
     expect(getStore().workspaces).toBe(after.workspaces);
   });
 
-  it('restores a chosen tab order as local and SSH workspaces are reopened', () => {
-    const firstId = addWorkspace({ workspacePath: '/projects/shared', name: 'Local' }).activeWorkspaceId!;
-    const remoteId = addWorkspace({ workspacePath: '/projects/shared', environmentId: 'ssh-host', name: 'Remote' }).activeWorkspaceId!;
-    const thirdId = addWorkspace({ workspacePath: '/projects/third', name: 'Third' }).activeWorkspaceId!;
-    getStore().moveWorkspace(remoteId, firstId);
-    getStore().moveWorkspace(thirdId, firstId);
-    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['Remote', 'Third', 'Local']);
-
-    resetStore();
-    addWorkspace({ workspacePath: '/projects/shared', name: 'Local' });
-    addWorkspace({ workspacePath: '/projects/third', name: 'Third' });
-    addWorkspace({ workspacePath: '/projects/shared', environmentId: 'ssh-host', name: 'Remote' });
-    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['Remote', 'Third', 'Local']);
-  });
-
-  it('keeps a closed workspace in its saved position when the other tabs are reordered', () => {
-    addWorkspace({ workspacePath: '/projects/a', name: 'A' });
-    const bId = addWorkspace({ workspacePath: '/projects/b', name: 'B' }).activeWorkspaceId!;
-    const cId = addWorkspace({ workspacePath: '/projects/c', name: 'C' }).activeWorkspaceId!;
-    const dId = addWorkspace({ workspacePath: '/projects/d', name: 'D' }).activeWorkspaceId!;
-    persistWorkspaceTabOrder(getStore().workspaces);
-
-    getStore().closeWorkspace(bId);
-    getStore().moveWorkspace(dId, cId);
-    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['A', 'D', 'C']);
-    expect(getStore().activeWorkspaceId).toBe(dId);
-
-    resetStore();
-    addWorkspace({ workspacePath: '/projects/c', name: 'C' });
-    addWorkspace({ workspacePath: '/projects/b', name: 'B' });
-    addWorkspace({ workspacePath: '/projects/d', name: 'D' });
-    addWorkspace({ workspacePath: '/projects/a', name: 'A' });
-    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['A', 'B', 'D', 'C']);
-  });
-
   it('addWorkspace sets active workspace and populates snapshot fields', () => {
     const state = addWorkspace({ workspacePath: TEST_PROJECT, name: 'My Project' });
     expect(state.name).toBe('My Project');
@@ -167,28 +129,6 @@ describe('workspace lifecycle', () => {
     expect(state.workspaces[0].lifecycle).toBe('active');
   });
 
-  it('keeps same-path local and SSH notes visibility separate through workspace lifecycle', () => {
-    window.localStorage.setItem('clanker-grid:notes-visible:v1:/shared/project', '1');
-    const local = addWorkspace({ workspacePath: '/shared/project', notesVisible: undefined, notesPane: undefined });
-    expect(local.notesVisible).toBe(true);
-
-    const remote = addWorkspace({
-      workspacePath: '/shared/project',
-      environmentId: 'ssh-server',
-      notesVisible: undefined,
-      notesPane: undefined,
-    });
-    expect(remote.notesVisible).toBe(false);
-    getStore().toggleNotesPane();
-    expect(readStoredNotesVisible('/shared/project', remote.activeWorkspaceId, 'ssh-server')).toBe(true);
-    expect(readStoredNotesVisible('/shared/project', local.activeWorkspaceId)).toBe(true);
-
-    getStore().selectWorkspace(local.activeWorkspaceId!);
-    getStore().toggleNotesPane();
-    expect(readStoredNotesVisible('/shared/project', local.activeWorkspaceId)).toBe(false);
-    expect(readStoredNotesVisible('/shared/project', remote.activeWorkspaceId, 'ssh-server')).toBe(true);
-  });
-
   it('addWorkspace derives name from path when name is empty', () => {
     const state = addWorkspace({ workspacePath: TEST_MY_APP, name: '' });
     expect(state.name).toBe('my-app');
@@ -197,89 +137,6 @@ describe('workspace lifecycle', () => {
   it('addWorkspace creates a layout from workspace panes', () => {
     const state = addWorkspace();
     expect(state.layoutRoot).not.toBeNull();
-  });
-
-  it('addWorkspace recreates utility panes referenced by the persisted layout', () => {
-    const persisted = createWorkspaceFixture({
-      workspacePath: '/restored-utility-layout',
-      explorerVisible: true,
-      explorerPane: { id: 'saved-explorer' },
-      browserVisible: true,
-      browserPane: {
-        id: 'saved-browser',
-        position: { x: 0, y: 0, w: 6, h: 6 },
-        tabs: [{
-          id: 'saved-browser-tab',
-          url: 'https://example.com',
-          title: 'Example',
-          canGoBack: false,
-          canGoForward: false,
-        }],
-        activeTabId: 'saved-browser-tab',
-      },
-      editorVisible: true,
-      editorPane: { id: 'saved-editor' },
-      notesVisible: true,
-      notesPane: { id: 'saved-notes' },
-      layoutRoot: {
-        type: 'split',
-        nodeId: 'saved-root',
-        orientation: 'horizontal',
-        ratio: 0.25,
-        first: { type: 'leaf', nodeId: 'saved-explorer-leaf', paneId: 'saved-explorer' },
-        second: {
-          type: 'split',
-          nodeId: 'saved-content',
-          orientation: 'vertical',
-          ratio: 0.5,
-          first: { type: 'leaf', nodeId: 'saved-terminal-leaf', paneId: 'pane-1' },
-          second: {
-            type: 'split',
-            nodeId: 'saved-utilities',
-            orientation: 'horizontal',
-            ratio: 0.5,
-            first: { type: 'leaf', nodeId: 'saved-browser-leaf', paneId: 'saved-browser' },
-            second: {
-              type: 'split',
-              nodeId: 'saved-editor-notes',
-              orientation: 'vertical',
-              ratio: 0.5,
-              first: { type: 'leaf', nodeId: 'saved-editor-leaf', paneId: 'saved-editor' },
-              second: { type: 'leaf', nodeId: 'saved-notes-leaf', paneId: 'saved-notes' },
-            },
-          },
-        },
-      },
-    });
-    persistWorkspaceLayout(persisted);
-
-    const state = addWorkspace({
-      workspacePath: persisted.workspacePath,
-      explorerVisible: false,
-      explorerPane: null,
-      browserVisible: false,
-      browserPane: null,
-      editorVisible: false,
-      editorPane: null,
-      notesVisible: false,
-      notesPane: null,
-      layoutRoot: null,
-    });
-
-    expect(state.explorerVisible).toBe(true);
-    expect(state.browserVisible).toBe(true);
-    expect(state.editorVisible).toBe(true);
-    expect(state.notesVisible).toBe(true);
-    expect(state.explorerPane).not.toBeNull();
-    expect(state.browserPane).not.toBeNull();
-    expect(state.editorPane).not.toBeNull();
-    expect(state.notesPane).not.toBeNull();
-    expect(collectLeafPaneIds(state.layoutRoot)).toEqual([
-      'pane-1',
-      state.browserPane?.id,
-      state.editorPane?.id,
-      state.notesPane?.id,
-    ]);
   });
 
   it('selectWorkspace restores workspace snapshot', () => {
@@ -698,43 +555,11 @@ describe('browser', () => {
     expect(JSON.stringify(getStore().layoutRoot)).not.toContain(notesPane!.id);
   });
 
-  it('persists notes pane visibility for the active workspace identity', () => {
-    getStore().toggleNotesPane();
-    expect(readStoredNotesVisible('/workspace', getStore().activeWorkspaceId)).toBe(true);
-
-    getStore().toggleNotesPane();
-    expect(readStoredNotesVisible('/workspace', getStore().activeWorkspaceId)).toBe(false);
-  });
-
-  it('restores notes pane visibility when a workspace is reopened', () => {
+  it('ignores historical Notes visibility on ordinary reopen', () => {
     window.localStorage.setItem('clanker-grid:notes-visible:v1:/restored-notes', '1');
-
-    const fixture = createWorkspaceFixture({ workspacePath: '/restored-notes/' });
-    const { id: _ignored, notesVisible: _notesVisible, notesPane: _notesPane, ...withoutId } = fixture;
-    void _ignored;
-    void _notesVisible;
-    void _notesPane;
-    getStore().addWorkspace(withoutId);
-
-    expect(getStore().notesVisible).toBe(true);
-    expect(getStore().notesPane).not.toBeNull();
-    expect(getStore().layoutRoot).not.toBeNull();
-  });
-
-  it('normalizes Windows path casing and separators for notes visibility persistence', () => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-
-    try {
-      addWorkspace({ workspacePath: 'C:\\Users\\Jay\\Project\\' });
-
-      getStore().toggleNotesPane();
-
-      expect(readStoredNotesVisible('c:/users/jay/project', getStore().activeWorkspaceId)).toBe(true);
-      expect(readStoredNotesVisible('C:\\Users\\Jay\\Project\\', getStore().activeWorkspaceId)).toBe(true);
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform });
-    }
+    addWorkspace({ workspacePath: '/restored-notes', notesVisible: undefined, notesPane: undefined });
+    expect(getStore().notesVisible).toBe(false);
+    expect(getStore().notesPane).toBeNull();
   });
 
   it('setBrowserUrl updates url', () => {

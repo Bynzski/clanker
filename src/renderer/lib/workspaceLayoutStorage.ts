@@ -1,12 +1,6 @@
 import type { LayoutNode, WorkspaceTab } from '../store/workspaceTypes';
 import type { PersistedRecipeLayout } from '../../shared/types/recipes';
-import { workspaceIdentityKey } from '../../shared/workspaceIdentity';
-import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
-import { pathKey } from '../../shared/pathKey';
 import { createDefaultBrowserPane, generateId } from '../store/workspaceStoreHelpers';
-
-const STORAGE_PREFIX = 'clanker-grid:layout:v1:';
-const STORAGE_VERSION = 1;
 
 type PersistedLayoutNode =
   | { type: 'leaf'; paneKey: string }
@@ -17,30 +11,6 @@ type PersistedLayoutNode =
       first: PersistedLayoutNode;
       second: PersistedLayoutNode;
     };
-
-interface PersistedWorkspaceLayout {
-  version: typeof STORAGE_VERSION;
-  terminalCount: number;
-  explorerVisible?: boolean;
-  root: PersistedLayoutNode | null;
-}
-
-function getLegacyWorkspaceLayoutStorageKey(workspacePath: string): string {
-  let normalized = workspacePath.trim().replace(/\\/g, '/');
-  while (normalized.length > 1 && normalized.endsWith('/') && !/^[A-Za-z]:\/$/.test(normalized)) {
-    normalized = normalized.slice(0, -1);
-  }
-  return `${STORAGE_PREFIX}${encodeURIComponent(pathKey(normalized))}`;
-}
-
-export function getWorkspaceLayoutStorageKey(
-  workspacePath: string,
-  isWindows?: boolean,
-  environmentId?: string,
-): string {
-  const identity = workspaceIdentityKey({ path: workspacePath, environmentId }, isWindows);
-  return `${STORAGE_PREFIX}${encodeURIComponent(identity)}`;
-}
 
 function createPaneKeyMap(workspace: WorkspaceTab): Map<string, string> {
   const map = new Map<string, string>();
@@ -194,10 +164,8 @@ export function restoreWorkspaceLayoutFromPersisted(
       : workspace;
   }
 
-  // Pane instances are runtime state and receive fresh IDs on every app
-  // launch. Recreate utility panes represented by the saved topology before
-  // mapping pane keys, otherwise reopening a workspace would collapse and
-  // immediately overwrite those branches.
+  // Recipes explicitly recreate utility panes represented by the captured topology
+  // before mapping their fresh runtime IDs. Ordinary workspace opening never calls this.
   const restoredWorkspace = restoreUtilityPaneState(
     workspace,
     collectPersistedPaneKeys(persistedRoot),
@@ -224,56 +192,4 @@ export function restoreWorkspaceLayoutFromPersisted(
     layoutRevision: (workspace.layoutRevision ?? 0) + 1,
     layoutUndoStack: [],
   };
-}
-
-export function persistWorkspaceLayout(workspace: WorkspaceTab): void {
-  if (typeof window === 'undefined' || !workspace.workspacePath) return;
-  try {
-    const serialized = serializeWorkspaceLayout(workspace);
-    if (!serialized) return;
-    const payload: PersistedWorkspaceLayout = {
-      version: STORAGE_VERSION,
-      terminalCount: serialized.terminalCount,
-      explorerVisible: serialized.explorerVisible,
-      root: serialized.root as PersistedLayoutNode | null,
-    };
-    window.localStorage.setItem(
-      getWorkspaceLayoutStorageKey(workspace.workspacePath, undefined, workspace.environmentId),
-      JSON.stringify(payload),
-    );
-  } catch {
-    // Layout persistence must never prevent the workspace from operating.
-  }
-}
-
-export function restoreWorkspaceLayout(workspace: WorkspaceTab): WorkspaceTab {
-  if (typeof window === 'undefined' || !workspace.workspacePath) return workspace;
-  try {
-    const key = getWorkspaceLayoutStorageKey(workspace.workspacePath, undefined, workspace.environmentId);
-    const legacyKey = workspace.environmentId == null || workspace.environmentId === LOCAL_ENVIRONMENT_ID
-      ? getLegacyWorkspaceLayoutStorageKey(workspace.workspacePath)
-      : null;
-    const current = window.localStorage.getItem(key);
-    const raw = current ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
-    if (!raw) return workspace;
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    if (value.version !== STORAGE_VERSION || value.terminalCount !== workspace.panes.length) {
-      return workspace;
-    }
-    const restored = restoreWorkspaceLayoutFromPersisted(workspace, {
-      root: value.root,
-      terminalCount: value.terminalCount as number,
-      explorerVisible: typeof value.explorerVisible === 'boolean' ? value.explorerVisible : undefined,
-    });
-    if (current === null && restored !== workspace) {
-      try {
-        window.localStorage.setItem(key, raw);
-      } catch {
-        // A failed migration must not prevent restoring an existing local layout.
-      }
-    }
-    return restored;
-  } catch {
-    return workspace;
-  }
 }

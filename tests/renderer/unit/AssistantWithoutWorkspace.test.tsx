@@ -48,17 +48,14 @@ let pushSnapshot: (snapshot: AssistantSnapshot) => void = () => undefined;
 
 const surfaceOf = (id: string) => document.querySelector(`[data-assistant-id="${id}"]`);
 const gate = () => document.querySelector('.workspace-gate');
-const launchWorkspaceFromGate = async (scope: HTMLElement | Document = document) => {
-  const add = await within(scope as HTMLElement).findByRole('button', { name: 'Add plain terminal' });
-  await waitFor(() => expect(add).toBeEnabled());
-  fireEvent.click(add);
-  const launch = within(scope as HTMLElement).getByRole('button', { name: 'Launch Workspace' });
-  await waitFor(() => expect(launch).toBeEnabled());
-  fireEvent.click(launch);
+const openLocalWorkspace = async (scope: HTMLElement) => {
+  fireEvent.click(within(scope).getByRole('button', { name: 'Choose Folder…' }));
+  await within(scope).findByText('/projects/b');
+  fireEvent.click(within(scope).getByRole('button', { name: 'Open Workspace' }));
 };
-const openFredFromLauncher = async () => {
-  const launcher = await screen.findByRole('region', { name: 'Assistants' });
-  fireEvent.click(within(launcher).getByRole('button', { name: /Fred/ }));
+const openFredFromRoster = async () => {
+  const roster = await screen.findByRole('region', { name: 'Assistants' });
+  fireEvent.click(within(roster).getByRole('button', { name: /Fred/ }));
   await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
 };
 const workspaceStateUntouched = () => {
@@ -79,7 +76,7 @@ beforeEach(() => {
   installElectronApiMock();
   xterms.length = 0;
   const api = window.electronAPI;
-  vi.mocked(api.getLastWorkspace).mockResolvedValue('/projects/b');
+  vi.mocked(api.openDirectoryDialog).mockResolvedValue('/projects/b');
   vi.mocked(api.getBaseDirectory).mockResolvedValue('/projects/');
   vi.mocked(api.getHarnessOptions).mockResolvedValue({ codex: true, claude: false, opencode: false, pi: false } as never);
   vi.mocked(api.getHarnessDefaults).mockResolvedValue({
@@ -98,19 +95,19 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-describe('startup launcher', () => {
-  it('Hermes unavailable: the ordinary launcher with no Assistants section', async () => {
+describe('normal empty shell Assistants roster', () => {
+  it('Hermes unavailable: the normal empty shell with no Assistants section', async () => {
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ available: false, assistants: [], service: { state: 'disabled', ownership: null } }));
     render(<App />);
-    await waitFor(() => expect(gate()).not.toBeNull());
+    await waitFor(() => expect(gate()).toBeNull());
     await act(async () => { await Promise.resolve(); });
     expect(screen.queryByRole('region', { name: 'Assistants' })).toBeNull();
   });
 
-  it('Assistants disabled: the ordinary launcher with no Assistants section', async () => {
+  it('Assistants disabled: the normal empty shell with no Assistants section', async () => {
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ settings: { enabled: false, autoStart: false }, assistants: [], service: { state: 'disabled', ownership: null } }));
     render(<App />);
-    await waitFor(() => expect(gate()).not.toBeNull());
+    await waitFor(() => expect(gate()).toBeNull());
     await act(async () => { await Promise.resolve(); });
     expect(screen.queryByRole('region', { name: 'Assistants' })).toBeNull();
   });
@@ -125,10 +122,10 @@ describe('startup launcher', () => {
     // A disconnected service reports an empty authoritative roster.
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ service: { state, ownership: null }, assistants: [] }));
     render(<App />);
-    const launcher = await screen.findByRole('region', { name: 'Assistants' });
-    expect(within(launcher).getByText(text)).toBeInTheDocument();
-    expect(within(launcher).queryByRole('button', { name: /Fred/ })).toBeNull();
-    expect(Boolean(within(launcher).queryByRole('button', { name: 'Retry' }))).toBe(retry);
+    const roster = await screen.findByRole('region', { name: 'Assistants' });
+    expect(within(roster).getByText(text)).toBeInTheDocument();
+    expect(within(roster).queryByRole('button', { name: /Fred/ })).toBeNull();
+    expect(Boolean(within(roster).queryByRole('button', { name: 'Retry' }))).toBe(retry);
   });
 
   it('does not offer a previously opened Assistant as launchable while the service is offline', async () => {
@@ -136,22 +133,21 @@ describe('startup launcher', () => {
     useAssistantsStore.setState({ knownAssistants: { [FRED]: { id: FRED, displayName: 'Fred' } } });
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ service: { state: 'offline', ownership: null }, assistants: [] }));
     render(<App />);
-    const launcher = await screen.findByRole('region', { name: 'Assistants' });
-    expect(within(launcher).queryByRole('button', { name: /Fred/ })).toBeNull();
+    const roster = await screen.findByRole('region', { name: 'Assistants' });
+    expect(within(roster).getByRole('button', { name: /Fred/ })).toHaveClass('offline');
   });
 
-  it.each([1, 3, 7])('connected with %i Assistants: one compact launcher chip each, with no status dot or row styling', async (count) => {
+  it.each([1, 3, 7])('connected with %i Assistants: one normal roster row each', async (count) => {
     const assistants = Array.from({ length: count }, (_, i) => ({ id: `hermes:bot${i}`, displayName: i === 0 ? 'A very long assistant display name that must stay bounded' : `Bot ${i}`, description: `desc ${i}` }));
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ assistants }));
     render(<App />);
-    const launcher = await screen.findByRole('region', { name: 'Assistants' });
-    const buttons = await within(launcher).findAllByRole('button');
+    const roster = await screen.findByRole('region', { name: 'Assistants' });
+    const buttons = await within(roster).findAllByRole('button');
     expect(buttons).toHaveLength(count);
     for (const button of buttons) {
-      expect(button).toHaveClass('assistant-launcher-button');
-      expect(button).not.toHaveClass('assistant-row');
+      expect(button).toHaveClass('assistant-row');
     }
-    expect(launcher.querySelector('.assistant-dot')).toBeNull();
+    expect(roster.querySelector('.assistant-dot.live')).not.toBeNull();
     expect(buttons[0]).toHaveAccessibleName(/A very long assistant display name that must stay bounded/);
     expect(buttons[0]).toHaveAttribute('title', expect.stringContaining('desc 0'));
     // Each chip opens its own opaque Assistant ID.
@@ -176,8 +172,8 @@ describe('startup launcher', () => {
 
   it('connected: lists Fred; clicking Fred enters the normal shell with no Workspace, registration, spawn or checkout context', async () => {
     render(<App />);
-    expect(gate()).not.toBeNull();
-    await openFredFromLauncher();
+    expect(gate()).toBeNull();
+    await openFredFromRoster();
     expect(gate()).toBeNull();
     expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument(); // Header is mounted: normal shell
     expect(useAssistantNavStore.getState().activeAssistantId).toBe(FRED);
@@ -189,25 +185,10 @@ describe('startup launcher', () => {
     useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a' });
     render(<App />);
     fireEvent.click((await screen.findAllByRole('button', { name: 'Open Workspace' }))[0]);
-    const dialog = await screen.findByRole('dialog', { name: /New Workspace/ });
+    const dialog = await screen.findByRole('dialog', { name: /Open Workspace/ });
     expect(within(dialog).queryByRole('region', { name: 'Assistants' })).toBeNull();
   });
 
-  it('Assistant buttons are disabled while a Workspace launch is in flight', async () => {
-    let finish: (value: { success: boolean; error?: string }) => void = () => undefined;
-    vi.mocked(window.electronAPI.registerOpenWorkspace).mockImplementation(() => new Promise((resolve) => { finish = resolve as never; }));
-    vi.mocked(window.electronAPI.getLastWorkspace).mockResolvedValue('/projects/b');
-    render(<App />);
-    const launcher = await screen.findByRole('region', { name: 'Assistants' });
-    await launchWorkspaceFromGate();
-    await waitFor(() => expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalled());
-    const fred = within(launcher).getByRole('button', { name: /Fred/ });
-    expect(fred).toBeDisabled();
-    fireEvent.click(fred);
-    expect(useAssistantNavStore.getState().activeAssistantId).toBeNull();
-    await act(async () => { finish({ success: false, error: 'nope' }); });
-    await waitFor(() => expect(within(launcher).getByRole('button', { name: /Fred/ })).toBeEnabled());
-  });
 });
 
 describe('zero-workspace Assistant shell', () => {
@@ -217,10 +198,21 @@ describe('zero-workspace Assistant shell', () => {
     await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
   };
 
-  it('with no Assistant, zero workspaces still renders the fullscreen launcher', async () => {
+  it('with no Assistant, zero workspaces renders navigation and the empty state', async () => {
     render(<App />);
-    expect(gate()).not.toBeNull();
-    expect(screen.queryByTestId('workspace-host')).toBeNull();
+    expect(gate()).toBeNull();
+    expect(await screen.findByTestId('workspace-host')).toBeInTheDocument();
+  });
+
+  it('no destination exposes only app controls, including usable Settings', async () => {
+    render(<App />);
+    await screen.findByText('No workspace open');
+    for (const label of ['Terminal', 'Codex', 'New isolated agent', 'Toggle browser panel', 'Toggle notes panel', 'Toggle File Explorer', 'Recipes', 'Chat history', 'Usage', 'Fit All', 'Undo layout']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(await screen.findByText('Appearance')).toBeInTheDocument();
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
   });
 
   it('WorkspaceHost mounts Fred with an empty workspace list and synthesizes nothing', async () => {
@@ -233,9 +225,9 @@ describe('zero-workspace Assistant shell', () => {
     workspaceStateUntouched();
   });
 
-  it('WorkspaceHost renders no Assistant or workspace surfaces for zero workspaces and no Assistant', () => {
+  it('WorkspaceHost renders navigation and an empty state without a destination', async () => {
     render(<WorkspaceHost />);
-    expect(screen.queryByTestId('workspace-host')).toBeNull();
+    expect(await screen.findByTestId('workspace-host')).toBeInTheDocument();
   });
 
   it('Header exposes Assistant capabilities only', async () => {
@@ -261,7 +253,7 @@ describe('zero-workspace Assistant shell', () => {
     expect(screen.queryByTestId('files-section')).toBeNull();
   });
 
-  it('collapsed rail: Assistant icon and Open Workspace, never Show Files; plus opens the launcher', async () => {
+  it('collapsed rail: Assistant icon and Open Workspace, never Show Files; plus opens the dialog', async () => {
     useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 40 });
     await enterFred();
     const rail = screen.getByRole('navigation', { name: 'Workspaces' });
@@ -269,7 +261,7 @@ describe('zero-workspace Assistant shell', () => {
     expect(within(rail).getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
     expect(within(rail).queryByRole('button', { name: 'Show Files' })).toBeNull();
     fireEvent.click(within(rail).getByRole('button', { name: 'Open Workspace' }));
-    expect(await screen.findByRole('dialog', { name: /New Workspace/ })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /Open Workspace/ })).toBeInTheDocument();
     expect(useAssistantNavStore.getState().activeAssistantId).toBe(FRED); // opening the modal alone does not leave Fred
   });
 
@@ -395,7 +387,7 @@ describe('closing the last Workspace', () => {
     expect(useAssistantSurfaceStore.getState().byId[FRED]).toEqual(browserBefore);
   });
 
-  it('Fred PARKED behind an active Workspace: closing the last Workspace leaves no active destination, so the launcher returns', async () => {
+  it('Fred PARKED behind an active Workspace: closing the last Workspace leaves no active destination, and shows the empty workspace state', async () => {
     oneWorkspace();
     useAssistantNavStore.getState().openAssistantSurface(FRED);
     render(<App />);
@@ -406,10 +398,10 @@ describe('closing the last Workspace', () => {
 
     await closeLast();
 
-    // No remembered-destination policy exists, so with no active destination the launcher is shown.
+    // Closing a workspace does not implicitly select an Assistant.
     expect(useAssistantNavStore.getState().activeAssistantId).toBeNull();
     expect(useAssistantNavStore.getState().openedAssistantIds).toEqual([FRED]);
-    await waitFor(() => expect(gate()).not.toBeNull());
+    await waitFor(() => expect(gate()).toBeNull());
     expect(useWorkspaceStore.getState().workspaces).toEqual([]);
   });
 });
@@ -479,8 +471,8 @@ describe('transitions while Fred is active', () => {
     await waitFor(() => expect(xterms).toHaveLength(1));
     const clearActive = vi.spyOn(useAssistantNavStore.getState(), 'clearActive');
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Workspace' })[0]);
-    const dialog = await screen.findByRole('dialog', { name: /New Workspace/ });
-    await launchWorkspaceFromGate(dialog);
+    const dialog = await screen.findByRole('dialog', { name: /Open Workspace/ });
+    await openLocalWorkspace(dialog);
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(useAssistantNavStore.getState().activeAssistantId).toBe(FRED);
     expect(clearActive).not.toHaveBeenCalled();
@@ -504,14 +496,14 @@ describe('transitions while Fred is active', () => {
     expect(xterms[0].dispose).not.toHaveBeenCalled();
   });
 
-  it('disabling Assistants with zero workspaces clears Assistant state and returns the launcher', async () => {
+  it('disabling Assistants with zero workspaces clears Assistant state and shows the empty workspace state', async () => {
     useAssistantNavStore.getState().openAssistantSurface(FRED);
     render(<App />);
     await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Toggle browser panel' }));
     expect(useAssistantSurfaceStore.getState().byId[FRED]?.browserVisible).toBe(true);
     act(() => pushSnapshot(snap({ settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] })));
-    await waitFor(() => expect(gate()).not.toBeNull());
+    await waitFor(() => expect(gate()).toBeNull());
     expect(useAssistantNavStore.getState()).toMatchObject({ activeAssistantId: null, openedAssistantIds: [] });
     expect(useAssistantSurfaceStore.getState().byId).toEqual({});
     expect(screen.queryByRole('region', { name: 'Assistants' })).toBeNull();

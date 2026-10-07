@@ -2,41 +2,33 @@
 
 Workspaces provide isolated development environments within a single window.
 
-## Creating a Workspace
+## Opening a Workspace
 
 1. Click **Open Workspace** (`+`) in the **WORKSPACES** sidebar header (in the collapsed rail it sits directly under the open workspaces), or beside the workspace tabs in Tabs mode
-2. Enter or browse to a local directory
-3. The workspace opens and is added to the sidebar (or the tab strip)
+2. Select **This PC → Choose Folder…**, or choose an SSH environment and enter/browse its absolute remote path
+3. Click **Open Workspace**. An empty workspace is added to the sidebar (or the tab strip); launch terminals afterward from the Header
 
 For local workspaces, the native directory picker can create a new directory before opening the workspace on platforms that support it. SSH workspaces use Clanker's own remote chooser and **New Folder** action.
 
-### Task worktrees
+### Isolated agents and linked worktrees
 
-Click the **Worktree** side of the launch button to slide from the workspace launcher to the task worktree options. Use **Back to workspace** to return to the normal launcher. To make a separate checkout for a task:
-
-1. Select a Git repository directory and click **Load repository**.
-2. Choose a base ref and enter a task branch name.
-3. Click **Create and open worktree**. Clanker creates the checkout beside the repository, then opens it as a normal workspace with its own terminals, editor, browser, and Git state. For a new branch, Clanker creates it from the base ref. If the branch already exists without a checkout, Clanker uses that branch, which also lets you retry after a failed checkout.
-
-If a local branch and tag share a name, the base ref uses the branch. Enter `refs/tags/<name>` to use the tag.
-
-The launcher also lists existing linked worktrees. Click **Open** to use one without recreating it. Several conversations or terminals can share a worktree workspace; create another worktree when work needs separate files and a branch.
-
-For SSH worktrees, first open a repository workspace on the remote host. In **New Workspace → SSH Remote**, select the same saved target and click **Worktree**. Choose an open SSH repository to discover its existing checkouts, then click **Open** beside a checkout. Discovery uses that repository's registered workspace identity, and the selected checkout opens in the same SSH environment after remote path validation. **Refresh worktrees** retries discovery or reloads the list after changes made on the host. Missing checkouts cannot be opened; a Git worktree lock does not prevent opening.
-
-To create an SSH worktree, enter a **Base ref** and **Worktree branch**, then click **Create and open worktree**. New branches start from the base ref (default `HEAD` of the selected repository workspace); existing branches keep their current commit. As with local creation, a branch takes precedence over a tag with the same name. The remote checkout is created in `<repository>-worktrees` beside the main repository, using a unique directory name derived from the branch. Existing destinations and symlinked parent directories are rejected. If SSH disconnects or creation fails, refresh the list before retrying: Git may have completed the checkout, and partial files or branches are preserved.
-
-Click **Inspect** beside a remote linked checkout to check whether it has tracked changes, untracked files, or ignored files. Inspection checks repository identity and reports locked or missing checkouts. It checks initialized submodules recursively, including ignored files, and overrides submodule ignore settings. Inspection is limited to 128 repositories including the parent checkout; incomplete inspection reports an error rather than a clean result. Close workspaces and stop terminals using the checkout before checking removal readiness; Clanker includes workspace and terminal directories from equivalent OpenSSH destinations, including duplicate saved environments and matching aliases, even if a terminal outlives its workspace registration. Results describe the checkout at inspection time. Inspection is read-only. To remove a clean remote checkout, click **Remove…** and confirm the displayed checkout path and branch. Clanker rechecks cleanliness, branch identity, open workspaces, and active terminal directories before removal. Main, locked, missing, dirty, and submodule-containing checkouts cannot be removed through this flow.
+Use **New isolated agent** beside the Header harness pills to create a branch/check-out or use an existing linked worktree inside the same workspace. Creation and adoption attach a validated checkout context; they never widen the workspace root. Manage linked worktrees through the Git menu, with the existing activity, cleanliness, and removal protections. A linked worktree can also be opened directly as an empty standalone workspace by choosing its checkout folder. Generated `*-worktrees` containers are not workspace roots.
 
 Remote removal preserves checkout files under `<checkout-parent>/.clanker-worktree-recovery/removed-<id>/checkout` and records the original path and branch in `recovery.json` beside that folder. The preserved folder is a file recovery copy, not a registered Git worktree; its old `.git` pointer is no longer valid. The branch remains available, so you can create a new worktree for it and copy needed files from the recovery folder. Recovery and operation-journal folders must be owned by the SSH account with private permissions (`0700`). Existing unsafe folders are rejected before the checkout is moved; Clanker does not change their permissions. Recovery folders are not automatically purged. If SSH loses the removal result, paths stay reserved until **Refresh worktrees** verifies that operation's completion journal on the host. If verification cannot complete, Clanker shows the staging and recovery paths for manual host inspection. Do not reopen them while the operation may still be running.
 
-Closing a workspace (its sidebar row or tab) stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a local checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
+Closing a workspace stops its live terminals and closes its UI; it leaves the checkout and branch on disk. Remove linked worktrees through the Git menu after their terminals are closed. Local removal checks uncommitted, untracked and ignored files, confirms the path and branch, moves checkout files to Trash and keeps the branch.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
 
 Removal safeguards share an opaque resource identity for saved SSH aliases whose effective OpenSSH hostname, user, port, and proxy route match. Workspaces retain their separate saved environment identities. Different destination names (for example, a DNS name and its numeric IP) or different proxy routes are not assumed equivalent; use one saved environment when accessing the same repository through those routes.
 
 Pending removal records are saved before dispatch and restored when Clanker restarts. After an interrupted removal, open the owning repository and use **Refresh worktrees** to verify the host completion journal. Until verification succeeds, conflicting opens and terminal launches remain blocked. A missing or incomplete journal requires host inspection; loss of SSH connectivity never proves that removal finished.
+
+### Remembered workspace identities
+
+Clanker continuously remembers the current open set, order and active workspace. Closing a workspace removes it from that set. Each restart registers every saved root again through main, independently. Valid roots become empty shells; failed identities are omitted, removed from persistence, and reported in a warning. If the active root fails, the first surviving workspace in saved order is selected.
+
+Runtime work is explicit: terminals, agents, resumed conversations, Browser views, editor tabs, Notes visibility and pane topology are not restored. Durable Notes content remains available when you open Notes. Recipes in the normal workspace toolbar can explicitly launch work and apply their captured layout.
 
 ## Remote Workspaces (SSH)
 
@@ -49,7 +41,7 @@ Clanker supports opening workspaces on remote Linux/POSIX development machines r
 
 ### Selecting a Remote Directory
 
-Choose a saved SSH environment in the launcher. In **Manage SSH Targets**, add or edit a target's optional **Default workspace root** using an absolute remote path, such as `/srv/repos`. Clanker starts there when it is accessible, resolving symlinks to the canonical path. If the setting is blank or unavailable, it falls back to `$HOME/workspaces`, then `$HOME`. Clearing the field restores that automatic choice. Targets cannot be edited or deleted while an open or registering workspace uses them, or a pending worktree removal protects them. **Browse remote directories** opens an application-rendered chooser, not an operating-system folder dialog. It lists remote directories over SSH, lets you navigate to parent folders, create a remote folder with **New Folder**, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually. The default root is a browsing preference; workspace file operations remain confined to their registered root.
+Choose a saved SSH environment in **Open Workspace**. In **Server settings…**, add or edit a target's optional **Default workspace root** using an absolute remote path, such as `/srv/repos`. Clanker starts there when it is accessible, resolving symlinks to the canonical path. If the setting is blank or unavailable, it falls back to `$HOME/workspaces`, then `$HOME`. Clearing the field restores that automatic choice. Targets cannot be edited or deleted while an open or registering workspace uses them, or a pending worktree removal protects them. **Browse remote directories** opens an application-rendered chooser, not an operating-system folder dialog. It lists remote directories over SSH, lets you navigate to parent folders, create a remote folder with **New Folder**, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually. The default root is a browsing preference; workspace file operations remain confined to their registered root.
 
 Pre-workspace browsing and folder creation are resolved from the saved SSH environment ID and can reach directories the SSH account is allowed to access. Browsing returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and creates only a direct child of the selected canonical parent when that directory is writable. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
 
@@ -61,7 +53,7 @@ Workspace identity is composite:
 environmentId + canonical workspace path
 ```
 
-This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without layout or notes state collision. SSH paths are canonicalized on the remote host before registration, and subsequent file, Git, and terminal requests use that registered location.
+This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without identity or Notes content collision. SSH paths are canonicalized on the remote host before registration, and subsequent file, Git, and terminal requests use that registered location.
 
 SSH workspaces are marked with their environment (for example `SSH · dev-vps`): as a prefix on the tab in Tabs mode, and as a server icon on the sidebar row (with the environment in its tooltip) or a dot on the rail mark. Local workspaces carry no marker.
 
@@ -131,7 +123,7 @@ Discovery is demand-driven by the visible, active Browser. Workspaces on the sam
 
 SSH transport readiness and web-service readiness are separate. **Waiting for remote service** means the tunnel is established but the application is unavailable. Delayed startup and server restarts recover automatically on the same tunnel and reopen the selected preview. A newly detected workspace-owned port can replace the previous automatic preview. SSH forwarding policy rejection, authentication/host-key failures and disconnects are transport errors; restore connectivity/policy and choose **Open** again. Low-level SSH diagnostics are not displayed in Browser.
 
-Each workspace supports four independent forwards, with at most 16 across the app. **Stop** in the preview menu, workspace close, window close, renderer loss and app shutdown release connections. Browser URLs may persist, but forwarding rules do not. Managed previews retain normal host-key verification and reject targets with preconfigured forwards. They use system OpenSSH `-N` and bounded ephemeral discovery commands: no Clanker daemon, installed helper or persistent remote service is introduced. Privileged ports and persisted forwarding rules remain unsupported.
+Each workspace supports four independent forwards, with at most 16 across the app. **Stop** in the preview menu, workspace close, window close, renderer loss and app shutdown release connections. Browser views and forwarding rules are not restored on application startup. Managed previews retain normal host-key verification and reject targets with preconfigured forwards. They use system OpenSSH `-N` and bounded ephemeral discovery commands: no Clanker daemon, installed helper or persistent remote service is introduced. Privileged ports and persisted forwarding rules remain unsupported.
 
 ### Remote limits and refresh behavior
 

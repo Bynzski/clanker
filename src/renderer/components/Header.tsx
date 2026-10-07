@@ -121,6 +121,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId, prefetch: warmupEnabled });
 
   const handleAddTerminal = async (harnessId: string) => {
+    if (!focusedWorkspace || !workspacePath || destination.kind !== 'workspace') return;
     try {
       const { harness: resolvedHarness, model: resolvedModel } = resolveToolbarLaunch({
         harnessId,
@@ -132,17 +133,20 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
 
       const info = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
         ? await window.electronAPI.spawnTerminal(
-          workspacePath || '/', resolvedHarness, resolvedModel, undefined, undefined,
+          workspacePath, resolvedHarness, resolvedModel, undefined, undefined,
           focusedWorkspace.id, focusedWorkspace.environmentId,
         )
-        : await window.electronAPI.spawnTerminal(workspacePath || '/', resolvedHarness, resolvedModel);
+        : await window.electronAPI.spawnTerminal(workspacePath, resolvedHarness, resolvedModel, undefined, undefined, focusedWorkspace.id, focusedWorkspace.environmentId || 'local');
       addTerminal({
         id: info.id,
         pid: info.pid,
         workingDir: workspacePath,
+        workspaceId: focusedWorkspace.id,
+        checkoutContextId: info.checkoutContextId,
+        environmentId: focusedWorkspace.environmentId,
         harnessId: info.harnessId ?? resolvedHarness ?? null,
         attentionEnabled: info.attentionEnabled === true,
-      });
+      }, focusedWorkspace.id);
     } catch (err) {
       console.error('Failed to spawn terminal:', err);
     }

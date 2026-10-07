@@ -1,3 +1,4 @@
+import { Button } from './ui/Button';
 import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
@@ -184,12 +185,6 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
     });
   }, [warmWorkspaceIdSet]);
 
-  // The Explorer watcher owner lives outside the lazy/Suspense presentation subtree.
-  // No workspace and no Assistant: nothing to host. An active Assistant mounts its surface without any Workspace.
-  if (workspaces.length === 0 && !assistantActive) {
-    return <ExplorerLifecycleCoordinator />;
-  }
-
   return (
     <>
     <ExplorerLifecycleCoordinator />
@@ -204,6 +199,10 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
         <BrowserLifecycleCoordinator activeOwnerId={activeBrowserOwnerId} />
         {sidebarMode && <WorkspaceSidebar onOpenWorkspace={onOpenWorkspace} />}
         <div className="workspace-surfaces-container">
+          {workspaces.length === 0 && !assistantActive && <div className="empty-workspace-state">
+            <p>No workspace open</p>
+            <Button type="button" onClick={onOpenWorkspace}>Open Workspace</Button>
+          </div>}
           {workspaces.map((workspace) => (
             <WorkspaceSurface
               key={workspace.id}

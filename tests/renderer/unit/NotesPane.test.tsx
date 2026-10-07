@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import NotesPane from '../../../src/renderer/components/NotesPane';
-import { getNotesContentStorageKey, readStoredNotesVisible, writeStoredNotesVisible } from '../../../src/renderer/lib/notesStorage';
+import { getNotesContentStorageKey } from '../../../src/renderer/lib/notesStorage';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
@@ -143,16 +143,6 @@ describe('NotesPane', () => {
 
     expect(screen.getByPlaceholderText('Notes…')).toHaveValue('');
     expect(window.localStorage.getItem(getNotesContentStorageKey('/workspace/notes', 'ws-remote', 'ssh-server'))).toBeNull();
-  });
-
-  it('restores legacy visibility locally without showing it on SSH, then persists each independently', () => {
-    window.localStorage.setItem('clanker-grid:notes-visible:v1:/workspace/notes', '1');
-    expect(readStoredNotesVisible('/workspace/notes', 'local-id')).toBe(true);
-    expect(readStoredNotesVisible('/workspace/notes', 'remote-id', 'ssh-server')).toBe(false);
-    writeStoredNotesVisible('/workspace/notes', true, 'remote-id', 'ssh-server');
-    writeStoredNotesVisible('/workspace/notes', false, 'local-id');
-    expect(readStoredNotesVisible('/workspace/notes', 'remote-id', 'ssh-server')).toBe(true);
-    expect(readStoredNotesVisible('/workspace/notes', 'local-id')).toBe(false);
   });
 
   it('closes the notes pane from the pane header', () => {

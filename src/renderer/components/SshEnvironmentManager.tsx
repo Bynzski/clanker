@@ -7,7 +7,7 @@ import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { Input } from './ui/Input';
 import { Field, FieldLabel } from './ui/Field';
-import './WorkspaceGate.css';
+import './WorkspaceLocation.css';
 interface Props {
   environments: SshEnvironmentConfig[];
   initialEnvironment?: SshEnvironmentConfig;
@@ -86,7 +86,7 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
       </div>
       <div className="ssh-manager-body clanker-dialog-body">
         <form className="ssh-manager-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <span className="gate-section-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
+          <span className="workspace-location-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
           <Field className="ssh-form-row">
             <FieldLabel htmlFor="ssh-target-label">Label</FieldLabel>
             <Input ref={labelRef} id="ssh-target-label" size="sm" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
@@ -109,7 +109,7 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
           </div>
         </form>
         <div className="ssh-saved-list">
-          <span className="gate-section-label">Saved Environments ({environments.length})</span>
+          <span className="workspace-location-label">Saved Environments ({environments.length})</span>
           {!environments.length && <p className="ssh-env-target">No saved SSH environments yet.</p>}
           {environments.map((config) => <div key={config.id} className="ssh-env-item">
             <div className="ssh-env-info">

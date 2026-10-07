@@ -6,6 +6,7 @@ import { Folder, FolderOpen, Loader2 } from 'lucide-react';
 import RemoteDirectoryChooser from './RemoteDirectoryChooser';
 import { joinPaths, normalizePath, relativePath } from '../lib/pathUtils';
 import './RemoteDirectoryChooser.css';
+import './WorkspaceLocation.css';
 
 interface Props {
   environmentId: string;
@@ -94,7 +95,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
 
   return <>
     <div className="input-wrapper remote-path-input">
-      <Input variant="mono" ref={inputRef} type="text" className="gate-input" aria-label="Remote Directory Path"
+      <Input variant="mono" ref={inputRef} type="text" className="workspace-location-input" aria-label="Remote Directory Path"
         value={relativeToBase && basePath && !absoluteInput && path.startsWith('/') ? relativePath(basePath, path) || '.' : path}
         onChange={(event) => {
           const value = event.target.value;
@@ -120,7 +121,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
         {waitingForBase ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
       </IconButton>
     </div>
-    {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter an absolute path manually. <Button type="button" onClick={() => { setHomeError(''); setHomeLoading(true); setHomeAttempt((attempt) => attempt + 1); }}>Retry</Button></p>}
+    {homeError && <p role="alert" className="workspace-location-error">Could not load remote home: {homeError}. Enter an absolute path manually. <Button type="button" onClick={() => { setHomeError(''); setHomeLoading(true); setHomeAttempt((attempt) => attempt + 1); }}>Retry</Button></p>}
     {focused && suggestions.length > 0 && <ul className="suggestions-list remote-suggestions">
       {suggestions.map((entry, index) => <li key={entry.path}>
         <button type="button" className={`suggestion-item ${selectedIndex === index ? 'selected' : ''}`}

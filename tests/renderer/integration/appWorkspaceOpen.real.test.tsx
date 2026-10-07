@@ -1,399 +1,133 @@
 // @vitest-environment jsdom
-
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import { installElectronApiMock } from '../../setup/electron';
-import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
-import { useAssistantsStore } from '../../../src/renderer/store/assistantsStore';
+import { installElectronApiMock } from '../../setup/electron';
+import { OPEN_WORKSPACES_STORAGE_KEY, readOpenWorkspaceState } from '../../../src/renderer/lib/openWorkspaceStorage';
+import { closeWorkspaceWithCleanup } from '../../../src/renderer/lib/workspaceClose';
 
-function resetStore() {
-  useWorkspaceStore.setState({
-    name: '',
-    workspacePath: '',
-    harness: 'codex',
-    model: '',
-    terminals: [],
-    panes: [],
-    browserVisible: false,
-    browserOverlayCount: 0,
-    browserUrl: 'https://github.com',
-    activeTerminalId: null,
-    browserPane: null,
-    layoutRoot: null,
-    explorerVisible: false,
-    explorerSidebarWidth: 280,
-    explorerExpandedPaths: [],
-    explorerSelectedPath: null,
-    explorerEntriesByPath: {},
-    explorerLoadingPaths: [],
-    explorerErrorsByPath: {},
-    showHiddenFiles: true,
-    workspaces: [],
-    activeWorkspaceId: null,
-    gridViewport: { cols: 12, rows: 8 },
-    layoutRevision: 0,
-    editorVisible: false,
-    editorPane: null,
-    editorTabs: [],
-    activeEditorTabId: null,
-    gitChanges: [],
-  });
+vi.mock('../../../src/renderer/components/TerminalPane', () => ({
+  default: () => <div data-testid="terminal-surface" />, markTerminalDisposed: vi.fn(),
+}));
+const state = () => useWorkspaceStore.getState();
+const location = (path: string) => ({ environmentId: 'local', path });
+async function openFolder(path: string) {
+  vi.mocked(window.electronAPI.openDirectoryDialog).mockResolvedValue(path);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Open Workspace' })[0]);
+  const dialog = await screen.findByRole('dialog', { name: 'Open Workspace' });
+  fireEvent.click(screen.getByText('Choose Folder…'));
+  await screen.findByText(path);
+  fireEvent.click(dialog.querySelector('.open-workspace-form > button:last-child')!);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Open Workspace' })).toBeNull());
 }
-
-async function chooseBasicTerminal() {
-  const add = screen.getByRole('button', { name: 'Add plain terminal' });
-  await waitFor(() => expect(add).toBeEnabled());
-  fireEvent.click(add);
-}
-
-describe('App workspace open integration', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetStore();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: vi.fn(() => null),
-        setItem: vi.fn(),
-        removeItem: vi.fn(),
-        clear: vi.fn(),
-      },
-    });
-    installElectronApiMock({
-      getLastWorkspace: vi.fn().mockResolvedValue('/workspace/'),
-      getHarnessOptions: vi.fn().mockResolvedValue({ codex: true, '': true }),
-      getHarnessModels: vi.fn().mockResolvedValue([]),
-      spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1234 }),
-      getTerminalBuffer: vi.fn().mockResolvedValue(''),
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-    });
+beforeEach(() => {
+  const values = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  } });
+  useAssistantNavStore.getState().clearAllAssistants();
+  useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, activeWorkspaceLifecycle: null });
+  useWorkspaceNavigationStore.setState({ mode: 'sidebar', resolved: true, sidebarWidth: 280 });
+  installElectronApiMock({
+    registerOpenWorkspace: vi.fn(async (id: string, path: string, environmentId = 'local') => ({ success: true, location: { path, environmentId },
+      checkoutContext: { id: `${id}::main`, workspaceId: id, environmentId, path, kind: 'main' } })),
+    gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [] }),
+    spawnTerminal: vi.fn(async (_path: string, harness?: string, _model?: string, _command?: string, _recipe?: boolean, workspaceId?: string) => ({
+      id: 'terminal-new', pid: 1001, harnessId: harness, checkoutContextId: `${workspaceId}::main`,
+    })),
   });
+});
 
-  it('shows the main screen after selecting a workspace', async () => {
+describe('normal application shell and workspace identity opening', () => {
+  it.each(['sidebar', 'tabs'] as const)('%s navigation renders immediately with zero workspaces and no launcher', async (mode) => {
+    useWorkspaceNavigationStore.setState({ mode });
     render(<App />);
-
-    expect(screen.getByText('Launch Workspace')).toBeInTheDocument();
-    const pathInput = document.querySelector('.gate-input') as HTMLInputElement | null;
-    expect(pathInput).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.change(pathInput!, { target: { value: '/workspace/' } });
-    });
-
-    await act(async () => {
-      await chooseBasicTerminal();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-      fireEvent.click(screen.getByText('Launch Workspace'));
-    });
-
-    await waitFor(() => {
-      expect(document.querySelector('.titlebar')).toBeTruthy();
-      expect(document.querySelector('.header')).toBeTruthy();
-      expect(document.querySelector('.main-content')).toBeTruthy();
-    });
-    const workspace = useWorkspaceStore.getState().workspaces[0];
-    expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledWith(workspace.id, '/workspace/');
-    expect(vi.mocked(window.electronAPI.registerOpenWorkspace).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(window.electronAPI.spawnTerminal).mock.invocationCallOrder[0]);
-  });
-
-  describe('checkout contexts', () => {
-    const open = async (path: string) => {
-      render(<App />);
-      fireEvent.change(document.querySelector('.gate-input') as HTMLInputElement, { target: { value: path } });
-      await chooseBasicTerminal();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-      fireEvent.click(screen.getByText('Launch Workspace'));
-      await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
-      return useWorkspaceStore.getState().workspaces[0];
-    };
-
-    it('gives a newly opened workspace the main context main registered, and binds its terminals to it', async () => {
-      const context = (id: string) => ({ id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/canonical', kind: 'main' as const });
-      installElectronApiMock({
-        registerOpenWorkspace: vi.fn().mockImplementation(async (id: string) => ({
-          success: true, location: { environmentId: 'local', path: '/canonical' }, checkoutContext: context(id),
-        })),
-        spawnTerminal: vi.fn().mockImplementation(async (_path, harness) => ({
-          id: 'terminal-1', pid: 1, harnessId: harness, checkoutContextId: undefined,
-        })),
-      });
-
-      const workspace = await open('/workspace/');
-
-      expect(workspace.checkoutContexts).toEqual([context(workspace.id)]);
-      expect(workspace.terminals).toHaveLength(1);
-      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
-      expect(workspace.isLinkedWorktree).toBe(false);
-    });
-
-    it('trusts the context id main reports for the terminal it spawned', async () => {
-      installElectronApiMock({
-        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/canonical' } }),
-        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1, checkoutContextId: 'reported-by-main' }),
-      });
-      const workspace = await open('/workspace/');
-      expect(workspace.terminals[0].checkoutContextId).toBe('reported-by-main');
-    });
-
-    it('backfills a main context when main returns none (older registration result)', async () => {
-      installElectronApiMock({
-        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/canonical' } }),
-        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1 }),
-      });
-      const workspace = await open('/workspace/');
-      expect(workspace.checkoutContexts).toEqual([
-        { id: `${workspace.id}::main`, workspaceId: workspace.id, environmentId: 'local', path: '/canonical', kind: 'main' },
-      ]);
-      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
-    });
-
-    it('opens an existing linked worktree as the same legacy workspace, annotated as a worktree context', async () => {
-      installElectronApiMock({
-        registerOpenWorkspace: vi.fn().mockImplementation(async (id: string) => ({
-          success: true,
-          location: { environmentId: 'local', path: '/repos/app-worktrees/task' },
-          checkoutContext: { id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/repos/app-worktrees/task', kind: 'main' },
-        })),
-        gitListWorktrees: vi.fn().mockResolvedValue({
-          success: true,
-          worktrees: [
-            { path: '/repos/app', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
-            { path: '/repos/app-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false },
-          ],
-        }),
-        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1 }),
-      });
-
-      const workspace = await open('/repos/app-worktrees/task');
-
-      // Still one workspace, still presented as a linked worktree workspace...
-      expect(workspace).toMatchObject({ workspacePath: '/repos/app-worktrees/task', isLinkedWorktree: true, projectName: 'app' });
-      // ...whose single context is the worktree root, with the repository relationship recorded.
-      expect(workspace.checkoutContexts).toEqual([{
-        id: `${workspace.id}::main`, workspaceId: workspace.id, environmentId: 'local',
-        path: '/repos/app-worktrees/task', kind: 'worktree', branch: 'task', mainCheckoutPath: '/repos/app',
-      }]);
-      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
-    });
-  });
-
-  it.each(['fullscreen', 'modal'])('spawns mixed harness counts with displayed models at the canonical root from the %s launcher', async (shell) => {
-    installElectronApiMock({
-      getHarnessOptions: vi.fn().mockResolvedValue({ codex: true, pi: true }),
-      getHarnessModels: vi.fn(async (harness) => [{ id: `${harness}-model`, label: `${harness} Model` }]),
-      registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/canonical' } }),
-      spawnTerminal: vi.fn().mockImplementation(async (_path, harness) => ({ id: crypto.randomUUID(), pid: 1234, harnessId: harness })),
-    });
-    render(<App />);
-    await screen.findByRole('button', { name: 'codex model' });
-    if (shell === 'modal') {
-      await chooseBasicTerminal();
-      fireEvent.change(screen.getByLabelText('Workspace directory'), { target: { value: '/first' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
-      await screen.findByRole('button', { name: 'Open Workspace' });
-      vi.mocked(window.electronAPI.spawnTerminal).mockClear();
-      vi.mocked(window.electronAPI.registerOpenWorkspace).mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/second-canonical' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Open Workspace' }));
-      await screen.findByRole('button', { name: 'codex model' });
-    }
-    await screen.findByText('codex Model');
-    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Add Codex terminal' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Codex terminal' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Add Pi terminal' }));
-    fireEvent.change(screen.getByLabelText('Workspace directory'), { target: { value: '/alias' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
-    await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(shell === 'modal' ? 2 : 1));
-    const root = shell === 'modal' ? '/second-canonical' : '/canonical';
-    expect(vi.mocked(window.electronAPI.spawnTerminal).mock.calls).toEqual([
-      [root, 'codex', 'codex-model'], [root, 'codex', 'codex-model'],
-      [root, 'codex', 'codex-model'], [root, 'pi', 'pi-model'],
-    ]);
-    expect(useWorkspaceStore.getState().workspaces[shell === 'modal' ? 1 : 0].terminals.map((terminal) => terminal.harnessId)).toEqual(['codex', 'codex', 'codex', 'pi']);
-  });
-
-  it('releases the launcher overlay from the workspace that opened it', async () => {
-    render(<App />);
-
-    const initialPathInput = document.querySelector('.gate-input') as HTMLInputElement;
-    fireEvent.change(initialPathInput, { target: { value: '/workspace/' } });
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.click(screen.getByText('Launch Workspace'));
-
-    await waitFor(() => {
-      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
-    });
-    const firstWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId!;
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open Workspace' }));
-    expect(useWorkspaceStore.getState().getWorkspaceById(firstWorkspaceId)?.browserOverlayCount).toBe(1);
-
-    const nextPathInput = document.querySelector('.gate-input') as HTMLInputElement;
-    fireEvent.change(nextPathInput, { target: { value: '/second-workspace/' } });
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.click(screen.getByText('Launch Workspace'));
-
-    await waitFor(() => {
-      expect(useWorkspaceStore.getState().workspaces).toHaveLength(2);
-    });
-    expect(useWorkspaceStore.getState().getWorkspaceById(firstWorkspaceId)?.browserOverlayCount).toBe(0);
-    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
-  });
-
-  it('uses the canonical SSH registration path for workspace state and terminal spawning', async () => {
-    const registerOpenWorkspace = vi.fn().mockResolvedValue({
-      success: true, location: { environmentId: 'dev-vps', path: '/srv/projects/project' },
-    });
-    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'remote-terminal', pid: 1234 });
-    installElectronApiMock({
-      sshEnvironmentList: vi.fn().mockResolvedValue([{ id: 'dev-vps', label: 'Dev VPS', target: 'dev-vps' }]),
-      registerOpenWorkspace, spawnTerminal,
-    });
-    render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Dev VPS, dev-vps' }));
-    await screen.findByLabelText('Remote Directory Path');
-    fireEvent.change(screen.getByLabelText('Remote Directory Path'), {
-      target: { value: '/home/jay/project' },
-    });
-    // The target selector renders before asynchronous harness discovery is ready.
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
-    await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
-    const workspace = useWorkspaceStore.getState().workspaces[0];
-    expect(registerOpenWorkspace).toHaveBeenCalledWith(workspace.id, '/home/jay/project', 'dev-vps');
-    expect(workspace.workspacePath).toBe('/srv/projects/project');
-    expect(workspace.terminals[0].workingDir).toBe('/srv/projects/project');
-    expect(spawnTerminal).toHaveBeenCalledWith('/srv/projects/project', expect.anything(), undefined,
-      undefined, undefined, workspace.id, 'dev-vps');
-  });
-
-  it('preserves branch identity when an SSH checkout is registered at its canonical remote path', async () => {
-    installElectronApiMock({
-      sshEnvironmentList: vi.fn().mockResolvedValue([{ id: 'dev-vps', label: 'Dev VPS', target: 'dev-vps' }]),
-      registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'dev-vps', path: '/srv/task' } }),
-      gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [
-        { path: '/srv/project', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
-        { path: '/srv/task', branch: 'task/ssh', isMain: false, isLocked: false, isPrunable: false },
-      ] }),
-    });
-    render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Dev VPS, dev-vps' }));
-    await screen.findByLabelText('Remote Directory Path');
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/alias/task' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
-    await waitFor(() => expect(useWorkspaceStore.getState().workspaces[0]).toMatchObject({ environmentId: 'dev-vps', workspacePath: '/srv/task', isLinkedWorktree: true, gitCurrentBranch: 'task/ssh', projectName: 'project' }));
-    const workspace = useWorkspaceStore.getState().workspaces[0];
-    expect(window.electronAPI.gitListWorktrees).toHaveBeenCalledWith('/srv/task', workspace.id);
-    expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/srv/task', expect.anything(), undefined, undefined, undefined, workspace.id, 'dev-vps');
-  });
-
-  it('keeps the launcher open when main rejects workspace registration', async () => {
-    installElectronApiMock({ registerOpenWorkspace: vi.fn().mockResolvedValue({ success: false, error: 'Worktree is being removed' }) });
-    render(<App />);
-    const pathInput = document.querySelector('.gate-input') as HTMLInputElement;
-    fireEvent.change(pathInput, { target: { value: '/workspace/' } });
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.click(screen.getByText('Launch Workspace'));
-    await screen.findByRole('alert');
-    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+    expect(document.querySelector('.titlebar')).toBeInTheDocument();
+    expect(document.querySelector('.header')).toBeInTheDocument();
+    expect(document.querySelector('.status-bar')).toBeInTheDocument();
+    expect(await screen.findByText('No workspace open')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open Workspace' }).length).toBeGreaterThan(0);
+    expect(document.querySelector('.workspace-gate')).toBeNull();
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    if (mode === 'sidebar') expect(screen.getByTestId('workspace-sidebar')).toBeInTheDocument();
   });
-
-  it('opens an existing worktree as a workspace with its branch identity', async () => {
-    installElectronApiMock({
-      gitListWorktrees: vi.fn().mockResolvedValue({
-        success: true,
-        worktrees: [
-          { path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
-          { path: '/workspace', branch: 'task/example', isMain: false, isLocked: false, isPrunable: false },
-        ],
-      }),
-    });
+  it('opens an empty shell, then launches the first terminal explicitly from Header', async () => {
     render(<App />);
-    const pathInput = document.querySelector('.gate-input') as HTMLInputElement;
-    fireEvent.change(pathInput, { target: { value: '/workspace/' } });
-    await chooseBasicTerminal();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-    fireEvent.click(screen.getByText('Launch Workspace'));
-    await waitFor(() => {
-      expect(useWorkspaceStore.getState().workspaces[0]).toEqual(expect.objectContaining({
-        isLinkedWorktree: true,
-        gitCurrentBranch: 'task/example',
-        projectName: 'repo',
-      }));
-    });
+    await screen.findByText('No workspace open');
+    await openFolder('/repo');
+    expect(state().workspaces[0]).toMatchObject({ terminals: [], panes: [], activeTerminalId: null, layoutRoot: null });
+    expect(await screen.findByText('No terminals open')).toBeInTheDocument();
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminal' }));
+    await waitFor(() => expect(state().workspaces[0].terminals).toHaveLength(1));
+    expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/repo', undefined, undefined, undefined, undefined, state().activeWorkspaceId, 'local');
+    expect(state().workspaces[0].terminals[0].checkoutContextId).toBe(`${state().activeWorkspaceId}::main`);
   });
-
-  describe('while an Assistant is active', () => {
-    const fred = { id: 'hermes:fred', displayName: 'Fred' };
-    const snapshot = {
-      available: true, settings: { enabled: true, autoStart: false }, service: { state: 'connected', ownership: 'external' },
-      assistants: [fred], surfaces: [],
-    };
-    const startWithFredActive = async (registerOpenWorkspace: ReturnType<typeof vi.fn>) => {
-      useAssistantsStore.getState().reset();
-      useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
-      useWorkspaceStore.setState({
-        workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a',
-      });
-      installElectronApiMock({
-        getAssistants: vi.fn().mockResolvedValue(snapshot),
-        onAssistantsChanged: vi.fn(() => () => undefined),
-        openAssistant: vi.fn().mockResolvedValue({ state: 'open', replay: '' }),
-        registerOpenWorkspace,
-        getHarnessOptions: vi.fn().mockResolvedValue({ codex: true, '': true }),
-        getHarnessModels: vi.fn().mockResolvedValue([]),
-        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-b', pid: 1 }),
-        getTerminalBuffer: vi.fn().mockResolvedValue(''),
-        fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-      });
-      render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Fred' }));
-      await waitFor(() => expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:fred'));
-    };
-    const openWorkspaceViaGate = async (path: string) => {
-      fireEvent.click(screen.getAllByRole('button', { name: 'Open Workspace' })[0]);
-      const input = await waitFor(() => {
-        const element = document.querySelector('.gate-input') as HTMLInputElement | null;
-        expect(element).toBeTruthy();
-        return element!;
-      });
-      fireEvent.change(input, { target: { value: path } });
-      await chooseBasicTerminal();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-      fireEvent.click(screen.getByText('Launch Workspace'));
-    };
-
-    it('a successfully opened workspace becomes the visible surface while Fred stays opened', async () => {
-      await startWithFredActive(vi.fn(async (_id: string, path: string) => ({ success: true, location: { environmentId: 'local', path } })));
-      await openWorkspaceViaGate('/projects/b');
-      await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(2));
-      const opened = useWorkspaceStore.getState().workspaces[1];
-      expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(opened.id);
-      expect(useAssistantNavStore.getState()).toMatchObject({ activeAssistantId: null, openedAssistantIds: ['hermes:fred'] });
-      await waitFor(() => expect(document.querySelector(`[data-workspace-id="${opened.id}"]`)).toHaveAttribute('data-workspace-visibility', 'active'));
-      expect(document.querySelector('[data-assistant-id="hermes:fred"]')).toHaveClass('parked');
-    });
-
-    it('a failed registration leaves Fred as the active surface and adds no workspace', async () => {
-      await startWithFredActive(vi.fn(async () => ({ success: false, error: 'nope' })));
-      await openWorkspaceViaGate('/projects/b');
-      await waitFor(() => expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalled());
-      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
-      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
-      expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:fred');
-      expect(document.querySelector('[data-assistant-id="hermes:fred"]')).toHaveClass('active');
-    });
+  it('releases the Open Workspace overlay from its original owner after opening a different shell', async () => {
+    render(<App />); await screen.findByText('No workspace open');
+    await openFolder('/a'); const a = state().activeWorkspaceId!;
+    await openFolder('/b');
+    expect(state().workspaces.find((workspace) => workspace.id === a)?.browserOverlayCount).toBe(0);
+    expect(state().workspaces.every((workspace) => !workspace.browserOverlayCount)).toBe(true);
+  });
+  it('uses main canonical identity and selects post-canonical duplicates', async () => {
+    vi.mocked(window.electronAPI.registerOpenWorkspace).mockImplementation(async (id: string) => ({ success: true, location: location('/canonical'),
+      checkoutContext: { id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/canonical', kind: 'main' } }));
+    render(<App />); await screen.findByText('No workspace open');
+    await openFolder('/alias-one'); const id = state().activeWorkspaceId;
+    await openFolder('/alias-two');
+    expect(state().activeWorkspaceId).toBe(id);
+    expect(state().workspaces).toHaveLength(1);
+    expect(readOpenWorkspaceState().workspaces).toEqual([location('/canonical')]);
+    expect(window.electronAPI.unregisterOpenWorkspace).toHaveBeenCalledOnce();
+  });
+  it('restores order and active identity after a real App remount without resurrecting presentation', async () => {
+    const first = render(<App />); await screen.findByText('No workspace open');
+    await openFolder('/a'); const a = state().activeWorkspaceId!;
+    await openFolder('/b'); const b = state().activeWorkspaceId!;
+    await openFolder('/c'); const c = state().activeWorkspaceId!;
+    act(() => { state().moveWorkspace(c, a); state().selectWorkspace(b); state().toggleNotesPane(); state().setBrowserVisible(true, b); });
+    expect(readOpenWorkspaceState()).toEqual({ version: 1, workspaces: [location('/c'), location('/a'), location('/b')], activeWorkspace: location('/b') });
+    first.unmount();
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null });
+    vi.mocked(window.electronAPI.spawnTerminal).mockClear();
+    vi.mocked(window.electronAPI.browserCreateTab).mockClear();
+    render(<App />);
+    await waitFor(() => expect(state().workspaces).toHaveLength(3));
+    expect(state().workspaces.map((w) => w.workspacePath)).toEqual(['/c', '/a', '/b']);
+    expect(state().workspacePath).toBe('/b');
+    expect(state().activeWorkspaceId).not.toBe(b);
+    for (const workspace of state().workspaces) expect(workspace).toMatchObject({ terminals: [], panes: [], layoutRoot: null,
+      activeTerminalId: null, browserVisible: false, browserPane: null, editorVisible: false, editorTabs: [], notesVisible: false, explorerVisible: false });
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    expect(window.electronAPI.browserCreateTab).not.toHaveBeenCalled();
+    expect(window.electronAPI.invokeSession).not.toHaveBeenCalled();
+  });
+  it('closing commits removal to storage and it stays gone on restart', async () => {
+    const app = render(<App />); await screen.findByText('No workspace open');
+    await openFolder('/a'); const a = state().activeWorkspaceId!;
+    await openFolder('/b');
+    await act(async () => { await closeWorkspaceWithCleanup(a); });
+    expect(readOpenWorkspaceState().workspaces).toEqual([location('/b')]);
+    app.unmount(); useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null });
+    render(<App />); await waitFor(() => expect(state().workspaces).toHaveLength(1));
+    expect(state().workspaces[0].workspacePath).toBe('/b');
+  });
+  it('restores valid identities while reporting registration failures through notifications', async () => {
+    window.localStorage.setItem(OPEN_WORKSPACES_STORAGE_KEY, JSON.stringify({ version: 1, workspaces: [location('/missing'), location('/valid')], activeWorkspace: location('/missing') }));
+    vi.mocked(window.electronAPI.registerOpenWorkspace).mockImplementation(async (_id: string, path: string) => path === '/missing'
+      ? { success: false, error: 'Directory missing' } : { success: true, location: location(path) });
+    render(<App />);
+    expect(document.querySelector('.titlebar')).toBeInTheDocument();
+    await waitFor(() => expect(state().workspaces).toHaveLength(1));
+    expect(state().workspacePath).toBe('/valid');
+    expect(await screen.findByText(/1 workspace could not be reopened/)).toBeInTheDocument();
+    expect(readOpenWorkspaceState().workspaces).toEqual([location('/valid')]);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

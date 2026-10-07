@@ -7,7 +7,6 @@ import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindin
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import App from '../../../src/renderer/App';
 import { useNotificationStore } from '../../../src/renderer/store/notificationStore';
-import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -55,27 +54,13 @@ vi.mock('../../../src/renderer/components/WorkspaceHost', () => ({
   ),
 }));
 
-vi.mock('../../../src/renderer/components/WorkspaceGate', () => ({
-  WorkspaceGateFullscreen: ({ onWorkspaceSelect }: { onWorkspaceSelect: (path: string, terminals: number, harness: string, model?: string) => void }) => (
-    <div data-testid="workspace-gate-fullscreen">
-      <button data-testid="gate-select" onClick={() => onWorkspaceSelect('/test/path', 1, 'codex', '')}>
-        Select Workspace
-      </button>
-      <button data-testid="gate-select-multi" onClick={() => onWorkspaceSelect('/test/path', 3, 'codex', 'gpt-4')}>
-        Select Multi-Terminal
-      </button>
+vi.mock('../../../src/renderer/components/OpenWorkspaceDialog', () => ({
+  default: ({ isOpen, onClose, onOpen }: { isOpen: boolean; onClose: () => void; onOpen: (location: { environmentId: string; path: string }) => Promise<unknown> }) => isOpen ? (
+    <div data-testid="open-workspace-dialog">
+      <button onClick={onClose}>Close</button>
+      <button onClick={() => { void onOpen({ environmentId: 'local', path: '/modal/path' }).then(onClose); }}>Open selected folder</button>
     </div>
-  ),
-  WorkspaceGateModal: ({ isOpen, onClose, onWorkspaceSelect }: { isOpen: boolean; onClose: () => void; onWorkspaceSelect: (path: string, terminals: number, harness: string, model?: string) => void }) => (
-    isOpen ? (
-      <div data-testid="workspace-gate-modal">
-        <button data-testid="modal-close" onClick={onClose}>Close</button>
-        <button data-testid="modal-select" onClick={() => onWorkspaceSelect('/modal/path', 2, 'claude', '')}>
-          Select from Modal
-        </button>
-      </div>
-    ) : null
-  ),
+  ) : null,
 }));
 
 describe('App', () => {
@@ -89,6 +74,7 @@ describe('App', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     useNotificationStore.setState({ notifications: [] });
     useKeybindingStore.setState({ overrides: {}, loaded: false, capturing: false });
     mockSpawnTerminal.mockReset();
@@ -123,7 +109,6 @@ describe('App', () => {
       explorerLoadingPaths: [],
       explorerErrorsByPath: {},
     showHiddenFiles: true,
-      addWorkspace: vi.fn(),
       fitAllPanes: mockFitAllPanes,
     });
 
@@ -140,6 +125,7 @@ describe('App', () => {
         success: true, location: { path, environmentId },
       })),
       unregisterOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+      gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [] }),
       onFitAllPanes: mockOnFitAllPanes,
       zoomInWindow: mockZoomInWindow,
       zoomOutWindow: mockZoomOutWindow,
@@ -167,225 +153,32 @@ describe('App', () => {
   });
 
   // =========================================================================
-  // Empty State - Workspace Gate Fullscreen
+  // Empty State - normal empty shell
   // =========================================================================
-  describe('empty state (no workspaces)', () => {
-    it('renders WorkspaceGateFullscreen when there are no workspaces', () => {
+  describe('empty shell', () => {
+    it('mounts normal chrome immediately with no saved workspaces', async () => {
       render(<App />);
-      expect(screen.getByTestId('workspace-gate-fullscreen')).toBeTruthy();
+      expect(screen.getByTestId('title-bar')).toBeInTheDocument();
+      expect(screen.getByTestId('header')).toBeInTheDocument();
+      expect(screen.getByTestId('status-bar')).toBeInTheDocument();
+      expect(await screen.findByTestId('workspace-host')).toBeInTheDocument();
+      expect(mockSpawnTerminal).not.toHaveBeenCalled();
     });
-
-    it('keeps pending notices and history accessible with no workspaces', async () => {
-      useNotificationStore.getState().show({ tone: 'warning', message: 'Checkout remains on disk', workspaceId: 'closed', workspaceName: 'Closed project' });
+    it('opens a shell through the normal dialog with no terminals', async () => {
       render(<App />);
-      expect(screen.getAllByRole('alert')).toHaveLength(1);
-      expect(screen.getByRole('alert')).toHaveTextContent('Closed project');
-      fireEvent.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
-      expect(await screen.findByRole('dialog', { name: 'Notification history' })).toHaveTextContent('Checkout remains on disk');
-    });
-
-    it('does not render main layout when there are no workspaces', () => {
-      render(<App />);
-      expect(screen.queryByTestId('dynamic-pane-layout')).toBeNull();
-      expect(screen.queryByTestId('title-bar')).toBeNull();
-    });
-
-    it('does not render header when there are no workspaces', () => {
-      render(<App />);
-      expect(screen.queryByTestId('header')).toBeNull();
-    });
-
-    it('does not render StatusBar when there are no workspaces', () => {
-      render(<App />);
-      expect(screen.queryByTestId('status-bar')).toBeNull();
-    });
-
-    it('does not render modal when there are no workspaces', () => {
-      render(<App />);
-      expect(screen.queryByTestId('workspace-gate-modal')).toBeNull();
-    });
-
-    it('enters the normal shell (not the launcher) when an Assistant is the active destination, creating no workspace', async () => {
-      useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred', openedAssistantIds: ['hermes:fred'] });
-      try {
-        render(<App />);
-        expect(screen.queryByTestId('workspace-gate-fullscreen')).toBeNull();
-        expect(screen.getByTestId('title-bar')).toBeTruthy();
-        expect(await screen.findByTestId('workspace-host')).toBeTruthy();
-        expect(screen.getByTestId('status-bar')).toBeTruthy();
-        expect(useWorkspaceStore.getState().workspaces).toEqual([]);
-        expect(useWorkspaceStore.getState().activeWorkspaceId).toBeNull();
-        // Leaving the Assistant destination with zero workspaces returns to the launcher.
-        act(() => useAssistantNavStore.getState().clearAllAssistants());
-        expect(screen.getByTestId('workspace-gate-fullscreen')).toBeTruthy();
-      } finally {
-        useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
-      }
-    });
-  });
-
-  // =========================================================================
-  // Workspace Gate Selection
-  // =========================================================================
-  describe('workspace gate selection', () => {
-    it('calls spawnTerminal when gate selects a workspace', async () => {
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      expect(mockSpawnTerminal).toHaveBeenCalled();
-    });
-
-    it('spawns correct number of terminals based on selection', async () => {
-      mockSpawnTerminal
-        .mockResolvedValueOnce({ id: 'term-1', pid: 1111 })
-        .mockResolvedValueOnce({ id: 'term-2', pid: 2222 })
-        .mockResolvedValueOnce({ id: 'term-3', pid: 3333 });
-      
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select-multi');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      expect(mockSpawnTerminal).toHaveBeenCalledTimes(3);
-    });
-
-    it('passes correct parameters to spawnTerminal', async () => {
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      expect(mockSpawnTerminal).toHaveBeenCalledWith('/test/path', 'codex', '');
-    });
-
-    it('passes model parameter to spawnTerminal', async () => {
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select-multi');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      expect(mockSpawnTerminal).toHaveBeenCalledWith('/test/path', 'codex', 'gpt-4');
-    });
-  });
-
-  // =========================================================================
-  // Workspace Gate Modal
-  // =========================================================================
-  describe('workspace gate modal', () => {
-    it('opens modal when onOpenWorkspace is called', async () => {
-      act(() => {
-        useWorkspaceStore.setState({
-          workspaces: [{
-            id: 'ws-1',
-            lifecycle: 'active',
-            name: 'test',
-            workspacePath: '/test',
-            harness: 'codex',
-            model: '',
-            terminals: [{ id: 't1', pid: 1, workingDir: '/test' }],
-            panes: [],
-            browserVisible: false,
-            browserUrl: '',
-            activeTerminalId: null,
-            browserPane: null,
-            layoutRoot: null,
-            explorerVisible: false,
-            explorerSidebarWidth: 280,
-            explorerExpandedPaths: [],
-            explorerSelectedPath: null,
-            explorerEntriesByPath: {},
-            explorerLoadingPaths: [],
-            explorerErrorsByPath: {},
-    showHiddenFiles: true,
-            editorPane: null,
-            editorVisible: false,
-            editorTabs: [],
-            activeEditorTabId: null,
-            gitChanges: [],
-            gitCurrentBranch: null,
-            gitIsRepo: false,
-            gitIsDetached: false,
-            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
-          }],
-        });
-      });
-      
-      render(<App />);
-      
       fireEvent.click(screen.getByTestId('titlebar-open-workspace'));
-      
-      await waitFor(() => {
-        expect(screen.getByTestId('workspace-gate-modal')).toBeTruthy();
-      });
+      fireEvent.click(screen.getByText('Open selected folder'));
+      await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
+      expect(useWorkspaceStore.getState().workspaces[0].terminals).toEqual([]);
+      expect(mockSpawnTerminal).not.toHaveBeenCalled();
     });
-
-    it('closes modal when close button is clicked', async () => {
-      act(() => {
-        useWorkspaceStore.setState({
-          workspaces: [{
-            id: 'ws-1',
-            lifecycle: 'active',
-            name: 'test',
-            workspacePath: '/test',
-            harness: 'codex',
-            model: '',
-            terminals: [{ id: 't1', pid: 1, workingDir: '/test' }],
-            panes: [],
-            browserVisible: false,
-            browserUrl: '',
-            activeTerminalId: null,
-            browserPane: null,
-            layoutRoot: null,
-            explorerVisible: false,
-            explorerSidebarWidth: 280,
-            explorerExpandedPaths: [],
-            explorerSelectedPath: null,
-            explorerEntriesByPath: {},
-            explorerLoadingPaths: [],
-            explorerErrorsByPath: {},
-            showHiddenFiles: true,
-            editorPane: null,
-            editorVisible: false,
-            editorTabs: [],
-            activeEditorTabId: null,
-            gitChanges: [],
-            gitCurrentBranch: null,
-            gitIsRepo: false,
-            gitIsDetached: false,
-            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
-          }],
-        });
-      });
-      
+    it('keeps notification history accessible without a workspace', async () => {
+      useNotificationStore.getState().show({ tone: 'warning', message: 'Startup warning' });
       render(<App />);
-      
-      fireEvent.click(screen.getByTestId('titlebar-open-workspace'));
-      
-      await waitFor(() => {
-        expect(screen.getByTestId('workspace-gate-modal')).toBeTruthy();
-      });
-      
-      fireEvent.click(screen.getByTestId('modal-close'));
-      
-      await waitFor(() => {
-        expect(screen.queryByTestId('workspace-gate-modal')).toBeNull();
-      });
+      expect(await screen.findByText('Startup warning')).toBeInTheDocument();
     });
   });
 
-  // =========================================================================
-  // Main Layout (with workspaces)
-  // =========================================================================
   describe('main layout (with workspaces)', () => {
     beforeEach(() => {
       act(() => {
@@ -464,14 +257,14 @@ describe('App', () => {
       expect(row?.querySelector('[data-testid="dynamic-pane-layout"]')).toBeTruthy();
     });
 
-    it('does not render WorkspaceGateFullscreen when workspaces exist', () => {
+    it('does not render the obsolete fullscreen launcher when workspaces exist', () => {
       render(<App />);
-      expect(screen.queryByTestId('workspace-gate-fullscreen')).toBeNull();
+      expect(screen.queryByTestId('obsolete-fullscreen-launcher')).toBeNull();
     });
 
-    it('does not render WorkspaceGateModal initially when workspaces exist', () => {
+    it('does not render Open Workspace dialog initially when workspaces exist', () => {
       render(<App />);
-      expect(screen.queryByTestId('workspace-gate-modal')).toBeNull();
+      expect(screen.queryByTestId('open-workspace-dialog')).toBeNull();
     });
   });
 
@@ -821,151 +614,6 @@ describe('App', () => {
 
   // =========================================================================
   // Workspace Creation Flow
-  // =========================================================================
-  describe('workspace creation flow', () => {
-    it('handles terminal spawn failure gracefully', async () => {
-      mockSpawnTerminal
-        .mockResolvedValueOnce({ id: 'term-1', pid: 1111 })
-        .mockRejectedValueOnce(new Error('Failed to spawn'))
-        .mockResolvedValueOnce({ id: 'term-3', pid: 3333 });
-      
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select-multi');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      // Should still call addWorkspace with 2 terminals
-      await waitFor(() => {
-        const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-        expect(addWorkspace).toHaveBeenCalled();
-      });
-    });
-
-    it('sets activeTerminalId to last terminal', async () => {
-      // Reset to ensure fresh state
-      mockSpawnTerminal.mockReset();
-      mockSpawnTerminal
-        .mockResolvedValueOnce({ id: 'term-1', pid: 1111 })
-        .mockResolvedValueOnce({ id: 'term-2', pid: 2222 });
-      
-      // Reset the addWorkspace mock for this test
-      const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-      (addWorkspace as unknown as ReturnType<typeof vi.fn>).mockReset();
-      (addWorkspace as unknown as ReturnType<typeof vi.fn>).mockImplementation(vi.fn());
-      
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select-multi');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      await waitFor(() => {
-        expect(addWorkspace).toHaveBeenCalled();
-      });
-      
-      // Check the last call's arguments
-      const calls = (addWorkspace as unknown as ReturnType<typeof vi.fn>).mock.calls;
-      const lastCall = calls[calls.length - 1][0];
-      expect(lastCall.activeTerminalId).toBe('term-2');
-    });
-
-    it('sets activeTerminalId to null when no terminals spawn', async () => {
-      mockSpawnTerminal.mockRejectedValue(new Error('All failed'));
-      
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      await waitFor(() => {
-        const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-        expect(addWorkspace).toHaveBeenCalledWith(
-          expect.objectContaining({
-            activeTerminalId: null,
-          })
-        );
-      });
-    });
-
-    it('closes gate after workspace selection', async () => {
-      render(<App />);
-      
-      // Verify gate is showing initially
-      expect(screen.getByTestId('workspace-gate-fullscreen')).toBeTruthy();
-      
-      const selectButton = screen.getByTestId('gate-select');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      // The gate should disappear because workspace was added
-      // We test this by verifying the state changed
-      // Note: We check that the component re-renders based on store change
-      // The gate will disappear once workspaces.length > 0
-      
-      // Wait for addWorkspace to be called, which means the selection was processed
-      await waitFor(() => {
-        const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-        expect(addWorkspace).toHaveBeenCalled();
-      });
-    });
-
-    it('adds workspace with correct properties', async () => {
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      await waitFor(() => {
-        const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-        expect(addWorkspace).toHaveBeenCalledWith(
-          expect.objectContaining({
-            workspacePath: '/test/path',
-            harness: 'codex',
-            model: '',
-            browserUrl: 'https://github.com',
-          })
-        );
-      });
-    });
-
-    it('creates panes for each terminal', async () => {
-      // Reset mocks
-      mockSpawnTerminal.mockReset();
-      mockSpawnTerminal
-        .mockResolvedValueOnce({ id: 'term-1', pid: 1111 })
-        .mockResolvedValueOnce({ id: 'term-2', pid: 2222 });
-      
-      const addWorkspace = useWorkspaceStore.getState().addWorkspace as ReturnType<typeof vi.fn>;
-      (addWorkspace as unknown as ReturnType<typeof vi.fn>).mockReset();
-      (addWorkspace as unknown as ReturnType<typeof vi.fn>).mockImplementation(vi.fn());
-      
-      render(<App />);
-      
-      const selectButton = screen.getByTestId('gate-select-multi');
-      await act(async () => {
-        fireEvent.click(selectButton);
-      });
-      
-      await waitFor(() => {
-        expect(addWorkspace).toHaveBeenCalled();
-      });
-      
-      const calls = (addWorkspace as unknown as ReturnType<typeof vi.fn>).mock.calls;
-      const lastCall = calls[calls.length - 1][0];
-      expect(lastCall.panes.length).toBe(2);
-    });
-  });
-
-  // =========================================================================
-  // electronAPI.onFitAllPanes integration
   // =========================================================================
   describe('electronAPI.onFitAllPanes integration', () => {
     beforeEach(() => {

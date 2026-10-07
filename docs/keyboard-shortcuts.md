@@ -74,7 +74,7 @@ These are interaction semantics of individual components, not Clanker commands, 
 - `Esc` in dialogs, popovers, and inline create/rename fields; `Enter` to confirm
 - File tree and list arrow-key navigation, `Enter`/`Space` activation
 - Workspace tab and sidebar-row accessibility and reorder keys (`Alt+Shift+←/→`, `Alt+Shift+↑/↓`)
-- Workspace Gate and SSH directory chooser keys (below)
+- SSH directory chooser keys (below)
 - CodeMirror's own editing keys: arrows, selection, `Cmd/Ctrl+Z` undo, `Cmd/Ctrl+Shift+Z`/`Cmd/Ctrl+Y` redo, and the rest of its standard keymap
 - Terminal copy: `Ctrl+Shift+C` copies the xterm selection (selecting text also copies it)
 - Browser DevTools: `Cmd/Ctrl+Shift+I` and `F12`
@@ -87,21 +87,6 @@ These are interaction semantics of individual components, not Clanker commands, 
 | Move focused workspace tab left or right (Tabs mode) | `Alt+Shift+←` / `Alt+Shift+→` | Also available by dragging a tab; does not activate an inactive tab |
 | Move focused workspace row up or down (Sidebar mode) | `Alt+Shift+↑` / `Alt+Shift+↓` | Also available by dragging a row; does not activate an inactive workspace |
 
-## Workspace Gate
-
-These shortcuts work in the workspace picker when focus is not inside an input field.
-
-| Action | Shortcut |
-|--------|----------|
-| Select 1 terminal | `1` |
-| Select 2 terminals | `2` |
-| Select 4 terminals | `4` |
-| Plain shell | `B` |
-| Codex harness | `C` |
-| OpenCode harness | `O` |
-| Pi harness | `P` |
-| Antigravity harness | `A` |
-
 ## SSH Remote Directory Chooser
 
 | Action | Shortcut |
@@ -113,4 +98,4 @@ These shortcuts work in the workspace picker when focus is not inside an input f
 | Close the chooser | `Escape` |
 | Cancel the New Folder form | `Escape` while its input is focused |
 
-In the remote path field, `↑` / `↓` move through suggestions, `Enter` accepts a highlighted suggestion or launches the workspace, and `Escape` dismisses visible suggestions.
+In the remote path field, `↑` / `↓` move through suggestions, `Enter` accepts a highlighted suggestion or opens the workspace, and `Escape` dismisses visible suggestions.
