@@ -47,11 +47,18 @@ own `npm run dev` as the fixture: that starts another Electron application.
   tooltip. No scripts run during inspection.
 - Fresh isolated checkout with missing dependencies: an advisory recommends the
   selected package manager's install command **in that checkout**. Detection and Run
-  never silently install dependencies. Install manually in the checkout terminal,
-  then retry Run.
+  never silently install dependencies. Click `Install…`, verify the exact command
+  and checkout in the confirmation (including the install-script warning), and
+  confirm. A visible `Install dependencies` shell opens in that checkout with the
+  fixed npm/pnpm/yarn/bun install command. Watch its output, then retry Run yourself;
+  there is no automatic server launch. Cancel must open no shell or execute anything.
+  You can still install manually in an existing checkout terminal instead.
 - Failed script / unavailable package manager: failed state, with an expandable
   `Why it failed` diagnostic (bounded 2 KiB output tail); another checkout's service
-  must remain unaffected.
+  must remain unaffected. If the package manager or effective checkout changes
+  while the install confirmation is open, setup must refuse the stale confirmation
+  rather than executing in another checkout. Switching to another destination during
+  setup discovery must not launch a shell there or reclaim focus.
 - Close a conversation after its service stops/fails, or remove its released checkout:
   no stale stopped-service row should remain. A still-running service must remain
   accessible and protected until explicitly stopped.

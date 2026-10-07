@@ -181,8 +181,13 @@ No xterm startup handshake, normal terminal-map entry, pane, attention credentia
 is involved. Output retains only an ANSI-free 2 KiB tail for failure diagnostics after bounded
 complete-row URL parsing; candidate loopback URLs are bounded and readiness-probed without overlap.
 There is no live Show Output in V1. Checkouts with declared dependencies but no `node_modules` or
-Yarn PnP setup receive an advisory to run the selected manager's install command themselves; detection
-never installs dependencies automatically or blocks dependency-free/custom scripts. Completed records
+Yarn PnP setup receive an advisory and an explicit `Install…` action. Its confirmation names the
+fixed manager install command, physical checkout cwd and install-script trust transition. The renderer
+rediscovers the target through main, then uses the existing checkout-bound terminal launcher to open
+a visible shell (`Install dependencies`), not a second hidden service; main confines its canonical cwd
+to that context. The normal TerminalPane readiness handshake delivers the command once visible.
+Setup never automatically starts the dev server, never derives commands from diagnostic text, and
+never installs during detection or blocks dependency-free/custom scripts. Completed records
 are retired after their context or originating conversation disappears; only live orphan services
 remain as checkout-labelled management rows.
 

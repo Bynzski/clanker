@@ -9,12 +9,16 @@ import { useAgentLocation } from '../lib/useAgentLocation';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
+import { Button } from './ui/Button';
+import ConfirmCloseDialog from './ConfirmCloseDialog';
+import { devDependencyInstallCommand, installDevServiceDependencies } from '../lib/devServiceInstall';
 
 export function DevServerControls({ workspace, command, service, terminalId, onStartFinished }: {
   workspace: WorkspaceTab; command?: DevServiceCommand; service?: WorkspaceService; terminalId?: string; onStartFinished?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [confirmingInstall, setConfirmingInstall] = useState<DevServiceCommand | null>(null);
   const live = service && isLiveWorkspaceService(service);
   const stopping = service?.status === 'stopping';
   const starting = service?.status === 'starting';
@@ -32,6 +36,9 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
         : failed ? <TriangleAlert size={11} aria-hidden="true" /> : <Circle size={8} fill={live ? 'currentColor' : 'none'} aria-hidden="true" />}
       <span className="ws-service-label">Dev Server · {text}</span>
+      {!live && command?.preparationHint && terminalId && <Button className="ws-service-install" size="xs" variant="ghost" disabled={busy}
+        aria-label="Install dependencies…" title={`Run ${devDependencyInstallCommand(command.packageManager)} in a visible terminal\n${command.cwd}`}
+        onClick={() => setConfirmingInstall({ ...command })}>Install…</Button>}
       {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`Run ${command.command}\n${command.cwd}`} onClick={() => void action(async () => {
         const result = await window.electronAPI.workspaceServiceStart({ workspaceId: workspace.id, terminalId, checkoutContextId: command.checkoutContextId, cwd: command.cwd, command: command.command });
         onStartFinished?.();
@@ -58,6 +65,17 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
       <summary>Why it failed</summary><pre>{service.error}</pre>
     </details>}
     {(error || (stopping && service?.error)) && <div className="ws-service-error" role="alert">{error || service?.error}</div>}
+    <ConfirmCloseDialog
+      isOpen={confirmingInstall !== null}
+      title="Install dependencies in this checkout?"
+      message={confirmingInstall ? `Run ${devDependencyInstallCommand(confirmingInstall.packageManager)} in ${confirmingInstall.cwd}? This opens a visible terminal. Installing downloads packages and can execute project and dependency install scripts. The dev server will not start automatically; click Run after installation finishes.` : ''}
+      options={confirmingInstall && terminalId ? [{ label: 'Install dependencies', variant: 'primary', action: () => {
+        const expected = confirmingInstall;
+        setConfirmingInstall(null);
+        void action(async () => { await installDevServiceDependencies(terminalId, expected); onStartFinished?.(); });
+      } }] : []}
+      onCancel={() => setConfirmingInstall(null)}
+    />
   </div>;
 }
 

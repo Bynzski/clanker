@@ -204,6 +204,7 @@
   color: var(--text-muted);
 }
 .ws-service-row > svg { flex-shrink: 0; }
+.ws-service-row .ws-service-install { flex-shrink: 0; min-height: 18px; padding: 0 4px; font-size: var(--font-size-xs); }
 .ws-service-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-service-row.failed, .ws-service-error { color: var(--status-error); }
 .ws-service-error { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }

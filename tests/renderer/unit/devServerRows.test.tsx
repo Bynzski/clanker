@@ -75,6 +75,28 @@ describe('checkout-aware sidebar service controls', () => {
     rerender(<WorkspaceNavigatorSection />);
     expect(screen.getByText('Why it failed').closest('details')?.textContent).toContain('sh: next: command not found');
   });
+  it('requires confirmation before opening an install terminal and Cancel executes nothing', async () => {
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command: { ...command, preparationHint: 'Dependencies may need installation.' } }) });
+    render(<WorkspaceNavigatorSection />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Install dependencies…' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.textContent).toContain('npm install');
+    expect(dialog.textContent).toContain(wt.path);
+    expect(dialog.textContent).toContain('install scripts');
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+  });
+  it('runs the confirmed install from this checkout in a visible shell without starting the dev service', async () => {
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command: { ...command, preparationHint: 'Dependencies may need installation.' } }), spawnTerminal: vi.fn().mockResolvedValue({ id: 'install', pid: 42, checkoutContextId: wt.id }) });
+    render(<WorkspaceNavigatorSection />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Install dependencies…' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Install dependencies' }));
+    await waitFor(() => expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith(wt.path, undefined, undefined, 'npm install', undefined, 'ws', 'local', wt.id));
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.terminals.some((terminal) => terminal.displayName === 'Install dependencies')).toBe(true);
+    expect(window.electronAPI.workspaceServiceStart).not.toHaveBeenCalled();
+  });
   it('shows startup/failure and start errors without consuming any layout pane', async () => {
     useWorkspaceServiceStore.setState({ services: [{ ...service, status: 'starting', previewUrl: undefined }] });
     const { rerender } = render(<WorkspaceNavigatorSection />);
