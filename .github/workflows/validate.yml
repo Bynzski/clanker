@@ -115,34 +115,10 @@ jobs:
           path: coverage/
           retention-days: 7
 
-  # Windows compatibility: platform-independent checks (lint, typecheck, build,
-  # audit, coverage) run on Ubuntu only. Windows runs the plain `main` Vitest
-  # project (fs, git, subprocess, path, harness, SSH). The renderer project is
-  # jsdom-only; its Windows tests simulate win32 via path.win32 / a mocked
-  # process.platform, so they behave identically on Ubuntu (still run there).
-  windows-compat:
-    needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Test main project (no coverage)
-        run: npm run test -- --project main
-
-  # Stable required-check candidate. Always runs. Heavy jobs may only be
+  # Stable required-check candidate. Always runs. Ubuntu validation may only be
   # "skipped" when `changes` reported a docs-only change.
   validate:
-    needs: [changes, ubuntu-validation, windows-compat]
+    needs: [changes, ubuntu-validation]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -151,25 +127,27 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           CODE_CHANGED: ${{ needs.changes.outputs.code_changed }}
           UBUNTU: ${{ needs.ubuntu-validation.result }}
-          WINDOWS: ${{ needs.windows-compat.result }}
         run: |
-          echo "changes=$CHANGES code_changed=$CODE_CHANGED ubuntu=$UBUNTU windows=$WINDOWS"
+          echo "changes=$CHANGES code_changed=$CODE_CHANGED ubuntu=$UBUNTU"
           if [ "$CHANGES" != "success" ]; then
             echo "::error::Change detection did not succeed ($CHANGES)."
             exit 1
           fi
           if [ "$CODE_CHANGED" = "true" ]; then
-            # Heavy jobs were required: they must have actually succeeded.
-            if [ "$UBUNTU" != "success" ] || [ "$WINDOWS" != "success" ]; then
-              echo "::error::Required job did not succeed (ubuntu=$UBUNTU, windows=$WINDOWS)."
+            # Ubuntu validation was required: it must have actually succeeded.
+            if [ "$UBUNTU" != "success" ]; then
+              echo "::error::Required job did not succeed (ubuntu=$UBUNTU)."
               exit 1
             fi
             echo "Code changed and all required jobs succeeded."
-          else
-            # Docs-only: heavy jobs must have been skipped, not failed.
-            if [ "$UBUNTU" != "skipped" ] || [ "$WINDOWS" != "skipped" ]; then
-              echo "::error::Docs-only run but heavy jobs were not skipped (ubuntu=$UBUNTU, windows=$WINDOWS)."
+          elif [ "$CODE_CHANGED" = "false" ]; then
+            # Docs-only: Ubuntu validation must have been skipped, not failed.
+            if [ "$UBUNTU" != "skipped" ]; then
+              echo "::error::Docs-only run but Ubuntu validation was not skipped (ubuntu=$UBUNTU)."
               exit 1
             fi
-            echo "Docs-only change; heavy jobs intentionally skipped."
+            echo "Docs-only change; Ubuntu validation intentionally skipped."
+          else
+            echo "::error::Change detection returned an invalid code_changed value ($CODE_CHANGED)."
+            exit 1
           fi

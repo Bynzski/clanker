@@ -23,7 +23,9 @@ npm run validate
 
 ### Platform support
 
-Clanker Grid is developed and validated on **Linux (x64)** and **Windows 10 1809+ / Windows 11 (x64)**. CI is split by purpose rather than run as a full matrix. The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), lint, typecheck, build, and the full Vitest suite with coverage. The `windows-compat` job runs only the `main` Vitest project (filesystem, Git, subprocess, path, harness, and SSH tests) without coverage; it does not repeat lint, typecheck, or build. The renderer project is jsdom-only and runs on Ubuntu. A final `validate` job aggregates the results and is the stable required check; docs-only changes skip the heavy jobs. CI does not run `npm run branding:check` or the `security-check` policy gate, so run `npm run validate` locally, where high/critical audit findings fail the run apart from the documented exception in [RELEASING.md](RELEASING.md#security-gate).
+Clanker Grid's primary development and required CI platform is **Linux (x64)**. **Windows 10 1809+ / Windows 11 (x64)** remains **best-effort supported, not CI-gated**. Preserve Windows platform abstractions, packaging and useful regression tests, review new filesystem/process/path code for Windows assumptions, and fix reproducible Windows bugs when practical. Windows artifacts may lag Linux releases; native Windows runner availability or test status does not automatically block PRs or releases.
+
+The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), lint, typecheck, build, and the full Vitest suite with coverage. This includes deterministic Windows compatibility tests using `path.win32`, mocked platforms and injected subprocess/path seams, plus the jsdom renderer suite. There is no automatic per-PR Windows runner. The final `validate` job is the stable check to require in branch protection: code changes require Ubuntu success; docs-only changes require the heavy job to be skipped. A failed/cancelled Ubuntu job or invalid change-detection result fails the gate. CI does not run `npm run branding:check` or the `security-check` policy gate, so run `npm run validate` locally, where high/critical audit findings fail the run apart from the documented exception in [RELEASING.md](RELEASING.md#security-gate).
 
 When adding code that touches the filesystem, terminals, harness launch, credentials, or paths, follow the platform patterns in [AGENTS.md](AGENTS.md#windows-support) and [docs/windows.md](docs/windows.md). Key rules:
 
@@ -102,7 +104,7 @@ The GPU diagnostic launches the installed Electron runtime with an isolated temp
 
 For a live SSH workspace check, use the guarded [remote VPS smoke procedure](docs/remote-vps-smoke-test.md). Create a unique temporary directory for any destructive test and leave the persistent fixture intact.
 
-**Important:** Always use `npm run test`, not bare `npm test`. `npm run validate` runs branding check → lint → typecheck → security check → build → test. CI runs the full suite with coverage on Ubuntu and the `main` Vitest project on Windows; see [Platform support](#platform-support).
+**Important:** Always use `npm run test`, not bare `npm test`. `npm run validate` runs branding check → lint → typecheck → security check → build → test. CI runs the full suite with coverage on Ubuntu, including Windows simulation tests; see [Platform support](#platform-support).
 
 Test directories:
 - `tests/main/unit/` — Main process unit tests
@@ -117,7 +119,7 @@ Tests are split by environment:
 ## Pull Request Checklist
 
 - [ ] `npm run validate` passes locally
-- [ ] The CI `validate` check is green (Ubuntu validation and Windows `main`-project compatibility)
+- [ ] The CI `validate` check is green (canonical Ubuntu validation; docs-only changes skip the heavy job)
 - [ ] Tests added/updated for new features
 - [ ] No TypeScript errors
 - [ ] No ESLint warnings

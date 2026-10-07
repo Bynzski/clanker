@@ -1,8 +1,10 @@
 # Windows Notes
 
+Windows 10 1809+ / Windows 11 is a best-effort compatibility target. Linux is the primary development and required CI platform; native Windows CI and smoke testing do not automatically gate PRs or releases. Windows packaging, runtime abstractions and useful regression tests remain, and reproducible Windows bugs should be fixed when practical. The full Ubuntu suite retains deterministic Windows path/process/platform coverage.
+
 Reference for running and developing Clanker Grid on Windows.
 
-**Supported:** Windows 10 1809+ and Windows 11, x64.
+**Best-effort supported:** Windows 10 1809+ and Windows 11, x64.
 **Not supported:** ARM64, WSL (use the Linux AppImage instead).
 
 ## Installing a release build

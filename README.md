@@ -27,8 +27,8 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 
 ## Supported platforms
 
-- **Linux (x64)** — AppImage build, tested on current desktop distributions. This is the actively produced release artifact for the current release.
-- **Windows 10 1809+ / Windows 11 (x64)** — supported by the codebase and build configuration, but Windows artifacts may lag Linux releases. When produced, Windows builds are unsigned; SmartScreen will display a warning on first launch — choose **More info → Run anyway** to continue.
+- **Linux (x64)** — primary development and required CI platform; AppImage build, tested on current desktop distributions. This is the actively produced release artifact for the current release.
+- **Windows 10 1809+ / Windows 11 (x64)** — best-effort supported, without a native Windows CI or release gate. Compatibility code, tests and packaging remain; Windows artifacts may lag Linux releases. When produced, Windows builds are unsigned; SmartScreen will display a warning on first launch — choose **More info → Run anyway** to continue.
 
 macOS, ARM64, and WSL are not produced in this release. WSL users should run the Linux AppImage.
 
