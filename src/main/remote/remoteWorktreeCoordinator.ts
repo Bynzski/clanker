@@ -1,5 +1,6 @@
+import { canRemoveWorktree } from '../worktreeChanges';
 import { randomUUID } from 'node:crypto';
-import type { GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
+import type { GitWorktreeInspectionResult, GitWorktreeRemoveResult, GitWorktreeRemovalOptions } from '../../shared/types/git';
 import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistry';
 import { validRemoteWorktreePath } from './sshWorktreeInspection';
 import { remoteRemovalPaths } from './sshWorktreeRemoval';
@@ -93,7 +94,7 @@ export class RemoteWorktreeCoordinator {
     return result;
   }
 
-  public async remove(workspace: RegisteredWorkspace, worktreePath: string, expectedBranch: string | null): Promise<GitWorktreeRemoveResult> {
+  public async remove(workspace: RegisteredWorkspace, worktreePath: string, expectedBranch: string | null, options: GitWorktreeRemovalOptions = {}): Promise<GitWorktreeRemoveResult> {
     if (this.recoveryError) return { success: false, error: this.recoveryError };
     if (!workspace.environment.removeWorktree || !workspace.environment.waitForWorktreeOperations) return { success: false, error: 'Remote worktree removal is unavailable for this environment' };
     if (!validRemoteWorktreePath(worktreePath) || (typeof expectedBranch !== 'string' && expectedBranch !== null)) return { success: false, error: 'Invalid remote worktree removal request' };
@@ -110,7 +111,7 @@ export class RemoteWorktreeCoordinator {
     try {
       const inspection = await this.inspect(workspace, worktreePath);
       if (!inspection.success || !inspection.worktree) return { success: false, error: inspection.error || 'Could not inspect worktree' };
-      if (inspection.hasChanges !== false) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
+      if (!canRemoveWorktree(inspection, options.discardIgnored === true)) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
       if (inspection.worktree.branch !== expectedBranch) return { success: false, error: 'Worktree branch changed; inspect it again' };
       const activity = this.activity(workspace);
       if (!activity) return { success: false, error: 'Active terminal directories could not be verified' };
@@ -119,7 +120,7 @@ export class RemoteWorktreeCoordinator {
       pending.persisted = true;
       try { this.save(); } catch (error) { pending.persisted = false; throw error; }
       uncertain = true;
-      const result = await workspace.environment.removeWorktree(workspace.location.path, worktreePath, expectedBranch, activity, operationId);
+      const result = await workspace.environment.removeWorktree(workspace.location.path, worktreePath, expectedBranch, activity, operationId, options);
       uncertain = result.uncertain === true;
       return { success: result.success, error: result.error, warning: result.warning, recoveryPath: result.recoveryPath };
     } catch (error) {

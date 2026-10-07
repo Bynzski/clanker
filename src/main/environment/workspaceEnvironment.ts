@@ -23,7 +23,7 @@ import type { PortForwardHandle } from '../remote/sshPortForward';
 import type { ExecuteHarnessCommand, OpenHarnessCommandSession } from '../harnesses/commandExecution';
 import type { HarnessSession } from '../../shared/types/session';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
-import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
+import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemovalOptions, GitWorktreeRemoveResult } from '../../shared/types/git';
 
 export interface EnvironmentCapabilities {
   readonly watchFiles: boolean;
@@ -98,7 +98,7 @@ export interface WorkspaceEnvironment {
   execGit(workspacePath: string, args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }>;
   createWorktree?(workspacePath: string, baseRef: string, branch: string): Promise<GitWorktreeCreateResult>;
   inspectWorktree?(workspacePath: string, worktreePath: string, activePaths: string[]): Promise<GitWorktreeInspectionResult>;
-  removeWorktree?(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }>;
+  removeWorktree?(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string, options?: GitWorktreeRemovalOptions): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }>;
   waitForWorktreeOperations?(workspacePath: string, operationId: string): Promise<void>;
 
   // Terminal & Harness operations

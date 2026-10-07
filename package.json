@@ -135,5 +135,10 @@
     "node-pty@1.1.0": true,
     "electron-winstaller@5.4.0": true,
     "fallow@2.56.0": true
+  },
+  "overrides": {
+    "concurrently": {
+      "shell-quote": "1.11.0"
+    }
   }
 }

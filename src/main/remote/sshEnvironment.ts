@@ -1,3 +1,4 @@
+import type { GitWorktreeRemovalOptions } from '../../shared/types/git';
 import { discoverSshWebServices, type RemoteWebEndpoint } from './sshPortDiscovery';
 import { findHarnessProvider, getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
@@ -623,8 +624,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return inspectSshWorktree(this.executor, this.target, workspacePath, worktreePath, activePaths);
   }
 
-  public removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string) {
-    return removeSshWorktree(this.executor, this.target, workspacePath, worktreePath, expectedBranch, activePaths, operationId);
+  public removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string, options: GitWorktreeRemovalOptions = {}) {
+    return removeSshWorktree(this.executor, this.target, workspacePath, worktreePath, expectedBranch, activePaths, operationId, options);
   }
 
   public waitForWorktreeOperations(workspacePath: string, operationId: string) {

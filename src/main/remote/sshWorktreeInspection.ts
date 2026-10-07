@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { validateWorktreeChanges } from '../worktreeChanges';
 import type { GitWorktreeInspectionResult } from '../../shared/types/git';
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 
@@ -15,15 +16,33 @@ def git(cwd, args):
   return result.stdout
 def canonical(value):
   return os.path.isabs(value) and os.path.normpath(value) == value and os.path.realpath(value) == value
-def has_changes(cwd, visited):
+def collect_changes(cwd, visited, changes):
   if cwd in visited or len(visited) >= 128:
     raise RuntimeError('Submodule inspection exceeded its repository limit or found a cycle')
   visited.add(cwd)
-  # Override submodule.<name>.ignore and diff.ignoreSubmodules. The parent
-  # still cannot report ignored files inside a submodule, so inspect gitlinks
-  # from each initialized checkout's index as well (including nested ones).
-  if git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored', '--ignore-submodules=none']):
-    return True
+  records = git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--ignore-submodules=none']).split(b'\0')
+  index = 0
+  while index < len(records):
+    record = records[index]
+    index += 1
+    if not record:
+      continue
+    if len(record) < 4 or record[2:3] != b' ':
+      raise RuntimeError('Invalid Git status record')
+    status, relative = record[:2], os.fsdecode(record[3:])
+    if os.path.isabs(relative) or '..' in relative.split('/'):
+      raise RuntimeError('Git status path is outside the checkout')
+    group = changes['ignored' if status == b'!!' else 'untracked' if status == b'??' else 'tracked']
+    group['count'] += 1
+    example = os.path.relpath(os.path.join(cwd, relative), target)
+    if relative.endswith('/'):
+      example += '/'
+    if len(group['paths']) < 20 and len(os.fsencode(example)) <= 4096:
+      group['paths'].append(example)
+    if b'R' in status or b'C' in status:
+      if index >= len(records) or not records[index]:
+        raise RuntimeError('Invalid Git rename record')
+      index += 1
   for record in git(cwd, ['ls-files', '--stage', '-z']).split(b'\0'):
     if not record:
       continue
@@ -34,17 +53,13 @@ def has_changes(cwd, visited):
     if not canonical(submodule) or os.path.commonpath([target, submodule]) != target or submodule == cwd:
       raise RuntimeError('Submodule path is outside the checkout or no longer canonical')
     if not os.path.lexists(os.path.join(submodule, '.git')):
-      # Empty uninitialized submodules have no contents to preserve. Treat
-      # populated directories without Git metadata conservatively as changes.
       if os.path.isdir(submodule) and os.listdir(submodule):
-        return True
+        changes['untracked']['count'] += 1
       continue
     toplevel = os.fsdecode(git(submodule, ['rev-parse', '--show-toplevel']).rstrip(b'\n'))
     if toplevel != submodule:
       raise RuntimeError('Initialized submodule repository identity changed')
-    if has_changes(submodule, visited):
-      return True
-  return False
+    collect_changes(submodule, visited, changes)
 def inspect():
   if not canonical(workspace) or not os.path.isdir(workspace):
     raise RuntimeError('Registered workspace is no longer a canonical directory')
@@ -78,12 +93,14 @@ def inspect():
   target_common = git(target, ['rev-parse', '--path-format=absolute', '--git-common-dir']).rstrip(b'\n')
   if os.path.realpath(os.fsdecode(common)) != os.path.realpath(os.fsdecode(target_common)):
     raise RuntimeError('Worktree repository identity changed; refresh the list')
-  changed = has_changes(target, set())
+  changes = {key: {'count': 0, 'paths': []} for key in ('tracked', 'untracked', 'ignored')}
+  collect_changes(target, set(), changes)
+  changed = any(group['count'] for group in changes.values())
   # Git -C resolves paths on each invocation. Detect replacement during status
   # so a changed/symlinked target is not reported ready.
   if not canonical(target):
     raise RuntimeError('Worktree directory is no longer canonical')
-  return {'success': True, 'worktree': match, 'hasChanges': changed}
+  return {'success': True, 'worktree': match, 'hasChanges': changed, 'changes': changes}
 
 @contextmanager
 def repository_lock(exclusive=False):
@@ -127,7 +144,8 @@ export async function inspectSshWorktree(executor: SshCommandExecutor, target: s
         (worktree.branch !== null && typeof worktree.branch !== 'string') ||
         !('isMain' in worktree) || worktree.isMain !== false || !('isLocked' in worktree) || worktree.isLocked !== false ||
         !('isPrunable' in worktree) || worktree.isPrunable !== false) throw new Error('Invalid remote worktree inspection response');
-    return { success: true, hasChanges: result.hasChanges, worktree: { path: worktreePath, branch: worktree.branch, isMain: false, isLocked: false, isPrunable: false } };
+    const changes = 'changes' in result ? validateWorktreeChanges(result.changes, result.hasChanges) : undefined;
+    return { success: true, hasChanges: result.hasChanges, changes, worktree: { path: worktreePath, branch: worktree.branch, isMain: false, isLocked: false, isPrunable: false } };
   } catch (error) {
     return { success: false, error: error instanceof SshExecutionError ? error.stderr.trim() || error.message : error instanceof Error ? error.message : 'Could not inspect remote worktree' };
   }

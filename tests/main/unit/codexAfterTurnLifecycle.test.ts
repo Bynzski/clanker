@@ -65,6 +65,7 @@ let bridge: AgentBridgeService;
 let broker: AgentAttentionBroker;
 let lifecycle: IsolatedCheckoutService;
 let dirty: boolean;
+let ignoredOnly: boolean;
 /** The directory the thread ACTUALLY runs in, as the daemon would have it. */
 let effectiveCwd: Map<string, string>;
 let spawnBehavior: (options: Spawned, attempt: number) => 'ok' | { fail: string };
@@ -88,7 +89,7 @@ beforeEach(async () => {
   root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-after-turn-')));
   appPath = path.join(root, 'app');
   fs.mkdirSync(appPath, { recursive: true });
-  terminals = new Map(); contexts = [MAIN()]; events = []; log = []; spawns = []; dirty = false; resumeAttempts = 0; killMode = 'prompt'; createGate = null; processExits.clear();
+  terminals = new Map(); contexts = [MAIN()]; events = []; log = []; spawns = []; dirty = false; ignoredOnly = false; resumeAttempts = 0; killMode = 'prompt'; createGate = null; processExits.clear();
   effectiveCwd = new Map(); removedPaths.length = 0; deletedBranches.length = 0;
   listed = [{ path: appPath, branch: 'main', isMain: true }];
   spawnBehavior = () => 'ok';
@@ -182,12 +183,13 @@ async function build() {
       return { success: true, worktree: { path: context.path, branch, isMain: false, isLocked: false, isPrunable: false }, checkoutContext: context };
     },
     listWorktrees: async () => ({ success: true, worktrees: listed.map((entry) => ({ isLocked: false, isPrunable: false, ...entry })) }),
-    checkWorktreeClean: async (_ws: string, worktreePath: string) => ({ success: true, hasChanges: dirty, worktree: { path: worktreePath, branch: 'x' } }),
+    checkWorktreeClean: async (_ws: string, worktreePath: string) => ({ success: true, hasChanges: dirty || ignoredOnly, changes: ignoredOnly ? { tracked: { count: dirty ? 1 : 0, paths: [] }, untracked: { count: 0, paths: [] }, ignored: { count: 1, paths: ['node_modules/'] } } : undefined, worktree: { path: worktreePath, branch: 'x' } }),
     inspectWorktree: async (_ws: string, worktreePath: string) => {
       const entry = listed.find((candidate) => toPosixPath(candidate.path) === toPosixPath(worktreePath));
-      return { success: true, hasChanges: false, worktree: { path: worktreePath, branch: entry?.branch ?? null, isMain: false, isLocked: false, isPrunable: false } };
+      return { success: true, hasChanges: ignoredOnly, changes: ignoredOnly ? { tracked: { count: 0, paths: [] }, untracked: { count: 0, paths: [] }, ignored: { count: 1, paths: ['node_modules/'] } } : undefined, worktree: { path: worktreePath, branch: entry?.branch ?? null, isMain: false, isLocked: false, isPrunable: false } };
     },
-    removeWorktree: async (_ws: string, worktreePath: string) => {
+    removeWorktree: async (_ws: string, worktreePath: string, _branch: string | null, _paths: string[], options?: { discardIgnored?: boolean }) => {
+      if (ignoredOnly) expect(options?.discardIgnored).toBe(true);
       log.push('removeWorktree');
       removedPaths.push(worktreePath);
       fs.rmSync(worktreePath, { recursive: true, force: true });
@@ -531,6 +533,17 @@ describe('complete (after-turn)', () => {
     expect((await call(replacement, 'clanker_context')).data).toMatchObject({ checkout: { kind: 'main', isolated: false } });
     expect(bridge.credentials.resolve(tokenOf(spawn))).toBeNull();
     expect(kinds().slice(-3)).toEqual(['terminal-replaced', 'checkout-released', 'notice']);
+  });
+
+  it('carries ignored-only opt-in through the scheduled move and cleanup', async () => {
+    const { spawn, tree } = await inWorktree();
+    ignoredOnly = true;
+    expect((await call(spawn, 'clanker_complete_isolated_checkout', {})).data).toMatchObject({ reason: 'ignored-only' });
+    expect((await call(spawn, 'clanker_complete_isolated_checkout', { deleteBranch: true, discardIgnored: true })).data).toMatchObject({ status: 'scheduled' });
+    await stop(spawn, 't2');
+    expect(effectiveCwd.get(SESSION)).toBe(appPath);
+    expect(removedPaths).toContain(tree.path);
+    expect(deletedBranches).toEqual(['feature']);
   });
 
   it('keeps a checkout safe while identity is lost and completes after an authoritative resume start restores it', async () => {

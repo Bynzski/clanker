@@ -283,12 +283,12 @@ describe('registerGitIpc', () => {
     }));
     expect(service.inspectWorktree).toHaveBeenCalledWith(validPath, validPath, [validPath]);
     await handler('git-remove-worktree')(null, validPath, validPath, 'one', [validPath]);
-    expect(service.removeWorktree).toHaveBeenCalledWith(validPath, validPath, 'one', [validPath]);
+    expect(service.removeWorktree).toHaveBeenCalledWith(validPath, validPath, 'one', [validPath], {});
     const missingOpenPath = `${validPath}/deleted-workspace`;
     expect(await handler('git-inspect-worktree')(null, validPath, validPath, [missingOpenPath])).toEqual(expect.objectContaining({ success: true }));
     expect(service.inspectWorktree).toHaveBeenLastCalledWith(validPath, validPath, [expect.stringContaining('deleted-workspace')]);
     expect(await handler('git-remove-worktree')(null, validPath, validPath, 'one', [missingOpenPath])).toEqual(expect.objectContaining({ success: true }));
-    expect(service.removeWorktree).toHaveBeenLastCalledWith(validPath, validPath, 'one', [expect.stringContaining('deleted-workspace')]);
+    expect(service.removeWorktree).toHaveBeenLastCalledWith(validPath, validPath, 'one', [expect.stringContaining('deleted-workspace')], {});
     expect(await handler('git-remove-worktree')(null, validPath, validPath, 'one', ['relative/deleted-workspace'])).toEqual(expect.objectContaining({ success: false }));
   });
 
@@ -1438,7 +1438,7 @@ describe('Git IPC workspace identity routing', () => {
     Object.assign(remote, { inspectWorktree, removeWorktree, waitForWorktreeOperations });
     await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
     expect(await handle('git-remove-worktree')(null, '/forged', '/srv/task', 'task', ['/untrusted'], 'source')).toMatchObject({ success: false });
-    expect(removeWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', 'task', [workspacePath], expect.any(String));
+    expect(removeWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', 'task', [workspacePath], expect.any(String), {});
     expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
     expect(await handle('git-list-worktrees')(null, '/forged', 'source')).toMatchObject({ success: true });
     expect(waitForWorktreeOperations).toHaveBeenCalledWith(workspacePath, removeWorktree.mock.calls[0][4]);

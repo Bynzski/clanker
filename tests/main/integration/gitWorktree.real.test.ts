@@ -38,6 +38,34 @@ async function withRepo(run: (repo: string) => Promise<void>): Promise<void> {
 }
 
 describe('GitService worktree lifecycle', () => {
+  it('preserves a large ignored dependency tree in Trash only with opt-in', async () => {
+    await withRepo(async (repo) => {
+      fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n');
+      await execFileAsync('git', ['add', '.gitignore'], { cwd: repo });
+      await execFileAsync('git', ['commit', '-m', 'Ignore dependencies'], { cwd: repo });
+      let recycled = '';
+      const service = makeService(async (checkout) => {
+        recycled = `${checkout}.recycled`;
+        await fs.promises.rename(checkout, recycled);
+      });
+      const created = await service.createWorktree(repo, 'main', 'ignored');
+      const checkout = created.worktree!.path;
+      fs.mkdirSync(path.join(checkout, 'node_modules', 'dependency'), { recursive: true });
+      for (let index = 0; index < 200; index++) fs.writeFileSync(path.join(checkout, 'node_modules', 'dependency', `${index}.js`), 'keep');
+      expect(await service.inspectWorktree(repo, checkout)).toMatchObject({ hasChanges: true,
+        changes: { tracked: { count: 0 }, untracked: { count: 0 }, ignored: { count: 1, paths: ['node_modules/'] } } });
+      expect((await service.removeWorktree(repo, checkout, 'ignored')).success).toBe(false);
+      fs.writeFileSync(path.join(checkout, 'source.txt'), 'work');
+      expect((await service.removeWorktree(repo, checkout, 'ignored', [], { discardIgnored: true })).success).toBe(false);
+      fs.unlinkSync(path.join(checkout, 'source.txt'));
+      fs.writeFileSync(path.join(checkout, 'README.md'), 'work');
+      expect((await service.removeWorktree(repo, checkout, 'ignored', [], { discardIgnored: true })).success).toBe(false);
+      await execFileAsync('git', ['restore', 'README.md'], { cwd: checkout });
+      expect((await service.removeWorktree(repo, checkout, 'ignored', [], { discardIgnored: true })).success).toBe(true);
+      expect(fs.readFileSync(path.join(recycled, 'node_modules', 'dependency', '199.js'), 'utf8')).toBe('keep');
+    });
+  });
+
   it('creates a branch and checkout, lists it, and keeps the branch after safe removal', async () => {
     await withRepo(async (repo) => {
       const service = makeService();

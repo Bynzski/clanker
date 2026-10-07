@@ -706,7 +706,7 @@ back to the main checkout, without ever naming a path, workspace, terminal or ch
 | Tool | Input (operation data only) | Effect |
 | --- | --- | --- |
 | `clanker_create_isolated_checkout` | `branch` (1-200 chars, validated by Git) | new worktree on a new branch, same conversation resumed inside it |
-| `clanker_complete_isolated_checkout` | `deleteBranch?` (boolean) | same conversation resumed in the main checkout, then the worktree is removed and its context released |
+| `clanker_complete_isolated_checkout` | `deleteBranch?`, `discardIgnored?` (booleans) | same conversation resumed in the main checkout, then the worktree is removed and its context released |
 
 These are **transactions, not Git wrappers**. There is deliberately no create-branch, create-worktree, adopt,
 change-cwd, switch-checkout, delete-worktree or delete-branch tool: each exposes an unsafe ordering and allows
@@ -721,6 +721,14 @@ manual cwd switching: Clanker must track the checkout and move the same conversa
 stays normal (edits, commits, pushes, pull requests and merges use ordinary Git and GitHub tools; there are no
 PR or Git tools in the bridge). Outside Clanker, or for a launch that was not granted the tools, provider-native
 behavior is unchanged: nothing intercepts shell commands or disables a provider's own worktree feature.
+
+Completion stays strict by default. A checkout with only ignored artifacts returns `reason: "ignored-only"`,
+structured `changes` (tracked/untracked/ignored counts and at most 20 relative examples per category), and
+`canCompleteWithDiscardIgnored: true`. An explicit `discardIgnored: true` permits only ignored-only dirtiness;
+it moves the entire checkout, including those files, into Trash (local) or the SSH recovery archive. It never
+runs `git clean`. Tracked/staged changes and ordinary untracked files still block, and inspection repeats at
+after-turn settlement and before removal. Submodules are inspected recursively with a 128-repository limit;
+SSH removal of a checkout containing submodules remains unsupported. The MCP lifecycle itself stays local-only.
 
 **Guidance is discoverability, not security.** Authorization is the credential, the grants and main's live state;
 nothing depends on the model reading or obeying text. Smoke tests showed why the text matters anyway: with the old
