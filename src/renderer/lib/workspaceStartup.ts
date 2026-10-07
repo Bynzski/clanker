@@ -8,7 +8,8 @@ import { persistOpenWorkspaces, readOpenWorkspaceState } from './openWorkspaceSt
 
 /** One mount owns startup registrations. Persistence is barred until the atomic commit. */
 export function startWorkspaceRestoration(): { dispose: () => void; done: Promise<void> } {
-  const saved = readOpenWorkspaceState();
+  let invalidIdentities = 0;
+  const saved = readOpenWorkspaceState(() => { invalidIdentities++; });
   let cancelled = false;
   let hydrating = true;
   let userSelected = useWorkspaceStore.getState().activeWorkspaceId !== null;
@@ -38,7 +39,7 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
     const prepared = new Set<WorkspaceTab>();
     let restoredActive: WorkspaceTab | undefined;
     const restored: WorkspaceTab[] = [];
-    const failures: string[] = [];
+    const failures = Array.from({ length: invalidIdentities }, () => 'Invalid saved workspace identity');
     try {
       for (const location of saved.workspaces) {
         if (cancelled) break;
@@ -68,10 +69,13 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
       useWorkspaceStore.getState().hydrateWorkspaceShells(shells, activeId);
       hydrating = false;
       persist();
-      if (failures.length) useNotificationStore.getState().show({
-        tone: 'warning', message: `${failures.length} workspace${failures.length === 1 ? '' : 's'} could not be reopened. ${failures.slice(0, 3).map((failure) => failure.length > 180 ? `${failure.slice(0, 179)}…` : failure).join('; ')}${failures.length > 3 ? '; …' : ''}`,
-        dedupeKey: 'workspace-startup',
-      });
+      if (failures.length) {
+        const details = failures.slice(0, 3).map((failure) => failure.length > 180 ? `${failure.slice(0, 179)}…` : failure).join('; ');
+        useNotificationStore.getState().show({
+          tone: 'warning', message: `${failures.length} workspace${failures.length === 1 ? '' : 's'} could not be reopened. ${details}${failures.length > 3 ? '; …' : ''}`,
+          dedupeKey: 'workspace-startup',
+        });
+      }
     } finally {
       // Includes canonical duplicates, user-closed shells and cancellation during registration.
       const liveIds = new Set(useWorkspaceStore.getState().workspaces.map((entry) => entry.id));

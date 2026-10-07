@@ -18,16 +18,16 @@ function identity(value: unknown): WorkspaceLocation | undefined {
   if (!(path.startsWith('/') || (record.environmentId === 'local' && /^[A-Za-z]:\//.test(path)))) return;
   return { environmentId: record.environmentId.trim(), path };
 }
-export function parseOpenWorkspaceState(value: unknown): PersistedOpenWorkspaceState {
+export function parseOpenWorkspaceState(value: unknown, onInvalid?: () => void): PersistedOpenWorkspaceState {
   const empty: PersistedOpenWorkspaceState = { version: 1, workspaces: [] };
-  if (!value || typeof value !== 'object') return empty;
+  if (!value || typeof value !== 'object') { if (value !== null) onInvalid?.(); return empty; }
   const record = value as Record<string, unknown>;
-  if (record.version !== 1 || !Array.isArray(record.workspaces)) return empty;
+  if (record.version !== 1 || !Array.isArray(record.workspaces)) { onInvalid?.(); return empty; }
   const seen = new Set<string>();
   const workspaces: WorkspaceLocation[] = [];
   for (const entry of record.workspaces) {
     const location = identity(entry);
-    if (!location) continue;
+    if (!location) { onInvalid?.(); continue; }
     const key = workspaceIdentityKey(location);
     if (seen.has(key)) continue;
     seen.add(key); workspaces.push(location);
@@ -35,10 +35,10 @@ export function parseOpenWorkspaceState(value: unknown): PersistedOpenWorkspaceS
   const activeWorkspace = identity(record.activeWorkspace);
   return { version: 1, workspaces, ...(activeWorkspace ? { activeWorkspace } : {}) };
 }
-export function readOpenWorkspaceState(): PersistedOpenWorkspaceState {
+export function readOpenWorkspaceState(onInvalid?: () => void): PersistedOpenWorkspaceState {
   try {
-    return parseOpenWorkspaceState(JSON.parse(window.localStorage.getItem(OPEN_WORKSPACES_STORAGE_KEY) || 'null'));
-  } catch { return { version: 1, workspaces: [] }; }
+    return parseOpenWorkspaceState(JSON.parse(window.localStorage.getItem(OPEN_WORKSPACES_STORAGE_KEY) || 'null'), onInvalid);
+  } catch { onInvalid?.(); return { version: 1, workspaces: [] }; }
 }
 export function persistOpenWorkspaces(workspaces: WorkspaceTab[], activeWorkspaceId: string | null): void {
   try {

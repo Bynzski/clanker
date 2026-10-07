@@ -183,6 +183,15 @@ describe('startup shell hydration', () => {
     expect(readOpenWorkspaceState().workspaces).toEqual([local('/survivor'), remote('/other')]);
     expect(useNotificationStore.getState().notifications).toEqual([expect.objectContaining({ tone: 'warning', message: expect.stringContaining('1 workspace could not be reopened') })]);
   });
+  it('reports malformed saved identities while restoring valid ones', async () => {
+    window.localStorage.setItem(OPEN_WORKSPACES_STORAGE_KEY, JSON.stringify({ version: 1,
+      workspaces: [null, { environmentId: 'local', path: 'relative' }, local('/valid')] }));
+    await restore();
+    expect(store().workspaces.map((workspace) => workspace.workspacePath)).toEqual(['/valid']);
+    expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledOnce();
+    expect(readOpenWorkspaceState().workspaces).toEqual([local('/valid')]);
+    expect(useNotificationStore.getState().notifications[0].message).toContain('2 workspaces could not be reopened');
+  });
   it('deduplicates saved path forms before main registration', async () => {
     save([local('/a'), local('/a/'), local('/b')]);
     await restore();
