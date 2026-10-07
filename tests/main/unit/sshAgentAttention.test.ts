@@ -490,7 +490,18 @@ const callbacks = {};
 install({on:(name, callback) => {callbacks[name] = callback;}});
 const ctx = {sessionManager:{getSessionId:()=>'session-a'}, agent:{kind:'main'}};
 // agent_end is deliberately not a completion for OMP and must stay unobserved.
-for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop', 'session_shutdown']) if (callbacks[name]) await callbacks[name]({}, ctx);
+if (${JSON.stringify(harness)} === 'pi') {
+  await callbacks.agent_start({}, ctx);
+  await callbacks.ui_prompt_start({kind:'confirm', title:'private prompt'}, ctx);
+  await callbacks.ui_prompt_end({kind:'confirm'}, ctx);
+  await callbacks.message_end({message:{role:'assistant', stopReason:'error', errorMessage:'private failure'}}, ctx);
+  await callbacks.agent_settled({aborted:false}, ctx);
+  await callbacks.agent_start({}, ctx);
+  await callbacks.agent_settled({aborted:true}, ctx);
+  await callbacks.session_shutdown({}, ctx);
+} else {
+  for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop', 'session_shutdown']) if (callbacks[name]) await callbacks[name]({}, ctx);
+}
 `);
       args = [runner];
     } else {
@@ -508,11 +519,16 @@ for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop',
     });
     const events: Array<{ event: string; scope?: string; sessionId?: string }> = [];
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
-    expect(events.map((event) => event.event)).toEqual(harness === 'pi' || harness === 'omp'
-      ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'turn_completed']);
+    expect(events.map((event) => event.event)).toEqual(harness === 'pi'
+      ? ['turn_started', 'input_requested', 'input_resolved', 'turn_failed', 'turn_started', 'turn_interrupted', 'session_ended']
+      : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'turn_completed']);
+    expect(JSON.stringify(events)).not.toContain('private');
+    if (harness === 'pi') {
+      expect(events[2]).toMatchObject({ inputId: (events[1] as { inputId?: string }).inputId, turnId: '1' });
+    }
     expect(events.every((event) => event.scope === 'root' && event.sessionId === 'session-a')).toBe(true);
     // Both ends of a turn carry the same turn identity (native, or a provider-owned epoch).
-    expect(new Set(events.filter((event) => event.event !== 'session_ended').map((event) => (event as { turnId?: string }).turnId)).size).toBe(1);
+    expect(new Set(events.filter((event) => event.event !== 'session_ended').map((event) => (event as { turnId?: string }).turnId)).size).toBe(harness === 'pi' ? 2 : 1);
     await prepared.release();
   });
 });

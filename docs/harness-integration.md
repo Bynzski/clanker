@@ -186,7 +186,7 @@ unseen Done are counted and jumped to.
 Source authority is declared per provider (`attention.authority: full | partial`, and
 `source: native | hook`) and arbitrated centrally (`attentionAuthority.ts`).
 `full` structured authority suppresses every lower-confidence source. `partial` (Claude has
-no interrupt hook; Pi and OMP expose no input waits) may accept narrowly scoped
+no interrupt hook; OMP exposes no input waits; Pi's extension prompt hooks do not cover every built-in dialog) may accept narrowly scoped
 provider-specific live-screen evidence through `receiveFallback`: a blocker only inside a
 proven active turn, clearable only by fallback itself and always replaced by a structured
 request; an idle-looking screen never changes state, and fallback can never create a turn
@@ -367,10 +367,23 @@ the root session; turn = the turn identity; child = how child scope is proven).
 | Codex | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
 | Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` (background tasks and crons do not hold the turn open), `StopFailure` = `turn_failed` (Failed, never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
 | OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
-| Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |
+| Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | `ui_prompt_start` / `ui_prompt_end` (extension-owned request epoch; foreground `ctx.ui` dialogs only) | `agent_settled`: aborted → interrupted; latest unrecovered assistant/compaction failure → failed; otherwise completed | `agent_end`, intermediate errors and lower-level events never settle | `session_shutdown` |
 | OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `session_stop` (OMP defers it until agent-owned background jobs are idle); it is the terminal foreground completion | `agent_end` is not terminal completion; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` (main) |
 | Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | `Stop` with `fullyIdle === true` for the root conversation | `Stop` with `fullyIdle` false/absent, other conversations | none native |
 | Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `post_llm_call` of a turn that began as a root turn | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
+
+Pi attention (checked against 1.1.0). The shared local/SSH observer uses authenticated extension events,
+not the new unauthenticated OSC 7501 program-status reports. `ui_prompt_start` / `ui_prompt_end`
+(available since 0.84.4) bracket the outermost blocking extension `ctx.ui` call. Requests are correlated
+with a local request epoch inside the identified foreground turn; idle dialogs never create a turn.
+Select/input/editor dialogs prove input; confirm/custom dialogs remain unclassified, never guessed
+as approval from titles. Titles, prompt content and error text are never forwarded. `message_end`
+tracks only the root assistant's latest outcome; a successful retry replaces an error.
+`session_compact_failed` records failure/cancellation, and only `agent_settled` publishes the final
+outcome (`aborted`, added in 1.1.0, takes precedence). Older versions omitting `aborted` retain their
+ordinary completion behavior unless another native outcome proves otherwise. Session shutdown
+clears request/outcome bookkeeping. Coverage remains partial: built-in login and other non-`ctx.ui`
+waits are not proven by these hooks. No checkout relocation capability is added.
 
 Claude permission lifecycle. `PermissionRequest` carries `tool_name`/`tool_input` but no
 `tool_use_id`, so there is no exact request identity. The interpreter records, in the

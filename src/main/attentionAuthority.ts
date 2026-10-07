@@ -2,8 +2,9 @@ import type { AgentAttentionEvidence, AgentRuntimeStatus } from '../shared/types
 
 /** How completely a provider's structured lifecycle covers the foreground turn.
  * `full`: start, request, resolution and settle are all provable; fallback evidence is never consulted.
- * `partial`: some boundary is unobservable (for example Claude has no interrupt hook, Pi/OMP
- * expose no input waits), so narrowly scoped fallback evidence may fill specific gaps. */
+ * `partial`: some boundary is unobservable (for example Claude has no interrupt hook, OMP
+ * exposes no input waits, and Pi's prompt hooks do not cover every built-in dialog), so narrowly
+ * scoped fallback evidence may fill specific gaps. */
 export type StructuredAuthority = 'full' | 'partial';
 
 /** Provenance of a provider's structured evidence, for diagnostics. */
