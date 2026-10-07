@@ -203,6 +203,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
 
     // Session history
     discoverSessions: createAsyncMock([]),
+    discoverSessionHistory: vi.fn(async (id: string) => ({ sessions: await window.electronAPI.discoverSessions(id), issues: [] })),
     getHarnessUsage: createAsyncMock({ workspaceId: '', entries: [] }),
     listHarnessAccounts: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     selectHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),

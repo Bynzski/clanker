@@ -567,6 +567,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
 
   // Session history
+  discoverSessionHistory: (workspaceId: string, forceRefresh = false) =>
+    ipcRenderer.invoke(SESSION_DISCOVER, workspaceId, { detailed: true, forceRefresh }),
   discoverSessions: (workspaceId: string) =>
     ipcRenderer.invoke(SESSION_DISCOVER, workspaceId),
   invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) =>

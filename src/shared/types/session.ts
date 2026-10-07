@@ -64,3 +64,13 @@ export interface SessionLaunchResult {
 
 /** Either a launch, or an offer (nothing was launched or created) to recreate a removed worktree. */
 export type SessionInvokeResult = SessionLaunchResult | { recreateOffer: RecreateCheckoutOffer };
+
+/** A partial history list stays usable, with provider failures reported separately. */
+export interface SessionDiscoveryIssue {
+  harness: HarnessId | null;
+  message: string;
+}
+export interface SessionDiscoveryResult {
+  sessions: HarnessSession[];
+  issues: SessionDiscoveryIssue[];
+}

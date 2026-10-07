@@ -277,12 +277,13 @@ export async function discoverSessionsWithCheckouts(params: {
   discover: (scanPath: string) => Promise<HarnessSession[]>;
   toScanPath?: (posixPath: string) => string;
   maxScans?: number;
+  onScanError?: (error: unknown) => void;
 }): Promise<HarnessSession[]> {
   const { plan, scanWorkspacePath, discover, toScanPath = (value) => value, maxScans = MAX_LOCAL_SESSION_SCANS } = params;
   const scopes = sessionScanScopes(plan);
   const scans = scopes.length > maxScans
     ? [discover('')]
-    : [discover(scanWorkspacePath), ...scopes.map((scope) => discover(toScanPath(scope)).catch((): HarnessSession[] => []))];
+    : [discover(scanWorkspacePath), ...scopes.map((scope) => discover(toScanPath(scope)).catch((error: unknown): HarnessSession[] => { params.onScanError?.(error); return []; }))];
   return classifySessions(plan, (await Promise.all(scans)).flat());
 }
 

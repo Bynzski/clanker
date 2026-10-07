@@ -11,10 +11,12 @@ const { mockHandle } = vi.hoisted(() => ({
 
 const {
   mockDiscoverSessions,
+  mockDiscoverSessionsDetailed,
   mockBuildSessionLaunch,
   mockSpawnPtyProcess,
 } = vi.hoisted(() => ({
   mockDiscoverSessions: vi.fn(),
+  mockDiscoverSessionsDetailed: vi.fn(),
   mockBuildSessionLaunch: vi.fn(),
   mockSpawnPtyProcess: vi.fn(),
 }));
@@ -38,6 +40,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../src/main/sessionHistory', () => ({
   discoverSessions: mockDiscoverSessions,
+  discoverSessionsDetailed: mockDiscoverSessionsDetailed,
   buildSessionLaunch: mockBuildSessionLaunch,
 }));
 
@@ -110,8 +113,35 @@ describe('registerSessionIpc', () => {
   beforeEach(() => {
     mockHandle.mockReset();
     mockDiscoverSessions.mockReset();
+    mockDiscoverSessionsDetailed.mockReset();
     mockBuildSessionLaunch.mockReset();
     mockSpawnPtyProcess.mockReset();
+  });
+
+  it('keeps successful history and returns safe diagnostics only for available providers', async () => {
+    mockDiscoverSessionsDetailed.mockResolvedValue({ sessions: [codexSession, claudeSession], harnessStatus: {
+      codex: { status: 'success' }, pi: { status: 'error', error: 'secret path/token', failure: { kind: 'storage-changed' } },
+      agy: { status: 'error', error: 'unavailable' },
+    } });
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handlers = registerHandlers(vi.fn(() => ({ codex: {}, pi: {} })));
+    const result = await handlers.get(SESSION_DISCOVER)!({}, 'local-ws', { detailed: true, forceRefresh: true });
+    expect(result).toEqual({ sessions: [codexSession], issues: [{ harness: 'pi', message: 'Pi: its session storage format changed.' }] });
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(toNativePath('/workspace', process.platform), { forceRefresh: true });
+    log.mockRestore();
+  });
+
+  it('rejects a late local discovery after its registered workspace is closed', async () => {
+    let finish!: (value: { sessions: HarnessSession[]; harnessStatus: object }) => void;
+    mockDiscoverSessionsDetailed.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    let current: typeof localWorkspace | null = localWorkspace;
+    const registry = withCheckoutContexts({ getWorkspace: () => current });
+    const handlers = registerHandlers(vi.fn(() => ({ codex: {} })), undefined, () => registry as never);
+    const pending = handlers.get(SESSION_DISCOVER)!({}, 'local-ws', { detailed: true });
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    current = null; finish({ sessions: [codexSession], harnessStatus: {} });
+    await expect(pending).rejects.toThrow('Workspace closed during discovery');
   });
 
   it('rejects forged Pi files before command construction or spawning', async () => {

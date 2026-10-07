@@ -12,6 +12,44 @@ beforeEach(() => { installElectronApiMock(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('useConversationHistory', () => {
+  it('retains partial warnings alongside usable sessions and retries with a fresh scan on opening', async () => {
+    const partial = { sessions: [session('good')], issues: [{ harness: 'pi' as const, message: 'Pi history could not be read.' }] };
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockResolvedValueOnce(partial).mockReturnValueOnce(new Promise(() => {}));
+    const { result } = renderHook(() => useConversationHistory('ws-1'));
+    act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS); }); await flush();
+    act(() => result.current.setOpen(true));
+    expect(result.current.sessions).toEqual(partial.sessions);
+    expect(result.current.error).toBe(partial.issues[0].message);
+    expect(window.electronAPI.discoverSessionHistory).toHaveBeenLastCalledWith('ws-1', true);
+  });
+
+  it('a dismissed older response cannot replace a newer remembered list', async () => {
+    let finishOld!: (value: { sessions: HarnessSession[]; issues: [] }) => void;
+    vi.mocked(window.electronAPI.discoverSessionHistory)
+      .mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }))
+      .mockResolvedValueOnce({ sessions: [session('new')], issues: [] })
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { result } = renderHook(() => useConversationHistory('ws-1', { warmup: false }));
+    act(() => result.current.setOpen(true));
+    act(() => result.current.setOpen(false));
+    act(() => result.current.setOpen(true)); await flush();
+    await act(async () => finishOld({ sessions: [session('old')], issues: [] }));
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true));
+    expect(result.current.sessions.map((entry) => entry.id)).toEqual(['new']);
+  });
+
+  it('does not remember a warm-up response after leaving its workspace', async () => {
+    let finish!: (value: { sessions: HarnessSession[]; issues: [] }) => void;
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }))
+      .mockReturnValue(new Promise(() => {}));
+    const { result, rerender } = renderHook(({ id }) => useConversationHistory(id), { initialProps: { id: 'a' } });
+    act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS); });
+    rerender({ id: 'b' }); await act(async () => finish({ sessions: [session('old')], issues: [] }));
+    rerender({ id: 'a' }); act(() => result.current.setOpen(true));
+    expect(result.current.sessions).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+  });
+
   it('warms history only after the warm-up delay, then opens instantly from it', async () => {
     vi.mocked(window.electronAPI.discoverSessions).mockResolvedValue([session('a', 'Warm')]);
     const { result } = renderHook(() => useConversationHistory('ws-1'));

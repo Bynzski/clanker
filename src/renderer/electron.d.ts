@@ -50,6 +50,7 @@ import type {
 import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession, SessionInvokeOptions, SessionInvokeResult } from '../../shared/types/session';
+import type { SessionDiscoveryResult } from '../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
@@ -335,6 +336,7 @@ export interface ElectronAPI {
 
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
+  discoverSessionHistory: (workspaceId: string, forceRefresh?: boolean) => Promise<SessionDiscoveryResult>;
   getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
   listHarnessAccounts: (environmentId: string, harness: string) => Promise<HarnessAccountList>;
   selectHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;

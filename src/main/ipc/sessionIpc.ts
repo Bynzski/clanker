@@ -12,12 +12,12 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'node:path';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
-import { discoverSessions, buildSessionLaunch } from '../sessionHistory';
+import { discoverSessions, discoverSessionsDetailed, buildSessionLaunch } from '../sessionHistory';
 import { ensureHarnessWrapperScript, resolveHarnessPtySpawn, type HarnessPtySpawnOptions } from '../harnessLaunch';
 import { SESSION_DISCOVER, SESSION_INVOKE } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
-import type { HarnessSession } from '../../shared/types/session';
+import type { SessionDiscoveryIssue, SessionDiscoveryResult, HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistry';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -123,44 +123,70 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
   });
 
   /** Local history for a workspace, labelled with checkouts: exactly what SESSION_DISCOVER returns. */
-  const discoverLocalSessions = async (workspace: RegisteredWorkspace, plan: SessionCheckoutPlan | null, forceRefresh = false): Promise<HarnessSession[]> => {
+  const discoverLocalSessions = async (workspace: RegisteredWorkspace, plan: SessionCheckoutPlan | null, forceRefresh = false, issues?: SessionDiscoveryIssue[]): Promise<HarnessSession[]> => {
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
     const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
     // `forceRefresh` bypasses the history cache. A listing is only a recent view; a conversation that began
     // after it was cached (the first turn of a new conversation) would otherwise be "not found".
-    const discover = (scanPath: string) => managed || forceRefresh
+    const discover = async (scanPath: string): Promise<HarnessSession[]> => {
+      if (issues) {
+        const found = await discoverSessionsDetailed(scanPath, { ...(managed ? { managed } : {}), forceRefresh });
+        for (const [harness, status] of Object.entries(found.harnessStatus)) {
+          if (status.status !== 'error' || !availableHarnessIds.has(harness)) continue;
+          console.warn(`[clanker-grid] ${harness} history discovery failed:`, status.failure?.kind ?? 'command-failed');
+          const label = findHarnessProvider(harness)?.descriptor.name ?? harness;
+          const reason = status.failure?.kind === 'storage-changed' ? 'its session storage format changed'
+            : status.failure?.kind === 'binary-unavailable' ? 'its CLI is unavailable'
+            : status.failure?.kind === 'timeout' ? 'discovery timed out'
+            : status.failure?.kind === 'output-limit' ? 'its session listing exceeds the supported limit'
+            : 'its session history could not be read';
+          const message = `${label}: ${reason}.`;
+          if (!issues.some((issue) => issue.message === message)) issues.push({ harness: harness as HarnessSession['harness'], message });
+        }
+        return found.sessions;
+      }
+      return managed || forceRefresh
       ? discoverSessions(scanPath, { ...(managed ? { managed } : {}), ...(forceRefresh ? { forceRefresh: true } : {}) })
       : discoverSessions(scanPath);
+    };
     // Conversations of isolated agents live in linked worktrees outside the workspace root; they
     // belong to this workspace's history, labelled with their checkout.
     const sessions = plan
       ? await discoverSessionsWithCheckouts({
         plan, scanWorkspacePath: nativeWorkspacePath, discover,
+        onScanError: issues ? () => {
+          const message = 'Some checkout history could not be read.';
+          if (!issues.some((issue) => issue.message === message)) issues.push({ harness: null, message });
+        } : undefined,
         toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
       })
       : await discover(nativeWorkspacePath);
     return sessions.filter((session) => availableHarnessIds.has(session.harness));
   };
 
-  ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string) => {
+  ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string, options?: { detailed?: boolean; forceRefresh?: boolean }) => {
     const workspace = typeof workspaceId === 'string'
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
     const plan = await loadPlan(workspaceId, workspace);
     if (workspace.location.environmentId !== 'local') {
-      if (!workspace.environment?.capabilities.sessionDiscovery || !workspace.environment.discoverSessions) return [];
+      if (!workspace.environment?.capabilities.sessionDiscovery || !workspace.environment.discoverSessions) return options?.detailed ? { sessions: [], issues: [] } : [];
       // One bounded on-host scan covers the workspace and the worktree scopes main derived from Git.
       const scopes = plan ? sessionScanScopes(plan).slice(0, MAX_REMOTE_SESSION_SCOPES) : [];
       const found = scopes.length > 0
         ? await workspace.environment.discoverSessions(workspace.location.path, scopes)
         : await workspace.environment.discoverSessions(workspace.location.path);
       if (deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId) !== workspace) throw new Error('Remote workspace closed during discovery');
-      return plan ? classifySessions(plan, found) : found;
+      const sessions = plan ? classifySessions(plan, found) : found;
+      return options?.detailed ? { sessions, issues: [] } : sessions;
     }
 
-    return discoverLocalSessions(workspace, plan);
+    const issues: SessionDiscoveryIssue[] = [];
+    const sessions = await discoverLocalSessions(workspace, plan, options?.forceRefresh === true, options?.detailed ? issues : undefined);
+    if (deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId) !== workspace) throw new Error('Workspace closed during discovery');
+    return options?.detailed ? { sessions, issues } satisfies SessionDiscoveryResult : sessions;
   });
 
   const invokeSession = async (

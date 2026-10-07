@@ -252,8 +252,9 @@ describe('discoverSessionsWithCheckouts', () => {
       worktrees: [entry('/p/app', 'main', { isMain: true }), entry('/p/bad', 'bad'), entry(generated('feat'), 'feat')], branches: ['main', 'feat'],
     });
     const scans: string[] = [];
+    const onScanError = vi.fn();
     const result = await discoverSessionsWithCheckouts({
-      plan, scanWorkspacePath: '/p/app',
+      plan, scanWorkspacePath: '/p/app', onScanError,
       discover: async (scanPath) => {
         scans.push(scanPath);
         if (scanPath === '/p/app') return [session('main', '/p/app', 5)];
@@ -262,6 +263,7 @@ describe('discoverSessionsWithCheckouts', () => {
       },
     });
     expect(scans).toEqual(['/p/app', '/p/app-worktrees', '/p/bad']);
+    expect(onScanError).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }));
     expect(result.map((item) => item.id)).toEqual(['a', 'main']);
     expect(result[0].checkout).toEqual({ branch: 'feat', path: generated('feat'), exists: true });
     expect(result[1].checkout).toBeUndefined();

@@ -205,12 +205,11 @@ export default function ChatHistoryDropdown({
           </div>
         </div>
       )}
+      {discoveryError && <div className="chat-history-empty" role="alert">{discoveryError}</div>}
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions…</div>
-      ) : discoveryError ? (
-        <div className="chat-history-empty" role="alert">{discoveryError}</div>
       ) : sessions.length === 0 ? (
-        <div className="chat-history-empty">No sessions for this workspace</div>
+        discoveryError ? null : <div className="chat-history-empty">No sessions for this workspace</div>
       ) : (
         sortedHarnesses.map((harness) => (
           <HarnessGroup
