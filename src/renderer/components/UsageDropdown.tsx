@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react';
+import { CircleAlert, Info, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { HarnessUsageEntry, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName } from '../lib/usageFormat';
@@ -51,7 +51,7 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
       {shownIds.length === 0 && (
         <div className="usage-harness">
           <p className="usage-note">No usage providers available</p>
-          <p className="usage-checked">Install a supported harness here, or enable one in Settings → Harness Defaults.</p>
+          <p className="usage-empty-hint">Enable providers in Settings → Harness Defaults.</p>
         </div>
       )}
       {shownIds.map((id) => {
@@ -87,6 +87,10 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
   const meta = single ? groupMeta(single) : '';
   const stale = entry?.stale === true && (entry?.measurements.length ?? 0) > 0;
   const statusText = entry && entry.status !== 'ok' && entry.status !== 'not-installed' ? (entry.error ?? STATUS_TEXT[entry.status]) : undefined;
+  const problem = [stale ? 'Stale usage data' : undefined, statusText].filter(Boolean).join(' · ');
+  const problemTitle = problem && [problem, entry?.checkedAt !== undefined ? `last ${formatChecked(entry.checkedAt, now)}` : undefined].filter(Boolean).join(' · ');
+  const tone = stale && entry?.status === 'ok' ? 'warning' : STATUS_TONE[entry?.status ?? 'unsupported'];
+  const StatusIcon = tone === 'error' ? CircleAlert : tone === 'warning' ? TriangleAlert : Info;
   return (
     <section className="usage-harness" aria-label={label} aria-busy={checking}>
       <div className="usage-harness-header">
@@ -95,10 +99,12 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
         {entry?.account?.selected && <span className="usage-badge">In use</span>}
         {onUse && <button type="button" className="usage-badge usage-use" onClick={onUse} aria-label={`Use ${entry?.account?.name ?? 'account'} for ${label}`}>Use</button>}
         {meta && <span className="usage-harness-meta" title={meta}>{meta}</span>}
-        {stale && <span className="usage-badge">Stale</span>}
+        {problemTitle && <span className={`usage-status-icon usage-status-${tone}`} role="img" tabIndex={0} aria-label={problemTitle} title={problemTitle}>
+          <StatusIcon size={12} aria-hidden="true" />{stale && <span className="usage-stale-label">Stale</span>}
+        </span>}
       </div>
       {!entry && checking && <p className="usage-note" role="status">Checking usage…</p>}
-      {entry && entry.status === 'ok' && entry.measurements.length === 0 && <p className="usage-note">No active usage limits reported</p>}
+      {entry && entry.status === 'ok' && entry.measurements.length === 0 && <p className="usage-note">No usage limits reported</p>}
       {groups.map((group) => (
         <div key={group.key} className="usage-group">
           {groups.length > 1 && (
@@ -126,8 +132,6 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
           })}
         </div>
       ))}
-      {statusText && <p className={`usage-note usage-status usage-status-${STATUS_TONE[entry!.status]}`}>{statusText}</p>}
-      {entry?.checkedAt !== undefined && <div className="usage-checked">{formatChecked(entry.checkedAt, now)}</div>}
     </section>
   );
 }

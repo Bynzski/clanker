@@ -93,15 +93,13 @@ export function GitInitMenu({
               className="header-btn header-btn-primary git-menu-action"
               onClick={onInitialize}
               disabled={isInitializing}
+              title="Create a Git repository in this workspace"
             >
               {isInitializing && <Loader2 size={13} className="spin" />}
               {isInitializing ? 'Initializing…' : 'Initialize Repository'}
             </Button>
           </div>
 
-          <p className="git-init-hint">
-            This will create a new git repository in the current workspace.
-          </p>
         </div>
       )}
     </>

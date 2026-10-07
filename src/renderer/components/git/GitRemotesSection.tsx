@@ -109,7 +109,6 @@ function RemoteList({
       {remotes.length === 0 ? (
         <div className="git-remotes-empty">
           <p>No remotes configured</p>
-          <span className="git-remotes-hint">Add a remote to connect to a repository host</span>
           <Button size="xs" type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
             <Plus size={12} />
             Add remote

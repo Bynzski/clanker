@@ -60,7 +60,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
         if (!await openUrlInWorkspaceBrowser(workspace.id, url)) throw new Error('Could not open dev server preview');
       })}><ExternalLink size={12} /></IconButton>}
     </div>
-    {!live && !failed && command?.preparationHint && <div className="ws-service-hint">{command.preparationHint}</div>}
+    {!live && !failed && command?.preparationHint && <div className="ws-service-hint" title={command.preparationHint}>Dependencies may need installation</div>}
     {failed && service?.error && <details className="ws-service-diagnostics">
       <summary>Why it failed</summary><pre>{service.error}</pre>
     </details>}
@@ -68,7 +68,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
     <ConfirmCloseDialog
       isOpen={confirmingInstall !== null}
       title="Install dependencies in this checkout?"
-      message={confirmingInstall ? `Run ${devDependencyInstallCommand(confirmingInstall.packageManager)} in ${confirmingInstall.cwd}? This opens a visible terminal. Installing downloads packages and can execute project and dependency install scripts. The dev server will not start automatically; click Run after installation finishes.` : ''}
+      message={confirmingInstall ? `Run ${devDependencyInstallCommand(confirmingInstall.packageManager)} in ${confirmingInstall.cwd}? Opens a terminal to download packages and run project/dependency install scripts. The dev server stays stopped.` : ''}
       options={confirmingInstall && terminalId ? [{ label: 'Install dependencies', variant: 'primary', action: () => {
         const expected = confirmingInstall;
         setConfirmingInstall(null);

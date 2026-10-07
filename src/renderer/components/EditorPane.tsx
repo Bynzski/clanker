@@ -17,6 +17,8 @@ import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope
 import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import { getLanguageExtension } from '../lib/editorLanguage';
+import { isMarkdownFile } from '../lib/markdownPreview';
+import MarkdownPreview from './MarkdownPreview';
 import './EditorPane.css';
 import { editorCreate, editorDestroy, editorReactMount, editorReactUnmount } from '../lib/workspaceSwitchDebug';
 
@@ -32,6 +34,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const isInteractiveRef = useRef(true);
 
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+  const [previewTabs, setPreviewTabs] = useState<ReadonlySet<string>>(() => new Set());
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
 
@@ -64,6 +67,19 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   const hasDirtyTabs = editorTabs.some((t) => t.isDirty);
+  const markdownTab = activeTab !== null && isMarkdownFile(activeTab.fileName);
+  const showingPreview = markdownTab && previewTabs.has(activeTab.id);
+
+  const setPreviewMode = (preview: boolean) => {
+    if (!isInteractive || !activeTab) return;
+    setPreviewTabs((current) => {
+      const next = new Set(current);
+      if (preview) next.add(activeTab.id);
+      else next.delete(activeTab.id);
+      return next;
+    });
+    if (!preview) requestAnimationFrame(() => viewRef.current?.requestMeasure());
+  };
 
   // Build the language extension only when the active tab changes.
   const languageExtension = useMemo(
@@ -261,6 +277,10 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <span className="editor-pane-title">Editor</span>
             <span className="editor-pane-spacer" />
           </div>
+          {markdownTab && <div className="editor-markdown-modes" role="group" aria-label="Markdown view">
+            <Button size="xs" variant="ghost" aria-pressed={!showingPreview} disabled={!isInteractive} onClick={() => setPreviewMode(false)}>Edit</Button>
+            <Button size="xs" variant="ghost" aria-pressed={showingPreview} disabled={!isInteractive} onClick={() => setPreviewMode(true)}>Preview</Button>
+          </div>}
           <IconButton variant="ghost"
             className="editor-pane-close-btn"
             onClick={handleClosePane}
@@ -274,13 +294,13 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
 
         <EditorTabBar workspaceId={workspaceId} />
         {activeTab?.checkoutContextId && !workspace?.checkoutContexts?.some((context) => context.id === activeTab.checkoutContextId && !context.missing) && (
-          <div role="status" className="editor-external-change-banner">This checkout is unavailable. Your buffer is preserved; saving cannot target another checkout.</div>
+          <div role="status" className="editor-external-change-banner">Checkout unavailable. Buffer kept; cannot save here.</div>
         )}
 
         {activeTab?.hasExternalChange && (
           <div className="editor-reload-banner">
             <span className="editor-reload-banner-text">
-              This file has been modified externally.
+              File changed on disk.
             </span>
             <Button
               className="editor-reload-banner-btn"
@@ -319,7 +339,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
         {activeTab?.isDeleted && (
           <div className="editor-reload-banner editor-reload-banner--danger">
             <span className="editor-reload-banner-text">
-              This file has been deleted.
+              File deleted.
             </span>
             <Button
               className="editor-reload-banner-btn"
@@ -366,8 +386,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
           <div
             className="editor-content"
             ref={editorRef}
-            style={{ display: editorVisible && editorTabs.length > 0 ? undefined : 'none' }}
+            style={{ display: editorVisible && editorTabs.length > 0 && !showingPreview ? undefined : 'none' }}
           />
+          {showingPreview && workspace && <MarkdownPreview workspace={workspace} tab={activeTab} interactive={isInteractive} />}
         </div>
       </div>
       <ConfirmCloseDialog

@@ -30,7 +30,7 @@ describe('UsageDropdown', () => {
   it('shows an empty state and nothing else when no usage providers are selected', () => {
     const { container } = renderPanel({}, { harnessIds: [] });
     expect(screen.getByText('No usage providers available')).toBeInTheDocument();
-    expect(screen.getByText('Install a supported harness here, or enable one in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(screen.getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
     expect(container.querySelectorAll('.usage-harness-name')).toHaveLength(0);
     expect(screen.queryByText('Checking usage…')).not.toBeInTheDocument();
   });
@@ -48,7 +48,7 @@ describe('UsageDropdown', () => {
     expect(within(section('Claude')).queryByText('Checking usage…')).not.toBeInTheDocument();
   });
 
-  it('renders percent windows with remaining text, a used-quota progress bar, resets, plan/account and checked time', () => {
+  it('renders healthy quotas, resets and account metadata without routine status or timestamps', () => {
     renderPanel({ codex: entry('codex', { measurements: [
       pct('Codex · 5 hour', 28, { resetsAt: NOW + 102 * 60_000, scope: { providerId: 'openai-codex', planLabel: 'Plus', accountLabel: 'alice@example.invalid' } }),
       pct('Codex · weekly', 59, { resetsAt: NOW + (3 * 24 + 6) * 3_600_000, scope: { providerId: 'openai-codex', planLabel: 'Plus', accountLabel: 'alice@example.invalid' } }),
@@ -59,7 +59,8 @@ describe('UsageDropdown', () => {
     expect(within(codex).getByText('72% remaining')).toBeInTheDocument();
     expect(within(codex).getByText('resets in 1h 42m')).toBeInTheDocument();
     expect(within(codex).getByText('resets in 3d 6h')).toBeInTheDocument();
-    expect(within(codex).getByText('checked just now')).toBeInTheDocument();
+    expect(within(codex).queryByText(/checked/)).not.toBeInTheDocument();
+    expect(codex.querySelector('.usage-status-icon')).toBeNull();
     const bar = within(codex).getByRole('progressbar', { name: 'Codex 5 hour' });
     expect(bar).toHaveAttribute('aria-valuenow', '72');
     expect(bar.firstElementChild).toHaveStyle({ width: '72%' });
@@ -119,8 +120,8 @@ describe('UsageDropdown', () => {
 
   it('distinguishes an empty successful result from an unsupported probe', () => {
     renderPanel({ hermes: entry('hermes'), pi: entry('pi', { status: 'unsupported', error: 'No supported usage probe', checkedAt: undefined, measurements: [] }) });
-    expect(within(section('Hermes')).getByText('No active usage limits reported')).toBeInTheDocument();
-    expect(within(section('Pi')).getByText('No supported usage probe')).toBeInTheDocument();
+    expect(within(section('Hermes')).getByText('No usage limits reported')).toBeInTheDocument();
+    expect(within(section('Pi')).getByRole('img', { name: 'No supported usage probe' })).toBeInTheDocument();
     expect(within(section('Pi')).queryByText(/checked/)).not.toBeInTheDocument();
   });
 
@@ -129,8 +130,12 @@ describe('UsageDropdown', () => {
     ['unauthenticated', 'Not signed in', 'warning'], ['unavailable', 'Usage temporarily unavailable', 'warning'], ['error', 'Usage could not be read', 'error'],
   ] as const)('shows the %s state with its tone', (status, text, tone) => {
     renderPanel({ opencode: entry('opencode', { status, error: text }) });
-    const note = within(section('OpenCode')).getByText(text);
+    const note = within(section('OpenCode')).getByRole('img', { name: `${text} · last checked just now` });
     expect(note).toHaveClass(`usage-status-${tone}`);
+    expect(note).toHaveAttribute('title', `${text} · last checked just now`);
+    expect(note).toHaveAttribute('tabindex', '0');
+    expect(section('OpenCode').querySelector('.usage-harness-header')).toContainElement(note);
+    expect(within(section('OpenCode')).queryByText(text)).not.toBeInTheDocument();
   });
   it('hides a harness that is not installed in this environment instead of listing it', () => {
     renderPanel({ hermes: entry('hermes'), opencode: entry('opencode', { status: 'not-installed', error: 'Not installed in this environment', measurements: [] }) });
@@ -141,7 +146,7 @@ describe('UsageDropdown', () => {
 
   it('falls back to default status copy when the entry carries no text', () => {
     renderPanel({ opencode: entry('opencode', { status: 'unauthenticated' }) });
-    expect(within(section('OpenCode')).getByText('Not signed in')).toBeInTheDocument();
+    expect(within(section('OpenCode')).getByRole('img', { name: /Not signed in/ })).toBeInTheDocument();
   });
 
   it('keeps stale last-good measurements visible, marks them Stale and shows the current failure', () => {
@@ -149,7 +154,15 @@ describe('UsageDropdown', () => {
     const claude = section('Claude');
     expect(within(claude).getByText('Stale')).toBeInTheDocument();
     expect(within(claude).getByText('31% remaining')).toBeInTheDocument();
-    expect(within(claude).getByText('Usage temporarily unavailable')).toBeInTheDocument();
+    expect(within(claude).getByRole('img', { name: 'Stale usage data · Usage temporarily unavailable · last checked just now' })).toBeInTheDocument();
+  });
+
+  it('flags stale successful data and exposes an older check only in the header status', () => {
+    renderPanel({ codex: entry('codex', { stale: true, checkedAt: NOW - 180_000, measurements: [pct('5 hour', 10)] }) });
+    const icon = within(section('Codex')).getByRole('img', { name: 'Stale usage data · last checked 3m ago' });
+    expect(icon).toHaveClass('usage-status-warning');
+    expect(within(section('Codex')).getByText('Stale')).toBeInTheDocument();
+    expect(within(section('Codex')).queryByText(/checked/)).not.toBeInTheDocument();
   });
 
   it('truncates long account labels visually but exposes the full text', () => {

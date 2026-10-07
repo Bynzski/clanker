@@ -234,9 +234,9 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
               <div className="git-worktree-meta">
                 <span className="git-worktree-branch">{branch}</span>
                 <span className="git-worktree-path">{entry.path}</span>
-                {entry.isPrunable && <span className="git-worktree-explanation">Directory is missing. {entry.pruneReason}</span>}
-                {entry.isLocked && <span className="git-worktree-explanation">{entry.lockReason ? `Lock reason: ${entry.lockReason}. ` : ''}Unlock explicitly before removal or pruning; a missing locked checkout cannot be pruned.</span>}
-                {inUse && <span className="git-worktree-explanation">Close this checkout’s terminals and stop its dev servers before cleanup.</span>}
+                {entry.isPrunable && entry.pruneReason && <span className="git-worktree-explanation" title={entry.pruneReason}>Directory missing</span>}
+                {entry.isLocked && <span className="git-worktree-explanation" title={entry.lockReason}>Unlock before cleanup{entry.lockReason ? ` · ${entry.lockReason}` : ''}</span>}
+                {inUse && <span className="git-worktree-explanation">Close terminals and stop dev servers to remove.</span>}
               </div>
               <div className="git-worktree-actions">
                 <span className={`git-worktree-tag${managed ? ' managed' : ''}`}>{tag}</span>
@@ -275,7 +275,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
             <div className="git-worktree-meta">
               <span className="git-worktree-branch">{worktreeBranchLabel(context)}</span>
               <span className="git-worktree-path">{context.path}</span>
-              <span className="git-worktree-explanation">Missing checkout; retained while a terminal or dev server uses it. Forget rechecks Git and live usage; it deletes no files or branches.</span>
+              <span className="git-worktree-explanation">Directory missing · forget when unused</span>
             </div>
             <Button type="button" size="xs" variant="ghost" disabled={working || removingPath !== null} onClick={() => setConfirming({ kind: 'forget', context })}>Forget stale checkout…</Button>
           </div>
@@ -301,9 +301,9 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
         isOpen={confirming !== null}
         title={confirming?.kind === 'prune' ? 'Prune missing worktrees?' : confirming?.kind === 'unlock' ? `Unlock checkout for branch ${confirming.entry.branch ?? 'HEAD'}?` : confirming?.kind === 'forget' ? 'Forget stale checkout?' : confirming ? `Remove checkout for branch ${confirming.entry.branch ?? 'HEAD'}?` : 'Remove checkout?'}
         message={confirming?.kind === 'prune'
-          ? `Git still lists worktrees whose directories are already gone. This cleans up those stale records for every such worktree in this repository. No branch and no existing checkout directory is deleted. Active workspaces, terminals and dev servers block pruning.\n${confirming.entries.map((entry) => `${entry.branch ?? 'HEAD'}: ${entry.path}`).join('\n')}`
+          ? `Remove all missing-worktree records in this repository? No branches or existing directories are deleted. In-use checkouts block pruning.\n${confirming.entries.map((entry) => `${entry.branch ?? 'HEAD'}: ${entry.path}`).join('\n')}`
           : confirming?.kind === 'unlock'
-            ? `Unlock ${confirming.entry.path}? ${confirming.entry.lockReason ? `Lock reason: ${confirming.entry.lockReason}. ` : ''}Locks may be intentional. Nothing is deleted. If the directory is missing, prune its stale metadata after unlocking.`
+            ? `Unlock ${confirming.entry.path}? ${confirming.entry.lockReason ? `Lock reason: ${confirming.entry.lockReason}. ` : ''}Locks may be intentional. Nothing is deleted.`
             : confirming?.kind === 'forget'
               ? `Recheck and forget ${worktreeBranchLabel(confirming.context)} at ${confirming.context.path} only if Git no longer has it and no terminal or dev server uses it. No files or branches are deleted.`
               : confirming

@@ -33,6 +33,27 @@ describe('notifications', () => {
     expect(store().notifications.find((entry) => entry.message === 'left on disk')?.dismissed).toBe(true);
   });
 
+  it('keeps long toasts compact with keyboard-accessible details and full history', async () => {
+    const message = `Checkout could not be removed. ${'Diagnostic detail. '.repeat(20)}`.trim();
+    store().show({ tone: 'warning', message, actions: [{ label: 'Retry', run: vi.fn() }] });
+    render(<><ToastViewport /><NotificationCenter /></>);
+    const text = screen.getByText(message);
+    expect(text).toHaveClass('notification-message--compact');
+    const details = screen.getByRole('button', { name: 'Details' });
+    expect(details).toHaveAttribute('aria-expanded', 'false');
+    expect(details).toHaveAttribute('aria-controls', text.id);
+    fireEvent.click(details);
+    expect(text).not.toHaveClass('notification-message--compact');
+    expect(screen.getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Less' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
+    const history = await screen.findByRole('dialog', { name: 'Notification history' });
+    expect(within(history).getByText(message)).not.toHaveClass('notification-message--compact');
+    expect(within(history).queryByRole('button', { name: 'Details' })).toBeNull();
+    expect(store().notifications[0].message).toBe(message);
+  });
+
   it('expires routine tones while warning/error persist and dismissed messages remain in history', () => {
     vi.useFakeTimers();
     render(<ToastViewport />);

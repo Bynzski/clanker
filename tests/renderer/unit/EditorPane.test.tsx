@@ -9,7 +9,7 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 const editorMockState = vi.hoisted(() => ({
   createdDocs: [] as string[],
   extensions: [] as unknown[][],
-  views: [] as { state: { doc: { toString: () => string } }; dispatch: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; setState: ReturnType<typeof vi.fn>; scrollDOM: { scrollTop: number }; selection: { anchor: number } }[],
+  views: [] as { state: { doc: { toString: () => string } }; dispatch: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; setState: ReturnType<typeof vi.fn>; requestMeasure: ReturnType<typeof vi.fn>; scrollDOM: { scrollTop: number }; selection: { anchor: number } }[],
 }));
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 vi.mock('../../../src/renderer/theme/editorTheme', () => ({ getEditorTheme: (theme: string) => [theme] }));
@@ -50,6 +50,7 @@ vi.mock('@codemirror/view', () => {
     this.dispatch = vi.fn();
     this.destroy = vi.fn();
     this.setState = vi.fn();
+    this.requestMeasure = vi.fn();
     this.scrollDOM = { scrollTop: 72 };
     this.selection = { anchor: 9 };
     editorMockState.views.push(this as unknown as typeof editorMockState.views[number]);
@@ -123,6 +124,78 @@ describe('EditorPane', () => {
       expect(keymapExtension?.keymapBindings?.length ?? 0).toBeGreaterThan(20);
       const keys = (keymapExtension?.keymapBindings as Array<{ key?: string }>).map((binding) => binding.key);
       expect(keys).toEqual(expect.arrayContaining(['Mod-z', 'Mod-y', 'ArrowLeft', 'Backspace']));
+    });
+  });
+
+  describe('Markdown modes', () => {
+    function setupMarkdown(fileName = 'README.md') {
+      const workspace = createWorkspaceFixture({ id: 'md-ws', workspacePath: '/workspace', lifecycle: 'active', editorVisible: true,
+        editorPane: { id: 'editor-md' }, activeEditorTabId: 'md', editorTabs: [{ id: 'md', filePath: `/workspace/${fileName}`, fileName,
+          content: '# Saved', originalContent: '# Saved', isDirty: false, hasExternalChange: false }] });
+      useWorkspaceStore.setState({ workspaces: [workspace], activeWorkspaceId: workspace.id });
+      return workspace;
+    }
+
+    it.each(['README.md', 'notes.markdown', 'Notes.Md', 'NOTES.MARKDOWN'])('offers Edit/Preview for %s, starting in Edit', (name) => {
+      const ws = setupMarkdown(name);
+      render(<EditorPane workspaceId={ws.id} />);
+      expect(screen.getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.queryByRole('region', { name: 'Markdown preview' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      expect(screen.getByRole('heading', { name: 'Saved' })).toBeTruthy();
+      expect(useWorkspaceStore.getState().workspaces[0].editorTabs[0].isDirty).toBe(false);
+    });
+
+    it.each(['notes.txt', 'index.js', 'index.ts', 'notes.mdx'])('does not offer preview for %s', (name) => {
+      const ws = setupMarkdown(name);
+      render(<EditorPane workspaceId={ws.id} />);
+      expect(screen.queryByRole('group', { name: 'Markdown view' })).toBeNull();
+    });
+
+    it('uses the unsaved buffer, preserves CodeMirror across modes and reflects external reloads', () => {
+      const ws = setupMarkdown();
+      render(<EditorPane workspaceId={ws.id} />);
+      const view = editorMockState.views[0];
+      act(() => useWorkspaceStore.getState().updateEditorContent('md', '# Unsaved', ws.id));
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      expect(screen.getByRole('heading', { name: 'Unsaved' })).toBeTruthy();
+      expect(document.querySelector('.editor-content')).toHaveStyle({ display: 'none' });
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      expect(document.querySelector('.editor-content')).not.toHaveStyle({ display: 'none' });
+      expect(view.destroy).not.toHaveBeenCalled();
+      expect(view.setState).not.toHaveBeenCalled();
+      expect(editorMockState.views).toEqual([view]);
+      expect(useWorkspaceStore.getState().workspaces[0].editorTabs[0]).toMatchObject({ content: '# Unsaved', isDirty: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      act(() => useWorkspaceStore.setState({ workspaces: [{ ...ws, editorTabs: [{ ...ws.editorTabs[0], content: '# Reloaded' }] }] }));
+      expect(screen.getByRole('heading', { name: 'Reloaded' })).toBeTruthy();
+    });
+
+    it('remembers each tab mode without exposing controls for non-Markdown tabs', () => {
+      const ws = setupMarkdown();
+      const textTab = { ...ws.editorTabs[0], id: 'text', filePath: '/workspace/a.ts', fileName: 'a.ts', content: 'const a = 1;' };
+      useWorkspaceStore.setState({ workspaces: [{ ...ws, editorTabs: [...ws.editorTabs, textTab] }] });
+      render(<EditorPane workspaceId={ws.id} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      act(() => useWorkspaceStore.getState().setActiveEditorTab('text', ws.id));
+      expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull();
+      expect(screen.queryByRole('region', { name: 'Markdown preview' })).toBeNull();
+      act(() => useWorkspaceStore.getState().setActiveEditorTab('md', ws.id));
+      expect(screen.getByRole('heading', { name: 'Saved' })).toBeTruthy();
+    });
+
+    it('retains preview through theme and warm-workspace switches, without allowing parked interaction', () => {
+      const ws = setupMarkdown();
+      render(<EditorPane workspaceId={ws.id} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      act(() => useThemeStore.setState({ theme: 'light' }));
+      expect(screen.getByRole('heading', { name: 'Saved' })).toBeTruthy();
+      const other = createWorkspaceFixture({ id: 'other', lifecycle: 'active' });
+      act(() => useWorkspaceStore.setState({ activeWorkspaceId: other.id, workspaces: [{ ...ws, lifecycle: 'parked' }, other] }));
+      expect(screen.getByRole('button', { name: 'Preview', hidden: true })).toBeDisabled();
+      act(() => useWorkspaceStore.setState({ activeWorkspaceId: ws.id, workspaces: [ws, { ...other, lifecycle: 'parked' }] }));
+      expect(screen.getByRole('heading', { name: 'Saved' })).toBeTruthy();
+      expect(editorMockState.views).toHaveLength(1);
     });
   });
 
@@ -577,7 +650,7 @@ describe('EditorPane', () => {
 
       const banner = document.querySelector('.editor-reload-banner');
       expect(banner).toBeTruthy();
-      expect(screen.getByText('This file has been modified externally.')).toBeTruthy();
+      expect(screen.getByText('File changed on disk.')).toBeTruthy();
       expect(screen.getByText('Reload')).toBeTruthy();
       expect(screen.getByText('Keep Mine')).toBeTruthy();
     });
@@ -692,7 +765,7 @@ describe('EditorPane', () => {
 
       const banner = document.querySelector('.editor-reload-banner--danger');
       expect(banner).toBeTruthy();
-      expect(screen.getByText('This file has been deleted.')).toBeTruthy();
+      expect(screen.getByText('File deleted.')).toBeTruthy();
       expect(screen.getByText('Close')).toBeTruthy();
       expect(screen.getByText('Save')).toBeTruthy();
     });

@@ -1,0 +1,39 @@
+.markdown-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-lg);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.markdown-preview > * { max-width: 80ch; margin: 0 auto 1em; }
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3,
+.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { line-height: 1.3; margin-top: 1.2em; }
+.markdown-preview h1 { font-size: 1.8em; }
+.markdown-preview h2 { font-size: 1.5em; }
+.markdown-preview h3 { font-size: 1.25em; }
+.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { font-size: 1em; }
+.markdown-preview > :first-child { margin-top: 0; }
+.markdown-preview ul, .markdown-preview ol { padding-left: 2em; }
+.markdown-preview li > p { margin: 0.3em 0; }
+.markdown-preview blockquote {
+  border-left: 3px solid var(--border-default);
+  padding-left: 1em;
+  color: var(--text-secondary);
+}
+.markdown-preview blockquote > :last-child { margin-bottom: 0; }
+.markdown-preview code { font-family: var(--font-mono); background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 0.15em 0.3em; }
+.markdown-preview pre { background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1em; overflow-x: auto; white-space: pre; overflow-wrap: normal; }
+.markdown-preview pre code { padding: 0; background: none; }
+.markdown-preview table { display: block; overflow-x: auto; border-collapse: collapse; }
+.markdown-preview th, .markdown-preview td { padding: 0.4em 0.7em; border: 1px solid var(--border-default); text-align: left; }
+.markdown-preview th { background: var(--surface-header); }
+.markdown-preview a { color: var(--accent-interactive); text-decoration: underline; cursor: pointer; }
+.markdown-preview hr { border: 0; border-top: 1px solid var(--border-default); }
+.markdown-preview .contains-task-list { list-style: none; }
+.markdown-preview input[type="checkbox"] { margin-right: 0.5em; accent-color: var(--accent-interactive); }
+.markdown-image-placeholder { color: var(--text-muted); font-style: italic; }
+.editor-markdown-modes { display: flex; gap: var(--space-xs); cursor: default; }
+.editor-markdown-modes [aria-pressed="true"] { background: var(--surface-control); color: var(--text-primary); }

@@ -109,14 +109,16 @@
 .usage-bar-fill { height: 100%; background: var(--accent-interactive); }
 .usage-bar.low .usage-bar-fill { background: var(--status-warning); }
 
-.usage-reset, .usage-checked { margin-top: 2px; color: var(--text-muted); font-size: var(--font-size-xs); }
-.usage-checked { margin-top: 4px; }
+.usage-reset { margin-top: 2px; color: var(--text-muted); font-size: var(--font-size-xs); }
+.usage-empty-hint { margin: 4px 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
+.usage-status-icon { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; cursor: help; }
+.usage-status-icon:focus-visible { outline: 2px solid var(--accent-interactive); outline-offset: 2px; border-radius: var(--radius-sm); }
+.usage-stale-label { font-size: var(--font-size-xs); }
 
 .usage-note { margin: 0; color: var(--text-secondary); }
 .usage-status-muted { color: var(--text-muted); }
 .usage-status-warning { color: var(--status-warning); }
 .usage-status-error { color: var(--status-error); }
-.usage-measurement + .usage-status, .usage-group + .usage-status { margin-top: 4px; }
 
 .usage-use { cursor: pointer; border: 1px solid var(--border-default); background: transparent; }
 .usage-use:hover { background: var(--surface-control); }

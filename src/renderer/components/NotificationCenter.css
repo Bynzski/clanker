@@ -4,7 +4,7 @@
   top: calc(var(--toolbar-height) + var(--space-sm));
   right: var(--space-md);
   z-index: 900;
-  width: min(520px, calc(100vw - 2 * var(--space-md)));
+  width: min(380px, calc(100vw - 2 * var(--space-md)));
   max-height: 50vh;
   overflow: auto;
   pointer-events: none;
@@ -37,6 +37,8 @@
 .notification-workspace, .notification-time, .notification-overflow, .notification-empty { color: var(--text-secondary); font-size: var(--font-size-sm); }
 .notification-workspace { margin-bottom: var(--space-xs); overflow-wrap: anywhere; }
 .notification-message, .notification-action-error { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notification-message--compact { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.notification-details { margin-top: var(--space-xs); color: var(--text-secondary); }
 .notification-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
 .notification-action-error { margin-top: var(--space-xs); }
 .notification-overflow {
