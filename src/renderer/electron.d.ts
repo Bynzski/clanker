@@ -335,7 +335,7 @@ export interface ElectronAPI {
   // Explorer tree auto-refresh
   onExplorerTreeChanged: (callback: (event: ExplorerTreeChangedEvent) => void) => () => void;
   /** Start watching a workspace tree. Triggers EXPLORER_TREE_CHANGED events on file changes. */
-  explorerStartWatching: (workspaceId: string) => Promise<void>;
+  explorerStartWatching: (workspaceId: string, checkoutContextId?: string) => Promise<void>;
   /** Stop watching the current workspace tree. */
   explorerStopWatching: () => Promise<void>;
 

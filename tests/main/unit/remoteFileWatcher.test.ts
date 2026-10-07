@@ -55,6 +55,35 @@ describe('remote file watcher', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
+  it('polls an independently registered checkout and discards a response after its context is released', async () => {
+    const environment = registry.getWorkspace('remote')!.environment as SshEnvironment;
+    vi.mocked(environment.validateWorkspacePath).mockImplementation(async (dir) => ({ valid: true, resolvedPath: dir }));
+    const context = (await registry.registerCheckoutContext({ workspaceId: 'remote', path: '/ws-worktrees/a', kind: 'worktree' })).checkoutContext!;
+    const scoped = { workspaceId: 'remote', checkoutContextId: context.id, filePaths: ['/ws-worktrees/a/file'], directoryPaths: ['/ws-worktrees/a'] };
+    let resolve!: (value: RemoteFileSnapshot) => void;
+    snapshot.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    expect(watcher.sync(scoped)).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(snapshot).toHaveBeenCalledWith(context.path, scoped, expect.any(AbortSignal));
+    registry.unregisterCheckoutContext(context.id);
+    resolve({ files: [{ path: scoped.filePaths[0], fingerprint: 'old' }], directories: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(changed).not.toHaveBeenCalled();
+    expect(watcher.sync(scoped)).toBe(false);
+    expect(watcher.sync({ ...request, filePaths: scoped.filePaths })).toBe(false);
+  });
+
+  it('asks for Git reconciliation after a scoped SSH failure without declaring files deleted', async () => {
+    const environment = registry.getWorkspace('remote')!.environment as SshEnvironment;
+    vi.mocked(environment.validateWorkspacePath).mockImplementation(async (dir) => ({ valid: true, resolvedPath: dir }));
+    const context = (await registry.registerCheckoutContext({ workspaceId: 'remote', path: '/ws-worktrees/a', kind: 'worktree' })).checkoutContext!;
+    snapshot.mockRejectedValueOnce(new Error('Workspace root missing or SSH disconnected'));
+    watcher.sync({ workspaceId: 'remote', checkoutContextId: context.id, filePaths: [], directoryPaths: [context.path] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(changed).toHaveBeenCalledWith({ workspaceId: 'remote', checkoutContextId: context.id, reconcileCheckout: true, files: [], directoryPaths: [] });
+    expect(registry.getCheckoutContext(context.id)).toEqual(context);
+  });
+
   it('backs off after failures without reporting missing files and detects changes on recovery', async () => {
     watcher.sync(request);
     await vi.advanceTimersByTimeAsync(0);

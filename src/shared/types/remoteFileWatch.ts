@@ -3,6 +3,7 @@ export const REMOTE_WATCH_MAX_DIRECTORIES = 128;
 
 export interface RemoteFileWatchRequest {
   workspaceId: string;
+  checkoutContextId?: string;
   filePaths: string[];
   directoryPaths: string[];
 }
@@ -20,6 +21,9 @@ export interface RemoteFileSnapshot {
 
 export interface RemoteFilesChangedEvent {
   workspaceId: string;
+  checkoutContextId?: string;
+  /** A scoped poll failed; ask Git to re-verify the context, never infer deletion from SSH errors. */
+  reconcileCheckout?: boolean;
   files: Array<{ filePath: string; deleted: boolean; initial: boolean }>;
   directoryPaths: string[];
   /** Existing unchanged files let the renderer retry previously failed clean reloads. */

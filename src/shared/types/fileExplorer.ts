@@ -7,6 +7,7 @@ export interface FileExplorerEntry {
 }
 
 export interface FileListDirectoryRequest {
+  checkoutContextId?: string;
   workspacePath: string;
   workspaceId?: string;
   directoryPath: string;

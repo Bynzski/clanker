@@ -249,6 +249,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
       <div
         ref={panelRef}
         className={`editor-panel${editorVisible ? '' : ' editor-panel--hidden'}`}
+        onFocusCapture={() => {
+          if (activeEditorTabId) useWorkspaceStore.getState().setActiveEditorTab(activeEditorTabId, workspaceId);
+        }}
         data-workspace-interactive={isInteractive ? 'true' : 'false'}
         data-keybinding-context="editor"
       >
@@ -270,6 +273,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
         </div>
 
         <EditorTabBar workspaceId={workspaceId} />
+        {activeTab?.checkoutContextId && !workspace?.checkoutContexts?.some((context) => context.id === activeTab.checkoutContextId && !context.missing) && (
+          <div role="status" className="editor-external-change-banner">This checkout is unavailable. Your buffer is preserved; saving cannot target another checkout.</div>
+        )}
 
         {activeTab?.hasExternalChange && (
           <div className="editor-reload-banner">

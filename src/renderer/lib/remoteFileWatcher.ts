@@ -2,6 +2,8 @@ import { REMOTE_WATCH_MAX_FILES, REMOTE_WATCH_MAX_DIRECTORIES, type RemoteFileWa
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { isEditorOperationPending } from '../store/workspaceStoreHelpers';
 import { handleWorkspaceFileChanged } from './editorFileWatcher';
+import { focusedFileCheckout, pathInFileCheckout } from './fileCheckout';
+import { requestCheckoutReconciliation } from './checkoutReconciliation';
 
 /** Keep the single main-process remote poller aligned with the active workspace. */
 export function startRemoteFileWatcher(): () => void {
@@ -52,11 +54,12 @@ export function startRemoteFileWatcher(): () => void {
     const workspace = state.workspaces.find((entry) => entry.id === state.activeWorkspaceId);
     let request: RemoteFileWatchRequest | null = null;
     if (workspace && (workspace.environmentId ?? 'local') !== 'local') {
-      const filePaths = [...new Set(workspace.editorTabs.map((tab) => tab.filePath))].sort().slice(0, REMOTE_WATCH_MAX_FILES);
+      const root = focusedFileCheckout(workspace);
+      const filePaths = [...new Set(workspace.editorTabs.filter((tab) => tab.checkoutContextId === root.checkoutContextId && pathInFileCheckout(root.workspacePath, tab.filePath)).map((tab) => tab.filePath))].sort().slice(0, REMOTE_WATCH_MAX_FILES);
       const directoryPaths = workspace.explorerVisible
-        ? [...new Set([workspace.workspacePath, ...workspace.explorerExpandedPaths])].slice(0, REMOTE_WATCH_MAX_DIRECTORIES).sort()
+        ? [...new Set([root.workspacePath, ...workspace.explorerExpandedPaths.filter((entry) => pathInFileCheckout(root.workspacePath, entry))])].slice(0, REMOTE_WATCH_MAX_DIRECTORIES).sort()
         : [];
-      if (filePaths.length || directoryPaths.length) request = { workspaceId: workspace.id, filePaths, directoryPaths };
+      if (filePaths.length || directoryPaths.length) request = { workspaceId: workspace.id, ...(root.checkoutContextId ? { checkoutContextId: root.checkoutContextId } : {}), filePaths, directoryPaths };
     }
     const key = JSON.stringify(request);
     if (key === previousKey) return;
@@ -67,7 +70,8 @@ export function startRemoteFileWatcher(): () => void {
     const state = useWorkspaceStore.getState();
     if (state.activeWorkspaceId !== event.workspaceId) return;
     const workspace = state.workspaces.find((entry) => entry.id === event.workspaceId);
-    if (!workspace || (workspace.environmentId ?? 'local') === 'local') return;
+    if (!workspace || (workspace.environmentId ?? 'local') === 'local' || event.checkoutContextId !== focusedFileCheckout(workspace).checkoutContextId) return;
+    if (event.reconcileCheckout) void requestCheckoutReconciliation(workspace.id);
     for (const file of event.files) {
       if (!workspace.editorTabs.some((tab) => tab.filePath === file.filePath)) continue;
       const key = changeKey(workspace.id, file.filePath);

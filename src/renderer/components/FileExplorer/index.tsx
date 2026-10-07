@@ -9,6 +9,8 @@ import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import { dirnamePath, joinPaths, normalizePath } from '../../lib/pathUtils';
 import { pathKey } from '../../../shared/pathKey';
+import { focusedFileCheckout, pathInFileCheckout } from '../../lib/fileCheckout';
+import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import FileTree from './FileTree';
@@ -77,7 +79,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const isSection = variant === 'section';
   const workspace = useScopedWorkspaceSelector((current) => current && ({
     id: current.id,
-    workspacePath: current.workspacePath,
+    ...focusedFileCheckout(current),
     environmentId: current.environmentId,
     gitChanges: current.gitChanges,
     explorerVisible: current.explorerVisible,
@@ -118,18 +120,20 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   })));
   const resolvedWorkspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.workspacePath ?? '';
-  const gitChanges = workspace?.gitChanges ?? [];
+  const checkoutContextId = workspace?.checkoutContextId;
+  const gitChanges = checkoutContextId ? [] : workspace?.gitChanges ?? [];
   const isRemote = workspace?.environmentId != null && workspace.environmentId !== 'local';
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
   const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? EMPTY_ENTRIES;
   const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? EMPTY_PATHS;
   const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? EMPTY_ERRORS;
-  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? EMPTY_PATHS;
+  const explorerExpandedPaths = useMemo(() => (workspace?.explorerExpandedPaths ?? EMPTY_PATHS).filter((entry) => pathInFileCheckout(workspacePath, entry)), [workspace?.explorerExpandedPaths, workspacePath]);
   const showHiddenFiles = workspace?.showHiddenFiles ?? true;
-  const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
+  const explorerSelectedPath = workspace?.explorerSelectedPath && pathInFileCheckout(workspacePath, workspace.explorerSelectedPath) ? workspace.explorerSelectedPath : null;
 
   const normalizedWorkspacePath = workspacePath ? normalizePath(workspacePath) : workspacePath;
+  const rootIdentity = `${checkoutContextId ?? ''}:${normalizedWorkspacePath}`;
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
@@ -139,6 +143,14 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const filterInputRef = useRef<HTMLInputElement>(null);
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
+  const previousRootRef = useRef(rootIdentity);
+
+  useEffect(() => {
+    setContextMenu(null);
+    setDeleteTarget(null);
+    setCreating(null);
+    setRenaming(null);
+  }, [normalizedWorkspacePath, checkoutContextId]);
 
   const handleResizeStart = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -185,11 +197,13 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       const result = await window.electronAPI.fileListDirectory({
         workspacePath: normalizedWorkspacePath,
         workspaceId: requestWorkspaceId,
+        ...(checkoutContextId ? { checkoutContextId } : {}),
         directoryPath: normalizedDirectoryPath,
       });
 
       const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
-      if (liveWorkspace == null) {
+      if (liveWorkspace == null || normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) !== normalizedWorkspacePath
+        || focusedFileCheckout(liveWorkspace).checkoutContextId !== checkoutContextId) {
         return result;
       }
 
@@ -206,6 +220,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       } else {
         setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
         setExplorerDirectoryError(normalizedDirectoryPath, result.error ?? 'Unable to load directory', requestWorkspaceId);
+        if (checkoutContextId) void requestCheckoutReconciliation(requestWorkspaceId);
       }
 
       return result;
@@ -217,7 +232,9 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         error,
       });
 
-      if (useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
+      const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
+      if (liveWorkspace && normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) === normalizedWorkspacePath
+        && focusedFileCheckout(liveWorkspace).checkoutContextId === checkoutContextId) {
         setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
         setExplorerDirectoryError(normalizedDirectoryPath, errorMessage, requestWorkspaceId);
       }
@@ -236,6 +253,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   }, [
     resolvedWorkspaceId,
     normalizedWorkspacePath,
+    checkoutContextId,
     setExplorerDirectoryEntries,
     setExplorerDirectoryError,
     setExplorerDirectoryLoading,
@@ -249,6 +267,12 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       void loadDirectory(dirPath);
     });
   }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
+
+  useEffect(() => {
+    if (previousRootRef.current === rootIdentity) return;
+    previousRootRef.current = rootIdentity;
+    if (explorerVisible) handleRefresh();
+  }, [rootIdentity, explorerVisible, handleRefresh]);
 
   // Keep the immediate SSH focus refresh alongside bounded background polling;
   // never route remote paths into local chokidar.
@@ -273,13 +297,14 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     }
 
     const normalizedDirectoryPath = normalizePath(directoryPath);
+    if (!pathInFileCheckout(normalizedWorkspacePath, normalizedDirectoryPath)) return;
     const currentState = useWorkspaceStore.getState();
     const currentWorkspace = resolvedWorkspaceId ? currentState.getWorkspaceById(resolvedWorkspaceId) : null;
     if (!currentWorkspace?.explorerVisible) {
       return;
     }
 
-    const currentWorkspacePath = currentWorkspace.workspacePath ? normalizePath(currentWorkspace.workspacePath) : null;
+    const currentWorkspacePath = normalizePath(focusedFileCheckout(currentWorkspace).workspacePath);
     const isRootDirectory = currentWorkspacePath === normalizedDirectoryPath;
     const isExpandedDirectory = currentWorkspace.explorerExpandedPaths.includes(normalizedDirectoryPath);
     const hasCachedEntries = Object.prototype.hasOwnProperty.call(
@@ -306,7 +331,8 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         return;
       }
 
-      const latestWorkspacePath = latestWorkspace.workspacePath ? normalizePath(latestWorkspace.workspacePath) : null;
+      const latestWorkspacePath = normalizePath(focusedFileCheckout(latestWorkspace).workspacePath);
+      if (latestWorkspacePath !== normalizedWorkspacePath) return;
       const stillRefreshable = latestWorkspacePath === normalizedDirectoryPath
         || latestWorkspace.explorerExpandedPaths.includes(normalizedDirectoryPath)
         || Object.prototype.hasOwnProperty.call(latestWorkspace.explorerEntriesByPath, normalizedDirectoryPath);
@@ -377,11 +403,15 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         return;
       }
 
+      if (checkoutContextId && pathInFileCheckout(event.directoryPath, normalizedWorkspacePath) && !pathInFileCheckout(normalizedWorkspacePath, event.directoryPath)) {
+        void requestCheckoutReconciliation(resolvedWorkspaceId!);
+        return;
+      }
       scheduleDirectoryRefresh(event.directoryPath);
     });
 
     return dispose;
-  }, [scheduleDirectoryRefresh, resolvedWorkspaceId]);
+  }, [scheduleDirectoryRefresh, resolvedWorkspaceId, checkoutContextId, normalizedWorkspacePath]);
 
   useEffect(() => {
     if (typeof window.electronAPI.onRemoteFilesChanged !== 'function') return;
@@ -458,6 +488,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     const result = await window.electronAPI.fileCreate({
       workspacePath: normalizedWorkspacePath,
       workspaceId: resolvedWorkspaceId ?? undefined,
+      ...(checkoutContextId ? { checkoutContextId } : {}),
       targetPath,
       type: c.type,
     });
@@ -472,12 +503,13 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
 
     setCreating(null);
     void loadDirectory(c.parentPath);
-  }, [creating, normalizedWorkspacePath, resolvedWorkspaceId, loadDirectory]);
+  }, [creating, normalizedWorkspacePath, resolvedWorkspaceId, checkoutContextId, loadDirectory]);
 
   const actionDeps = useMemo<ExplorerActionDeps>(() => ({
     resolvedWorkspaceId,
     environmentId: workspace?.environmentId ?? 'local',
     normalizedWorkspacePath,
+    checkoutContextId,
     explorerEntriesByPath,
     explorerExpandedPaths,
     setExplorerSelectedPath,
@@ -490,6 +522,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     resolvedWorkspaceId,
     normalizedWorkspacePath,
     workspace?.environmentId,
+    checkoutContextId,
     explorerEntriesByPath,
     explorerExpandedPaths,
     setExplorerSelectedPath,
@@ -675,6 +708,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           )}
         </div>
       </div>
+      {workspace?.checkoutLabel && <div className="file-explorer-checkout" title={normalizedWorkspacePath}>Checkout: {workspace.checkoutLabel}</div>}
       <div className="file-explorer-filter">
         <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />
         <Input

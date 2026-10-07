@@ -1,4 +1,5 @@
 export interface FileCreateRequest {
+  checkoutContextId?: string;
   workspacePath: string;
   workspaceId?: string;
   targetPath: string;
@@ -6,12 +7,14 @@ export interface FileCreateRequest {
 }
 
 export interface FileDeleteRequest {
+  checkoutContextId?: string;
   workspacePath: string;
   workspaceId?: string;
   targetPath: string;
 }
 
 export interface FileRenameRequest {
+  checkoutContextId?: string;
   workspacePath: string;
   oldPath: string;
   workspaceId?: string;

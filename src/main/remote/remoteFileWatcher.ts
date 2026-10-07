@@ -1,4 +1,5 @@
 import type { WorkspaceRegistry } from '../workspaceRegistry';
+import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type { RemoteFileWatchRequest, RemoteFileSnapshot, RemoteFilesChangedEvent } from '../../shared/types/remoteFileWatch';
 import { validateSnapshotTargets } from './sshFileSnapshot';
@@ -6,6 +7,8 @@ import { validateSnapshotTargets } from './sshFileSnapshot';
 interface WatchSession {
   request: RemoteFileWatchRequest;
   workspace: RegisteredWorkspace;
+  root: string;
+  context?: CheckoutContext;
 }
 
 interface WatchBaseline {
@@ -38,11 +41,16 @@ export class RemoteFileWatcher {
       return true;
     }
     if (!request || typeof request.workspaceId !== 'string') return false;
-    const workspace = this.deps.getWorkspaceRegistry().getWorkspace(request.workspaceId);
-    if (!workspace || workspace.environment.kind !== 'ssh' || !workspace.environment.capabilities.watchFiles ||
-        !workspace.environment.snapshotFiles || !validateSnapshotTargets(workspace.location.path, request)) return false;
+    const registry = this.deps.getWorkspaceRegistry();
+    const workspace = registry.getWorkspace(request.workspaceId);
+    const context = request.checkoutContextId !== undefined ? registry.resolveCheckoutContext(request.workspaceId, request.checkoutContextId) : undefined;
+    if (request.checkoutContextId !== undefined && (typeof request.checkoutContextId !== 'string' || !request.checkoutContextId || !context || context.missing)) { this.stop(); return false; }
+    const root = context?.path ?? workspace?.location.path;
+    if (!workspace || !root || workspace.environment.kind !== 'ssh' || !workspace.environment.capabilities.watchFiles ||
+        !workspace.environment.snapshotFiles || !validateSnapshotTargets(root, request)) { this.stop(); return false; }
     const normalized: RemoteFileWatchRequest = {
       workspaceId: request.workspaceId,
+      ...(context ? { checkoutContextId: context.id } : {}),
       filePaths: [...new Set(request.filePaths)].sort(),
       directoryPaths: [...new Set(request.directoryPaths)].sort(),
     };
@@ -53,7 +61,7 @@ export class RemoteFileWatcher {
     if (JSON.stringify(this.active?.request) === JSON.stringify(normalized)) return true;
     if (this.active?.request.workspaceId !== request.workspaceId) this.inFlight?.abort();
     this.clearTimer();
-    this.active = { request: normalized, workspace };
+    this.active = { request: normalized, workspace, root, ...(context ? { context } : {}) };
     this.failures = 0;
     if (!this.inFlight) this.schedule(0);
     return true;
@@ -90,7 +98,7 @@ export class RemoteFileWatcher {
   private applySnapshot(session: WatchSession, snapshot: RemoteFileSnapshot): void {
     const { workspaceId } = session.request;
     const baseline = this.baselines.get(workspaceId) ?? { files: new Map(), directories: new Map() };
-    const event: RemoteFilesChangedEvent = { workspaceId, files: [], directoryPaths: [] };
+    const event: RemoteFilesChangedEvent = { workspaceId, ...(session.context ? { checkoutContextId: session.context.id } : {}), files: [], directoryPaths: [] };
     const unchangedFilePaths: string[] = [];
     const unchangedDirectoryPaths: string[] = [];
     for (const file of snapshot.files) {
@@ -117,22 +125,27 @@ export class RemoteFileWatcher {
   private async poll(): Promise<void> {
     const session = this.active;
     if (!session || this.inFlight) return;
-    if (this.deps.getWorkspaceRegistry().getWorkspace(session.request.workspaceId) !== session.workspace) {
+    const validSession = () => this.deps.getWorkspaceRegistry().getWorkspace(session.request.workspaceId) === session.workspace
+      && (!session.context || (this.deps.getWorkspaceRegistry().getCheckoutContext(session.context.id) === session.context && !session.context.missing));
+    if (!validSession()) {
       this.closeWorkspace(session.request.workspaceId);
       return;
     }
     const controller = new AbortController();
     this.inFlight = controller;
     try {
-      const snapshot = await session.workspace.environment.snapshotFiles!(session.workspace.location.path, session.request, controller.signal);
+      const snapshot = await session.workspace.environment.snapshotFiles!(session.root, session.request, controller.signal);
       if (this.active === session && !controller.signal.aborted &&
-          this.deps.getWorkspaceRegistry().getWorkspace(session.request.workspaceId) === session.workspace) {
+          validSession()) {
         this.applySnapshot(session, snapshot);
         this.failures = 0;
       }
     } catch {
       // SSH/permission failures leave the baseline intact; they are not deletions.
-      if (this.active === session && !controller.signal.aborted) this.failures = Math.min(this.failures + 1, 4);
+      if (this.active === session && !controller.signal.aborted) {
+        this.failures = Math.min(this.failures + 1, 4);
+        if (session.context) this.deps.onChanged({ workspaceId: session.request.workspaceId, checkoutContextId: session.context.id, reconcileCheckout: true, files: [], directoryPaths: [] });
+      }
     } finally {
       this.inFlight = null;
       if (this.active) this.schedule(this.active !== session ? 0 : Math.min(this.intervalMs * 2 ** this.failures, 30000));

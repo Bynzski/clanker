@@ -576,8 +576,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(EXPLORER_TREE_CHANGED, handler);
     return () => ipcRenderer.removeListener(EXPLORER_TREE_CHANGED, handler);
   },
-  explorerStartWatching: (workspaceId: string) =>
-    ipcRenderer.invoke(EXPLORER_START_WATCHING, workspaceId),
+  explorerStartWatching: (workspaceId: string, checkoutContextId?: string) =>
+    checkoutContextId === undefined
+      ? ipcRenderer.invoke(EXPLORER_START_WATCHING, workspaceId)
+      : ipcRenderer.invoke(EXPLORER_START_WATCHING, workspaceId, checkoutContextId),
   explorerStopWatching: () =>
     ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
 
