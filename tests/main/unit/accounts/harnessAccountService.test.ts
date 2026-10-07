@@ -169,6 +169,25 @@ describe('selection', () => {
 });
 
 describe('auth flow lifecycle', () => {
+  it('counts starting/browser sign-in work, but not completed or failed flows', async () => {
+    let finish!: () => void;
+    h.capabilities.codex.authenticate.mockImplementationOnce(async (context) => {
+      context.waitingForBrowser();
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return {};
+    });
+    expect(h.service.hasActiveSignIn()).toBe(false);
+    const started = h.service.startAdd('local', 'codex');
+    expect(h.service.hasActiveSignIn()).toBe(true);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(h.service.hasActiveSignIn()).toBe(true);
+    finish(); await settleFlow(h, started.flowId);
+    expect(h.service.hasActiveSignIn()).toBe(false);
+    h.capabilities.codex.authenticate.mockRejectedValueOnce(new Error('failed'));
+    await settleFlow(h, h.service.startAdd('local', 'codex').flowId);
+    expect(h.service.hasActiveSignIn()).toBe(false);
+  });
+
   it('cleans the owned directory and persists nothing when sign-in fails, mapping errors to safe text', async () => {
     h.capabilities.codex.authenticate.mockRejectedValueOnce(new Error('token=sk-SECRET url=https://x/?code=ABC path=/home/me/.codex'));
     const started = h.service.startAdd('local', 'codex');

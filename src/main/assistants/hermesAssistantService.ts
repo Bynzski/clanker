@@ -130,6 +130,9 @@ export class HermesAssistantService {
     };
   }
 
+  /** Shutdown stops only this exact owned child, never an adopted external service. */
+  hasRunningOwnedService(): boolean { return this.childAlive(); }
+
   private publish(): AssistantSnapshot {
     const snapshot = this.get();
     this.deps.onChanged(snapshot);

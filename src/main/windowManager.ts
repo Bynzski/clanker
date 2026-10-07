@@ -5,7 +5,7 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, type Event } from 'electron';
 import * as path from 'path';
 
 import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata, type ThemeId } from '../shared/types/theme';
@@ -28,6 +28,8 @@ export interface CreateMainWindowOptions {
     close: () => void;
   };
   onWindowClosed?: () => void;
+  onWindowClose?: (event: Event) => void;
+  onQuerySessionEnd?: (event: Event) => void;
   onRendererGone?: () => void;
   backgroundColor?: string;
   /** Saved theme, passed to the page so its boot splash paints in the right colours before any script runs. */
@@ -165,6 +167,8 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     onWindowClosed?.();
   };
 
+  if (deps.onWindowClose) mainWindow.on('close', deps.onWindowClose);
+  if (deps.onQuerySessionEnd) mainWindow.on('query-session-end', deps.onQuerySessionEnd);
   mainWindow.on('closed', cleanup);
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     if (process.env.NODE_ENV === 'development') {

@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import { createMainWindow, getIconPath, resolveInitialWindowBackground } from '../../../src/main/windowManager';
 
+import { AppCloseGuard } from '../../../src/main/appCloseGuard';
 import { getThemeMetadata } from '../../../src/shared/types/theme';
 vi.mock('electron', () => ({ app: { get isPackaged() { return false; }, getAppPath: () => process.cwd() }, BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
 
@@ -29,6 +30,40 @@ test('renderer loss stops file/git watchers and releases workspace resources wit
   expect(deps.onRendererGone).toHaveBeenCalledTimes(1);
   expect(deps.onWindowClosed).not.toHaveBeenCalled();
   process.env.NODE_ENV = nodeEnv;
+});
+
+test('native close and session-end use the guard before closed teardown', async () => {
+  const handlers = new Map<string, (event: { preventDefault(): void }) => void>();
+  const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(),
+    on: vi.fn((name: string, handler: (event: { preventDefault(): void }) => void) => handlers.set(name, handler)), once: vi.fn(),
+    webContents: { on: vi.fn(), openDevTools: vi.fn() } };
+  vi.mocked(BrowserWindow).mockImplementation(function () { return window as never; });
+  const confirmClose = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const onWindowClosed = vi.fn();
+  const deps = { preloadPath: '/preload.js', gitService: { stopPolling: vi.fn() }, fileWatcher: { unwatchAll: vi.fn() }, onWindowClosed };
+  const closeWindow = vi.fn(() => {
+    const event = { preventDefault: vi.fn() };
+    handlers.get('close')!(event);
+    if (!event.preventDefault.mock.calls.length) handlers.get('closed')!(event);
+  });
+  const quit = vi.fn();
+  const guard = new AppCloseGuard({ hasRunningWork: () => true, confirmClose, closeWindow, quit,
+    windowCloseQuitsApp: true, onError: vi.fn() });
+  createMainWindow({ ...deps, onWindowClose: (event) => guard.beforeWindowClose(event), onQuerySessionEnd: (event) => guard.beforeSessionEnd(event) });
+  const event = { preventDefault: vi.fn() };
+  handlers.get('close')!(event);
+  await vi.waitFor(() => expect(confirmClose).toHaveBeenCalledOnce());
+  expect(event.preventDefault).toHaveBeenCalledOnce();
+  expect(onWindowClosed).not.toHaveBeenCalled();
+  expect(deps.gitService.stopPolling).not.toHaveBeenCalled();
+  handlers.get('close')!(event);
+  await vi.waitFor(() => expect(onWindowClosed).toHaveBeenCalledOnce());
+  expect(closeWindow).toHaveBeenCalledOnce();
+  expect(deps.gitService.stopPolling).toHaveBeenCalledOnce();
+  // The Windows event is wired to the same admitted quit path.
+  handlers.get('query-session-end')!(event);
+  expect(quit).not.toHaveBeenCalled();
+  expect(confirmClose).toHaveBeenCalledTimes(2);
 });
 
 // ============================================================================

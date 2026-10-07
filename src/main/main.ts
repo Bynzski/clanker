@@ -5,13 +5,17 @@ import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
  * Thin orchestrator: imports → store init → register IPC calls → create window → lifecycle
  */
 
-import { app, BrowserWindow, shell, type Rectangle } from 'electron';
+import { app, BrowserWindow, dialog, shell, type Rectangle } from 'electron';
+import { AppCloseGuard } from './appCloseGuard';
+
+let closeGuard: AppCloseGuard | undefined = undefined;
 
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
 // Global exception handlers for main process
 process.on('uncaughtException', (error) => {
   console.error('[clanker-grid] Uncaught exception:', error);
+  closeGuard?.authorizeQuit();
   // Trigger graceful shutdown: PTY cleanup + window close
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.close();
@@ -227,6 +231,7 @@ const cleanupWorkspaceResources = () => {
 };
 
 const cleanupWindowState = () => {
+  closeGuard?.windowClosed();
   cleanupWorkspaceResources();
   mainWindow = null;
 };
@@ -348,6 +353,34 @@ function prewarmModelCache(): void {
     });
   }
 }
+
+// Read main-owned live resources, never renderer pane/cache/attention state. An
+// external Hermes backend keeps its own conversations alive when sockets close.
+closeGuard = new AppCloseGuard({
+  hasRunningWork: (intent) => terminals.size > 0 || harnessAccountService.hasActiveSignIn()
+    || ((intent === 'quit' || process.platform !== 'darwin') && (assistantService?.hasRunningOwnedService() ?? false)),
+  confirmClose: async (signal) => {
+    const options = {
+      type: 'warning' as const,
+      title: 'Close Clanker?',
+      message: 'Clanker still has running work.',
+      detail: 'Closing will stop running sessions or services and cancel any sign-in in progress.',
+      buttons: ['Keep Clanker Open', 'Close Anyway'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      signal,
+    };
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+    return result.response === 1;
+  },
+  closeWindow: () => mainWindow?.close(),
+  quit: () => app.quit(),
+  windowCloseQuitsApp: process.platform !== 'darwin',
+  onError: (error) => console.warn('[clanker-grid] close confirmation failed:', error),
+});
 
 // App lifecycle
 app.whenReady().then(() => {
@@ -557,6 +590,8 @@ app.whenReady().then(() => {
     backgroundColor: resolveInitialWindowBackground(store),
     theme: resolveInitialTheme(store),
     onWindowClosed: cleanupWindowState,
+    onWindowClose: (event) => closeGuard?.beforeWindowClose(event),
+    onQuerySessionEnd: (event) => closeGuard?.beforeSessionEnd(event),
     onRendererGone: cleanupWorkspaceResources,
   }));
 
@@ -574,6 +609,8 @@ app.whenReady().then(() => {
         backgroundColor: resolveInitialWindowBackground(store),
         theme: resolveInitialTheme(store),
         onWindowClosed: cleanupWindowState,
+        onWindowClose: (event) => closeGuard?.beforeWindowClose(event),
+        onQuerySessionEnd: (event) => closeGuard?.beforeSessionEnd(event),
         onRendererGone: cleanupWorkspaceResources,
       }));
     }
@@ -598,6 +635,7 @@ let quitCleanup: Promise<void> | undefined;
 let quitCleanupComplete = false;
 app.on('before-quit', (event) => {
   if (quitCleanupComplete) return;
+  if (closeGuard && !closeGuard.beforeQuit(event)) return;
   event.preventDefault();
   if (quitCleanup) return;
   const previewsClosed = remotePreviewManager.close();
