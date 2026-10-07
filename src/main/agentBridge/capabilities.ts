@@ -36,6 +36,14 @@ export interface AgentBridgeCallContext {
   readonly signal: AbortSignal;
 }
 
+/** MCP permission hints only; authorization always uses the credential and live state. */
+export interface AgentBridgeToolAnnotations {
+  readonly readOnlyHint?: boolean;
+  readonly destructiveHint?: boolean;
+  readonly idempotentHint?: boolean;
+  readonly openWorldHint?: boolean;
+}
+
 /**
  * One agent-callable Clanker capability, built with `defineCapability`. Adding one means adding an
  * entry to the capability list and nothing in any harness provider.
@@ -43,6 +51,7 @@ export interface AgentBridgeCallContext {
 export interface AgentBridgeCapability {
   readonly name: string;
   readonly description: string;
+  readonly annotations?: AgentBridgeToolAnnotations;
   readonly inputSchema: ToolJsonSchema;
   /**
    * Granted only to launches that can honor it. Absent: every launch. `checkout-rehoming`: launches
@@ -63,6 +72,7 @@ export const MAX_TOOL_TIMEOUT_MS = 60_000;
 export interface AgentBridgeCapabilityDefinition<S extends InputSpec> {
   readonly name: string;
   readonly description: string;
+  readonly annotations?: AgentBridgeToolAnnotations;
   readonly input: S;
   readonly requires?: AgentBridgeRequirement;
   readonly timeoutMs?: number;
@@ -79,6 +89,7 @@ export function defineCapability<const S extends InputSpec>(definition: AgentBri
   return {
     name: definition.name,
     description: definition.description,
+    ...(definition.annotations ? { annotations: { ...definition.annotations } } : {}),
     inputSchema: input.jsonSchema,
     ...(definition.requires ? { requires: definition.requires } : {}),
     ...(definition.timeoutMs !== undefined ? { timeoutMs: definition.timeoutMs } : {}),
@@ -115,6 +126,7 @@ function relativeLaunchDirectory(caller: AgentBridgeCaller): string | null {
  */
 export const clankerContextCapability: AgentBridgeCapability = defineCapability({
   name: 'clanker_context',
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   description: 'Describe the Clanker workspace and checkout this agent was launched in, and which Clanker capabilities are available. Read-only; takes no arguments.',
   input: {},
   run(_input, { caller }) {

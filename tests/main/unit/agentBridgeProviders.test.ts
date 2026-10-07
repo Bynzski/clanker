@@ -51,8 +51,8 @@ describe('provider registry contract', () => {
   });
 
   it('supports exactly the harnesses with a verified launch-scoped, additive MCP mechanism', () => {
-    expect([...AGENT_BRIDGE_HARNESS_IDS].sort()).toEqual(['claude', 'codex', 'opencode']);
-    for (const unsupported of ['pi', 'omp', 'hermes', 'agy']) expect(bridgeOf(unsupported), unsupported).toBeUndefined();
+    expect([...AGENT_BRIDGE_HARNESS_IDS].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    for (const unsupported of ['omp', 'hermes', 'agy']) expect(bridgeOf(unsupported), unsupported).toBeUndefined();
   });
 
   it('attention and the bridge are distinct capabilities', () => {
@@ -259,7 +259,7 @@ describe('agentBridgeLaunchStep', () => {
   beforeEach(() => { service = makeService(); });
   afterEach(async () => { await service.shutdown(); });
 
-  it.each(['pi', 'omp', 'hermes', 'agy'])('an unsupported harness (%s) launches unchanged and never touches the listener or a credential', async (harness) => {
+  it.each(['omp', 'hermes', 'agy'])('an unsupported harness (%s) launches unchanged and never touches the listener or a credential', async (harness) => {
     const prepared = await prepareLaunchAttachments({ args: ['--x'], env: {} }, [agentBridgeLaunchStep({ service, harness, identity: identity(harness) })], () => undefined);
     expect(prepared.attached).toEqual([]);
     expect(prepared.args).toEqual(['--x']);
@@ -338,7 +338,7 @@ describe('agentBridgeLaunchStep', () => {
     fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.mine]\ncommand = "z"\n');
     const before = digestTree(root);
 
-    for (const harness of ['claude', 'codex', 'opencode']) {
+    for (const harness of ['claude', 'codex', 'opencode', 'pi']) {
       const prepared = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: path.join(home, '.codex'), HOME: home } },
         [agentBridgeLaunchStep({ service, harness, identity: identity(harness) })], () => undefined);
       expect(prepared.attached).toEqual(['agent-bridge']);

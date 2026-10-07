@@ -201,7 +201,7 @@ describe('searchable harness default settings', () => {
 });
 
 describe('Clanker bridge setting', () => {
-  it.each(['claude', 'codex', 'opencode'])('offers the opt-in for %s, off by default, and persists the choice', (harness) => {
+  it.each(['claude', 'codex', 'opencode', 'pi'])('offers the opt-in for %s, off by default, and persists the choice', (harness) => {
     const { props } = renderSettings({ harness, options: models });
     const checkbox = screen.getByRole('checkbox', { name: /Clanker bridge for/ });
     expect(checkbox).not.toBeChecked();
@@ -209,7 +209,7 @@ describe('Clanker bridge setting', () => {
     expect(props.handleSetHarnessAgentBridge).toHaveBeenCalledWith(harness, true);
   });
 
-  it.each(['pi', 'omp', 'hermes', 'agy'])('has no bridge row for %s, which cannot attach it', (harness) => {
+  it.each(['omp', 'hermes', 'agy'])('has no bridge row for %s, which cannot attach it', (harness) => {
     renderSettings({ harness, options: models });
     expect(screen.queryByRole('checkbox', { name: /Clanker bridge/ })).not.toBeInTheDocument();
   });

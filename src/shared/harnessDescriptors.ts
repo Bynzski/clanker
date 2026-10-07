@@ -17,7 +17,7 @@ export interface HarnessDescriptor {
 export const HARNESS_DESCRIPTORS = {
   codex: { id: 'codex', name: 'Codex', iconKey: 'codex', legacyIcon: '🧠', aiCommit: { support: 'native' }, usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
   opencode: { id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
-  pi: { id: 'pi', name: 'Pi', iconKey: 'pi', legacyIcon: 'π', aiCommit: { support: 'native' } },
+  pi: { id: 'pi', name: 'Pi', iconKey: 'pi', legacyIcon: 'π', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
   omp: { id: 'omp', name: 'Oh My Pi', iconKey: 'omp', legacyIcon: 'π', aiCommit: { support: 'native' }, usage: { support: 'native' } },
   claude: { id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨', usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
   hermes: { id: 'hermes', name: 'Hermes', iconKey: 'hermes', legacyIcon: '☿', usage: { support: 'native' } },

@@ -161,11 +161,12 @@ describe('ordinary terminal launches', () => {
     expect((service as unknown as { server: { url: string | null } }).server.url).toBeNull();
   });
 
-  it('a harness without the capability launches normally even when the setting is on', async () => {
+  it('Pi with --no-mcp launches normally even when the setting is on', async () => {
     registerTerminal();
+    defaults.pi.flags = '--no-mcp';
     await spawn('pi');
     expect(lastSpawn().env).not.toHaveProperty(AGENT_BRIDGE_TOKEN_ENV);
-    expect(argvText()).not.toMatch(/mcp/i);
+    expect(argvText()).not.toContain('pi-clanker-mcp');
     expect(service.credentials.size).toBe(0);
   });
 
@@ -327,6 +328,29 @@ describe('resumed sessions', () => {
 
     await lastSpawn().onExit();
     expect(service.credentials.resolve(token)).toBeNull();
+  });
+
+  it.each([false, true])('Pi resume/fork (%s) receives the same context-only attachment and exit cleanup', async (fork) => {
+    registerSession();
+    const selected: HarnessSession = { id: 's1', harness: 'pi', title: 't', cwd: WORKSPACE, timestamp: 1 };
+    const validate = vi.spyOn(findHarnessProvider('pi')!.sessions!, 'validateLocal').mockResolvedValue(selected);
+    const args = [fork ? '--fork' : '--session', '/sessions/s1.jsonl'];
+    mockBuildArgs.mockReturnValue({ command: 'pi', args });
+    const result = await handlers.get(SESSION_INVOKE)!({}, 'ws', selected, fork);
+    validate.mockRestore();
+    const { env, spawnArgs } = lastSpawn();
+    const token = env[AGENT_BRIDGE_TOKEN_ENV];
+    const grant = service.credentials.resolve(token)!;
+    expect(grant.identity).toEqual({ terminalId: result.id, workspaceId: 'ws', environmentId: 'local', checkoutContextId: 'ws::main', harnessId: 'pi' });
+    expect(service.listTools(grant).map((tool) => tool.name)).toEqual(['clanker_context']);
+    expect(spawnArgs).toEqual(expect.arrayContaining(args));
+    const argv = spawnArgs as string[];
+    const file = argv[argv.indexOf('--extension') + 1];
+    expect(fs.existsSync(file)).toBe(true);
+    expect(fs.readFileSync(file, 'utf8')).not.toContain(token);
+    await lastSpawn().onExit();
+    expect(service.credentials.resolve(token)).toBeNull();
+    expect(fs.existsSync(file)).toBe(false);
   });
 
   it('a failed spawn on resume revokes the credential', async () => {
@@ -599,11 +623,11 @@ describe('lifecycle grants follow what native attention actually did for THIS la
     } finally { provider.agentBridge = saved; }
   });
 
-  it('Pi (no rehome capability) gets the bridge-less treatment it always had: no lifecycle tools', async () => {
+  it('Pi gets context only, with no rehome or lifecycle tools', async () => {
     arrange();
     defaults.pi = { agentBridgeEnabled: true, attentionEnabled: true };
     await spawn('pi');
-    expect(toolsOfLast()?.filter((name) => lifecycleNames.includes(name)) ?? []).toEqual([]);
+    expect(toolsOfLast()).toEqual(['clanker_context']);
   });
 
   it('OpenCode: a user-owned OPENCODE_CONFIG_DIR also declines attention, and the lifecycle tools are not granted', async () => {

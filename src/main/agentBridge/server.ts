@@ -4,7 +4,7 @@ import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { AgentBridgeCredentials, AgentBridgeGrant } from './credentials';
-import type { AgentBridgeToolResult } from './capabilities';
+import type { AgentBridgeToolAnnotations, AgentBridgeToolResult } from './capabilities';
 import type { ToolJsonSchema } from './input';
 
 export const AGENT_BRIDGE_PATH = '/mcp';
@@ -26,6 +26,7 @@ export const AGENT_BRIDGE_LIMITS = Object.freeze({
 export interface AgentBridgeToolDescriptor {
   readonly name: string;
   readonly description: string;
+  readonly annotations?: AgentBridgeToolAnnotations;
   readonly inputSchema: ToolJsonSchema;
 }
 
@@ -225,7 +226,7 @@ export class AgentBridgeServer {
       { capabilities: { tools: {} }, ...(instructions ? { instructions } : {}) },
     );
     server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: host.listTools(grant).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties }, ...(tool.inputSchema.required ? { required: [...tool.inputSchema.required] } : {}) } })),
+      tools: host.listTools(grant).map((tool) => ({ name: tool.name, description: tool.description, ...(tool.annotations ? { annotations: { ...tool.annotations } } : {}), inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties }, ...(tool.inputSchema.required ? { required: [...tool.inputSchema.required] } : {}) } })),
     }));
     server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const args = request.params.arguments;

@@ -113,7 +113,7 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     if (!this.resolveCaller(grant)) return [];
     return [...this.capabilities.values()]
       .filter((capability) => grant.capabilities.has(capability.name))
-      .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+      .map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, ...(annotations ? { annotations: { ...annotations } } : {}) }));
   }
 
   async callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>, clientSignal?: AbortSignal): Promise<AgentBridgeToolResult> {
