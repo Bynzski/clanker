@@ -139,6 +139,7 @@
   overflow: hidden;
   display: flex;
   min-height: 0;
+  min-width: 0;
 }
 
 .terminal-content .xterm {
@@ -151,16 +152,4 @@
 
 .terminal-content .xterm .xterm-viewport {
   background-color: inherit;
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-.terminal-content .xterm-viewport::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
-}
-
-.terminal-content .xterm-screen {
-  height: 100% !important;
 }

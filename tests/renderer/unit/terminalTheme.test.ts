@@ -24,7 +24,7 @@ function contrast(foreground: string, background: string): number {
 describe('terminal palette contract', () => {
   it.each(THEME_IDS)('provides complete ANSI and interaction colors for %s', (theme) => {
     const palette = getTerminalTheme(theme);
-    for (const role of [...ANSI_ROLES, 'background', 'foreground', 'cursor', 'cursorAccent', 'selectionBackground'] as const) {
+    for (const role of [...ANSI_ROLES, 'background', 'foreground', 'cursor', 'cursorAccent', 'selectionBackground', 'scrollbarSliderBackground', 'scrollbarSliderHoverBackground', 'scrollbarSliderActiveBackground'] as const) {
       expect(palette[role], role).toMatch(/^#[0-9a-f]{6}$/i);
     }
     expect(palette.background).toBe(getThemeMetadata(theme).windowBackground);
@@ -32,6 +32,8 @@ describe('terminal palette contract', () => {
 
   it('preserves the production Dark palette exactly', () => {
     expect(getTerminalTheme('dark')).toEqual({
+      scrollbarSliderBackground: '#3a3a3a', scrollbarSliderHoverBackground: '#9b9b9b',
+      scrollbarSliderActiveBackground: '#9b9b9b',
       background: '#121212', foreground: '#e8e8e8', cursor: '#8b949e',
       cursorAccent: '#121212', selectionBackground: '#2f2f2f',
       black: '#121212', red: '#f85149', green: '#3fb950', yellow: '#d29922',

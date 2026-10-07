@@ -33,6 +33,7 @@ const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockClearSelection = vi.fn();
 const mockFocus = vi.fn();
+const fitAddons: { fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }[] = [];
 
 // Mock xterm modules - use actual class-like functions
 const mockOnDataDispose = vi.fn();
@@ -95,6 +96,7 @@ vi.mock('@xterm/xterm', () => {
 vi.mock('@xterm/addon-fit', () => {
   return {
     FitAddon: class MockFitAddon {
+      constructor() { fitAddons.push(this); }
       fit = vi.fn();
       proposeDimensions = vi.fn().mockReturnValue({ cols: 80, rows: 24 });
     },
@@ -219,6 +221,9 @@ describe('TerminalPane', () => {
     terminalOptions = null;
     terminalConstructionCount = 0;
     constructedTerminals.length = 0;
+    fitAddons.length = 0;
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
     lastTerminalElement = null;
     mockTerminalWrite.mockClear();
     mockHasSelection.mockReturnValue(false);
@@ -237,6 +242,7 @@ describe('TerminalPane', () => {
     clearTerminalCache();
     stopThemeSync();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('terminal themes', () => {
@@ -805,12 +811,13 @@ describe('TerminalPane', () => {
       });
       mockResizeTerminal.mockClear();
 
+      fitAddons[0].proposeDimensions.mockReturnValue({ cols: 70, rows: 20 });
       zoomKey(ctrlEqual);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
 
-      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 70, 20);
     });
 
     describe('registered commands vs. the PTY', () => {
@@ -922,6 +929,7 @@ describe('TerminalPane', () => {
       mockResizeTerminal.mockClear();
       mockWriteTerminal.mockClear();
 
+      fitAddons[0].proposeDimensions.mockReturnValue({ cols: 70, rows: 20 });
       const { handled, preventDefault, stopPropagation } = wheel({ ctrlKey: true, deltaY: -100 });
 
       expect(handled).toBe(false);
@@ -935,7 +943,7 @@ describe('TerminalPane', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
-      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 70, 20);
     });
 
     it('zooms out on Ctrl+wheel down', async () => {
@@ -1142,27 +1150,43 @@ describe('TerminalPane', () => {
   // Resize Handling
   // =========================================================================
   describe('resize handling', () => {
-    it('resizes terminal when resize is triggered', async () => {
+    it('uses changed geometry on window resize without redundant initial resizes', async () => {
       setupStoreWithTerminal('t1', 'p1');
-
       render(<TerminalPane paneId="p1" />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(mockResizeTerminal).toHaveBeenCalledExactlyOnceWith('t1', 80, 24);
+      fitAddons[0].proposeDimensions.mockReturnValue({ cols: 60, rows: 20 });
+      fireEvent(window, new Event('resize'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(mockResizeTerminal.mock.calls).toEqual([['t1', 80, 24], ['t1', 60, 20]]);
+    });
 
-      await act(async () => {
-        await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(100);
-      });
-
-      // Clear previous calls
+    it('fits cached xterm in its new container before ready without recreating or replaying it', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      const view = render(<TerminalPane paneId="p1" />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      view.unmount();
+      fitAddons[0].proposeDimensions.mockReturnValue({ cols: 60, rows: 20 });
       mockResizeTerminal.mockClear();
+      mockTerminalWrite.mockClear();
+      vi.mocked(window.electronAPI.terminalReady).mockClear();
+      render(<TerminalPane paneId="p1" />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(terminalConstructionCount).toBe(1);
+      expect(mockResizeTerminal).toHaveBeenCalledExactlyOnceWith('t1', 60, 20);
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledOnce();
+      expect(mockTerminalWrite).not.toHaveBeenCalled();
+    });
 
-      // Trigger resize timer
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(50);
-      });
-
-      await waitFor(() => {
-        expect(mockResizeTerminal).toHaveBeenCalled();
-      });
+    it('waits for the PTY resize acknowledgement before terminalReady', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      let finish!: () => void;
+      mockResizeTerminal.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+      render(<TerminalPane paneId="p1" />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(window.electronAPI.terminalReady).not.toHaveBeenCalled();
+      await act(async () => { finish(); await Promise.resolve(); });
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledOnce();
     });
   });
 
