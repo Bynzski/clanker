@@ -681,6 +681,15 @@ Intentionally **unsupported** (capability absent):
 - **Hermes** and **Antigravity**: MCP servers live in persisted configuration managed by
   `hermes mcp add` / `agy mcp add`; there is no launch-scoped override.
 
+### Codex shared background server
+
+Codex 0.160.1 selects embedded mode for Clanker's launch-scoped hook, MCP and optional
+`developer_instructions` overrides. Profiles/custom config loaders also select embedded mode;
+forcing `--remote` doesn't forward the hook/MCP configuration. The existing attachment is the
+verified compatibility fallback and its warning remains visible. See
+[the #107 investigation](codex-shared-server-compatibility.md) for supported alternatives,
+release-source evidence, local/SSH behavior and requirements for a future migration.
+
 ### Opt-in
 
 The bridge is **off by default** and does nothing unless the user enables *Clanker bridge (MCP)* for a

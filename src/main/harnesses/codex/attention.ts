@@ -134,6 +134,9 @@ export function codexHooksConflict(configToml: string, hooksJson: string): boole
 export const CODEX_STABLE_HOOK_COMMAND = (name: string, prefix = 'CLANKER_ATTENTION') =>
   `node "$${prefix}_COMMAND" "$${prefix}_INTERPRETER" ${name}`;
 
+/** These launch-owned hooks require embedded mode on Codex 0.160.1. No verified drop-in
+ * shared-server path preserves credential binding; see docs/codex-shared-server-compatibility.md.
+ * Never hide the warning or force --remote (the TUI doesn't forward these hooks). */
 export function codexHookOverrides(command: string, interpreter: string, platform: NodeJS.Platform): string[] {
   return CODEX_HOOK_EVENTS.flatMap((name) => {
     const hookCommand = platform === 'win32'
