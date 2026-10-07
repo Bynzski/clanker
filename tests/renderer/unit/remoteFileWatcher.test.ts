@@ -59,6 +59,23 @@ describe('remote file watcher renderer routing', () => {
     expect(api.remoteFilesWatch).toHaveBeenLastCalledWith(null);
   });
 
+  it('polls only the focused remote checkout and ignores late events from the previous root', () => {
+    const context = { id: 'remote::a', workspaceId: 'remote', environmentId: 'host', path: '/ws-worktrees/a', kind: 'worktree' as const, branch: 'a' };
+    const scoped = { ...remote, checkoutContexts: [context], activeTerminalId: 'a1', terminals: [
+      { id: 'a1', pid: 1, workingDir: context.path, checkoutContextId: context.id },
+      { id: 'a2', pid: 2, workingDir: context.path, checkoutContextId: context.id },
+    ], editorTabs: [...tabs, { ...tabs[0], id: 'isolated', filePath: `${context.path}/clean`, checkoutContextId: context.id, checkoutRoot: context.path }], explorerExpandedPaths: ['/ws/src', `${context.path}/src`] };
+    useWorkspaceStore.setState({ workspaces: [scoped] });
+    stop = startRemoteFileWatcher();
+    expect(api.remoteFilesWatch).toHaveBeenLastCalledWith({ workspaceId: 'remote', checkoutContextId: context.id, filePaths: [`${context.path}/clean`], directoryPaths: [context.path, `${context.path}/src`] });
+    useWorkspaceStore.setState({ workspaces: [{ ...scoped, activeTerminalId: 'a2' }] });
+    expect(api.remoteFilesWatch).toHaveBeenCalledTimes(1);
+    emit({ workspaceId: 'remote', files: [{ filePath: '/ws/clean', deleted: true, initial: false }], directoryPaths: [] });
+    expect(useWorkspaceStore.getState().markEditorTabDeleted).not.toHaveBeenCalled();
+    emit({ workspaceId: 'remote', checkoutContextId: context.id, files: [{ filePath: `${context.path}/clean`, deleted: false, initial: false }], directoryPaths: [] });
+    expect(useWorkspaceStore.getState().reloadEditorTab).toHaveBeenCalledWith('isolated', 'remote', { onlyIfClean: true });
+  });
+
   it('retries a failed clean reload on a later unchanged snapshot', () => {
     useWorkspaceStore.setState({ workspaces: [{ ...remote, editorTabs: tabs.map((tab) => ({ ...tab, hasExternalChange: true })) }] });
     stop = startRemoteFileWatcher();

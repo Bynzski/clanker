@@ -1,54 +1,33 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { focusedFileCheckout } from '../lib/fileCheckout';
 
-/**
- * Nonvisual owner of the local Explorer watcher.
- *
- * Keeps the single main-process watcher aligned with the active workspace.
- * Only an active local workspace is watched; parked workspaces keep cached
- * explorer state and refresh when activated again. SSH workspaces never route
- * through the local watcher (remote polling is owned elsewhere).
- */
+/** Align the single local tree watcher with focus; same-checkout terminal switches are no-ops. */
 export default function ExplorerLifecycleCoordinator() {
   useEffect(() => {
-    const syncExplorerWatcher = async (
-      workspaceId: string | null,
-      state = useWorkspaceStore.getState(),
-    ) => {
-      if (typeof window.electronAPI?.explorerStartWatching !== 'function') {
-        return;
-      }
-
-      const workspace = state.getWorkspaceById(workspaceId);
-      if (!workspace) {
-        if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-          await window.electronAPI.explorerStopWatching();
-        }
-        return;
-      }
-
-      if ((workspace.environmentId ?? 'local') !== 'local') {
-        await window.electronAPI.explorerStopWatching();
-        return;
-      }
-      await window.electronAPI.explorerStartWatching(workspace.id);
+    let previousKey = '';
+    const sync = () => {
+      if (typeof window.electronAPI?.explorerStartWatching !== 'function') return;
+      const state = useWorkspaceStore.getState();
+      const workspace = state.getWorkspaceById(state.activeWorkspaceId);
+      const root = workspace ? focusedFileCheckout(workspace) : null;
+      const local = workspace && (workspace.environmentId ?? 'local') === 'local';
+      const key = JSON.stringify(local ? [workspace.id, root?.workspacePath, root?.checkoutContextId] : null);
+      if (key === previousKey) return;
+      previousKey = key;
+      const request = local
+        ? root?.checkoutContextId
+          ? window.electronAPI.explorerStartWatching(workspace.id, root.checkoutContextId)
+          : window.electronAPI.explorerStartWatching(workspace.id)
+        : window.electronAPI.explorerStopWatching?.();
+      void request?.catch((error) => console.warn('Could not update Explorer watcher:', error));
     };
-
-    void syncExplorerWatcher(useWorkspaceStore.getState().activeWorkspaceId);
-
-    const unsubscribe = useWorkspaceStore.subscribe((state, prevState) => {
-      if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
-        void syncExplorerWatcher(state.activeWorkspaceId, state);
-      }
-    });
-
+    sync();
+    const unsubscribe = useWorkspaceStore.subscribe(sync);
     return () => {
       unsubscribe();
-      if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-        void window.electronAPI.explorerStopWatching();
-      }
+      void window.electronAPI.explorerStopWatching?.();
     };
   }, []);
-
   return null;
 }

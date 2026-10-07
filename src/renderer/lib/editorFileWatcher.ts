@@ -1,14 +1,16 @@
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspaceStore';
 import type { WorkspaceState } from '../store/workspaceStoreTypes';
 import { pathKey } from '../../shared/pathKey';
+import { editorFileCheckout } from './fileCheckout';
 
 interface EditorWatchTarget {
   filePath: string;
   workspaceId: string;
   workspacePath: string;
+  checkoutContextId?: string;
 }
 
-function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTab, 'id' | 'workspacePath' | 'editorTabs' | 'environmentId'>> {
+function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTab, 'id' | 'workspacePath' | 'editorTabs' | 'environmentId' | 'checkoutContexts'>> {
   if (state.workspaces.length > 0) {
     return state.workspaces;
   }
@@ -28,15 +30,15 @@ function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTa
 function getEditorWatchTargets(state: WorkspaceState): EditorWatchTarget[] {
   return getEditorWatchWorkspaces(state)
     .filter((workspace) => (workspace.environmentId ?? 'local') === 'local')
-    .flatMap((workspace) => workspace.editorTabs.map((tab) => ({
+    .flatMap((workspace) => workspace.editorTabs.filter((tab) => !tab.checkoutContextId || workspace.checkoutContexts?.some((context) => context.id === tab.checkoutContextId && !context.missing)).map((tab) => ({
       filePath: tab.filePath,
       workspaceId: workspace.id,
-      workspacePath: workspace.workspacePath,
+      ...editorFileCheckout(workspace, tab),
     })));
 }
 
-function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath'>): string {
-  return `${target.workspaceId}:${pathKey(target.filePath)}`;
+function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath' | 'checkoutContextId'>): string {
+  return `${target.workspaceId}:${target.checkoutContextId ?? ''}:${pathKey(target.filePath)}`;
 }
 
 function buildTargetsByOwner(state: WorkspaceState): Map<string, EditorWatchTarget> {
@@ -106,6 +108,7 @@ export function startEditorFileWatcher(): () => void {
     void window.electronAPI.editorWatchFile({
       workspacePath: target.workspacePath,
       workspaceId: target.workspaceId,
+      ...(target.checkoutContextId ? { checkoutContextId: target.checkoutContextId } : {}),
       filePath: target.filePath,
     });
   };

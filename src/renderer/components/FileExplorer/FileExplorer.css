@@ -30,6 +30,15 @@
   flex-shrink: 0;
 }
 
+.file-explorer-checkout {
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-explorer-title {
   min-width: 0;
 }

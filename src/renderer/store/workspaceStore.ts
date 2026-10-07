@@ -67,6 +67,8 @@ import { restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStora
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
 import { bindTerminalToCheckoutContext, reconcileCheckoutContextList, removeCheckoutContextFromList, upsertCheckoutContextList } from '../lib/checkoutContexts';
+import { fileCheckoutForPath, editorFileCheckout, retiredFileCheckoutState } from '../lib/fileCheckout';
+import { mainCheckoutContextId } from '../../shared/checkoutContext';
 
 export type {
   BrowserPaneState,
@@ -258,7 +260,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       lifecycle: 'active',
     });
     const selected = terminalId && next.terminals.some((terminal) => terminal.id === terminalId)
-      ? { ...next, activeTerminalId: terminalId }
+      ? { ...next, activeTerminalId: terminalId, fileSurfaceContextId: undefined }
       : next;
     const nextWorkspaces = assignWorkspaceLifecycles(
       state.workspaces.map((entry) => entry.id === id ? selected : entry),
@@ -351,7 +353,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return false;
     const next = removeCheckoutContextFromList(workspace, checkoutContextId);
     if (!next) return false;
-    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, ...retiredFileCheckoutState(entry, next), checkoutContexts: next })));
     return true;
   },
 
@@ -360,7 +362,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return;
     const next = reconcileCheckoutContextList(workspace, result);
     if (next === workspace.checkoutContexts) return;
-    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, ...retiredFileCheckoutState(entry, next), checkoutContexts: next })));
   },
 
   setWorkspacePath: (path) => set((state) => syncActiveWorkspace(state, (workspace) => ({
@@ -558,6 +560,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...syncActiveWorkspace(state, (workspace) => ({
         ...workspace,
         activeTerminalId: id,
+        fileSurfaceContextId: undefined,
       })),
     };
 
@@ -1511,7 +1514,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     const scopedWorkspaceId = scopedWorkspace.id;
-    const existingTab = scopedWorkspace.editorTabs.find((tab) => tab.filePath === filePath);
+    const fileCheckout = fileCheckoutForPath(scopedWorkspace, filePath);
+    const existingTab = scopedWorkspace.editorTabs.find((tab) => tab.filePath === filePath && tab.checkoutContextId === fileCheckout.checkoutContextId);
     if (existingTab) {
       useWorkspaceStore.setState((currentState) => ({
         ...patchWorkspaceById(currentState, scopedWorkspaceId, (workspace) => ({
@@ -1531,7 +1535,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     try {
       const readResult = await window.electronAPI.editorReadFile({
-        workspacePath: scopedWorkspace.workspacePath,
+        workspacePath: fileCheckout.workspacePath,
+        ...(fileCheckout.checkoutContextId ? { checkoutContextId: fileCheckout.checkoutContextId } : {}),
         workspaceId: scopedWorkspace.id,
         filePath,
       });
@@ -1544,6 +1549,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const fileName = filePath.split('/').pop() ?? filePath;
       const newTab: EditorTab = {
         id: generateId('editor-tab'),
+        ...(fileCheckout.checkoutContextId ? { checkoutContextId: fileCheckout.checkoutContextId, checkoutRoot: fileCheckout.workspacePath, checkoutLabel: fileCheckout.checkoutLabel } : {}),
         filePath,
         fileName,
         isDirty: false,
@@ -1557,7 +1563,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           return {};
         }
 
-        const latestExistingTab = latestWorkspace.editorTabs.find((tab) => tab.filePath === filePath);
+        if (fileCheckout.checkoutContextId && !latestWorkspace.checkoutContexts?.some((context) => context.id === fileCheckout.checkoutContextId && context.path === fileCheckout.workspacePath && !context.missing)) return {};
+        const latestExistingTab = latestWorkspace.editorTabs.find((tab) => tab.filePath === filePath && tab.checkoutContextId === fileCheckout.checkoutContextId);
         if (latestExistingTab) {
           return {
             ...patchWorkspaceById(currentState, scopedWorkspaceId, (workspace) => ({
@@ -1682,6 +1689,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...patchWorkspaceById(state, scopedWorkspaceId, (workspace) => ({
         ...workspace,
         activeEditorTabId: tabId,
+        fileSurfaceContextId: workspace.editorTabs.find((tab) => tab.id === tabId)?.checkoutContextId ?? mainCheckoutContextId(workspace.id),
       })),
     };
     if (import.meta.env.DEV) {
@@ -1728,7 +1736,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     try {
       const result = await window.electronAPI.editorWriteFile({
-        workspacePath: scopedWorkspace.workspacePath,
+        ...editorFileCheckout(scopedWorkspace, tab),
         workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
         content: contentToSave,
@@ -1742,7 +1750,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       useWorkspaceStore.setState((latestState) => {
         const latestWorkspace = resolveWorkspaceByScope(latestState, scopedWorkspace.id);
         const latestTab = latestWorkspace?.editorTabs.find((t) => t.id === tabId);
-        if (!latestWorkspace || !latestTab || latestTab.content !== contentToSave) {
+        if (!latestWorkspace || !latestTab || latestTab.content !== contentToSave
+          || (tab.checkoutContextId && !latestWorkspace.checkoutContexts?.some((context) => context.id === tab.checkoutContextId && !context.missing))) {
           return {};
         }
 
@@ -1936,7 +1945,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     try {
       const result = await window.electronAPI.editorReadFile({
-        workspacePath: scopedWorkspace.workspacePath,
+        ...editorFileCheckout(scopedWorkspace, tab),
         workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
       });
@@ -1972,6 +1981,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
         const nextTabs = workspace.editorTabs.map((t) => {
           if (t.id !== tabId || t.filePath !== tab.filePath) return t;
+          if (tab.checkoutContextId && !workspace.checkoutContexts?.some((context) => context.id === tab.checkoutContextId && !context.missing)) return t;
           if (options?.onlyIfClean && automaticReload.invalidated) return t;
           if (options?.onlyIfClean && isEditorOperationPending(currentState, tab.filePath, scopedWorkspace.environmentId)) return t;
           if (options?.onlyIfClean && automaticReload.rerun) return { ...t, hasExternalChange: true };

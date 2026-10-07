@@ -6,6 +6,8 @@
  */
 
 import type { EditorTab } from '../../store/workspaceTypes';
+import { useWorkspaceStore } from '../../store/workspaceStore';
+import { launchTerminalInCheckoutContext } from '../../lib/checkoutContextLaunch';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import type { FileOperationResult } from '../../../shared/types/fileOperations';
 import type { ContextAction } from './ContextMenu';
@@ -32,6 +34,7 @@ function filterPathsOutsideBase(basePath: string, paths: string[]): string[] {
 export interface ExplorerActionDeps {
   resolvedWorkspaceId: string | null;
   environmentId?: string;
+  checkoutContextId?: string;
   normalizedWorkspacePath: string;
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerExpandedPaths: string[];
@@ -97,6 +100,13 @@ async function handleOpenTerminal(
   const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
 
   try {
+    if (deps.checkoutContextId) {
+      const workspace = deps.resolvedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(deps.resolvedWorkspaceId) : null;
+      const context = workspace?.checkoutContexts?.find((entry) => entry.id === deps.checkoutContextId && !entry.missing);
+      if (!workspace || !context) throw new Error('Checkout is no longer registered');
+      await launchTerminalInCheckoutContext(workspace, context, { workingDir: targetDir });
+      return;
+    }
     if (deps.environmentId !== 'local' && !deps.resolvedWorkspaceId) {
       throw new Error('Remote terminal requires a registered workspace');
     }
@@ -122,10 +132,10 @@ async function handleCopyPath(entry: FileExplorerEntry): Promise<void> {
 
 async function handleCopyRelativePath(
   entry: FileExplorerEntry,
-  deps: Pick<ExplorerActionDeps, 'resolvedWorkspaceId' | 'normalizedWorkspacePath'>,
+  deps: Pick<ExplorerActionDeps, 'resolvedWorkspaceId' | 'normalizedWorkspacePath' | 'checkoutContextId'>,
   getWorkspacePath: (workspaceId: string) => string | undefined,
 ): Promise<void> {
-  const root = deps.resolvedWorkspaceId
+  const root = deps.resolvedWorkspaceId && !deps.checkoutContextId
     ? getWorkspacePath(deps.resolvedWorkspaceId) ?? deps.normalizedWorkspacePath
     : deps.normalizedWorkspacePath;
 
@@ -308,8 +318,8 @@ async function releaseEditorWatchForPath(workspacePath: string, filePath: string
   await window.electronAPI.editorUnwatchFile({ workspacePath, filePath });
 }
 
-async function rewatchEditorPath(workspacePath: string, filePath: string): Promise<void> {
-  await window.electronAPI.editorWatchFile({ workspacePath, filePath });
+async function rewatchEditorPath(workspacePath: string, filePath: string, deps: ExplorerActionDeps): Promise<void> {
+  await window.electronAPI.editorWatchFile({ workspacePath, filePath, ...(deps.checkoutContextId ? { checkoutContextId: deps.checkoutContextId, workspaceId: deps.resolvedWorkspaceId ?? undefined } : {}) });
 }
 
 function getFileInUseMessage(result: FileOperationResult): string {
@@ -343,10 +353,11 @@ export async function executeDelete(
     workspacePath: normalizedWorkspacePath,
     workspaceId: deps.resolvedWorkspaceId ?? undefined,
     targetPath: entry.path,
+    ...(deps.checkoutContextId ? { checkoutContextId: deps.checkoutContextId } : {}),
   });
 
   if (!result.success) {
-    await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath)));
+    await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath, deps)));
     const message = getFileInUseMessage(result);
     console.error('Failed to delete entry:', message);
     window.alert(message);
@@ -394,10 +405,11 @@ export async function executeRename(
     workspaceId: deps.resolvedWorkspaceId ?? undefined,
     oldPath,
     newPath,
+    ...(deps.checkoutContextId ? { checkoutContextId: deps.checkoutContextId } : {}),
   });
 
   if (!result.success) {
-    void rewatchEditorPath(normalizedWorkspacePath, oldPath);
+    void rewatchEditorPath(normalizedWorkspacePath, oldPath, deps);
     const message = getFileInUseMessage(result);
     console.error('Failed to rename entry:', message);
     window.alert(message);

@@ -108,7 +108,7 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
               role="tab"
               aria-selected={isActive}
               onClick={() => handleTabClick(tab.id)}
-              title={tab.filePath}
+              title={tab.checkoutLabel ? `${tab.checkoutLabel}\n${tab.filePath}` : tab.filePath}
               aria-disabled={!isInteractive}
               onKeyDown={(event) => {
                 if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -120,7 +120,7 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
               {tab.isDirty && (
                 <span className="editor-tab-dirty" aria-label="Unsaved changes" />
               )}
-              <span className="editor-tab-name">{tab.fileName}</span>
+              <span className="editor-tab-name">{tab.fileName}{tab.checkoutLabel ? ` · ${tab.checkoutLabel}` : ''}</span>
               <IconButton variant="ghost"
                 className="editor-tab-close"
                 onClick={(e) => handleCloseClick(tab.id, e)}

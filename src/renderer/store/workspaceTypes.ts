@@ -58,6 +58,9 @@ export interface ExplorerPaneState {
 
 export interface EditorTab {
   id: string;
+  checkoutContextId?: string;
+  checkoutRoot?: string;
+  checkoutLabel?: string;
   filePath: string;
   fileName: string;
   isDirty: boolean;
@@ -141,6 +144,8 @@ export interface WorkspaceTab {
    * sanitized). `workspacePath` is still the registered root, equal to the main context's path.
    */
   checkoutContexts?: CheckoutContext[];
+  /** Explicit editor-surface focus; terminal focus clears it. Runtime/descriptive only. */
+  fileSurfaceContextId?: string;
   /** Transitional: linked worktrees are still presented as workspaces (see checkoutContexts). */
   isLinkedWorktree?: boolean;
   projectName?: string;
