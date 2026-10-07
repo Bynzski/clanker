@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { resolveHarnessSpawn } from '../../harnessLaunch';
 import { prependUserCliBinsToPath } from '../../platformShell';
+import { HarnessCapabilityError } from '../types';
 import { sessionMatchesWorkspace } from '../sessionFiles';
 
 function runCommandOutput(command: string, args: string[], cwd?: string): Promise<string> {
@@ -63,7 +64,7 @@ export async function discoverOpenCodeSessions(workspacePath: string): Promise<H
     // `opencode session list` lists the sessions of the project that contains its working directory, not
     // of every project (measured with 1.18.34: from an unrelated directory it prints an empty list), so it
     // must run inside the workspace being asked about. Worktrees of one repository share a project.
-    const output = await runCommandOutput('opencode', ['session', 'list', '--format', 'json'], openCodeListingDirectory(workspacePath));
+    const output = await runCommandOutput('opencode', ['session', 'list', '--format', 'json', '--max-count', '4097'], openCodeListingDirectory(workspacePath));
     const trimmed = output.trim();
     if (!trimmed) return [];
 
@@ -85,16 +86,18 @@ export async function discoverOpenCodeSessions(workspacePath: string): Promise<H
       }
     }
 
+    if (rawSessions.length > 4096) throw new HarnessCapabilityError('output-limit', 'OpenCode session listing exceeds 4096 rows');
     const sessions: HarnessSession[] = [];
     for (const raw of rawSessions) {
-      if (!raw.id || !raw.directory) continue;
+      if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !raw.id.trim()
+        || typeof raw.directory !== 'string' || !raw.directory) continue;
       if (workspacePath && !sessionMatchesWorkspace(workspacePath, raw.directory)) continue;
       sessions.push({
         id: raw.id,
         harness: 'opencode',
-        title: raw.title ?? 'OpenCode session',
+        title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'OpenCode session',
         cwd: raw.directory,
-        timestamp: typeof raw.updated === 'number' ? raw.updated : Date.now(),
+        timestamp: Number.isFinite(raw.updated) ? raw.updated! : Number.isFinite(raw.created) ? raw.created! : 0,
       });
     }
     return sessions;

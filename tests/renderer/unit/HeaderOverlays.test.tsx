@@ -76,6 +76,18 @@ const renderHeader = () => render(<Header />);
       expect(screen.queryByText('Dismissed request')).not.toBeInTheDocument();
     });
 
+    it('shows provider warnings without hiding successful conversations', async () => {
+      vi.mocked(window.electronAPI.discoverSessionHistory).mockResolvedValue({
+        sessions: [{ id: 'good', harness: 'codex', title: 'Usable conversation', cwd: '/workspace', timestamp: 1 }],
+        issues: [{ harness: 'pi', message: 'Pi history could not be read.' }],
+      });
+      const user = userEvent.setup(); renderHeader();
+      await user.click(screen.getByRole('button', { name: 'Chat history' }));
+      expect(await screen.findByText('Pi history could not be read.')).toBeVisible();
+      await user.click(screen.getByRole('button', { name: /Codex.*1/ }));
+      expect(screen.getByText('Usable conversation')).toBeVisible();
+    });
+
     it('keeps discovery errors visible in Chat History', async () => {
       const user = userEvent.setup();
       vi.mocked(window.electronAPI.discoverSessions).mockRejectedValue(new Error('Host unavailable'));

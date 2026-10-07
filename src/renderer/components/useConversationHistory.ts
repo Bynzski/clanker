@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HarnessSession } from '../../shared/types/session';
+import type { SessionDiscoveryResult, HarnessSession } from '../../shared/types/session';
 import { scheduleIdleWarmup } from '../lib/idleWarmup';
 
 const MAX_CACHED_WORKSPACES = 8;
@@ -20,9 +20,9 @@ export interface UseConversationHistoryResult {
  * so a late answer never lands in another workspace's list or a dismissed panel.
  */
 export function useConversationHistory(workspaceId: string | null, { warmup = true }: { warmup?: boolean } = {}): UseConversationHistoryResult {
-  const cache = useRef(new Map<string, HarnessSession[]>());
+  const cache = useRef(new Map<string, SessionDiscoveryResult>());
   // Bounded so closed workspaces cannot grow it forever; the oldest entry goes first.
-  const remember = useCallback((id: string, found: HarnessSession[]) => {
+  const remember = useCallback((id: string, found: SessionDiscoveryResult) => {
     cache.current.delete(id);
     cache.current.set(id, found);
     while (cache.current.size > MAX_CACHED_WORKSPACES) {
@@ -48,34 +48,42 @@ export function useConversationHistory(workspaceId: string | null, { warmup = tr
     visibleRequest.current++;
   }, [workspaceId]);
 
+  useEffect(() => () => { visibleRequest.current++; }, []);
+
   // Background warm-up: once per workspace, only when nothing is remembered yet, and only after a delay
   // and an idle moment (see scheduleIdleWarmup; best-effort, not a startup-finished signal). Failures stay quiet; opening retries and shows them.
   useEffect(() => {
     if (!warmup || !workspaceId || cache.current.has(workspaceId)) return;
-    return scheduleIdleWarmup(() => {
+    let cancelled = false;
+    const cancelWarmup = scheduleIdleWarmup(() => {
+      const request = visibleRequest.current;
       if (cache.current.has(workspaceId)) return;
-      window.electronAPI.discoverSessions(workspaceId).then((found) => {
-        if (!cache.current.has(workspaceId)) remember(workspaceId, found);
+      window.electronAPI.discoverSessionHistory(workspaceId).then((found) => {
+        if (!cancelled && workspaceRef.current === workspaceId && visibleRequest.current === request
+          && !cache.current.has(workspaceId)) remember(workspaceId, found);
       }, () => undefined);
     });
+    return () => { cancelled = true; cancelWarmup(); };
   }, [warmup, workspaceId, remember]);
 
   const setOpen = useCallback((open: boolean) => {
     const request = ++visibleRequest.current;
-    if (!open) return;
+    if (!open) { setIsLoading(false); return; }
     const id = workspaceRef.current;
     const remembered = id ? cache.current.get(id) : undefined;
     if (id && remembered) remember(id, remembered); // reopening keeps it among the most recent
-    setSessions(remembered ?? []);
+    setSessions(remembered?.sessions ?? []);
     setIsLoading(!remembered);
-    setError('');
+    setError(remembered?.issues.map((issue) => issue.message).join(' ') ?? '');
     if (!id) {
       setIsLoading(false);
       return;
     }
-    window.electronAPI.discoverSessions(id).then((found) => {
+    window.electronAPI.discoverSessionHistory(id, true).then((found) => {
+      if (visibleRequest.current !== request || workspaceRef.current !== id) return;
       remember(id, found);
-      if (visibleRequest.current === request) setSessions(found);
+      setSessions(found.sessions);
+      setError(found.issues.map((issue) => issue.message).join(' '));
     }, (err: unknown) => {
       console.error('Failed to discover sessions:', err);
       if (visibleRequest.current === request) setError(err instanceof Error ? err.message : 'Could not discover sessions');

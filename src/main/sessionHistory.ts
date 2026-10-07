@@ -19,12 +19,16 @@ interface SessionCacheEntry {
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
+const activeScans = new Map<string, object>();
+let cacheGeneration = 0;
 const CACHE_KEY_SEPARATOR = '\u0000';
 export function clearSessionCache(): void {
+  cacheGeneration++;
   sessionCache.clear();
 }
 
 export function clearSessionCacheForWorkspace(workspacePath?: string): void {
+  cacheGeneration++;
   if (!workspacePath) {
     sessionCache.clear();
     return;
@@ -98,52 +102,62 @@ export async function discoverSessionsDetailed(
     return cached.discovery;
   }
 
-  const providers = getHarnessProviders().filter((provider) => provider.sessions?.discover)
-    .sort((a, b) => (a.sessions?.discoveryOrder ?? Infinity) - (b.sessions?.discoveryOrder ?? Infinity));
-  const harnesses = providers.map((provider) => provider.descriptor.id);
-  const [results, managedResults] = await Promise.all([
-    Promise.allSettled(providers.map((provider) => provider.sessions!.discover(normalizedPath))),
-    Promise.allSettled((managed?.targets ?? []).map((target) => target.discover(normalizedPath))),
-  ]);
+  // A failed refresh must not leave an older successful entry looking current.
+  if (options?.forceRefresh) sessionCache.delete(cacheKey);
+  const generation = cacheGeneration;
+  const token = {};
+  activeScans.set(cacheKey, token);
+  try {
+    const providers = getHarnessProviders().filter((provider) => provider.sessions?.discover)
+      .sort((a, b) => (a.sessions?.discoveryOrder ?? Infinity) - (b.sessions?.discoveryOrder ?? Infinity));
+    const harnesses = providers.map((provider) => provider.descriptor.id);
+    const [results, managedResults] = await Promise.all([
+      Promise.allSettled(providers.map((provider) => Promise.resolve().then(() => provider.sessions!.discover(normalizedPath)))),
+      Promise.allSettled((managed?.targets ?? []).map((target) => Promise.resolve().then(() => target.discover(normalizedPath)))),
+    ]);
 
-  const sessions: HarnessSession[] = [];
-  const harnessStatus = {} as DetailedSessionDiscovery['harnessStatus'];
-  for (const [index, result] of results.entries()) {
-    const harness = harnesses[index];
-    if (result.status === 'fulfilled') {
-      sessions.push(...result.value);
-      harnessStatus[harness] = { status: 'success' };
-    } else {
-      harnessStatus[harness] = { status: 'error', error: result.reason instanceof Error ? result.reason.message : String(result.reason), failure: classifyHarnessFailure(result.reason) };
+    const sessions: HarnessSession[] = [];
+    const harnessStatus = {} as DetailedSessionDiscovery['harnessStatus'];
+    for (const [index, result] of results.entries()) {
+      const harness = harnesses[index];
+      if (result.status === 'fulfilled') {
+        sessions.push(...result.value);
+        harnessStatus[harness] = { status: 'success' };
+      } else {
+        harnessStatus[harness] = { status: 'error', error: result.reason instanceof Error ? result.reason.message : String(result.reason), failure: classifyHarnessFailure(result.reason) };
+      }
     }
-  }
 
-  // Each managed account runs the provider's own parser against its own root. A failing account
-  // marks only its harness, never hides the others, and keeps a partial scan out of the cache.
-  for (const [index, result] of managedResults.entries()) {
-    const target = managed!.targets[index];
-    if (result.status === 'fulfilled') {
-      sessions.push(...result.value.map((session) => ({ ...session, accountId: target.accountId })));
-    } else if (harnessStatus[target.harness]?.status !== 'error') {
-      harnessStatus[target.harness] = { status: 'error', error: 'A managed account\'s session history could not be read', failure: classifyHarnessFailure(result.reason) };
+    // Each managed account runs the provider's own parser against its own root. A failing account
+    // marks only its harness, never hides the others, and keeps a partial scan out of the cache.
+    for (const [index, result] of managedResults.entries()) {
+      const target = managed!.targets[index];
+      if (result.status === 'fulfilled') {
+        sessions.push(...result.value.map((session) => ({ ...session, accountId: target.accountId })));
+      } else if (harnessStatus[target.harness]?.status !== 'error') {
+        harnessStatus[target.harness] = { status: 'error', error: 'A managed account\'s session history could not be read', failure: classifyHarnessFailure(result.reason) };
+      }
     }
+
+    sessions.sort((a, b) => b.timestamp - a.timestamp);
+
+    const posixSessions = sessions.map((session) => ({
+      ...session,
+      cwd: toPosixPath(session.cwd),
+      ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}),
+    }));
+
+    const discovery = { sessions: posixSessions, harnessStatus };
+    // A partial scan can still populate history, but it must not turn into a cached empty scan.
+    if (cacheGeneration === generation && activeScans.get(cacheKey) === token
+      && Object.values(harnessStatus).every((status) => status?.status === 'success')) {
+      sessionCache.set(cacheKey, { discovery, cachedAt: Date.now() });
+      pruneSessionCache(Date.now());
+    }
+    return discovery;
+  } finally {
+    if (activeScans.get(cacheKey) === token) activeScans.delete(cacheKey);
   }
-
-  sessions.sort((a, b) => b.timestamp - a.timestamp);
-
-  const posixSessions = sessions.map((session) => ({
-    ...session,
-    cwd: toPosixPath(session.cwd),
-    ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}),
-  }));
-
-  const discovery = { sessions: posixSessions, harnessStatus };
-  // A partial scan can still populate history, but it must not turn into a cached empty scan.
-  if (Object.values(harnessStatus).every((status) => status?.status === 'success')) {
-    sessionCache.set(cacheKey, { discovery, cachedAt: Date.now() });
-    pruneSessionCache(Date.now());
-  }
-  return discovery;
 }
 
 /**

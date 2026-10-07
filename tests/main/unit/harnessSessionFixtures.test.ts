@@ -7,8 +7,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { encodeClaudeProjectDir } from '../../../src/main/harnesses/claude/sessions';
 import { discoverAgySessions } from '../../../src/main/harnesses/agy/sessions';
+import { discoverSessionsDetailed, buildSessionLaunch, clearSessionCache } from '../../../src/main/sessionHistory';
+import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
+import { SESSION_DISCOVER } from '../../../src/shared/ipcChannels';
+import type { SessionDiscoveryResult } from '../../../src/shared/types/session';
 import { classifyHarnessFailure } from '../../../src/main/harnesses/types';
 
+const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+vi.mock('electron', () => ({ ipcMain: { handle: (name: string, handler: (...args: unknown[]) => unknown) => handlers.set(name, handler) }, BrowserWindow: vi.fn() }));
 const state = vi.hoisted(() => ({ home: '', output: '[]', calls: [] as string[][] }));
 vi.mock('os', async (importOriginal) => ({ ...(await importOriginal<typeof import('os')>()), homedir: () => state.home }));
 vi.mock('child_process', () => ({ execFile: (_command: string, args: string[], _options: unknown, callback: (error: null, output: string, stderr: string) => void) => {
@@ -20,7 +26,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-session-provider-'));
   state.home = path.join(root, 'home'); workspace = path.join(root, 'workspace');
   fs.mkdirSync(state.home); fs.mkdirSync(workspace);
-  state.output = '[]'; state.calls = [];
+  state.output = '[]'; state.calls = []; clearSessionCache(); handlers.clear();
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 function fixture(id: string, relative: string) {
@@ -33,6 +39,43 @@ function fixture(id: string, relative: string) {
 }
 
 describe('local provider session fixtures', () => {
+  it('all six realistic providers survive aggregation and detailed IPC with native launch identities', async () => {
+    fixture('codex', '.codex/sessions/rollout-11111111-1111-1111-1111-111111111111.jsonl');
+    fixture('claude', `.claude/projects/${encodeClaudeProjectDir(workspace)}/claude-fixture.jsonl`);
+    fixture('pi', '.pi/agent/sessions/project/pi.jsonl');
+    fixture('omp', '.omp/agent/sessions/project/omp.jsonl');
+    state.output = JSON.stringify([{ id: 'native-cli-session', title: 'Native CLI', directory: workspace, updated: 1000 }]);
+    const dbPath = path.join(state.home, '.gemini', 'antigravity-cli', 'conversation_summaries.db');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const db = new DatabaseSync(dbPath);
+    db.exec('CREATE TABLE conversation_summaries (conversation_id, title, preview, last_modified_time, last_user_input_time, workspace_uris)');
+    db.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?)').run(
+      '22222222-2222-2222-2222-222222222222', 'SQLite conversation', '', '2026-09-27T10:00:00Z', '', JSON.stringify([pathToFileURL(workspace).href]));
+    db.close();
+    const registered = { workspaceId: 'fixture', location: { environmentId: 'local', path: workspace } };
+    registerSessionIpc({
+      getTerminals: () => new Map(), getMainWindow: () => null, getSafeWorkspacePath: (value) => value,
+      getIsShuttingDown: () => false, getStore: () => ({}) as never,
+      getHarnessOptions: () => Object.fromEntries(['codex', 'claude', 'pi', 'omp', 'opencode', 'agy'].map((id) => [id, { name: id, command: id, args: [], icon: '' }])),
+      getWorkspaceRegistry: () => ({ getWorkspace: () => registered, getCheckoutContextsForWorkspace: () => [] }) as never,
+    });
+    const result = await handlers.get(SESSION_DISCOVER)!({}, 'fixture', { detailed: true, forceRefresh: true }) as SessionDiscoveryResult;
+    expect(result.issues).toEqual([]);
+    expect(result.sessions.map((entry) => entry.harness).sort()).toEqual(['agy', 'claude', 'codex', 'omp', 'opencode', 'pi']);
+    expect(result.sessions.map((entry) => entry.timestamp)).toEqual([...result.sessions.map((entry) => entry.timestamp)].sort((a, b) => b - a));
+    for (const entry of result.sessions) {
+      expect(buildSessionLaunch(entry).args).toContain(entry.filePath ?? entry.id);
+    }
+    state.output = 'broken JSON';
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const partial = await handlers.get(SESSION_DISCOVER)!({}, 'fixture', { detailed: true, forceRefresh: true }) as SessionDiscoveryResult;
+    expect(partial.sessions).toHaveLength(5);
+    expect(partial.issues).toEqual([{ harness: 'opencode', message: 'OpenCode: its session history could not be read.' }]);
+    // The provider-level status remains available to main diagnostics.
+    expect((await discoverSessionsDetailed(workspace, { forceRefresh: true })).harnessStatus.opencode?.status).toBe('error');
+    log.mockRestore();
+  });
+
   it('reads Codex JSONL without an index and preserves its user-message fallback', async () => {
     fixture('codex', '.codex/sessions/rollout-11111111-1111-1111-1111-111111111111.jsonl');
     expect(await getHarnessProvider('codex').sessions.discover(workspace)).toEqual([
@@ -66,7 +109,20 @@ describe('local provider session fixtures', () => {
     state.output = format === 'json' ? JSON.stringify([entry]) : `${JSON.stringify(entry)}\n${JSON.stringify({ ...entry, id: 'second' })}`;
     const result = await getHarnessProvider('opencode').sessions.discover(workspace);
     expect(result[0]).toMatchObject({ id: entry.id, title: entry.title, cwd: workspace, timestamp: 1000 });
-    expect(state.calls[0].slice(-4)).toEqual(['session', 'list', '--format', 'json']);
+    expect(state.calls[0].slice(-6)).toEqual(['session', 'list', '--format', 'json', '--max-count', '4097']);
+  });
+  it('skips malformed OpenCode rows without hiding valid sessions or inventing a recent timestamp', async () => {
+    state.output = JSON.stringify([null, 3, { id: 123, directory: workspace },
+      { id: 'good', directory: workspace, title: '', created: 7 },
+      { id: 'untimed', directory: workspace, title: {} }]);
+    expect(await getHarnessProvider('opencode').sessions.discover(workspace)).toEqual([
+      expect.objectContaining({ id: 'good', title: 'OpenCode session', timestamp: 7 }),
+      expect.objectContaining({ id: 'untimed', title: 'OpenCode session', timestamp: 0 }),
+    ]);
+  });
+  it('rejects an oversized OpenCode listing instead of silently returning a truncated history', async () => {
+    state.output = JSON.stringify(Array.from({ length: 4097 }, (_, i) => ({ id: `session-${i}`, directory: workspace })));
+    await expect(getHarnessProvider('opencode').sessions.discover(workspace)).rejects.toMatchObject({ kind: 'output-limit' });
   });
   it('reads Agy SQLite without modification, tolerates extra columns, and retains workspace/title fallbacks', async () => {
     const database = path.join(root, 'agy.db');

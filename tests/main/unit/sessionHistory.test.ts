@@ -728,7 +728,7 @@ describe('discoverSessions — opencode', () => {
     expect(mockExecFile).toHaveBeenCalledTimes(1);
     const [cmd, args] = mockExecFile.mock.calls[0] as [string, string[]];
     expect(cmd).toBe('cmd.exe');
-    expect(args).toEqual(['/c', 'opencode', 'session', 'list', '--format', 'json']);
+    expect(args).toEqual(['/c', 'opencode', 'session', 'list', '--format', 'json', '--max-count', '4097']);
   });
 });
 
