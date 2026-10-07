@@ -22,6 +22,9 @@ export function codexDeveloperInstructionsConflict(args: readonly string[], conf
 /**
  * Codex: `-c mcp_servers.<name>.*` overrides. Overrides are merged per key into the user's config,
  * so their own `[mcp_servers.*]` entries are untouched; only the (distinct) bridge name is added.
+ * Compatibility fallback: Codex 0.160.1 excludes these keys from shared-daemon launches.
+ * Profiles/custom loaders are excluded too; forcing --remote drops hook/MCP overrides.
+ * Keep the warning visible; see docs/codex-shared-server-compatibility.md (#107).
  * The credential is read by Codex from `bearer_token_env_var`, never placed in argv.
  */
 export const agentBridge: HarnessAgentBridgeCapability = {
