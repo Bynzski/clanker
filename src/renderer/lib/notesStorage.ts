@@ -3,7 +3,6 @@ import { workspaceIdentityKey } from '../../shared/workspaceIdentity';
 import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 
 const NOTES_STORAGE_PREFIX = 'clanker-grid:notes:v1:';
-const NOTES_VISIBILITY_STORAGE_PREFIX = 'clanker-grid:notes-visible:v1:';
 
 function trimTrailingSlashes(value: string): string {
   let result = value;
@@ -33,13 +32,6 @@ export function getNotesContentStorageKey(
   environmentId?: string,
 ): string {
   return `${NOTES_STORAGE_PREFIX}${encodeURIComponent(workspaceIdentityKey({
-    path: workspacePath || workspaceId || 'default',
-    environmentId,
-  }))}`;
-}
-
-function getNotesVisibilityStorageKey(workspacePath: string, workspaceId: string | null, environmentId?: string): string {
-  return `${NOTES_VISIBILITY_STORAGE_PREFIX}${encodeURIComponent(workspaceIdentityKey({
     path: workspacePath || workspaceId || 'default',
     environmentId,
   }))}`;
@@ -75,33 +67,5 @@ export function writeStoredNote(storageKey: string, value: string): void {
     window.localStorage.setItem(storageKey, value);
   } catch {
     // Ignore storage failures so typing never blocks on quota or privacy-mode errors.
-  }
-}
-
-export function readStoredNotesVisible(
-  workspacePath: string,
-  workspaceId: string | null = null,
-  environmentId?: string,
-): boolean {
-  try {
-    const legacyKey = environmentId == null || environmentId === LOCAL_ENVIRONMENT_ID
-      ? `${NOTES_VISIBILITY_STORAGE_PREFIX}${getLegacyWorkspaceStorageKey(workspacePath, workspaceId)}`
-      : null;
-    return readStoredValue(getNotesVisibilityStorageKey(workspacePath, workspaceId, environmentId), legacyKey) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function writeStoredNotesVisible(
-  workspacePath: string,
-  visible: boolean,
-  workspaceId: string | null = null,
-  environmentId?: string,
-): void {
-  try {
-    window.localStorage.setItem(getNotesVisibilityStorageKey(workspacePath, workspaceId, environmentId), visible ? '1' : '0');
-  } catch {
-    // Non-critical preference persistence; keep pane state changes working.
   }
 }
