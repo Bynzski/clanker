@@ -8,6 +8,9 @@ import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => null }));
+vi.mock('../../../src/renderer/lib/terminalPaneGeometry', async (original) => ({
+  ...(await original<object>()), waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }),
+}));
 const renderHeader = () => render(<Header />);
 
   describe('Header overlay interactions', () => {
@@ -261,7 +264,7 @@ const renderHeader = () => render(<Header />);
       await user.click(screen.getByRole('button', { name: 'Chat history' }));
       await user.click(await screen.findByRole('button', { name: /Codex.*1/ }));
       await user.click(screen.getByRole('button', { name: 'Resume me' }));
-      expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('ws-1', session);
+      expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('ws-1', session, false, { initialGeometry: { cols: 120, rows: 40 } });
       act(() => {
         useWorkspaceStore.getState().selectWorkspace('ws-2');
         if (change === 'remove') useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.filter((workspace) => workspace.id !== 'ws-1') }));

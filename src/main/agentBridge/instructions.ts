@@ -5,7 +5,7 @@ import { COMPLETE_ISOLATED_CHECKOUT, CREATE_ISOLATED_CHECKOUT } from './lifecycl
  * authority, so an agent that cannot call a tool is never told to). Guidance only: correctness and
  * authorization never depend on the model reading or following it.
  */
-export function bridgeInstructions(granted: ReadonlySet<string>): string {
+export function bridgeInstructions(granted: ReadonlySet<string>, liveRelocation = false): string {
   const lines = [
     'Clanker is the desktop workspace managing this agent. `clanker_context` describes the workspace and checkout you were launched in (read-only).',
   ];
@@ -23,7 +23,9 @@ export function bridgeInstructions(granted: ReadonlySet<string>): string {
     }
     lines.push('These tools move this same conversation and keep Clanker\'s checkout ownership, status display and cleanup in sync; doing it by hand strands the conversation.');
     lines.push('Everything else is normal: use ordinary Git and GitHub tools for edits, commits, pushes, pull requests and merges.');
-    lines.push('After calling either tool, finish your reply without running more tools; the conversation continues in the new checkout on its next turn.');
+    lines.push(liveRelocation
+      ? 'On a successful checkout move, continue this same turn in the confirmed checkout. A failure never permits manual checkout cleanup.'
+      : 'After calling either tool, finish your reply without running more tools; the conversation continues in the new checkout on its next turn.');
   }
   return lines.join('\n');
 }

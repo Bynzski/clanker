@@ -23,6 +23,9 @@ export function useConversationHistory(workspaceId: string | null, { warmup = tr
   const cache = useRef(new Map<string, SessionDiscoveryResult>());
   // Bounded so closed workspaces cannot grow it forever; the oldest entry goes first.
   const remember = useCallback((id: string, found: SessionDiscoveryResult) => {
+    // Keep partial results WITH their issues when no complete scan exists. An incomplete scan must
+    // never overwrite last-good history or suppress idle retries when returning to this workspace.
+    if (found.issues.length > 0 && cache.current.get(id)?.issues.length === 0) return;
     cache.current.delete(id);
     cache.current.set(id, found);
     while (cache.current.size > MAX_CACHED_WORKSPACES) {
@@ -50,17 +53,17 @@ export function useConversationHistory(workspaceId: string | null, { warmup = tr
 
   useEffect(() => () => { visibleRequest.current++; }, []);
 
-  // Background warm-up: once per workspace, only when nothing is remembered yet, and only after a delay
-  // and an idle moment (see scheduleIdleWarmup; best-effort, not a startup-finished signal). Failures stay quiet; opening retries and shows them.
+  // Background warm-up: only without a complete cached scan (partial scans retry on reactivation),
+  // after a delay and idle moment. Failures stay quiet; opening retries and shows diagnostics.
   useEffect(() => {
-    if (!warmup || !workspaceId || cache.current.has(workspaceId)) return;
+    if (!warmup || !workspaceId || cache.current.get(workspaceId)?.issues.length === 0) return;
     let cancelled = false;
     const cancelWarmup = scheduleIdleWarmup(() => {
       const request = visibleRequest.current;
-      if (cache.current.has(workspaceId)) return;
+      if (cache.current.get(workspaceId)?.issues.length === 0) return;
       window.electronAPI.discoverSessionHistory(workspaceId).then((found) => {
         if (!cancelled && workspaceRef.current === workspaceId && visibleRequest.current === request
-          && !cache.current.has(workspaceId)) remember(workspaceId, found);
+          && cache.current.get(workspaceId)?.issues.length !== 0) remember(workspaceId, found);
       }, () => undefined);
     });
     return () => { cancelled = true; cancelWarmup(); };

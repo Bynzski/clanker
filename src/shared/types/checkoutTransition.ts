@@ -29,6 +29,8 @@ export type AgentCheckoutTransitionEvent =
   | { kind: 'checkout-attached'; workspaceId: string; checkoutContext: CheckoutContext }
   /** The pane of `previousTerminalId` is now served by `terminal`, same conversation, another checkout. */
   | { kind: 'terminal-replaced'; workspaceId: string; previousTerminalId: string; terminal: ReplacementTerminal }
+  /** Same live terminal and turn, only its main-proven checkout binding changed. */
+  | { kind: 'terminal-checkout-changed'; workspaceId: string; terminalId: string; checkoutContextId: string; workingDir: string }
   /** Main released (unregistered) this worktree context. */
   | { kind: 'checkout-released'; workspaceId: string; checkoutContextId: string }
   /** Outcome the user should see (the agent that asked can no longer be told). */

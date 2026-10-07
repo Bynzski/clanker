@@ -9,10 +9,11 @@ interface Options {
   ready: () => Promise<unknown>;
   onError: (error: unknown) => void;
   isAlive?: () => boolean;
+  onDimensions?: (dimensions: Dimensions) => void;
 }
 
 /** One sizing path for mount, reattachment, container/window changes and font zoom. */
-export function observeTerminalGeometry({ container, fitAddon, resize, ready, onError, isAlive = () => true }: Options) {
+export function observeTerminalGeometry({ container, fitAddon, resize, ready, onError, isAlive = () => true, onDimensions }: Options) {
   let disposed = false;
   let fitTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -63,6 +64,7 @@ export function observeTerminalGeometry({ container, fitAddon, resize, ready, on
     if (!dimensions || !Number.isInteger(dimensions.cols) || !Number.isInteger(dimensions.rows)
       || dimensions.cols < 2 || dimensions.rows < 1) return;
     fitAddon.fit();
+    onDimensions?.(dimensions);
     pending = dimensions;
     flushResize();
   };

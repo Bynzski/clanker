@@ -13,7 +13,13 @@ import {
 } from './capabilities';
 import { AgentBridgeCredentials, type AgentBridgeGrant, type AgentBridgeIdentity } from './credentials';
 import { bridgeInstructions } from './instructions';
+import { liveCheckoutToolDescription } from './lifecycleCapabilities';
 import { AgentBridgeServer, AGENT_BRIDGE_LIMITS, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
+
+function supportsLiveRelocation(harness: string): boolean {
+  const capability = findHarnessProvider(harness)?.checkoutRehome;
+  return capability?.mode === 'live-relocate' && typeof capability.relocateLiveConversation === 'function';
+}
 
 export const AGENT_BRIDGE_SERVER_NAME = 'clanker-grid';
 /** Environment variable carrying the bearer credential into the launched harness only. */
@@ -91,7 +97,28 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     const { token, revoke } = this.credentials.issue(identity, granted);
     // `release` is the registry's own revoke closure (it holds only the digest), so keeping it alive
     // for the terminal's lifetime never keeps the raw token alive.
-    return { url, token, instructions: bridgeInstructions(new Set(granted)), release: revoke };
+    return { url, token, instructions: bridgeInstructions(new Set(granted), supportsLiveRelocation(identity.harnessId)), release: revoke };
+  }
+
+  /**
+   * Main-only grant half of the synchronous relocation commit. Both roots must still belong to the
+   * live workspace. The main-owned committer updates the terminal in the same synchronous step; the
+   * bridge transport itself never mutates terminal resources. Tool arguments cannot invoke this.
+   */
+  rebindCheckoutAuthority(identity: AgentBridgeIdentity, targetId: string): boolean {
+    if (this.shutDown || identity.environmentId !== LOCAL_ENVIRONMENT_ID) return false;
+    const registry = this.deps.getRegistry();
+    const terminal = this.deps.getTerminals().get(identity.terminalId);
+    const source = registry?.getCheckoutContext(identity.checkoutContextId);
+    const target = registry?.getCheckoutContext(targetId);
+    const workspace = registry?.getWorkspace(identity.workspaceId);
+    if (!terminal || !workspace || !source || !target || target.missing
+      || workspace.location.environmentId !== identity.environmentId
+      || source.workspaceId !== identity.workspaceId || source.environmentId !== identity.environmentId
+      || target.workspaceId !== identity.workspaceId || target.environmentId !== identity.environmentId
+      || terminal.workspaceId !== identity.workspaceId || terminal.checkoutContextId !== identity.checkoutContextId
+      || terminal.harnessId !== identity.harnessId || (terminal.environmentId ?? LOCAL_ENVIRONMENT_ID) !== identity.environmentId) return false;
+    return this.credentials.rebindCheckout(identity, targetId);
   }
 
   /** Revokes a terminal's authority. Safe for unknown terminals. */
@@ -106,14 +133,17 @@ export class AgentBridgeService implements AgentBridgeToolHost {
   }
 
   instructionsFor(grant: AgentBridgeGrant): string {
-    return bridgeInstructions(grant.capabilities);
+    return bridgeInstructions(grant.capabilities, supportsLiveRelocation(grant.identity.harnessId));
   }
 
   listTools(grant: AgentBridgeGrant): AgentBridgeToolDescriptor[] {
     if (!this.resolveCaller(grant)) return [];
+    const live = supportsLiveRelocation(grant.identity.harnessId);
     return [...this.capabilities.values()]
       .filter((capability) => grant.capabilities.has(capability.name))
-      .map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, ...(annotations ? { annotations: { ...annotations } } : {}) }));
+      .map(({ name, description, inputSchema, annotations }) => ({ name,
+        description: live ? liveCheckoutToolDescription(name, description) : description,
+        inputSchema, ...(annotations ? { annotations: { ...annotations } } : {}) }));
   }
 
   async callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>, clientSignal?: AbortSignal): Promise<AgentBridgeToolResult> {
@@ -152,6 +182,7 @@ export class AgentBridgeService implements AgentBridgeToolHost {
    * has not run yet.
    */
   private resolveCaller(grant: AgentBridgeGrant): AgentBridgeCaller | null {
+    if (!this.credentials.isCurrent(grant)) return null;
     const { identity } = grant;
     const registry = this.deps.getRegistry();
     const terminal = this.deps.getTerminals().get(identity.terminalId);

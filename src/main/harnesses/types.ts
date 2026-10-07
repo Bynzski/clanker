@@ -315,8 +315,11 @@ export interface HarnessAccountsCapability {
  *   owns it. The move is scheduled when the request is accepted and performed after the harness'
  *   native root turn completes: the first process is retired completely, and only then is the same
  *   conversation resumed in the target.
+ * - `live-relocate`: a proven native operation moves the SAME running root turn, including its tools
+ *   and resources. Main waits for matching native location evidence, then atomically rebinds authority.
+ *   Neither a resume capability nor an API success response proves this property.
  */
-export type CheckoutRehomeMode = 'hot-replace' | 'after-turn';
+export type CheckoutRehomeMode = 'hot-replace' | 'after-turn' | 'live-relocate';
 /**
  * A provider helper process that touched native conversation state could not be PROVEN to have exited. Nothing may
  * be resumed afterwards: a second process around the same native session state is exactly what the checkout
@@ -328,6 +331,19 @@ export class UnverifiedProcessExitError extends Error {
 
 export interface HarnessCheckoutRehomeCapability {
   readonly mode: CheckoutRehomeMode;
+  /**
+   * Proven provider-native movement of the running root session, including cwd-bound tools/resources.
+   * Required for `live-relocate`. Must honor cancellation and never submit a prompt, restart a process,
+   * or redirect only individual tools. Returning is NOT proof: main waits for native location evidence.
+   * No shipped provider advertises this until a same-turn experiment proves the contract.
+   */
+  relocateLiveConversation?(request: {
+    readonly terminalId: string;
+    readonly sessionId: string;
+    readonly source: import('../../shared/types/checkoutContext').CheckoutContext;
+    readonly target: import('../../shared/types/checkoutContext').CheckoutContext;
+    readonly signal: AbortSignal;
+  }): Promise<void>;
   /**
    * The resume argv with the harness' own explicit "work in this directory" option set to `directory`
    * (any such option already present is replaced: the target is Clanker's, never the user's). `directory`

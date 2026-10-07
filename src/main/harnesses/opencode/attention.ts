@@ -8,7 +8,8 @@ import { localAttention } from '../localAttention';
  * session whose parentage cannot be established is never reported. Handlers are
  * serialized so metadata lookups cannot reorder lifecycle events.
  * Location: a session's native info carries its `directory`; a verified root reports it on its turn
- * events (the plugin's own instance directory when the info has none). Children never do. */
+ * events (the plugin's own instance directory when the info has none), and immediately when native
+ * session.updated changes the directory. Children never move the root location. */
 export const SOURCE = `import { emit } from '../observer.mjs';
 const trusted = process.env.CLANKER_ATTENTION_SESSION_ID || null;
 const parentage = new Map();
@@ -51,7 +52,16 @@ export const ClankerAttention = async ({ client, directory }) => {
   };
   const handle = async (event) => {
     const props = event.properties || {};
-    if (event.type === 'session.created' || event.type === 'session.updated') return remember(props.info);
+    if (event.type === 'session.created' || event.type === 'session.updated') {
+      const info = props.info;
+      const previous = directories.get(info?.id);
+      remember(info);
+      if (event.type === 'session.updated' && typeof info?.id === 'string' && typeof info.directory === 'string'
+        && info.directory && info.directory !== previous && await isRoot(info.id) === true) {
+        await emit('location_changed', { scope: 'root', sessionId: info.id, nativeEvent: event.type, cwd: info.directory });
+      }
+      return;
+    }
     const [kind, sessionId, inputId, requestKind] = classify(event.type, props) ?? [];
     if (!kind || typeof sessionId !== 'string') return;
     const root = await isRoot(sessionId);

@@ -8,6 +8,10 @@ import { installElectronApiMock } from '../../setup/electron';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
+vi.mock('../../../src/renderer/lib/terminalPaneGeometry', () => ({
+  waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }), clearTerminalPaneGeometry: vi.fn(),
+}));
+
 describe('ChatHistoryDropdown', () => {
   const sampleSession: HarnessSession = {
     id: 'codex-sess-1',
@@ -35,7 +39,7 @@ describe('ChatHistoryDropdown', () => {
     const session = screen.getByRole('button', { name: /Auth conversation/i });
     fireEvent.click(session);
     await waitFor(() => expect(useWorkspaceStore.getState().getWorkspaceById('remote-ws')?.terminals).toEqual([expect.objectContaining({ id: 'remote-term', workingDir: '/projects/repo/canonical', environmentId: 'ssh-a' })]));
-    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('remote-ws', sampleSession);
+    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('remote-ws', sampleSession, false, { initialGeometry: { cols: 120, rows: 40 } });
   });
 
   it('attaches a late remote resume to its original workspace after switching to another', async () => {
@@ -48,6 +52,7 @@ describe('ChatHistoryDropdown', () => {
     fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
     fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
     expect(screen.getByRole('button', { name: /Auth conversation/i })).toBeDisabled();
+    await waitFor(() => expect(window.electronAPI.invokeSession).toHaveBeenCalledOnce());
     act(() => { useWorkspaceStore.getState().selectWorkspace('b'); });
     await act(async () => finish({ id: 'late-term', pid: 4 }));
     expect(useWorkspaceStore.getState().getWorkspaceById('a')?.terminals).toEqual([expect.objectContaining({ id: 'late-term' })]);
@@ -60,10 +65,11 @@ describe('ChatHistoryDropdown', () => {
     installElectronApiMock();
     let finish!: (value: { id: string; pid: number }) => void;
     vi.mocked(window.electronAPI.invokeSession).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-    useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'a', environmentId: 'ssh-a', workspacePath: '/projects/repo' })] });
+    useWorkspaceStore.setState({ activeWorkspaceId: 'a', workspaces: [createWorkspaceFixture({ id: 'a', environmentId: 'ssh-a', workspacePath: '/projects/repo', terminals: [], panes: [], activeTerminalId: null })] });
     render(<ChatHistoryDropdown sessions={[sampleSession]} isLoading={false} workspacePath="/projects/repo" workspaceId="a" onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
     fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
+    await waitFor(() => expect(window.electronAPI.invokeSession).toHaveBeenCalledOnce());
     act(() => { useWorkspaceStore.setState({ workspaces: [] }); });
     await act(async () => finish({ id: 'late-term', pid: 4 }));
     expect(window.electronAPI.killTerminal).toHaveBeenCalledWith('late-term');
@@ -76,6 +82,7 @@ describe('ChatHistoryDropdown', () => {
       render(<ChatHistoryDropdown sessions={[sampleSession]} isLoading={false} workspacePath="/projects/repo" workspaceId="local-ws" onClose={onClose} />);
       fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
       fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
+      await waitFor(() => expect(window.electronAPI.invokeSession).toHaveBeenCalledOnce());
     }
 
     it('attaches to the original workspace after switching without closing the dropdown', async () => {
@@ -108,7 +115,7 @@ describe('ChatHistoryDropdown', () => {
       expect(window.electronAPI.killTerminal).toHaveBeenCalledWith('local-resumed');
       expect(useWorkspaceStore.getState().terminals).toEqual([]);
       expect(onClose).not.toHaveBeenCalled();
-      expect(screen.getByText(/The workspace closed while resuming/)).toBeInTheDocument();
+      expect(screen.getByText(/The workspace closed.*while resuming/)).toBeInTheDocument();
     });
   });
 
@@ -153,6 +160,6 @@ describe('ChatHistoryDropdown', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
     fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
-    await waitFor(() => expect(invokeSession).toHaveBeenCalledWith('local-ws', sampleSession));
+    await waitFor(() => expect(invokeSession).toHaveBeenCalledWith('local-ws', sampleSession, false, { initialGeometry: { cols: 120, rows: 40 } }));
   });
 });

@@ -2,8 +2,10 @@ import { findHarnessProvider } from '../harnesses/registry';
 import type { CheckoutRehomeMode, HarnessCheckoutRehomeCapability } from '../harnesses/types';
 
 /**
- * Whether a harness conversation can be moved to another checkout by resuming it there, judged from
- * the provider's own proven capabilities (never from its name, and never from MCP support alone):
+ * Whether a harness conversation can be moved to another checkout, judged from the provider's own
+ * proven capabilities (never from its name, and never from MCP support alone). A live-relocate
+ * strategy requires its native live mover plus local attention; it does not require a restart/resume.
+ * Replacement strategies require all of the following:
  *
  * - `sessions.resume` is a native local operation (the replacement is that CLI's real resume);
  * - the CLI can run the conversation in another directory: either `sessions.resumesWithoutOriginalDirectory
@@ -23,6 +25,9 @@ import type { CheckoutRehomeMode, HarnessCheckoutRehomeCapability } from '../har
 export function canSafelyRehomeConversation(harness: string): boolean {
   const provider = findHarnessProvider(harness);
   const resume = provider?.sessions?.resume;
+  if (provider?.checkoutRehome?.mode === 'live-relocate') {
+    return Boolean(provider.attention?.local && provider.checkoutRehome.relocateLiveConversation);
+  }
   return Boolean(
     provider?.checkoutRehome
     && provider.attention?.local

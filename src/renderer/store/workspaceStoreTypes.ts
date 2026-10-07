@@ -131,7 +131,7 @@ export interface WorkspaceState {
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
   setModel: (model: string) => void;
-  addTerminal: (terminal: Terminal, workspaceId?: string) => void;
+  addTerminal: (terminal: Terminal, workspaceId?: string, reservedPaneId?: string) => void;
   removeTerminal: (id: string) => void;
   /**
    * Main moved a conversation to another checkout and started a replacement process: the pane that
@@ -183,8 +183,8 @@ export interface WorkspaceState {
   setGitBranchInfo: (branch: string | null, isRepo: boolean, isDetached: boolean) => void;
 
   setPanes: (panes: Pane[]) => void;
-  addPane: (terminalId: string | null, position?: PanePosition) => void;
-  removePane: (paneId: string) => void;
+  addPane: (terminalId: string | null, position?: PanePosition, workspaceId?: string) => string | null;
+  removePane: (paneId: string, workspaceId?: string) => void;
   updatePanePosition: (paneId: string, position: PanePosition) => void;
   updateAllPanePositions: (positions: Array<{ id: string; position: PanePosition }>) => void;
   updateBrowserPosition: (position: PanePosition) => void;

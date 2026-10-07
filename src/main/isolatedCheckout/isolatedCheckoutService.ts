@@ -18,6 +18,9 @@ import { findListedWorktree } from '../worktreeContextAttachment';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { checkoutRehomeOf, canSafelyRehomeConversation } from './rehomeSupport';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
+import { LiveCheckoutRelocation } from './liveRelocation';
+import { relocateLiveCaller } from './liveRelocationCaller';
+import type { AgentBridgeIdentity } from '../agentBridge/credentials';
 
 /**
  * Agent-requested isolated-checkout transactions (issue #102).
@@ -64,6 +67,7 @@ import type { RegisteredWorkspace } from '../workspaceRegistry';
 
 /** The part of main's terminal table the lifecycle reads and retires. */
 export interface LifecycleTerminal extends TerminalUsage, RetirableTerminal {
+  pty: RetirableTerminal['pty'] & { cols?: number; rows?: number };
   workspaceId?: string;
   harnessId?: string;
 }
@@ -73,7 +77,7 @@ export interface IsolatedCheckoutServiceDeps {
   getTerminals(): Map<string, LifecycleTerminal>;
   isAttentionEnabled(harnessId: string): boolean;
   attention: {
-    snapshot(terminalId: string): Pick<AgentAttentionSnapshot, 'sessionId' | 'lastOutcome'> | null;
+    snapshot(terminalId: string): (Pick<AgentAttentionSnapshot, 'sessionId' | 'lastOutcome'> & Partial<AgentAttentionSnapshot>) | null;
     release(terminalId: string): void;
   };
   git: Pick<GitIpcController, 'getBranchState' | 'createCheckoutWorktree' | 'listWorktrees' | 'checkWorktreeClean' | 'removeWorktree'
@@ -88,6 +92,8 @@ export interface IsolatedCheckoutServiceDeps {
    * must not overlap a second process is never resumed on the strength of the terminal merely leaving the table.
    */
   retireTerminalAndWait(terminalId: string): Promise<TerminalExitOutcome>;
+  /** Atomic bridge/terminal commit, unavailable unless a main-owned bridge exists. */
+  commitCheckoutRelocation?(identity: AgentBridgeIdentity, targetId: string): boolean;
   notify(event: AgentCheckoutTransitionEvent): void;
   isShuttingDown(): boolean;
   /** Test seam. */
@@ -137,7 +143,7 @@ interface PendingMove {
 }
 
 /** Who a replacement is for; the part of a request the start/proof logic needs. */
-interface MoveSubject { workspaceId: string; workspace: RegisteredWorkspace; harnessId: string }
+interface MoveSubject { workspaceId: string; workspace: RegisteredWorkspace; harnessId: string; initialGeometry?: { cols: number; rows: number } }
 
 /** A replacement that did not come up; `output` is what it printed (bounded), for provider-owned recognition. */
 class ReplacementFailure extends Error {
@@ -185,6 +191,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
   private readonly active = new Map<string, Promise<unknown>>();
   /** At most one scheduled `after-turn` move per source terminal. */
   private readonly pending = new Map<string, PendingMove>();
+  private readonly live = new LiveCheckoutRelocation();
   private shutDown = false;
   private readonly timing: ReplacementTiming;
 
@@ -195,6 +202,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
   /** Waits for every in-flight transaction (post-commit cleanup included) and refuses new ones. */
   async shutdown(): Promise<void> {
     this.shutDown = true;
+    this.live.shutdown();
     this.pending.clear(); // a scheduled move is dropped; the conversation stays where it is
     await Promise.allSettled([...this.active.values()]);
   }
@@ -210,6 +218,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    *  - session ended / terminal gone -> drop it
    */
   onAttentionChange(change: AgentAttentionChange): void {
+    this.live.onAttentionChange(change);
     const pending = this.pending.get(change.terminalId);
     if (!pending || this.shutDown) return;
     const snapshot = change.snapshot;
@@ -285,6 +294,11 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       // ran schedules and moves nothing; the checkout it made stays attached and listed.
       this.abortAfterCreate(signal, workspaceId, branch, createdNow);
 
+      if (checkoutRehomeOf(caller.harnessId)?.mode === 'live-relocate') {
+        await this.relocateLive(caller, session, target, signal);
+        return ok({ status: 'moved', turnContinuity: 'preserved', checkout: this.describe(target) });
+      }
+
       // A conversation that must not be replaced while it runs is moved after its turn instead.
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
         return this.schedule(caller, session, signal, { kind: 'create', source: caller.checkoutContext, target, label: branch, createdNow, deleteBranch: false, discardIgnored: false });
@@ -330,6 +344,13 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       const checkout = await this.inspectCheckout(workspaceId, old, input.discardIgnored === true);
       this.throwIfAborted(signal);
 
+      if (checkoutRehomeOf(caller.harnessId)?.mode === 'live-relocate') {
+        await this.relocateLive(caller, session, main, signal);
+        const cleanup = await this.cleanUp(workspaceId, old, checkout, input.deleteBranch === true, input.discardIgnored === true);
+        this.notice(workspaceId, cleanup.complete ? 'info' : 'warning', cleanup.summary);
+        return ok({ status: cleanup.complete ? 'completed' : 'moved-with-cleanup-pending', turnContinuity: 'preserved', checkout: this.describe(main), cleanup: cleanup.report });
+      }
+
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
         return this.schedule(caller, session, signal, { kind: 'complete', source: old, target: main, label: old.branch ?? 'HEAD', createdNow: false, deleteBranch: input.deleteBranch === true, discardIgnored: input.discardIgnored === true });
       }
@@ -351,6 +372,21 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     });
   }
 
+  private async relocateLive(caller: AgentBridgeCaller, session: HarnessSession, target: CheckoutContext, signal: AbortSignal): Promise<void> {
+    try {
+      await relocateLiveCaller(this.deps, this.live, caller, session, target, signal, () => this.shutDown);
+    } catch {
+      throw new TransitionFailure('Native checkout movement could not be confirmed. Checkout authority was not changed and nothing was removed; the target checkout was kept.');
+    }
+    // Past commit: a vanished renderer must never turn success into a false "source unchanged" report.
+    try {
+      this.deps.notify({ kind: 'terminal-checkout-changed', workspaceId: caller.workspace.workspaceId,
+        terminalId: caller.terminalId, checkoutContextId: target.id, workingDir: target.path });
+    } catch (error) {
+      console.warn('[clanker-grid] reporting live checkout movement failed:', messageOf(error, 'renderer unavailable'));
+    }
+  }
+
   // ---------------------------------------------------------------------------------------- phase 1
 
   /** Authority and support that both transactions share. Throws a refusal; mutates nothing. */
@@ -358,11 +394,14 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     const registry = this.deps.getRegistry();
     const terminal = this.deps.getTerminals().get(caller.terminalId);
     const workspaceId = caller.workspace.workspaceId;
-    if (!registry || !terminal || registry.getWorkspace(workspaceId) !== caller.workspace) {
-      throw new TransitionFailure('This Clanker session is no longer active');
-    }
     if (caller.workspace.location.environmentId !== LOCAL_ENVIRONMENT_ID) {
       throw new TransitionFailure('Isolated checkouts are available for local workspaces only');
+    }
+    if (!registry || !terminal || registry.getWorkspace(workspaceId) !== caller.workspace
+      || terminal.workspaceId !== workspaceId || terminal.checkoutContextId !== caller.checkoutContext.id
+      || terminal.harnessId !== caller.harnessId || (terminal.environmentId ?? LOCAL_ENVIRONMENT_ID) !== caller.workspace.location.environmentId
+      || !isCurrentCheckoutContext(registry, caller.checkoutContext)) {
+      throw new TransitionFailure('This Clanker session is no longer active');
     }
     // Defense in depth: the credential is only granted to such launches, but the support rule is the authority.
     if (!canSafelyRehomeConversation(caller.harnessId)) {
@@ -395,7 +434,14 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     }
     const sessions = this.deps.getSessions();
     const session = sessions ? await sessions.findSession(caller.workspace.workspaceId, caller.harnessId, sessionId) : null;
-    if (!session) throw new TransitionFailure('Clanker could not find this conversation in its history yet, so it cannot be moved safely');
+    if (!session || session.id !== sessionId || session.harness !== caller.harnessId) {
+      throw new TransitionFailure('Clanker could not find this conversation in its history yet, so it cannot be moved safely');
+    }
+    // Rediscovery awaited: a session boundary or terminal/context mutation during it invalidates the caller.
+    this.preflightCommon(caller);
+    if (this.deps.attention.snapshot(caller.terminalId)?.sessionId !== sessionId) {
+      throw new TransitionFailure('The native conversation changed while its history was being discovered');
+    }
     return session;
   }
 
@@ -474,6 +520,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         },
         onExit: () => exited.resolve(),
         startupBufferLimit: REPLACEMENT_STARTUP_BUFFER,
+        initialGeometry: subject.initialGeometry,
       });
       const started = await firstOf({ output: output.promise, exited: exited.promise, aborted: aborted.promise }, this.timing.startDeadlineMs);
       if (started === 'aborted') throw new TransitionAborted();
@@ -630,7 +677,8 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
   // ------------------------------------------------------------------------- after-turn strategy
 
   private subjectOf(caller: AgentBridgeCaller): MoveSubject {
-    return { workspaceId: caller.workspace.workspaceId, workspace: caller.workspace, harnessId: caller.harnessId };
+    return { workspaceId: caller.workspace.workspaceId, workspace: caller.workspace, harnessId: caller.harnessId,
+      initialGeometry: this.geometryOf(caller.terminalId) };
   }
 
   /** A repeated request for the move that is already scheduled is answered, not duplicated. */
@@ -661,7 +709,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     this.notice(caller.workspace.workspaceId, 'info', spec.kind === 'create'
       ? `This conversation will move into isolated checkout "${spec.label}" when its current turn finishes.`
       : `This conversation will move back to the main checkout and "${spec.label}" will be cleaned up when its current turn finishes.`);
-    return ok({ status: 'scheduled', message: SCHEDULED_MESSAGE, checkout: this.describe(spec.target) });
+    return ok({ status: 'scheduled', turnContinuity: 'next-turn', message: SCHEDULED_MESSAGE, checkout: this.describe(spec.target) });
   }
 
   /** Throws (after saying what was kept) when the request was cancelled once the checkout already existed. */
@@ -722,8 +770,21 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     }
     const sessions = this.deps.getSessions();
     const session = sessions ? await sessions.findSession(workspaceId, pending.harnessId, pending.sessionId) : null;
-    if (!session) return cancel('the conversation could not be found in history');
+    if (!session || session.id !== pending.sessionId || session.harness !== pending.harnessId) {
+      return cancel('the conversation could not be found in history');
+    }
+    // Inspection and rediscovery awaited. Never retire a process after a newer turn began, the
+    // workspace closed, or the registered checkout/terminal changed during those operations.
+    const latest = this.deps.attention.snapshot(terminalId);
+    if (this.shutDown || this.deps.isShuttingDown() || registry.getWorkspace(workspaceId) !== pending.workspace
+      || this.deps.getTerminals().get(terminalId) !== terminal || terminal.checkoutContextId !== pending.source.id
+      || latest?.sessionId !== pending.sessionId || (latest.runtime && latest.runtime.status !== 'idle')
+      || !isCurrentCheckoutContext(registry, pending.target) || !isCurrentCheckoutContext(registry, pending.source)) {
+      return cancel('the conversation, turn or checkout changed during discovery');
+    }
 
+    // Capture the source pane's current geometry before retirement removes the record.
+    const initialGeometry = this.geometryOf(terminalId);
     // ---- the source process goes first, and completely: terminal removed, attachments disposed, attention
     // released, bridge credential revoked. Only then may the conversation be resumed anywhere.
     const retired = await this.deps.retireTerminalAndWait(terminalId).catch((error: unknown): TerminalExitOutcome => {
@@ -738,7 +799,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       return;
     }
 
-    const subject: MoveSubject = { workspaceId, workspace: pending.workspace, harnessId: pending.harnessId };
+    const subject: MoveSubject = { workspaceId, workspace: pending.workspace, harnessId: pending.harnessId, initialGeometry };
     let moved: ResumedSessionLaunch | undefined;
     let targetError = '';
     let unsafeToResume = false;
@@ -760,7 +821,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     }
 
     // ---- recovery: put the same conversation back where it was. Nothing is deleted on this path.
-    const stillThere = registry.getCheckoutContext(pending.source.id) === pending.source
+    const stillThere = isCurrentCheckoutContext(registry, pending.source)
       && directoryExists(toNativePath(pending.source.path, process.platform));
     let recoveryError = unsafeToResume ? 'the failed attempt could not be confirmed stopped' : 'its original checkout is gone';
     if (stillThere && !unsafeToResume) {
@@ -809,6 +870,11 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
   // ------------------------------------------------------------------------------------- plumbing
 
+  private geometryOf(terminalId: string): { cols: number; rows: number } | undefined {
+    const pty = this.deps.getTerminals().get(terminalId)?.pty;
+    return typeof pty?.cols === 'number' && typeof pty.rows === 'number' ? { cols: pty.cols, rows: pty.rows } : undefined;
+  }
+
   private describe(context: CheckoutContext): { kind: CheckoutContext['kind']; isolated: boolean; branch: string | null } {
     return { kind: context.kind, isolated: context.kind === 'worktree', branch: context.branch ?? null };
   }
@@ -842,6 +908,8 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       }
     })();
     this.active.set(caller.terminalId, transaction);
-    try { return await transaction; } finally { this.active.delete(caller.terminalId); }
+    try { return await transaction; } finally {
+      if (this.active.get(caller.terminalId) === transaction) this.active.delete(caller.terminalId);
+    }
   }
 }

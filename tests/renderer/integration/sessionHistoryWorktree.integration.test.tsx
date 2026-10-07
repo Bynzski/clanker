@@ -11,6 +11,10 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import type { HarnessSession, SessionInvokeResult } from '../../../src/shared/types/session';
 
+vi.mock('../../../src/renderer/lib/terminalPaneGeometry', () => ({
+  waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }), clearTerminalPaneGeometry: vi.fn(),
+}));
+
 const ROOT = '/projects/app';
 const WORKTREE = '/projects/app-worktrees/feature-foo-abc';
 const MAIN: CheckoutContext = { id: 'ws::main', workspaceId: 'ws', environmentId: 'local', path: ROOT, kind: 'main' };
@@ -60,7 +64,7 @@ describe('resuming isolated-agent conversations from chat history', () => {
     fireEvent.click(screen.getByRole('button', { name: /Live isolated agent/ }));
 
     await waitFor(() => expect(state().terminals).toHaveLength(1));
-    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('ws', liveSession);
+    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('ws', liveSession, false, { initialGeometry: { cols: 120, rows: 40 } });
     // The checkout main attached is recorded on the owning workspace (descriptive, never a root the renderer chose).
     expect(state().checkoutContexts).toEqual([MAIN, WORKTREE_CONTEXT]);
     const terminal = state().terminals[0];
@@ -113,7 +117,7 @@ describe('resuming isolated-agent conversations from chat history', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Recreate and resume' }));
     await waitFor(() => expect(state().terminals).toHaveLength(1));
-    expect(invoke).toHaveBeenLastCalledWith('ws', removedSession, false, { recreateCheckout: true });
+    expect(invoke).toHaveBeenLastCalledWith('ws', removedSession, false, { recreateCheckout: true, initialGeometry: { cols: 120, rows: 40 } });
     expect(state().terminals[0].checkoutContextId).toBe('ws::wt');
     expect(state().checkoutContexts).toContainEqual(WORKTREE_CONTEXT);
     expect(await screen.findByRole('status')).toHaveTextContent('Recreated the worktree for feature/foo');

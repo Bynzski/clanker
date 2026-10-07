@@ -33,6 +33,23 @@ function fixture(harness: HarnessSession['harness'] = 'codex') {
 beforeEach(() => { vi.mocked(spawnPtyProcess).mockReset().mockImplementation((options) => ({ id: options.id, pid: 123 })); });
 
 describe('remote session invocation', () => {
+  it('snapshots measured geometry before SSH awaits and passes it to the native PTY', async () => {
+    const f = fixture();
+    const initialGeometry = { cols: 135, rows: 44 };
+    const pending = invokeRemoteSession(f.deps, f.workspace, f.session, false, { initialGeometry });
+    initialGeometry.cols = 20;
+    await pending;
+    expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ initialGeometry: { cols: 135, rows: 44 } }));
+  });
+
+  it('rejects invalid geometry before host discovery or attention preparation', async () => {
+    const f = fixture();
+    await expect(invokeRemoteSession(f.deps, f.workspace, f.session, false, { initialGeometry: { cols: 0, rows: 24 } })).rejects.toThrow('Invalid initial terminal geometry');
+    expect(f.environment.discoverSessions).not.toHaveBeenCalled();
+    expect(f.broker.registerRemote).not.toHaveBeenCalled();
+    expect(spawnPtyProcess).not.toHaveBeenCalled();
+  });
+
   it('releases broker registration when remote attention preparation fails', async () => {
     const f = fixture();
     f.environment.resolveTerminalSpawn.mockRejectedValueOnce(new Error('Host attention setup failed'));

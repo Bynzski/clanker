@@ -29,6 +29,7 @@ import {
   terminalDetach,
 } from '../lib/workspaceSwitchDebug';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
+import { publishTerminalPaneGeometry, clearTerminalPaneGeometry } from '../lib/terminalPaneGeometry';
 import {
   findTerminalLinks,
   normalizeTerminalUrl,
@@ -475,21 +476,23 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // Attach after input listeners: startup output can contain terminal queries.
   // Readiness is sent only after a visible fit and its PTY resize have completed.
   useEffect(() => {
-    if (!terminalRuntimeReady || !terminalRef.current || !fitAddonRef.current || terminalId == null) return;
+    if (!terminalRuntimeReady || !terminalRef.current || !fitAddonRef.current || !isInteractive) return;
     const geometry = observeTerminalGeometry({
       container: terminalRef.current,
       fitAddon: fitAddonRef.current,
-      isAlive: () => !isTerminalDisposed(terminalId),
-      resize: (cols, rows) => window.electronAPI.resizeTerminal(terminalId, cols, rows),
-      ready: () => window.electronAPI.terminalReady(terminalId),
+      isAlive: () => terminalId === null || !isTerminalDisposed(terminalId),
+      onDimensions: (dimensions) => publishTerminalPaneGeometry(paneId, dimensions),
+      resize: (cols, rows) => terminalId === null ? Promise.resolve() : window.electronAPI.resizeTerminal(terminalId, cols, rows),
+      ready: () => terminalId === null ? Promise.resolve() : window.electronAPI.terminalReady(terminalId),
       onError: console.error,
     });
     geometryRef.current = geometry;
     return () => {
       geometry.dispose();
+      clearTerminalPaneGeometry(paneId);
       if (geometryRef.current === geometry) geometryRef.current = null;
     };
-  }, [terminalId, terminalRuntimeReady]);
+  }, [terminalId, terminalRuntimeReady, paneId, isInteractive]);
 
   // -------------------------------------------------------------------------
   // Active state — track which terminal is focused
@@ -532,7 +535,12 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // Action handlers
   // -------------------------------------------------------------------------
   const handleClose = useCallback(async () => {
-    if (terminal == null || !isInteractive) return;
+    if (!isInteractive) return;
+    const closePane = () => workspaceId ? removePane(paneId, workspaceId) : removePane(paneId);
+    if (terminal == null) {
+      if (pane) closePane();
+      return;
+    }
     try {
       await window.electronAPI.killTerminal(terminal.id);
       // Guard the React teardown after main confirms the PTY was killed. The
@@ -541,12 +549,12 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       markTerminalDisposed(terminal.id);
       removeTerminal(terminal.id);
       if (paneId != null) {
-        removePane(paneId);
+        closePane();
       }
     } catch (err) {
       console.error('Failed to kill terminal:', err);
     }
-  }, [isInteractive, terminal, removeTerminal, removePane, paneId]);
+  }, [isInteractive, terminal, pane, removeTerminal, removePane, paneId, workspaceId]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     if (!isInteractive) {
@@ -595,7 +603,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
   }, [isInteractive, terminalId]);
 
-  if (terminal == null) {
+  if (terminal == null && pane == null) {
     return (
       <div className="terminal-pane empty">
         <div className="empty-state">
@@ -620,10 +628,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             <span className="terminal-harness-icon" role="img" aria-label={`${harnessOption.label} harness`} title={`${harnessOption.label} harness`}>
               <HarnessIcon size={14} strokeWidth={2} />
             </span>
-            <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${attentionSuffix}` : 'Shell'}>
+            <span className="terminal-title" title={terminal?.harnessId ? `${harnessOption.label}${attentionSuffix}` : 'Shell'}>
               {terminal?.displayName ?? 'Terminal'}
             </span>
-            {showAgentAttention && <AgentAttentionState attention={attention} name={terminal.displayName ?? 'Agent'} />}
+            {showAgentAttention && <AgentAttentionState attention={attention} name={terminal?.displayName ?? 'Agent'} />}
           </div>
           <div className="terminal-header-actions">
             <IconButton variant="ghost" aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>

@@ -10,7 +10,8 @@ import { attentionSourceOptions, trustedRootSessionId } from '../agentAttentionA
 import { loadSessionCheckoutPlan, sessionScanScopes, MAX_REMOTE_SESSION_SCOPES } from '../sessionWorktrees';
 import { isCurrentCheckoutContext, resolveSessionResumeTarget, type SessionResumeTarget } from '../sessionResumeTarget';
 
-import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../sessionLaunch';
+import { SUPPORTED_RESUME_HARNESSES, assertSessionSelectionFlags, supportsSessionOperation } from '../sessionLaunch';
+import { readInitialTerminalGeometry } from '../../shared/terminalGeometry';
 /**
  * Re-read the host session instead of trusting renderer-supplied paths or models. The conversation
  * is found by one bounded on-host scan of the workspace plus the worktree scopes main derived from
@@ -20,6 +21,7 @@ import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../session
  * or is offered for recreation, and a removed path is never the working directory.
  */
 export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspace: RegisteredWorkspace, requested: HarnessSession, fork?: boolean, invokeOptions?: SessionInvokeOptions) {
+  const initialGeometry = readInitialTerminalGeometry(invokeOptions?.initialGeometry);
   const environment = workspace.environment;
   if (!environment?.capabilities.sessionDiscovery || !environment.discoverSessions) throw new Error('Remote session invocation is not supported by this environment');
   if (!requested || !SUPPORTED_RESUME_HARNESSES.has(requested.harness) || typeof requested.id !== 'string'
@@ -83,8 +85,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   if (registry?.isRemotePathReserved?.(workspace.location.environmentId, session.cwd)) throw new Error('Remote session directory is being removed');
   const defaults = deps.getStore().get('harnessDefaults')[session.harness];
   const flags = defaults?.flags?.trim();
-  const tokens = flags?.split(/\s+/) ?? [];
-  if (tokens.some((token) => (getHarnessProvider(session.harness).sessions?.selectionFlags ?? []).some((option) => token === option || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) throw new Error('Harness default flags conflict with remote session selection');
+  assertSessionSelectionFlags(session.harness, flags, 'ssh');
   const id = `term-${randomUUID()}`;
   const broker = deps.agentAttentionBroker;
   // The rediscovered host session is the only authority for a resumed root identity.
@@ -106,6 +107,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       terminals: deps.getTerminals(), mainWindow: deps.getMainWindow(), getIsShuttingDown: deps.getIsShuttingDown,
       launchLabel: resolved.launchLabel, harnessId: session.harness, workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
+      ...(initialGeometry ? { initialGeometry } : {}),
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
       onOutput: deps.createRemoteOutputObserver?.(workspace.workspaceId),
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,

@@ -747,6 +747,13 @@ describe('OpenCode lifecycle', () => {
     await step(...status('child', 'idle'));
     expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
     await step('session.updated', { info: { id: 'root', directory: '/w/repo' } });
+    expect(locationOf(broker)).toBe('/w/repo'); // immediate, without forcing a turn boundary
+    const moved = broker.snapshot('term')!;
+    expect(moved.runtime.status).toBe('running');
+    await step('session.updated', { info: { id: 'root', directory: '/w/repo' } });
+    expect(broker.snapshot('term')!.revision).toBe(moved.revision);
+    await step('session.updated', { info: { id: 'child', parentID: 'root', directory: '/tmp/elsewhere' } });
+    expect(locationOf(broker)).toBe('/w/repo');
     await step(...status('root', 'idle'));
     expect(locationOf(broker)).toBe('/w/repo');
     await step('session.deleted', { info: { id: 'root' } });

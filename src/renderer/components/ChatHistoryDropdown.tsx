@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { HarnessSession, RecreateCheckoutOffer } from '../../shared/types/session';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { getSessionDisplayTitles } from '../lib/sessionTitles';
+import { resumeSessionInMeasuredPane } from '../lib/sessionResume';
 import './ChatHistoryDropdown.css';
 
 interface Props {
@@ -113,59 +114,49 @@ export default function ChatHistoryDropdown({
   workspaceId,
   onClose,
 }: Props) {
-  const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const [launching, setLaunching] = useState(false);
   const [sessionLaunchError, setSessionLaunchError] = useState('');
   const [resumeNotice, setResumeNotice] = useState('');
-  const upsertCheckoutContext = useWorkspaceStore((state) => state.upsertCheckoutContext);
   const environmentId = useWorkspaceStore((state) => state.getWorkspaceById(workspaceId)?.environmentId ?? 'local');
-  const stillOwnsWorkspace = () => {
-    const current = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
-    return current && (current.environmentId ?? 'local') === environmentId && current.workspacePath === workspacePath;
-  };
+  const launchController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; launchController.current?.abort(); };
+  }, []);
 
   const [offer, setOffer] = useState<{ session: HarnessSession; checkout: RecreateCheckoutOffer } | null>(null);
 
   const resumeSession = async (session: HarnessSession, recreateCheckout: boolean) => {
-    if (launching) return;
+    if (launching || launchController.current) return;
+    const controller = new AbortController();
+    launchController.current = controller;
     setLaunching(true);
     setSessionLaunchError('');
     setResumeNotice('');
     setOffer(null);
     try {
       if (!workspaceId) throw new Error('Workspace is not registered');
-      const info = recreateCheckout
-        ? await window.electronAPI.invokeSession(workspaceId, session, false, { recreateCheckout: true })
-        : await window.electronAPI.invokeSession(workspaceId, session);
+      const info = await resumeSessionInMeasuredPane({
+        workspaceId, workspacePath, environmentId, session, signal: controller.signal,
+        ...(recreateCheckout ? { options: { recreateCheckout: true } } : {}),
+      });
+      if (!mounted.current) return;
       // Nothing was launched or created: main asks first because this harness can only continue in
       // the directory it started in, and that worktree was removed.
       if ('recreateOffer' in info) {
         setOffer({ session, checkout: info.recreateOffer });
         return;
       }
-      if (!stillOwnsWorkspace()) {
-        await window.electronAPI.killTerminal(info.id);
-        throw new Error('The workspace closed while resuming');
-      }
-      // A conversation from an isolated agent resumes into its worktree context; record it on this
-      // workspace first so the terminal (and its agent row) is bound to that checkout.
-      if (info.checkoutContext && !upsertCheckoutContext(workspaceId, info.checkoutContext)) {
-        await window.electronAPI.killTerminal(info.id).catch(() => undefined);
-        throw new Error('The checkout this conversation ran in could not be attached to the workspace');
-      }
-      addTerminal({
-        id: info.id, pid: info.pid, workingDir: info.workingDir ?? session.cwd, workspaceId, environmentId,
-        harnessId: session.harness, attentionEnabled: info.attentionEnabled === true,
-        ...(info.checkoutContextId ? { checkoutContextId: info.checkoutContextId } : {}),
-      }, workspaceId);
       // Never resume somewhere other than where it ran without saying so.
       if (info.resumeNotice) setResumeNotice(info.resumeNotice);
       else if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
     } catch (err) {
       console.error('Failed to invoke session:', err);
-      setSessionLaunchError(err instanceof Error ? err.message : 'Could not resume session');
+      if (mounted.current) setSessionLaunchError(err instanceof Error ? err.message : 'Could not resume session');
     } finally {
-      setLaunching(false);
+      launchController.current = null;
+      if (mounted.current) setLaunching(false);
     }
   };
   const handleSessionClick = (session: HarnessSession) => resumeSession(session, false);

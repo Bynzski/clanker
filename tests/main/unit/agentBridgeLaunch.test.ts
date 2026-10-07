@@ -6,6 +6,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import { SESSION_INVOKE, SPAWN_TERMINAL } from '../../../src/shared/ipcChannels';
+import { successfulSessionDiscovery } from '../../_helpers/sessionDiscovery';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { toNativePath } from '../../../src/shared/pathNormalize';
 import { testHarnessWrapper } from '../../_helpers/tempPaths';
@@ -26,6 +27,7 @@ vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty
 vi.mock('../../../src/main/platformShell', async (importOriginal) => ({ ...(await importOriginal<object>()), defaultShell: () => 'shell' }));
 vi.mock('../../../src/main/sessionHistory', async (importOriginal) => ({
   ...(await importOriginal<object>()), discoverSessions: mockDiscover, buildSessionLaunch: mockBuildArgs,
+  discoverSessionsDetailed: async (...args: unknown[]) => successfulSessionDiscovery(await mockDiscover(...args)),
 }));
 
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
@@ -66,7 +68,7 @@ beforeEach(() => {
     exits.set(opts.id, opts.onExit);
     return { id: opts.id, pid: 1 };
   });
-  mockDiscover.mockReset().mockResolvedValue([]);
+  mockDiscover.mockReset().mockResolvedValue([{ id: 's1', harness: 'codex', title: 't', cwd: WORKSPACE, timestamp: 1 }]);
   mockBuildArgs.mockReset().mockReturnValue({ command: 'codex', args: ['resume', 's1'] });
   delete process.env[AGENT_BRIDGE_TOKEN_ENV];
 });
@@ -333,6 +335,7 @@ describe('resumed sessions', () => {
   it.each([false, true])('Pi resume/fork (%s) receives the same context-only attachment and exit cleanup', async (fork) => {
     registerSession();
     const selected: HarnessSession = { id: 's1', harness: 'pi', title: 't', cwd: WORKSPACE, timestamp: 1 };
+    mockDiscover.mockResolvedValue([selected]);
     const validate = vi.spyOn(findHarnessProvider('pi')!.sessions!, 'validateLocal').mockResolvedValue(selected);
     const args = [fork ? '--fork' : '--session', '/sessions/s1.jsonl'];
     mockBuildArgs.mockReturnValue({ command: 'pi', args });

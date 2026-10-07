@@ -102,7 +102,7 @@ import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
-import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
+import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
@@ -260,7 +260,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       getHarnessOptions: vi.fn().mockReturnValue({}),
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     };
-    return { terminals, opts };
+    return { terminals, opts, mainWindow };
   };
 
   beforeEach(() => {
@@ -826,6 +826,27 @@ describe('terminalIpc — error-path: handler returns', () => {
     const result = await handler(null, { id: 'existing-term', data: 'hello world' });
     expect(result).toEqual({ success: true });
     expect(mockPty.write).toHaveBeenCalledWith('hello world');
+  });
+
+  test('startup-paused terminals stay paused through initial resize; READY drains once before resuming', async () => {
+    const { terminals, opts, mainWindow } = createMockDeps();
+    const order: string[] = [];
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pause: vi.fn(), resume: vi.fn(() => { order.push('resume'); }) };
+    const terminal = { id: 'paused', pid: 99, pty: mockPty, startupBuffer: ['prefix', 'suffix'], startupBufferReady: false, startupPaused: true };
+    terminals.set('paused', terminal);
+    mainWindow.webContents.send.mockImplementation((channel: string, payload: { data: string }) => {
+      if (channel === TERMINAL_DATA) order.push(payload.data);
+    });
+    registerTerminalIpc(opts);
+    const handler = (channel: string) => mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)![1];
+    handler(RESIZE_TERMINAL)(null, { id: 'paused', cols: 120, rows: 40 });
+    expect(mockPty.resume).not.toHaveBeenCalled();
+    handler(TERMINAL_READY)(null, 'paused');
+    handler(TERMINAL_READY)(null, 'paused');
+    expect(order).toEqual(['prefix', 'suffix', 'resume']);
+    expect(mockPty.resume).toHaveBeenCalledOnce();
+    expect(terminal.startupBuffer).toEqual([]);
+    expect(terminal.startupPaused).toBe(false);
   });
 
   test('RESIZE_TERMINAL calls pty.resize when terminal exists', async () => {

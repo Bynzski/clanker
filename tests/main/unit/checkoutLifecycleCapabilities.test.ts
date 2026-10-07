@@ -14,6 +14,8 @@ import { COMPLETE_DESCRIPTION, COMPLETE_ISOLATED_CHECKOUT, CREATE_DESCRIPTION, C
 import { checkoutRehome as codexRehome } from '../../../src/main/harnesses/codex/rehome';
 import { findHarnessProvider } from '../../../src/main/harnesses/registry';
 import { checkoutRehomeModeOf, checkoutRehomeOf } from '../../../src/main/isolatedCheckout/rehomeSupport';
+import { liveCheckoutToolDescription } from '../../../src/main/agentBridge/lifecycleCapabilities';
+import type { HarnessCheckoutRehomeCapability } from '../../../src/main/harnesses/types';
 
 const caller = { terminalId: 't', harnessId: 'claude', workspace: {}, checkoutContext: {}, granted: [] } as unknown as AgentBridgeCaller;
 const context = { caller, signal: new AbortController().signal };
@@ -21,6 +23,35 @@ const context = { caller, signal: new AbortController().signal };
 function stubPort(): AgentCheckoutLifecyclePort & { create: ReturnType<typeof vi.fn>; complete: ReturnType<typeof vi.fn> } {
   return { create: vi.fn(async () => ({ data: { ok: 'create' } })), complete: vi.fn(async () => ({ data: { ok: 'complete' } })) };
 }
+
+describe('live relocation capability and guidance', () => {
+  it('ships no same-turn claim for any unproven provider', () => {
+    expect(getHarnessProviders().filter((provider) => provider.checkoutRehome?.mode === 'live-relocate')).toEqual([]);
+  });
+
+  it('fails closed for a live strategy without a native mover; resume support alone is insufficient', () => {
+    const provider = findHarnessProvider('claude') as unknown as { checkoutRehome?: HarnessCheckoutRehomeCapability };
+    const original = provider.checkoutRehome;
+    try {
+      provider.checkoutRehome = { mode: 'live-relocate' };
+      expect(canSafelyRehomeConversation('claude')).toBe(false);
+      provider.checkoutRehome = { mode: 'live-relocate', relocateLiveConversation: async () => undefined };
+      expect(canSafelyRehomeConversation('claude')).toBe(true);
+    } finally { provider.checkoutRehome = original; }
+  });
+
+  it('does not tell a proven live provider to stop its turn, while leaving boundary guidance intact', () => {
+    for (const name of [CREATE_ISOLATED_CHECKOUT, COMPLETE_ISOLATED_CHECKOUT]) {
+      const description = liveCheckoutToolDescription(name, 'fallback');
+      expect(description).toContain('same');
+      expect(description).not.toMatch(/finish your reply|next turn|restarts/);
+    }
+    const tools = new Set([CREATE_ISOLATED_CHECKOUT, COMPLETE_ISOLATED_CHECKOUT]);
+    expect(bridgeInstructions(tools, true)).toContain('continue this same turn');
+    expect(bridgeInstructions(tools)).toContain('finish your reply');
+    expect(liveCheckoutToolDescription('clanker_context', 'read-only')).toBe('read-only');
+  });
+});
 
 describe('rehome capability is a provider/runtime fact, separate from MCP transport', () => {
   type Mutable = { agentBridge?: unknown };

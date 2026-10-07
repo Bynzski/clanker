@@ -128,6 +128,29 @@ describe('applyAgentCheckoutTransition', () => {
     expect(workspace().checkoutContexts).toEqual([MAIN, TREE]);
   });
 
+  it('live checkout movement preserves terminal, pane, layout, name and cached xterm identity', () => {
+    const before = seed({ checkoutContexts: [MAIN, TREE] });
+    applyAgentCheckoutTransition({ kind: 'terminal-checkout-changed', workspaceId: WS,
+      terminalId: 'old', checkoutContextId: TREE.id, workingDir: TREE.path });
+    expect(workspace().terminals[0]).toMatchObject({ id: 'old', displayName: 'Odessa', checkoutContextId: TREE.id, workingDir: TREE.path });
+    expect(workspace().layoutRoot).toBe(before.layoutRoot);
+    expect(workspace().panes).toEqual(before.panes);
+    expect(workspace().activeTerminalId).toBe('old');
+    expect(markTerminalDisposed).not.toHaveBeenCalled();
+    expect(killTerminal).not.toHaveBeenCalled();
+  });
+
+  it('ignores live movement for an unknown checkout or a closed terminal', () => {
+    const before = seed();
+    applyAgentCheckoutTransition({ kind: 'terminal-checkout-changed', workspaceId: WS,
+      terminalId: 'old', checkoutContextId: TREE.id, workingDir: TREE.path });
+    applyAgentCheckoutTransition({ kind: 'terminal-checkout-changed', workspaceId: WS,
+      terminalId: 'gone', checkoutContextId: MAIN.id, workingDir: MAIN.path });
+    expect(workspace()).toBe(before);
+    expect(markTerminalDisposed).not.toHaveBeenCalled();
+    expect(killTerminal).not.toHaveBeenCalled();
+  });
+
   it('checkout-attached refuses a context another workspace owns', () => {
     seed();
     applyAgentCheckoutTransition({ kind: 'checkout-attached', workspaceId: WS, checkoutContext: { ...TREE, workspaceId: 'other' } });
