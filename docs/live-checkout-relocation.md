@@ -2,7 +2,9 @@
 
 Tracking: #131, superseding #118 (live relocation), #114 (resume redraw) and
 #116 (history reliability). Those originals were closed as superseded, not completed.
-This review checkpoint remains **partial implementation**; #131 stays open.
+The user approved closing #131 at this checkpoint. Remaining native research and
+verification below are deferred, not claimed implemented; any future problems will
+get focused new issues. **No shipped provider enables live relocation.**
 
 ## Implemented
 
@@ -105,7 +107,7 @@ Use a disposable repository/worktree and a normal user-requested root turn:
 6. Repeat with child activity, denied movement, timeout, workspace close and dirty/ignored contents.
 7. Verify bridge calls resolve the new checkout only after commit, and no prompts/config are injected.
 
-## Still open
+## Deferred work and limitations
 
 - #131 / former #118: native Claude hook integration and real active-turn OpenCode/Codex experiments. Enabling any live
   provider without these would misrepresent turn continuity and risk split-brain checkout authority.

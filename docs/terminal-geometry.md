@@ -49,8 +49,9 @@ this is not XON/XOFF and does not increase the ordinary startup buffer.
 This does **not** guarantee calm native transcript restoration. User-driven layout
 or font changes during discovery can still require a later resize, and harnesses
 own their native replay/alternate-screen behavior. Deliberately long real
-OpenCode/Pi comparisons and the full native local/SSH readiness matrix remain in
-#131; neither fixtures nor measured geometry prove visual improvement.
+OpenCode/Pi comparisons and the full native local/SSH readiness matrix are deferred
+from #131 by the user's closeout decision; neither fixtures nor measured geometry
+prove visual improvement. Future problems will get focused new issues.
 
 ## Verification
 

@@ -69,9 +69,11 @@ Switch workspaces during discovery and check that results stay scoped. With one
 installed provider's store unreadable, other providers should remain available
 beside a compact warning; restore the store and reopen to clear the warning.
 
-## Remaining work (#131, superseding #116)
+## Deferred review (#131 closeout, superseding #116)
 
-This slice does not close the consolidated ticket. Remaining review includes
+The user approved closing the consolidated ticket with the shipped safeguards.
+The following review is deferred, not claimed complete; future problems will get
+focused new issues. Deferred review includes
 provider-parser malformed metadata, canonical history matching including unscoped
 Antigravity rows, provider availability refresh, live provider-specific fork
 semantics, the complete local/SSH/removed-checkout matrix, and live provider smoke.
