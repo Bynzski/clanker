@@ -63,14 +63,10 @@ import {
   withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
-import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
-import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
+import { restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
+import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
 import { bindTerminalToCheckoutContext, reconcileCheckoutContextList, removeCheckoutContextFromList, upsertCheckoutContextList } from '../lib/checkoutContexts';
-import {
-  readStoredNotesVisible,
-  writeStoredNotesVisible,
-} from '../lib/notesStorage';
 
 export type {
   BrowserPaneState,
@@ -187,11 +183,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     useAssistantNavStore.getState().clearActive();
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
-    const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath, id, workspace.environmentId);
-    const restoredNotesPane = storedNotesVisible
-      ? workspace.notesPane ?? { id: generateId('notes') }
-      : workspace.notesPane ?? null;
-    const nextWorkspace: WorkspaceTab = restoreWorkspaceLayout(sanitizeWorkspace({
+    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
       ...createDefaultExplorerState(),
       ...createDefaultEditorState(),
       ...createDefaultNotesState(),
@@ -200,10 +192,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...workspace,
       terminals: nameTerminals(workspace.terminals),
       name: defaultName,
-      notesVisible: workspace.notesVisible ?? storedNotesVisible,
-      notesPane: restoredNotesPane,
-    }));
-    const nextWorkspaces = assignWorkspaceLifecycles(insertWorkspaceInSavedOrder(state.workspaces, nextWorkspace), id);
+    });
+    const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
 
     const nextState = {
       ...getActiveWorkspaceSnapshot(nextWorkspace),
@@ -219,6 +209,28 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
     }
     return nextState;
+  }),
+
+  hydrateWorkspaceShells: (shells, requestedActiveId) => set((state) => {
+    // Prepared shells are installed once; live user-opened workspaces win duplicate races.
+    const workspaces = [...state.workspaces];
+    for (const shell of shells) {
+      if (!workspaces.some((entry) => isSameWorkspaceIdentity(
+        { environmentId: entry.environmentId, path: entry.workspacePath },
+        { environmentId: shell.environmentId, path: shell.workspacePath },
+      ))) workspaces.push(sanitizeWorkspace(shell));
+    }
+    const requested = shells.find((shell) => shell.id === requestedActiveId);
+    const activeId = workspaces.find((entry) => entry.id === requestedActiveId || (requested && isSameWorkspaceIdentity(
+      { environmentId: entry.environmentId, path: entry.workspacePath },
+      { environmentId: requested.environmentId, path: requested.workspacePath },
+    )))?.id ?? workspaces[0]?.id ?? null;
+    const active = workspaces.find((entry) => entry.id === activeId);
+    return {
+      ...(active ? getActiveWorkspaceSnapshot(active) : defaultWorkspaceState),
+      workspaces: assignWorkspaceLifecycles(workspaces, activeId),
+      activeWorkspaceId: activeId, activeWorkspaceLifecycle: active ? 'active' : null,
+    };
   }),
 
   getWorkspaceById: (id) => {
@@ -272,7 +284,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }),
 
   moveWorkspace: (workspaceId, targetWorkspaceId) => {
-    let moved = false;
     set((state) => {
       if (workspaceId === targetWorkspaceId) return state;
       const fromIndex = state.workspaces.findIndex((workspace) => workspace.id === workspaceId);
@@ -281,10 +292,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const workspaces = [...state.workspaces];
       const [workspace] = workspaces.splice(fromIndex, 1);
       workspaces.splice(targetIndex, 0, workspace);
-      moved = true;
       return { workspaces };
     });
-    if (moved) persistWorkspaceTabOrder(get().workspaces);
   },
 
   closeWorkspace: (id) => set((state) => {
@@ -643,13 +652,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.notesPane.id);
     }
 
-    writeStoredNotesVisible(
-      state.workspacePath,
-      nextNotesVisible,
-      state.activeWorkspaceId,
-      findActiveWorkspace(state.workspaces)?.environmentId,
-    );
-
     const nextState = {
       notesVisible: nextNotesVisible,
       notesPane: nextNotesPane,
@@ -678,7 +680,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     const nextLayoutRoot = removePaneFromLayout(workspace.layoutRoot, workspace.notesPane.id);
-    writeStoredNotesVisible(workspace.workspacePath, false, workspace.id, workspace.environmentId);
     const nextState = {
       layoutRevision: state.layoutRevision + 1,
       ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
