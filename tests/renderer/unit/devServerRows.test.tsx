@@ -68,7 +68,7 @@ describe('checkout-aware sidebar service controls', () => {
   it('shows an installation advisory and expandable failure diagnostics without running an install', async () => {
     installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command: { ...command, preparationHint: 'Run npm install in this checkout first.' } }) });
     const { rerender } = render(<WorkspaceNavigatorSection />);
-    expect(await screen.findByText('Run npm install in this checkout first.')).toBeTruthy();
+    expect(await screen.findByText('Dependencies may need installation')).toHaveAttribute('title', 'Run npm install in this checkout first.');
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
     expect(window.electronAPI.workspaceServiceStart).not.toHaveBeenCalled();
     act(() => useWorkspaceServiceStore.setState({ services: [{ ...service, status: 'failed', error: 'sh: next: command not found', previewUrl: undefined }] }));

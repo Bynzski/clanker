@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Bell, CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react';
 import { useNotificationStore, isPersistentNotification, MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../store/notificationStore';
 import type { AppNotification } from '../store/notificationStore';
@@ -19,6 +19,9 @@ function NotificationCard({ notification, history = false }: { notification: App
   const [focused, setFocused] = useState(false);
   const [running, setRunning] = useState<number | null>(null);
   const [actionError, setActionError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const messageId = useId();
+  const lengthy = !history && (notification.message.length > 180 || notification.message.split('\n').length > 3);
   const remaining = useRef(TOAST_DURATION_MS);
   const paused = hovered || focused || running !== null;
   useEffect(() => {
@@ -44,7 +47,9 @@ function NotificationCard({ notification, history = false }: { notification: App
       <Icon size={14} className="notification-tone-icon" aria-hidden="true" />
       <div className="notification-body">
         {notification.workspaceId && <div className="notification-workspace">{notification.workspaceName ?? notification.workspaceId}</div>}
-        <p className="notification-message">{notification.message}</p>
+        <p id={messageId} className={`notification-message${lengthy && !expanded ? ' notification-message--compact' : ''}`}>{notification.message}</p>
+        {lengthy && <Button variant="ghost" size="xs" className="notification-details" aria-expanded={expanded} aria-controls={messageId}
+          onClick={() => setExpanded((value) => !value)}>{expanded ? 'Less' : 'Details'}</Button>}
         {history && <time className="notification-time" dateTime={new Date(notification.createdAt).toISOString()}>
           {new Date(notification.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </time>}

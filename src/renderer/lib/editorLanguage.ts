@@ -1,11 +1,12 @@
 import type { Extension } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { javascript } from '@codemirror/lang-javascript';
+import { isMarkdownFile } from './markdownPreview';
 
 export function getLanguageExtension(fileNameOrPath: string): Extension {
   const lower = fileNameOrPath.toLowerCase();
 
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+  if (isMarkdownFile(lower)) {
     return markdown();
   }
 

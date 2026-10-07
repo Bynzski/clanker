@@ -169,8 +169,8 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       await openMenu();
       await user.click(screen.getByRole('button', { name: 'Prune missing worktrees…' }));
       const dialog = await screen.findByRole('alertdialog');
-      expect(dialog.textContent).toContain('stale records');
-      expect(dialog.textContent).toContain('No branch and no existing checkout directory is deleted');
+      expect(dialog.textContent).toContain('all missing-worktree records in this repository');
+      expect(dialog.textContent).toContain('No branches or existing directories are deleted');
       await user.click(screen.getByRole('button', { name: 'Prune records' }));
 
       await waitFor(() => expect(api.gitPruneWorktrees).toHaveBeenCalledExactlyOnceWith(ROOT, 'ws'));
@@ -236,7 +236,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     it('shows the lock reason and Cancel does not unlock', async () => {
       remaining = [MAIN_ENTRY, { ...LOCKED, lockReason: 'external drive' }];
       await openMenu('external-task');
-      expect(within(await row()).getByText(/Lock reason: external drive/)).toBeTruthy();
+      expect(within(await row()).getByText('Unlock before cleanup · external drive')).toBeTruthy();
       await user.click(within(await row()).getByRole('button', { name: /Unlock checkout/ }));
       expect((await screen.findByRole('alertdialog')).textContent).toContain('external drive');
       await user.click(screen.getByRole('button', { name: 'Cancel' }));

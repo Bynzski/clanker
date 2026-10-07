@@ -74,8 +74,8 @@ describe('Usage panel loading', () => {
     await openUsage();
     await act(async () => pending.find((d) => d.harnessId === 'agy')!.reject(new Error('ECONNRESET /home/me/.secret token=sk-abc')));
     const agy = within(panel()).getByRole('region', { name: 'Antigravity' });
-    expect(within(agy).getByText('Usage could not be read')).toBeInTheDocument();
-    expect(panel().textContent).not.toMatch(/ECONNRESET|sk-abc|secret/);
+    expect(within(agy).getByRole('img', { name: /Usage could not be read/ })).toBeInTheDocument();
+    expect(panel().innerHTML).not.toMatch(/ECONNRESET|sk-abc|secret/);
 
     await respond(pending.find((d) => d.harnessId === 'codex')!, okEntry('codex', 'Codex · weekly', 40));
     // Next poll fails at the IPC level: the measurement stays, flagged stale.
@@ -85,7 +85,7 @@ describe('Usage panel loading', () => {
     const codex = within(panel()).getByRole('region', { name: 'Codex' });
     expect(within(codex).getByText('60% remaining')).toBeInTheDocument();
     expect(within(codex).getByText('Stale')).toBeInTheDocument();
-    expect(within(codex).getByText('Usage could not be read')).toBeInTheDocument();
+    expect(within(codex).getByRole('img', { name: /Stale usage data · Usage could not be read/ })).toBeInTheDocument();
   });
 });
 
@@ -260,7 +260,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     expect(within(panel()).getByText('No usage providers available')).toBeInTheDocument();
-    expect(within(panel()).getByText('Install a supported harness here, or enable one in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(within(panel()).getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
     expect(within(panel()).queryByText('Checking usage…')).not.toBeInTheDocument();
     expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
     expect(calls()).toHaveLength(0);

@@ -368,12 +368,3 @@
 .git-init-branch-option input {
   accent-color: var(--accent-interactive);
 }
-
-.git-init-hint {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-default);
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-  line-height: 1.4;
-}
