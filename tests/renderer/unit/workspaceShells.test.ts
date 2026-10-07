@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
 import { installElectronApiMock } from '../../setup/electron';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
@@ -7,6 +8,7 @@ import { useNotificationStore } from '../../../src/renderer/store/notificationSt
 import { prepareWorkspaceShell, openWorkspace } from '../../../src/renderer/lib/openWorkspace';
 import { OPEN_WORKSPACES_STORAGE_KEY, parseOpenWorkspaceState, persistOpenWorkspaces, readOpenWorkspaceState } from '../../../src/renderer/lib/openWorkspaceStorage';
 import { startWorkspaceRestoration } from '../../../src/renderer/lib/workspaceStartup';
+import { useActiveDestination } from '../../../src/renderer/lib/activeDestination';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 const local = (path: string) => ({ environmentId: 'local', path });
@@ -253,6 +255,37 @@ describe('startup shell hydration', () => {
     expect(clear).not.toHaveBeenCalled();
     expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:bot');
     expect(store().workspaces.filter((w) => w.lifecycle === 'active')).toHaveLength(1);
+  });
+  it.each([false, true])('preserves saved Workspace selection when an Assistant opens during restore (closed before commit: %s)', async (closeBeforeCommit) => {
+    save([local('/a'), local('/b')], local('/b'));
+    const pending = deferred<{ success: boolean; location: ReturnType<typeof local> }>();
+    vi.mocked(window.electronAPI.registerOpenWorkspace).mockImplementation(async (_id: string, path: string) =>
+      path === '/b' ? pending.promise : { success: true, location: local(path) });
+    const restoration = startWorkspaceRestoration();
+    await vi.waitFor(() => expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledTimes(2));
+    useAssistantNavStore.getState().openAssistantSurface('hermes:bot');
+    if (closeBeforeCommit) useAssistantNavStore.getState().clearActive();
+    expect(store().workspaces).toEqual([]);
+    expect(readOpenWorkspaceState().activeWorkspace).toEqual(local('/b'));
+    pending.resolve({ success: true, location: local('/b') });
+    await restoration.done;
+    const b = store().workspaces.find((workspace) => workspace.workspacePath === '/b')!;
+    expect(store().activeWorkspaceId).toBe(b.id);
+    expect(store().workspaces.map((workspace) => workspace.lifecycle)).toEqual(['parked', 'active']);
+    expect(readOpenWorkspaceState()).toEqual({ version: 1, workspaces: [local('/a'), local('/b')], activeWorkspace: local('/b') });
+    const destination = renderHook(() => useActiveDestination());
+    expect(destination.result.current).toEqual(closeBeforeCommit
+      ? { kind: 'workspace', workspaceId: b.id } : { kind: 'assistant', assistantId: 'hermes:bot' });
+    act(() => useAssistantNavStore.getState().clearActive());
+    expect(destination.result.current).toEqual({ kind: 'workspace', workspaceId: b.id });
+    expect(readOpenWorkspaceState().activeWorkspace).toEqual(local('/b'));
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    expect(window.electronAPI.invokeSession).not.toHaveBeenCalled();
+    expect(window.electronAPI.browserCreateTab).not.toHaveBeenCalled();
+    for (const shell of store().workspaces) expect(shell).toMatchObject({ terminals: [], panes: [], layoutRoot: null, activeTerminalId: null,
+      browserVisible: false, browserPane: null, editorTabs: [], editorVisible: false, notesVisible: false, explorerVisible: false });
+    destination.unmount();
+    restoration.dispose();
   });
   it('cleans prepared authority on unmount without rewriting the saved set', async () => {
     save([local('/a'), local('/b')]);

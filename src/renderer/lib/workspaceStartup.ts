@@ -1,5 +1,4 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useNotificationStore } from '../store/notificationStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import { isSameWorkspaceIdentity, workspaceIdentityKey } from '../../shared/workspaceIdentity';
@@ -12,7 +11,8 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
   const saved = readOpenWorkspaceState(() => { invalidIdentities++; });
   let cancelled = false;
   let hydrating = true;
-  let userSelected = useWorkspaceStore.getState().activeWorkspaceId !== null;
+  // Assistant navigation is independent of the remembered active Workspace.
+  let workspaceSelectionChanged = useWorkspaceStore.getState().activeWorkspaceId !== null;
   let lastNavigation = '';
   const persist = () => {
     const state = useWorkspaceStore.getState();
@@ -24,16 +24,13 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
   const closed = new Set<string>();
   const unsubscribe = useWorkspaceStore.subscribe((state, previous) => {
     if (hydrating) {
-      if (state.activeWorkspaceId !== previous.activeWorkspaceId) userSelected = true;
+      if (state.activeWorkspaceId !== previous.activeWorkspaceId) workspaceSelectionChanged = true;
       for (const workspace of previous.workspaces) {
         if (!state.workspaces.some((entry) => entry.id === workspace.id)) closed.add(workspaceIdentityKey(workspaceLocation(workspace)));
       }
       return;
     }
     persist();
-  });
-  const unsubscribeAssistant = useAssistantNavStore.subscribe((state, previous) => {
-    if (state.activeAssistantId !== previous.activeAssistantId) userSelected = true;
   });
   const done = (async () => {
     const prepared = new Set<WorkspaceTab>();
@@ -64,7 +61,7 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
       const persistedActive = restoredActive && shells.includes(restoredActive) ? restoredActive
         : saved.activeWorkspace ? findOpenWorkspace(saved.activeWorkspace, shells) : undefined;
       const live = useWorkspaceStore.getState();
-      const activeId = userSelected ? live.activeWorkspaceId : persistedActive?.id ?? shells[0]?.id ?? null;
+      const activeId = workspaceSelectionChanged ? live.activeWorkspaceId : persistedActive?.id ?? shells[0]?.id ?? null;
       // No awaits between the final identity check and the store commit.
       useWorkspaceStore.getState().hydrateWorkspaceShells(shells, activeId);
       hydrating = false;
@@ -82,5 +79,5 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
       await Promise.all([...prepared].filter((shell) => !liveIds.has(shell.id)).map(unregisterWorkspaceShell));
     }
   })();
-  return { done, dispose: () => { cancelled = true; unsubscribe(); unsubscribeAssistant(); } };
+  return { done, dispose: () => { cancelled = true; unsubscribe(); } };
 }
