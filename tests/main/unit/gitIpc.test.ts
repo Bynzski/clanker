@@ -974,7 +974,7 @@ describe('Git IPC workspace identity routing', () => {
     vi.clearAllMocks();
   });
 
-  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null, remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence) {
+  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null, remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence, usages: Array<{ environmentId?: string; cwd?: string; remoteWorkingDir?: string }> = []) {
     const statuses: GitStatusResult[] = [];
     const mainWindow = { webContents: { send: vi.fn() } };
     const makeEnvironment = (id: string) => ({
@@ -1011,6 +1011,7 @@ describe('Git IPC workspace identity routing', () => {
       getMainWindow: () => mainWindow as never,
       getWorkspaceRegistry: () => registry,
       getLiveRemoteTerminalPaths,
+      getCheckoutUsages: () => usages,
       remoteWorktreeRemovalPersistence,
     });
     const handle = (channel: string) =>
@@ -1145,6 +1146,14 @@ describe('Git IPC workspace identity routing', () => {
       expect(result).toEqual({ success: true, pruned: ['/srv/Repo-gone'] });
       expect(mutations(remote).map(([cwd, args]) => [cwd, args])).toEqual([[workspacePath, ['worktree', 'prune', '--expire', 'now']]]);
       expect(local.execGit).not.toHaveBeenCalled();
+    });
+
+    test('prune refuses an active remote directory without mutating host metadata', async () => {
+      const { remote, handle } = setup(undefined, undefined, [{ environmentId: 'ssh', remoteWorkingDir: '/srv/Repo-gone' }]);
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + STALE]);
+      expect(await handle('git-prune-worktrees')(null, workspacePath, 'ssh-tab')).toMatchObject({ success: false, error: expect.stringContaining('Cannot prune') });
+      expect(mutations(remote)).toHaveLength(0);
     });
 
     test('prune with nothing stale runs no mutation', async () => {

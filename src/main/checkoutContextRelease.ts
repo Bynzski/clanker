@@ -1,7 +1,7 @@
 import type { CheckoutContext, ReleaseCheckoutContextResult } from '../shared/types/checkoutContext';
 import { LOCAL_ENVIRONMENT_ID } from '../shared/types/environments';
-import { toNativePath } from '../shared/pathNormalize';
-import { isInsideRoot } from './localPathContainment';
+import { toPosixPath } from '../shared/pathNormalize';
+import { locateCheckoutContext } from './agentLocation';
 import { isPathContained } from './remote/remotePaths';
 import type { WorkspaceRegistry } from './workspaceRegistry';
 
@@ -30,7 +30,8 @@ function isUsing(terminal: TerminalUsage, context: CheckoutContext, registry: Wo
   if (terminal.checkoutContextId === context.id) return true;
   if (isLocal(context.environmentId)) {
     if (!isLocal(terminal.environmentId)) return false;
-    return !terminal.cwd || isInsideRoot(toNativePath(context.path, process.platform), terminal.cwd);
+    // Usage (unlike filesystem authorization) must still count a directory removed under a shell.
+    return !terminal.cwd || locateCheckoutContext(toPosixPath(terminal.cwd), [context], 'local') !== null;
   }
   if (isLocal(terminal.environmentId)
     || registry.getWorktreeResourceId(terminal.environmentId!) !== registry.getWorktreeResourceId(context.environmentId)) {

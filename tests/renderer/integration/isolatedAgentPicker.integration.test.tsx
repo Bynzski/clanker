@@ -307,7 +307,7 @@ describe('isolated agent picker: harness + working copy', () => {
       expect(workspace().checkoutContexts).toHaveLength(1);
     });
 
-    it('disables missing and locked worktrees as destinations and points at the Git menu', async () => {
+    it('disables unhealthy destinations and opens shared confirmed recovery without closing the picker', async () => {
       worktrees = [
         MAIN_ENTRY,
         listed(WT('gone'), 'gone', { isPrunable: true }),
@@ -317,8 +317,8 @@ describe('isolated agent picker: harness + working copy', () => {
       render(<Header />);
       await openPicker();
 
-      const gone = await section('Existing worktrees').findByRole('button', { name: /gone/ });
-      const stuck = section('Existing worktrees').getByRole('button', { name: /stuck/ });
+      const gone = await section('Existing worktrees').findByRole('button', { name: /^gone/ });
+      const stuck = section('Existing worktrees').getByRole('button', { name: /^stuck/ });
       expect(gone).toBeDisabled();
       expect(gone).toHaveTextContent('Missing');
       expect(stuck).toBeDisabled();
@@ -326,8 +326,20 @@ describe('isolated agent picker: harness + working copy', () => {
       expect(gone.getAttribute('title')).toContain('Git menu');
       expect(stuck.getAttribute('title')).toContain('Git menu');
       expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
-      // Management actions do not live in the picker.
-      expect(screen.queryByRole('button', { name: /Remove|Unlock|Prune/ })).toBeNull();
+      await user.click(section('Existing worktrees').getByRole('button', { name: 'Repair checkout for branch stuck' }));
+      await user.click(await screen.findByRole('button', { name: 'Unlock checkout for branch stuck' }));
+      const dialog = await screen.findByRole('alertdialog');
+      expect(dialog.textContent).toContain(WT('stuck'));
+      expect(api.gitUnlockWorktree).not.toHaveBeenCalled();
+      api.gitUnlockWorktree.mockImplementationOnce(async () => {
+        worktrees = worktrees.map((entry) => entry.branch === 'stuck' ? { ...entry, isLocked: false } : entry);
+        return { success: true };
+      });
+      await user.click(screen.getByRole('button', { name: 'Unlock worktree' }));
+      await waitFor(() => expect(api.gitUnlockWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, WT('stuck'), 'ws'));
+      await waitFor(() => expect(section('Existing worktrees').getByRole('button', { name: /^stuck/ })).not.toBeDisabled());
+      expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
+      expect(api.spawnTerminal).not.toHaveBeenCalled();
     });
 
     it('does not offer the main checkout or the workspace\'s own root', async () => {

@@ -499,6 +499,7 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
     releaseCheckoutContext: releaseCheckoutWithUsages,
+    getCheckoutUsages: checkoutUsages,
     // An agent whose harness runs hooks in its own (now removed) directory can never settle its turn.
     onCheckoutContextsGone: (_workspaceId, goneContextIds) => {
       for (const terminalId of strandedAgentTerminals({

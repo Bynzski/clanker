@@ -74,6 +74,10 @@
 }
 .isolated-agent-choice:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.isolated-agent-worktree { display: flex; align-items: center; }
+.isolated-agent-worktree > .isolated-agent-choice { flex: 1 1 auto; min-width: 0; }
+.isolated-agent-worktree > .clanker-button { flex: none; }
+
 .isolated-agent-choice-label {
   flex: 1 1 auto;
   min-width: 0;

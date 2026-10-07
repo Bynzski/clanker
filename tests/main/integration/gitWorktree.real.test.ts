@@ -529,6 +529,33 @@ describe('GitService worktree prune and unlock (real Git)', () => {
     });
   });
 
+  it('explicitly unlocks a missing locked checkout, prunes it, and a fresh service cannot resurrect it', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const gone = (await service.createWorktree(repo, 'main', 'task/recover')).worktree!.path;
+      await execFileAsync('git', ['worktree', 'lock', '--reason', 'offline drive', gone], { cwd: repo });
+      fs.rmSync(gone, { recursive: true, force: true });
+      expect(await service.pruneWorktrees(repo)).toEqual({ success: true, pruned: [] });
+      expect(await service.unlockWorktree(repo, gone)).toEqual({ success: true });
+      expect((await service.listWorktrees(repo)).worktrees.find((entry) => entry.path === gone)?.isPrunable).toBe(true);
+      expect(await service.pruneWorktrees(repo)).toEqual({ success: true, pruned: [gone] });
+      expect((await makeService().listWorktrees(repo)).worktrees.some((entry) => entry.path === gone)).toBe(false);
+      expect(await branchExists(repo, 'task/recover')).toBe(true);
+    });
+  });
+
+  it('rechecks live usage after listing and refuses mutation without falsely reporting success', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const gone = (await service.createWorktree(repo, 'main', 'task/active')).worktree!.path;
+      fs.rmSync(gone, { recursive: true, force: true });
+      const guard = vi.fn(() => 'Active terminal still owns this checkout');
+      expect(await service.pruneWorktrees(repo, guard)).toEqual({ success: false, pruned: [], error: 'Active terminal still owns this checkout' });
+      expect(guard).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ path: gone })]));
+      expect((await service.listWorktrees(repo)).worktrees.some((entry) => entry.path === gone)).toBe(true);
+    });
+  });
+
   it('refuses to prune while a removal is in flight', async () => {
     await withRepo(async (repo) => {
       let release!: () => void;
@@ -550,6 +577,7 @@ describe('GitService worktree prune and unlock (real Git)', () => {
       await execFileAsync('git', ['worktree', 'lock', '--reason', 'external', checkout], { cwd: repo });
       const locked = (await service.listWorktrees(repo)).worktrees.find((entry) => entry.branch === 'task/locked');
       expect(locked?.isLocked).toBe(true);
+      expect(locked?.lockReason).toBe('external');
       // A locked checkout cannot be inspected or removed until it is unlocked.
       expect((await service.inspectWorktree(repo, checkout)).success).toBe(false);
       expect((await service.removeWorktree(repo, checkout, 'task/locked')).success).toBe(false);

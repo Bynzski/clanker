@@ -66,6 +66,13 @@ describe('reconcileCheckoutContexts (local)', () => {
     ] };
   });
 
+  it('retains a gone checkout when a main-bound shell was cd-ed into its now missing directory', async () => {
+    terminals.set('cd-ed-shell', { checkoutContextId: mainCheckoutContextId('ws'), environmentId: 'local', cwd: dirs.removedUnused });
+    const result = await run();
+    expect(result.dropped).not.toContain(ids.removedUnused);
+    expect(registry.getCheckoutContext(ids.removedUnused)).toMatchObject({ missing: true });
+  });
+
   it('refreshes a present checkout\'s branch in place and keeps the registered object', async () => {
     const before = registry.getCheckoutContext(ids.present);
     const result = await run();
