@@ -45,16 +45,26 @@ own `npm run dev` as the fixture: that starts another Electron application.
   deliberately not offered in V1).
 - Invalid package metadata: compact unavailable state with a retry action and error
   tooltip. No scripts run during inspection.
-- Failed script / unavailable package manager: failed state, with details in the
-  tooltip; another checkout's service must remain unaffected.
+- Fresh isolated checkout with missing dependencies: an advisory recommends the
+  selected package manager's install command **in that checkout**. Detection and Run
+  never silently install dependencies. Install manually in the checkout terminal,
+  then retry Run.
+- Failed script / unavailable package manager: failed state, with an expandable
+  `Why it failed` diagnostic (bounded 2 KiB output tail); another checkout's service
+  must remain unaffected.
+- Close a conversation after its service stops/fails, or remove its released checkout:
+  no stale stopped-service row should remain. A still-running service must remain
+  accessible and protected until explicitly stopped.
 - Printed URL before the server binds: readiness retries eventually enable Browser.
 - Failed Browser readiness: show an error, do not pretend navigation succeeded.
 - Switch workspace or to an Assistant while Browser readiness is pending: the late
   result must not redirect the new destination.
-- SSH workspace: no local dev-server discovery/launch (existing SSH previews unchanged).
+- SSH workspace: one `Dev Server · local only` note explains the limitation; no local
+  dev-server discovery/launch (existing SSH previews unchanged). Start remote servers
+  manually in their SSH terminal and use the Browser's remote preview discovery.
 
 V1 inspects only the registered effective checkout root. It does not recurse into
-monorepos, offer arbitrary commands, retain output for Show Output, reconstruct
+monorepos, offer arbitrary commands, retain full/live output for Show Output, reconstruct
 processes across restart, or automatically open the Browser.
 
 Automated coverage includes real npm/PTY fixtures with two concurrent servers,

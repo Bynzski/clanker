@@ -178,8 +178,13 @@ Discovery reads bounded `package.json` through the environment's file API and in
 names. Only fixed npm/pnpm/yarn/bun `dev` argv is generated; project script bodies never become shell
 strings. Execution requires Run. Windows command shims use the existing canonical PTY spawn planner.
 No xterm startup handshake, normal terminal-map entry, pane, attention credential or MCP credential
-is involved. Output is discarded after bounded complete-row URL parsing; candidate loopback URLs
-are bounded and readiness-probed without overlap. There is no Show Output in V1.
+is involved. Output retains only an ANSI-free 2 KiB tail for failure diagnostics after bounded
+complete-row URL parsing; candidate loopback URLs are bounded and readiness-probed without overlap.
+There is no live Show Output in V1. Checkouts with declared dependencies but no `node_modules` or
+Yarn PnP setup receive an advisory to run the selected manager's install command themselves; detection
+never installs dependencies automatically or blocks dependency-free/custom scripts. Completed records
+are retired after their context or originating conversation disappears; only live orphan services
+remain as checkout-labelled management rows.
 
 Pending and live services participate in checkout release/reconciliation and local worktree-removal
 usage checks. A service survives its originating terminal, workspace switches and Browser visibility;

@@ -18,6 +18,7 @@ import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import WorkspaceCheckouts from './WorkspaceCheckouts';
 import DevServerRow, { DevServerControls } from './DevServerRow';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
+import { isLiveWorkspaceService } from '../../shared/types/workspaceServices';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
@@ -263,7 +264,12 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                     ))}
                   </ul>
                 )}
-                {isExpanded && services.filter((service) => service.workspaceId === workspace.id && !workspace.terminals.some((terminal) => {
+                {isExpanded && workspace.environmentId && workspace.environmentId !== 'local' && (
+                  <div className="ws-service-row" role="note" title="Dev Server launch is local-only for now. For SSH, start the server in a remote terminal and use the Browser's remote preview discovery.">
+                    <Server size={11} aria-hidden="true" /><span className="ws-service-label">Dev Server · local only</span>
+                  </div>
+                )}
+                {isExpanded && services.filter((service) => service.workspaceId === workspace.id && isLiveWorkspaceService(service) && !workspace.terminals.some((terminal) => {
                   const location = byTerminalId[terminal.id]?.location;
                   return (location ? location.checkoutContextId : terminal.checkoutContextId ?? mainCheckoutContextId(workspace.id)) === service.checkoutContextId;
                 })).map((service) => (

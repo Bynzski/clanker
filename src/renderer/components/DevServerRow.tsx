@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Circle, ExternalLink, LoaderCircle, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react';
-import type { DevServiceCommand, WorkspaceService } from '../../shared/types/workspaceServices';
+import { isLiveWorkspaceService, type DevServiceCommand, type WorkspaceService } from '../../shared/types/workspaceServices';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -15,7 +15,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const live = service && ['starting', 'running', 'stopping'].includes(service.status);
+  const live = service && isLiveWorkspaceService(service);
   const stopping = service?.status === 'stopping';
   const starting = service?.status === 'starting';
   const failed = service?.status === 'failed';
@@ -26,7 +26,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
     try { await run(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Dev server operation failed'); }
     finally { setBusy(false); }
   };
-  const title = `${service?.cwd ?? command?.cwd ?? ''}\n${service?.command ?? command?.command ?? ''}${service?.error ? `\n${service.error}` : ''}`;
+  const title = `${service?.cwd ?? command?.cwd ?? ''}\n${service?.command ?? command?.command ?? ''}${service?.error ? `\n${service.error}` : command?.preparationHint ? `\n${command.preparationHint}` : ''}`;
   return <div className="ws-service-item">
     <div className={`ws-service-row${failed ? ' failed' : ''}`} title={title}>
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
@@ -53,6 +53,10 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
         if (!await openUrlInWorkspaceBrowser(workspace.id, url)) throw new Error('Could not open dev server preview');
       })}><ExternalLink size={12} /></IconButton>}
     </div>
+    {!live && !failed && command?.preparationHint && <div className="ws-service-hint">{command.preparationHint}</div>}
+    {failed && service?.error && <details className="ws-service-diagnostics">
+      <summary>Why it failed</summary><pre>{service.error}</pre>
+    </details>}
     {(error || (stopping && service?.error)) && <div className="ws-service-error" role="alert">{error || service?.error}</div>}
   </div>;
 }

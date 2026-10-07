@@ -207,6 +207,9 @@
 .ws-service-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-service-row.failed, .ws-service-error { color: var(--status-error); }
 .ws-service-error { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.ws-service-hint, .ws-service-diagnostics { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.ws-service-diagnostics summary { cursor: pointer; }
+.ws-service-diagnostics pre { max-height: 120px; overflow: auto; white-space: pre-wrap; font: inherit; font-family: var(--font-mono); margin: 4px 0; user-select: text; }
 .ws-service-checkout { display: flex; gap: 4px; align-items: center; padding: 2px 8px 0 28px; color: var(--text-muted); font-size: var(--font-size-xs); }
 .ws-service-checkout svg { flex-shrink: 0; }
 .ws-service-checkout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

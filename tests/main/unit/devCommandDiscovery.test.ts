@@ -37,6 +37,19 @@ describe('deterministic dev command discovery', () => {
     vi.mocked(env.readFile).mockResolvedValueOnce({ success: false, errorCode: 'file-too-large', error: 'Too large' });
     await expect(discoverDevCommand(env, context)).rejects.toThrow('Too large');
   });
+  it('advises installation for a checkout with dependencies but no node_modules without running tooling', async () => {
+    const env = environment({ scripts: { dev: 'next dev' }, dependencies: { next: '1.0.0' }, packageManager: 'pnpm@1.2.3' });
+    expect(await discoverDevCommand(env, context)).toMatchObject({ command: 'pnpm run dev', preparationHint: expect.stringContaining('pnpm install in this checkout') });
+    expect(env.listDirectory).toHaveBeenCalledOnce();
+  });
+  it.each(['node_modules', '.pnp.cjs', '.pnp.js'])('does not advise installation with an existing %s dependency setup', async (name) => {
+    const env = environment({ scripts: { dev: 'next dev' }, dependencies: { next: '1.0.0' } });
+    vi.mocked(env.listDirectory).mockResolvedValue({ success: true, entries: [{ name, path: `/repo/${name}`, isDirectory: name === 'node_modules', size: 0, modified: 0 }] });
+    expect((await discoverDevCommand(env, context))?.preparationHint).toBeUndefined();
+  });
+  it('does not require node_modules for a dependency-free Node dev script', async () => {
+    expect((await discoverDevCommand(environment({ scripts: { dev: 'node server.js' } }), context))?.preparationHint).toBeUndefined();
+  });
   it('inspects the exact registered worktree root, never its descriptive mainCheckoutPath', async () => {
     const env = environment({ scripts: { dev: 'vite' } });
     const worktree = { ...context, id: 'wt', kind: 'worktree' as const, path: '/repo-worktrees/a', mainCheckoutPath: '/repo' };

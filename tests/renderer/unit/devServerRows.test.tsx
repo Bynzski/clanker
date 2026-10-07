@@ -57,6 +57,24 @@ describe('checkout-aware sidebar service controls', () => {
     expect(within(detached).getByText('feature')).toBeTruthy();
     expect(within(detached).getByRole('button', { name: 'Stop Dev Server' })).toBeTruthy();
   });
+  it.each(['stopped', 'failed'] as const)('does not leave an orphan %s service row after the originating conversation closes', (status) => {
+    useWorkspaceServiceStore.setState({ services: [{ ...service, status, previewUrl: undefined }] });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    useWorkspaceStore.setState({ workspaces: [{ ...workspace, terminals: [] }] });
+    render(<WorkspaceNavigatorSection />);
+    expect(screen.queryByLabelText('Checkout service')).toBeNull();
+    expect(screen.queryByText(/Dev Server/)).toBeNull();
+  });
+  it('shows an installation advisory and expandable failure diagnostics without running an install', async () => {
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command: { ...command, preparationHint: 'Run npm install in this checkout first.' } }) });
+    const { rerender } = render(<WorkspaceNavigatorSection />);
+    expect(await screen.findByText('Run npm install in this checkout first.')).toBeTruthy();
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    expect(window.electronAPI.workspaceServiceStart).not.toHaveBeenCalled();
+    act(() => useWorkspaceServiceStore.setState({ services: [{ ...service, status: 'failed', error: 'sh: next: command not found', previewUrl: undefined }] }));
+    rerender(<WorkspaceNavigatorSection />);
+    expect(screen.getByText('Why it failed').closest('details')?.textContent).toContain('sh: next: command not found');
+  });
   it('shows startup/failure and start errors without consuming any layout pane', async () => {
     useWorkspaceServiceStore.setState({ services: [{ ...service, status: 'starting', previewUrl: undefined }] });
     const { rerender } = render(<WorkspaceNavigatorSection />);
@@ -86,6 +104,8 @@ describe('checkout-aware sidebar service controls', () => {
     render(<WorkspaceNavigatorSection />);
     expect(window.electronAPI.workspaceServiceDiscover).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /Run Dev Server/ })).toBeNull();
+    expect(screen.getByRole('note').textContent).toBe('Dev Server · local only');
+    expect(screen.getByRole('note').title).toContain('remote terminal');
   });
   it('shows no service row where no dev script exists; reports discovery errors with an accessible retry', async () => {
     installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true }) });
@@ -147,6 +167,20 @@ describe('app-scoped service bridge', () => {
     dispose(); expect(unsubscribe).toHaveBeenCalledOnce();
     notify({ revision: 4, services: [] });
     expect(useWorkspaceServiceStore.getState().services).toHaveLength(1);
+  });
+  it('removes ended orphan/context records immediately on store changes and refuses their late snapshots', () => {
+    useWorkspaceServiceStore.getState().apply({ revision: 1, services: [{ ...service, status: 'stopped' }] });
+    const dispose = startWorkspaceServiceBridge();
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    useWorkspaceStore.setState({ workspaces: [{ ...workspace, terminals: [] }] });
+    expect(useWorkspaceServiceStore.getState().services).toEqual([]);
+    useWorkspaceServiceStore.getState().apply({ revision: 2, services: [{ ...service, status: 'stopped' }] });
+    expect(useWorkspaceServiceStore.getState().services).toEqual([]);
+    useWorkspaceServiceStore.getState().apply({ revision: 3, services: [service] });
+    expect(useWorkspaceServiceStore.getState().services).toHaveLength(1);
+    useWorkspaceStore.setState({ workspaces: [{ ...workspace, checkoutContexts: [main] }] });
+    expect(useWorkspaceServiceStore.getState().services).toEqual([]);
+    dispose();
   });
   it('drops closed workspace entries and refuses snapshots for foreign or repointed contexts', () => {
     useWorkspaceServiceStore.getState().apply({ revision: 1, services: [service, { ...service, id: 'wrong', checkoutRoot: '/escape' }, { ...service, id: 'foreign', workspaceId: 'other' }] });

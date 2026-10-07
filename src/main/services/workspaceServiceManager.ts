@@ -31,6 +31,7 @@ interface Runtime {
   startupTimer?: ReturnType<typeof setTimeout>;
   probing: boolean;
   candidates: Set<string>;
+  outputTail: string;
 }
 const message = (error: unknown) => error instanceof Error ? error.message : 'Dev server operation failed';
 
@@ -53,6 +54,16 @@ export class WorkspaceServiceManager {
   }) {}
 
   snapshot(): WorkspaceServicesUpdate {
+    // Completed diagnostics need not outlive their checkout or originating conversation.
+    // Live services are deliberately retained even when the conversation has gone.
+    let removed = false;
+    for (const [id, runtime] of this.runtimes) {
+      if (runtime.exited && (!this.deps.registry.resolveCheckoutContext(runtime.service.workspaceId, runtime.service.checkoutContextId)
+        || !this.deps.getTerminal(runtime.service.sourceTerminalId))) {
+        this.runtimes.delete(id); removed = true;
+      }
+    }
+    if (removed) this.revision++;
     return { revision: this.revision, services: [...this.runtimes.values()].map(({ service }) => ({ ...service })) };
   }
   private publish() { this.revision++; this.deps.changed(this.snapshot()); }
@@ -96,6 +107,7 @@ export class WorkspaceServiceManager {
   async start(request: DevServiceStartRequest): Promise<WorkspaceServiceResult> {
     let runtime: Runtime | undefined;
     try {
+      this.snapshot(); // Retire completed orphan records before applying the global bound.
       const target = this.resolve(request);
       if (request.checkoutContextId !== target.context.id || request.cwd !== target.canonicalRoot) throw new Error('Terminal checkout changed; discover the dev command again');
       const existing = [...this.runtimes.values()].find((entry) => entry.service.workspaceId === request.workspaceId && entry.service.checkoutContextId === target.context.id);
@@ -109,7 +121,7 @@ export class WorkspaceServiceManager {
       runtime = {
         service: { id, workspaceId: request.workspaceId, checkoutContextId: target.context.id, checkoutRoot: target.context.path, cwd: target.canonicalRoot,
           command: request.command, packageManager: 'npm', sourceTerminalId: request.terminalId, status: 'starting' },
-        cancelled: false, exited: false, probing: false, candidates: new Set(),
+        cancelled: false, exited: false, probing: false, candidates: new Set(), outputTail: '',
       };
       this.runtimes.set(id, runtime);
       // Reserve before asynchronous inspection: release/removal and duplicate launches cannot race the spawn.
@@ -137,8 +149,11 @@ export class WorkspaceServiceManager {
       runtime.process = child;
       runtime.service.pid = child.pid;
       const live = runtime;
-      const observe = createTerminalOutputRows((row) => this.observeUrl(live, row));
-      child.onData(observe); // Discard output after bounded row parsing; no unbounded stdout retention.
+      const observe = createTerminalOutputRows((row) => {
+        if (row.trim()) live.outputTail = `${live.outputTail}${row}\n`.slice(-2048);
+        this.observeUrl(live, row);
+      });
+      child.onData(observe); // Only a bounded 2 KiB failure tail, never an unbounded output buffer.
       child.onExit(({ exitCode }) => {
         live.ptyExited = true;
         clearTimeout(live.startupTimer);
@@ -150,6 +165,7 @@ export class WorkspaceServiceManager {
           this.signalGroup(live, 'SIGKILL');
           live.exited = true;
           live.service.status = exitCode === 0 ? 'stopped' : 'failed';
+          if (exitCode !== 0) live.service.error = [live.service.preparationHint, live.outputTail.trim() || `Command exited with code ${exitCode}`].filter(Boolean).join('\n');
         }
         if (this.runtimes.get(id) === live) this.publish();
       });

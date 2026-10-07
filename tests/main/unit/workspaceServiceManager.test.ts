@@ -217,6 +217,27 @@ describe('workspace-owned dev services', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect((await retry).success).toBe(true); expect(manager.usages()).toEqual([]);
   });
+  it('retains a bounded ANSI-free diagnostic tail on failure instead of hiding the reason', async () => {
+    await manager.start(request());
+    children[0].data('old line\n'.repeat(1000) + '\x1b[31msh: next: command not found\x1b[0m\n');
+    children[0].exit(127);
+    const failed = manager.snapshot().services[0];
+    expect(failed.error).toContain('sh: next: command not found');
+    expect(failed.error).not.toContain('\x1b');
+    expect(failed.error!.length).toBeLessThanOrEqual(2048);
+  });
+  it('forgets completed orphan records but keeps live processes after a conversation closes', async () => {
+    await manager.start(request()); await manager.start(request('b'));
+    children[0].exit(1);
+    terminals.delete('a'); terminals.delete('b');
+    expect(manager.snapshot().services.map((entry) => entry.checkoutContextId)).toEqual([b.id]);
+    expect(manager.usages()).toHaveLength(1);
+  });
+  it('forgets completed records after their checkout context is released', async () => {
+    await manager.start(request()); children[0].exit(0);
+    registry.unregisterCheckoutContext(a.id);
+    expect(manager.snapshot().services).toEqual([]);
+  });
   it('refuses stopping another workspace service', async () => {
     const started = await manager.start(request());
     expect((await manager.stop('other', started.service!.id)).success).toBe(false);
