@@ -9,6 +9,7 @@ import App from '../../../src/renderer/App';
 import { useNotificationStore } from '../../../src/renderer/store/notificationStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
+import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock localStorage for migrateLegacyFavorites in App.tsx
@@ -119,7 +120,7 @@ describe('App', () => {
     });
 
     // Mock window.electronAPI
-    window.electronAPI = {
+    installElectronApiMock({
       spawnTerminal: mockSpawnTerminal,
       registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
         success: true, location: { path, environmentId },
@@ -144,7 +145,7 @@ describe('App', () => {
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),
       onFileChanged: vi.fn().mockReturnValue(vi.fn()),
-    } as unknown as typeof window.electronAPI;
+    });
   });
 
   afterEach(() => {

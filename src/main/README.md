@@ -17,6 +17,8 @@ src/main/
 ├── workspaceRegistry.ts     # Runtime workspace ID to environment and canonical root
 ├── environment/             # Local and SSH workspace environment resolution
 ├── remote/                  # Bounded OpenSSH commands and SSH filesystem implementation
+├── services/                # Local checkout-scoped headless dev-server PTYs and metadata discovery
+├── terminalOutputRows.ts    # Bounded complete PTY row parsing shared by dev services / SSH preview
 ├── sessionHistory.ts       # Chat history discovery and caching
 ├── fileService.ts           # File read/write operations
 ├── fileWatcher.ts           # File system watching (couples to GitService)
@@ -78,6 +80,7 @@ All IPC handler registrations. Each file corresponds to a domain:
 |------|---------|
 | `settingsIpc.ts` | Persisted settings and harness defaults |
 | `terminalIpc.ts` | PTY spawn, write, resize, kill, startup handshake, clipboard write |
+| `workspaceServiceIpc.ts` | Local dev command discovery/start/stop, runtime snapshots and change notifications |
 | `gitIpc.ts` | Git polling, status, branch operations, stash, merge, history, diff, remotes, push/pull/fetch |
 | `assistantIpc.ts` | Assistant settings/refresh, opening a surface, PTY write/resize; no generic Hermes RPC, URL or token channel |
 | `browserIpc.ts` | WebContentsView navigation, back/forward, bounds, external link handling |
@@ -159,6 +162,41 @@ Browser annotation feature for capturing structured element descriptions:
 - **Test exports are internal.** `main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, `killAllTerminals` for test access only. Do not build new features on these exports.
 - **Canonical IPC paths are POSIX.** Convert local paths to native (`path.sep`) at the main-process boundary and return forward slashes to the renderer. Keep SSH paths as POSIX paths on the remote host. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
 - **Platform branching.** Use `src/main/platformShell.ts` for default-shell selection and `harnessLaunch.resolveHarnessPtySpawn()` for local PTY harness command resolution (`resolveHarnessSpawn()` is legacy, non-PTY only). Do not add ad-hoc `process.platform === 'win32'` branches; centralize them in these helpers.
+
+## Checkout Dev Services
+
+`services/workspaceServiceManager.ts` owns local headless PTYs, one service per workspace + checkout
+context (up to 64 retained service records globally). Conversation IDs select the launch surface, not
+process ownership. Main resolves a native agent's reported context, or its launch context before a
+report exists, then requires that root to be registered under the terminal's workspace. A report
+outside registered roots fails closed. Discovery resolves the physical root; Start confirms that
+same displayed cwd/command and rechecks exact workspace/context/terminal and physical-root identities
+after inspection and root validation, before spawning. The PTY uses the resolved root rather than
+a mutable symlink spelling; snapshots retain `checkoutRoot` separately for context identity.
+
+Discovery reads bounded `package.json` through the environment's file API and inspects root lockfile
+names. Only fixed npm/pnpm/yarn/bun `dev` argv is generated; project script bodies never become shell
+strings. Execution requires Run. Windows command shims use the existing canonical PTY spawn planner.
+No xterm startup handshake, normal terminal-map entry, pane, attention credential or MCP credential
+is involved. Output retains only an ANSI-free 2 KiB tail for failure diagnostics after bounded
+complete-row URL parsing; candidate loopback URLs are bounded and readiness-probed without overlap.
+There is no live Show Output in V1. Checkouts with declared dependencies but no `node_modules` or
+Yarn PnP setup receive an advisory and an explicit `Install…` action. Its confirmation names the
+fixed manager install command, physical checkout cwd and install-script trust transition. The renderer
+rediscovers the target through main, then uses the existing checkout-bound terminal launcher to open
+a visible shell (`Install dependencies`), not a second hidden service; main confines its canonical cwd
+to that context. The normal TerminalPane readiness handshake delivers the command once visible.
+Setup never automatically starts the dev server, never derives commands from diagnostic text, and
+never installs during detection or blocks dependency-free/custom scripts. Completed records
+are retired after their context or originating conversation disappears; only live orphan services
+remain as checkout-labelled management rows.
+
+Pending and live services participate in checkout release/reconciliation and local worktree-removal
+usage checks. A service survives its originating terminal, workspace switches and Browser visibility;
+workspace close, renderer loss, window close and quit stop it. POSIX termination escalates the original
+process group, even if npm's parent exits before descendants. Quit waits for cleanup. Snapshots are
+runtime-only and revision-ordered by the app-scoped renderer bridge, never persisted as running.
+SSH launching and automatic Browser opening are out of scope. See [manual smoke](../../docs/dev-services-smoke-test.md).
 
 ## Hermes Assistants
 

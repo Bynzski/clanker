@@ -93,6 +93,11 @@ export type {
 import type { AssistantOpenResult, AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
 
 export interface ElectronAPI {
+  workspaceServiceDiscover: (request: import('../shared/types/workspaceServices').DevServiceTarget) => Promise<import('../shared/types/workspaceServices').DevServiceDiscoveryResult>;
+  workspaceServiceStart: (request: import('../shared/types/workspaceServices').DevServiceStartRequest) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
+  workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
+  workspaceServiceGet: () => Promise<import('../shared/types/workspaceServices').WorkspaceServicesUpdate>;
+  onWorkspaceServicesChanged: (callback: (update: import('../shared/types/workspaceServices').WorkspaceServicesUpdate) => void) => () => void;
   getAssistants: () => Promise<AssistantSnapshot>;
   configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
   refreshAssistants: () => Promise<AssistantSnapshot>;

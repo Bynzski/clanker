@@ -42,7 +42,7 @@ import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
 import { isInsideRoot } from '../localPathContainment';
-import { releaseCheckoutContext } from '../checkoutContextRelease';
+import { releaseCheckoutContext, type TerminalUsage } from '../checkoutContextRelease';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -82,6 +82,7 @@ export type { Terminal };
 
 interface RegisterTerminalIpcDeps {
   getTerminals: () => Map<string, Terminal>;
+  getAdditionalCheckoutUsages?: () => TerminalUsage[];
   getMainWindow: () => BrowserWindow | null;
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
@@ -600,7 +601,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   ipcMain.handle(RELEASE_CHECKOUT_CONTEXT, (_, workspaceId: unknown, checkoutContextId: unknown) => {
     const registry = deps.getWorkspaceRegistry?.();
     if (!registry) return fail('Workspace registry is unavailable');
-    return releaseCheckoutContext({ registry, terminals: getTerminals().values(), workspaceId, checkoutContextId });
+    return releaseCheckoutContext({ registry, terminals: [...getTerminals().values(), ...(deps.getAdditionalCheckoutUsages?.() ?? [])], workspaceId, checkoutContextId });
   });
 
   ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {

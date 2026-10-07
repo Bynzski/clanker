@@ -7,6 +7,9 @@ export interface CheckoutContextLaunchOptions {
   harness?: string;
   model?: string;
   initialCommand?: string;
+  /** Optional canonical cwd/subdirectory; main still confines it to the registered context root. */
+  workingDir?: string;
+  displayName?: string;
 }
 
 /**
@@ -30,7 +33,7 @@ export async function launchTerminalInCheckoutContext(
   }
 
   const info = await window.electronAPI.spawnTerminal(
-    checkoutContext.path,
+    options.workingDir ?? checkoutContext.path,
     options.harness,
     options.model,
     options.initialCommand,
@@ -67,7 +70,8 @@ export async function launchTerminalInCheckoutContext(
   const terminal: Terminal = {
     id: info.id,
     pid: info.pid,
-    workingDir: checkoutContext.path,
+    workingDir: options.workingDir ?? checkoutContext.path,
+    ...(options.displayName ? { displayName: options.displayName } : {}),
     workspaceId: workspace.id,
     checkoutContextId: checkoutContext.id,
     environmentId,
