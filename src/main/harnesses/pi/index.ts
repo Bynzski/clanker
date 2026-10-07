@@ -1,4 +1,5 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
+import { agentBridge } from './agentBridge';
 import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
@@ -24,5 +25,6 @@ export const piProvider = defineHarness({
   aiCommit: { modelArg: '--model',
     buildInvocation: ({ model, prompt }) => ({ command: 'pi', args: [...['--print'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 45000 }),
   },
+  agentBridge,
   launch: { command: 'pi', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

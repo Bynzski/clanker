@@ -645,7 +645,7 @@ the user already owns this name or channel. A provider that cannot attach withou
 disabling user MCP configuration omits the capability. There is no no-op support, and
 `defineHarness()` plus the descriptor's `agentBridge` flag keep metadata and implementation in step.
 
-Verified against the installed CLIs (Claude Code 2.1.289, Codex 0.160.0, OpenCode 1.18.34) without
+Verified against the installed CLIs (Claude Code 2.1.289, Codex 0.160.0, OpenCode 1.18.34, Pi 1.0.4) without
 relying on remembered flags; each attachment was exercised against a real bridge instance:
 
 | Harness | Mechanism | User config | Credential |
@@ -653,12 +653,29 @@ relying on remembered flags; each attachment was exercised against a real bridge
 | Claude | extra `--mcp-config <scratch>/claude-mcp.json` placed last (it is variadic); no `--strict-mcp-config` | merged with user/project/local servers; skipped when the user passed `--strict-mcp-config` | header `Bearer ${CLANKER_MCP_TOKEN}` expanded from the environment |
 | Codex | `-c mcp_servers.clanker-grid.url=…` and `….bearer_token_env_var="CLANKER_MCP_TOKEN"`, before a `resume`/`fork` subcommand | overrides merge per key; `codex mcp list` shows the user's own servers beside ours; skipped if the name is already defined on the command line or in `config.toml` | `bearer_token_env_var` |
 | OpenCode | `OPENCODE_CONFIG_CONTENT` with an `mcp` entry | deep-merged over every other config source; skipped if the user already sets the variable | `Bearer {env:CLANKER_MCP_TOKEN}` |
+| Pi | private launch-owned `--extension` using `pi.registerMcpServer` with direct exposure | session-only, no agent-directory relocation; Pi preserves configured-server precedence and user tool restrictions | header `Bearer ${CLANKER_MCP_TOKEN}` expanded by Pi |
+
+Pi's extension checks the public registration API and `/mcp` command's `sourceInfo.path`
+(`builtin:mcp`) on `session_start`, after extensions load. Older APIs, disabled built-in MCP
+(`-builtin:mcp`), or a replacement MCP extension leave the session usable without Clanker's
+registration. `--no-mcp` and `--no-extensions` decline attachment before allocating scratch files.
+Pi owns normalized name conflict handling (`-` and `_` aliases): configured servers take precedence,
+and another extension's registration throws and is left untouched. Clanker never calls
+`setActiveTools`, bypasses `--tools` / `--exclude-tools`, writes `mcp.json`, or enables a built-in.
+Fresh, resumed and forked processes use the same extension; native MCP session shutdown closes
+connections and Clanker's launch disposer revokes credentials and removes scratch resources.
+Pi receives only `clanker_context`: no `checkoutRehome` capability is declared. Registration
+support says nothing about safe relocation (Pi restores a session's stored working directory).
+A reproducible no-model SDK smoke check uses the installed Pi package and a real Clanker bridge:
+`npm run build`, then `node scripts/pi-bridge-smoke.cjs /path/to/@earendil-works/pi-coding-agent`.
+It checks discovery/call, permission hints, context-only grants, native conflicts and restrictions,
+revocation and cleanup in an isolated temporary agent directory.
+The bridge transmits MCP permission annotations: context is read-only and idempotent; checkout
+transactions mutate state, completion is potentially destructive, and neither transaction is
+idempotent. These hints never grant authority.
 
 Intentionally **unsupported** (capability absent):
 
-- **Pi**: MCP servers come only from `~/.pi/agent/mcp.json` and a trusted project's `.pi/mcp.json`.
-  There is no launch-scoped channel; relocating the agent directory would replace sessions and auth,
-  and writing either file would modify user (or project) configuration.
 - **Oh My Pi**: `--config` loads an overlay for the run, but support for MCP servers in that overlay
   was not verified, and no other launch-scoped channel exists. Not faked.
 - **Hermes** and **Antigravity**: MCP servers live in persisted configuration managed by

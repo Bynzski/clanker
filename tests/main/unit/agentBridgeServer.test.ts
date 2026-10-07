@@ -25,7 +25,7 @@ const identityFor = (terminalId: string, context: CheckoutContext, harnessId = '
 
 /** The slice of a JSON-RPC reply these tests read; missing members are simply undefined at runtime. */
 interface JsonRpcReply {
-  result: { isError?: boolean; content: Array<{ text: string }>; tools: Array<{ name: string }>; serverInfo: unknown; capabilities: Record<string, unknown> };
+  result: { isError?: boolean; content: Array<{ text: string }>; tools: Array<{ name: string; annotations?: Record<string, boolean> }>; serverInfo: unknown; capabilities: Record<string, unknown> };
   error?: unknown;
 }
 interface Reply { status: number; headers: http.IncomingHttpHeaders; body: string; json: JsonRpcReply }
@@ -415,5 +415,13 @@ describe('malformed and hostile requests fail closed', () => {
     const reply = await rpc(lease.url, lease.token, 'resources/list');
     expect(reply.status).toBeLessThan(500);
     expect(reply.json.error).toBeTruthy();
+  });
+});
+
+it('transmits the context permission hints in tools/list', async () => {
+  const lease = await service.lease(identityFor('t1', MAIN));
+  const tools = (await rpc(lease.url, lease.token, 'tools/list')).json.result.tools;
+  expect(tools.find((tool) => tool.name === 'clanker_context')?.annotations).toEqual({
+    readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false,
   });
 });

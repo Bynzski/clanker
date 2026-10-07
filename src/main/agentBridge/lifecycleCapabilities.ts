@@ -53,6 +53,7 @@ export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecycle
   return [
     defineCapability({
       name: CREATE_ISOLATED_CHECKOUT,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: CREATE_DESCRIPTION,
       requires: 'checkout-rehoming',
       timeoutMs: CHECKOUT_LIFECYCLE_TIMEOUT_MS,
@@ -63,6 +64,7 @@ export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecycle
     }),
     defineCapability({
       name: COMPLETE_ISOLATED_CHECKOUT,
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
       description: COMPLETE_DESCRIPTION,
       requires: 'checkout-rehoming',
       timeoutMs: CHECKOUT_LIFECYCLE_TIMEOUT_MS,
