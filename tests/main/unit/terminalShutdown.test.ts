@@ -73,6 +73,7 @@ vi.mock('electron', () => ({
   },
   dialog: {
     showOpenDialog: vi.fn(),
+    showMessageBox: vi.fn(),
   },
   shell: {
     openExternal: vi.fn(),
@@ -93,7 +94,7 @@ vi.mock('node-pty', () => ({
 }));
 
 import { registerTerminalIpc, setAppShuttingDown } from '../../../src/main/ipc/terminalIpc';
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 import { RemotePreviewManager } from '../../../src/main/remote/remotePreviewManager';
 
 describe('Terminal Shutdown Behavior', () => {
@@ -103,22 +104,40 @@ describe('Terminal Shutdown Behavior', () => {
     setAppShuttingDown(false);
   });
 
-  test('before-quit drains preview teardown and repeated requests cannot bypass cleanup', async () => {
-    await import('../../../src/main/main');
+  test('quit cancellation preserves live PTYs; approval drains teardown once before final quit', async () => {
+    const { terminals } = await import('../../../src/main/main');
     let finish!: () => void;
     const close = vi.spyOn(RemotePreviewManager.prototype, 'close').mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
     const handler = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === 'before-quit')![1] as (event: { preventDefault: () => void }) => void;
     const event = { preventDefault: vi.fn() };
     vi.mocked(app.quit).mockClear();
+    const kill = vi.fn(() => terminals.delete('live'));
+    terminals.set('live', { pty: { kill } } as never);
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 0, checkboxChecked: false });
+    handler(event);
+    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(close).not.toHaveBeenCalled();
+    expect(kill).not.toHaveBeenCalled();
+    expect(terminals.has('live')).toBe(true);
+    expect(app.quit).not.toHaveBeenCalled();
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false });
+    handler(event);
+    await vi.waitFor(() => expect(app.quit).toHaveBeenCalledOnce());
+    // Mocked app.quit does not emit before-quit; simulate Electron's re-entry.
+    vi.mocked(app.quit).mockClear();
     handler(event);
     handler(event);
-    expect(event.preventDefault).toHaveBeenCalledTimes(2);
+    expect(event.preventDefault).toHaveBeenCalledTimes(4);
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(terminals.size).toBe(0);
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledTimes(1);
     expect(app.quit).not.toHaveBeenCalled();
     finish();
     await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(1));
     handler(event);
-    expect(event.preventDefault).toHaveBeenCalledTimes(2);
+    expect(event.preventDefault).toHaveBeenCalledTimes(4);
     close.mockRestore();
   });
 

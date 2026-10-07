@@ -370,6 +370,11 @@ export class HarnessAccountService {
     void flow.done.finally(() => clearTimeout(backstop));
   }
 
+  /** Main-owned sign-in work that window/app teardown would cancel. */
+  public hasActiveSignIn(): boolean {
+    return [...this.flows.values()].some(({ state }) => state.status === 'starting' || state.status === 'waiting-for-browser');
+  }
+
   /** Cancels every active flow and waits for their processes to be reaped (shutdown, window close). */
   public async cancelAllAuth(): Promise<void> {
     const active = [...this.flows.values()];

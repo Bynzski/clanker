@@ -153,6 +153,28 @@ describe('existing backend adoption', () => {
   });
 });
 
+describe('shutdown ownership', () => {
+  it('counts a starting/live owned child, and stops counting after shutdown', async () => {
+    const { service, hermes, children, ready } = setup({ enabled: true, autoStart: true });
+    expect(service.hasRunningOwnedService()).toBe(false);
+    hermes.running = false;
+    const pending = service.refresh();
+    await flush();
+    expect(service.hasRunningOwnedService()).toBe(true);
+    hermes.running = true; ready(children[0]); await pending;
+    expect(service.hasRunningOwnedService()).toBe(true);
+    await service.shutdown();
+    expect(service.hasRunningOwnedService()).toBe(false);
+  });
+
+  it('does not count an adopted external backend', async () => {
+    const { service } = setup({ enabled: true, autoStart: true });
+    expect((await service.refresh()).service.ownership).toBe('external');
+    expect(service.hasRunningOwnedService()).toBe(false);
+    await service.shutdown();
+  });
+});
+
 describe('Clanker-owned backend', () => {
   it('starts with the generated token when offline and autoStart is on, then adopts the printed port', async () => {
     const { service, hermes, spawnServe, children, ready } = setup({ enabled: true, autoStart: true });
