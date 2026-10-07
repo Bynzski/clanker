@@ -44,7 +44,7 @@ Long-term maintainability is a core priority:
 
 ## Windows Support
 
-Windows 10 1809+ is a supported platform. Key patterns:
+Linux is the primary development and required CI platform. Windows 10 1809+ / Windows 11 remains best-effort supported, without a native Windows CI or release gate. Preserve Windows compatibility code, packaging and regression tests; fix reproducible regressions when practical. Key patterns:
 
 - **Default shell:** `powershell.exe` (via `src/main/platformShell.ts:defaultShell()`). Never pass `-i` — PowerShell is interactive by default.
 - **Harness spawn:** npm-installed CLI tools are `.cmd` wrappers on Windows. PTY launches use `resolveHarnessPtySpawn()` from `harnessLaunch.ts`, which resolves through `PATH`/`PATHEXT` via the shared `planBoundedSpawn()` (`.exe` direct, `.cmd`/`.bat` through escaped `cmd.exe /d /s /c`, `%`/CR/LF and unresolvable commands fail closed). Never hand-build `cmd.exe /c` lines for PTY harness launches.
@@ -224,7 +224,7 @@ npm run security-check # scripts/security-audit.cjs (npm audit, high threshold, 
 npm run validate   # branding check, lint, typecheck, security-check, build, test
 ```
 
-CI (`.github/workflows/validate.yml`): `changes` → `ubuntu-validation` (dependency review on PRs, informational audit artifact, lint, typecheck, build, full tests with coverage) and `windows-compat` (`vitest --project main`, no coverage) → final `validate` aggregate, the stable required check. Windows does not repeat lint, typecheck, or build.
+CI (`.github/workflows/validate.yml`): `changes` → `ubuntu-validation` (dependency review on PRs, informational audit artifact, lint, typecheck, build, full tests with coverage) → final `validate` aggregate, the stable required check. Code changes require Ubuntu success; docs-only changes require Ubuntu to be skipped. Failed/cancelled jobs and invalid change-detection output fail the gate. No automatic native Windows job runs; Windows simulation/path/process tests remain in the full Ubuntu suite.
 
 ## File Size Thresholds
 

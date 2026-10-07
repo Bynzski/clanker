@@ -22,15 +22,17 @@ While the project is pre-1.0, MINOR releases may break compatibility. When they 
 
 ## Release process
 
+Linux is the primary validation platform. Windows remains best-effort supported; native Windows CI or smoke testing is not an automatic release gate. Preserve Windows packaging and compatibility tests. Maintainers may still delay a release for a concrete severe Windows regression.
+
 Releases are cut from `main`. The working tree must be clean before starting.
 
 A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
-Linux-only releases are allowed at any semantic version when the artifact scope is explicit. Choose the version from the changes being released, complete Linux validation and the AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. The release commit must pass the CI `validate` check (Ubuntu validation and Windows `main`-project compatibility); a Windows artifact is not required for a Linux-only release.
+Linux-only releases are allowed at any semantic version when the artifact scope is explicit. Choose the version from the changes being released, complete Linux validation and the AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. The release commit must pass the CI `validate` check (canonical Ubuntu validation); a Windows artifact is not required for a Linux-only release.
 
 ### 1. Prepare the release commit (Linux host)
 
-1. Confirm `main` is green: run `npm ci`, then `npm run validate` (branding check, lint, typecheck, security check, build, tests). The CI `validate` check must be green; it aggregates Ubuntu validation (lint, typecheck, build, full tests with coverage) and Windows compatibility (the `main` Vitest project only). See [Security gate](#security-gate) for what the security check enforces.
+1. Confirm `main` is green: run `npm ci`, then `npm run validate` (branding check, lint, typecheck, security check, build, tests). The CI `validate` check must be green; it requires Ubuntu validation (lint, typecheck, build, full tests with coverage, including Windows simulation tests). See [Security gate](#security-gate) for what the security check enforces.
 2. Edit `CHANGELOG.md`: rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`. Add a fresh empty `## [Unreleased]` section above it. Update the link references at the bottom.
 3. Bump `version` in `package.json` to `X.Y.Z`. Update `package-lock.json` to match (the top-level `version` and the root package entry).
 4. Run `npm run validate` again.
