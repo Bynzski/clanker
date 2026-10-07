@@ -78,6 +78,21 @@ describe('AgentBridgeCredentials', () => {
     expect(credentials.resolve(second.token)).not.toBeNull();
   });
 
+  it('compare-and-rebind retains the bearer, capabilities and exit revocation but invalidates captured old grants', () => {
+    const credentials = new AgentBridgeCredentials();
+    const issued = credentials.issue(identity(), ['clanker_context']);
+    const old = credentials.resolve(issued.token)!;
+    expect(credentials.rebindCheckout(identity({ workspaceId: 'other' }), 'w1::tree')).toBe(false);
+    expect(credentials.rebindCheckout(identity(), 'w1::tree')).toBe(true);
+    const moved = credentials.resolve(issued.token)!;
+    expect(moved.identity.checkoutContextId).toBe('w1::tree');
+    expect(old.identity.checkoutContextId).toBe('w1::main');
+    expect(moved.capabilities).toBe(old.capabilities);
+    expect(credentials.rebindCheckout(identity(), 'w1::different')).toBe(false);
+    issued.revoke();
+    expect(credentials.resolve(issued.token)).toBeNull();
+  });
+
   it('revokeAll drops every credential', () => {
     const credentials = new AgentBridgeCredentials();
     const tokens = ['a', 'b', 'c'].map((terminalId) => credentials.issue(identity({ terminalId }), []).token);

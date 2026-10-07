@@ -86,6 +86,7 @@ export interface InternalResumeRequest {
   onExit?: () => void;
   /** The replacement starts before its pane adopts it, so it may need to hold more startup output. */
   startupBufferLimit?: { bytes: number; chunks: number };
+  initialGeometry?: { cols: number; rows: number };
 }
 
 export interface ResumedSessionLaunch {
@@ -401,6 +402,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
         : disposeAttachments,
       ...(internal?.onOutput ? { onOutput: internal.onOutput } : {}),
       ...(internal?.startupBufferLimit ? { startupBufferLimit: internal.startupBufferLimit } : {}),
+      ...(internal?.initialGeometry ? { initialGeometry: internal.initialGeometry } : {}),
       });
       return {
         ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,

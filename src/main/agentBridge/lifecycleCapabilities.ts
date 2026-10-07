@@ -48,6 +48,17 @@ export const COMPLETE_DESCRIPTION = 'Use this after the work in an isolated chec
   + 'the branch when Git considers it fully merged (it is never force-deleted). After calling it, finish your reply without running more '
   + 'tools: the conversation continues in the main checkout on its next turn. Use normal Git and GitHub tools to commit, push, open and merge pull requests first. Native conversation identification is required; for Codex, enable Clanker hooks in /hooks before requesting a move.';
 
+export function liveCheckoutToolDescription(name: string, fallback: string): string {
+  if (name === CREATE_ISOLATED_CHECKOUT) return 'Use this to create and enter a Clanker-owned isolated checkout for a new branch. '
+    + 'Clanker moves this same live root conversation through the provider native mechanism and confirms its checkout before returning. '
+    + 'On success, continue this same turn in the returned checkout. On failure do not assume movement or remove any checkout.';
+  if (name === COMPLETE_ISOLATED_CHECKOUT) return 'Use this after isolated work is merged or finished to move this same live root conversation back to the main checkout before safe cleanup. '
+    + 'Clanker confirms native movement before releasing or removing the isolated checkout. On success continue this same turn in main. '
+    + 'deleteBranch only deletes a fully merged branch; discardIgnored preserves ignored-only contents in Trash/recovery. '
+    + 'On failure or partial cleanup, do not remove checkouts yourself.';
+  return fallback;
+}
+
 export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecyclePort): AgentBridgeCapability[] {
   const run = (context: AgentBridgeCallContext) => ({ caller: context.caller, signal: context.signal });
   return [

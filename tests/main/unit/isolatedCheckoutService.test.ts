@@ -16,6 +16,8 @@ import type { AgentBridgeCaller } from '../../../src/main/agentBridge/capabiliti
 import { IsolatedCheckoutService, REPLACEMENT_STARTUP_BUFFER, type LifecycleTerminal } from '../../../src/main/isolatedCheckout/isolatedCheckoutService';
 import { retireTerminal } from '../../../src/main/terminalRetirement';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
+import * as providers from '../../../src/main/harnesses/registry';
+import type { AgentAttentionSnapshot } from '../../../src/shared/types/agentAttention';
 
 let root: string;
 let mainPath: string;
@@ -47,6 +49,7 @@ interface Options {
   environmentId?: string;
   harness?: string;
   shuttingDown?: boolean;
+  live?: boolean;
 }
 
 function makeWorld(options: Options = {}) {
@@ -78,11 +81,15 @@ function makeWorld(options: Options = {}) {
 
   const attention = new Map<string, string | null>();
   const sessionId = options.sessionId === undefined ? 'native-1' : options.sessionId;
+  let liveSnapshot: AgentAttentionSnapshot = {
+    terminalId: 'caller', sessionId, revision: 1, runtime: { status: 'running', turnId: 'turn-1', startedAt: 1 },
+    pendingRequest: null, lastOutcome: null, lastCompletion: null, location: { path: mainPath, checkoutContextId: MAIN.id },
+  };
   let launches = 0;
   const lastReplacement: { id?: string } = {};
 
   const sessions = {
-    findSession: vi.fn(async () => { log.push('findSession'); return options.session === undefined ? { ...SESSION } : options.session; }),
+    findSession: vi.fn(async () => { log.push('findSession'); return options.session === undefined ? { ...SESSION, harness } : options.session; }),
     resumeInCheckout: vi.fn(async (_ws: string, _session: HarnessSession, request: {
       targetContext: CheckoutContext; onOutput?: (d: string) => void; onExit?: () => void; startupBufferLimit?: unknown;
     }) => {
@@ -141,6 +148,7 @@ function makeWorld(options: Options = {}) {
     getTerminals: () => terminals,
     attention: {
       snapshot: (id) => {
+        if (id === 'caller' && options.live) return liveSnapshot;
         if (id === 'caller') return options.attentionRegistered === false ? null : {
           sessionId, lastOutcome: options.sessionEnded ? { kind: 'session_ended', turnId: null, revision: 1, at: 1 } as const : null,
         };
@@ -153,6 +161,15 @@ function makeWorld(options: Options = {}) {
     releaseCheckoutContext,
     retireTerminal: (id) => retireTerminal({ terminals, releaseAttention: (terminalId) => { log.push(`attention.release ${terminalId}`); } }, id),
     retireTerminalAndWait: async (id) => { await retireTerminal({ terminals, releaseAttention: (terminalId) => { log.push(`attention.release ${terminalId}`); } }, id); return 'exited'; },
+    commitCheckoutRelocation: (identity, targetId) => {
+      const terminal = terminals.get(identity.terminalId);
+      const target = contexts.get(targetId);
+      if (!terminal || !target || terminal.checkoutContextId !== identity.checkoutContextId) return false;
+      log.push('rebind');
+      terminal.checkoutContextId = target.id;
+      terminal.cwd = target.path;
+      return true;
+    },
     notify: (event) => { events.push(event); log.push(`notify ${event.kind}`); },
     isShuttingDown: () => options.shuttingDown === true,
     timing: { startDeadlineMs: 150, observationMs: 15 },
@@ -161,7 +178,11 @@ function makeWorld(options: Options = {}) {
   const callerIn = (context: CheckoutContext, terminalId = 'caller'): AgentBridgeCaller => ({
     terminalId, harnessId: harness, workspace: workspace as never, checkoutContext: context, granted: ['x'],
   });
-  return { service, log, events, terminals, contexts, git, sessions, registry, addTerminal, releaseCheckoutContext, callerIn, lastReplacement, workspace };
+  const reportLive = (target: CheckoutContext) => {
+    liveSnapshot = { ...liveSnapshot, revision: liveSnapshot.revision + 1, location: { path: target.path, checkoutContextId: target.id } };
+    service.onAttentionChange({ terminalId: 'caller', revision: liveSnapshot.revision, snapshot: liveSnapshot });
+  };
+  return { service, log, events, terminals, contexts, git, sessions, registry, addTerminal, releaseCheckoutContext, callerIn, lastReplacement, workspace, reportLive };
 }
 
 type World = ReturnType<typeof makeWorld>;
@@ -181,7 +202,7 @@ beforeEach(() => {
   MAIN = { id: 'ws::main', workspaceId: 'ws', environmentId: 'local', path: toPosixPath(mainPath), kind: 'main', branch: null };
   TREE = { id: 'ws::ckt-1', workspaceId: 'ws', environmentId: 'local', path: toPosixPath(wtPath), kind: 'worktree', branch: 'task', mainCheckoutPath: toPosixPath(mainPath) };
 });
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); vi.restoreAllMocks(); });
 
 /** A world whose caller is a live Claude terminal in the main checkout. */
 function inMain(options: Options = {}): World {
@@ -198,6 +219,58 @@ function inTree(options: Options = {}): World {
   for (const other of options.others ?? []) world.addTerminal(other.id, other.ctx, other.cwd);
   return world;
 }
+
+describe('provider-gated live relocation', () => {
+  function native(world: World) {
+    const provider = providers.findHarnessProvider('claude')!;
+    const invoke = vi.fn(async (request: { target: CheckoutContext }) => {
+      expect(world.terminals.get('caller')!.checkoutContextId).not.toBe(request.target.id);
+      world.reportLive(request.target);
+    });
+    vi.spyOn(providers, 'findHarnessProvider').mockReturnValue({ ...provider,
+      checkoutRehome: { mode: 'live-relocate', relocateLiveConversation: invoke } });
+    return invoke;
+  }
+
+  it('creates and enters a checkout in the same terminal/turn without resume, retirement or xterm replacement', async () => {
+    const world = inMain({ live: true });
+    const terminal = world.terminals.get('caller')!;
+    const invoke = native(world);
+    const result = await call(world, 'create', MAIN, { branch: 'task' });
+    expect(result).toMatchObject({ data: { status: 'moved', turnContinuity: 'preserved' } });
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(world.terminals.get('caller')).toBe(terminal);
+    expect(terminal.checkoutContextId).toBe(TREE.id);
+    expect(terminal.pty.kill).not.toHaveBeenCalled();
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+    expect(world.events.map((event) => event.kind)).toEqual(['checkout-attached', 'terminal-checkout-changed']);
+  });
+
+  it('moves back live before releasing/removing the old checkout, leaving the same process alive', async () => {
+    const world = inTree({ live: true });
+    world.reportLive(TREE);
+    const terminal = world.terminals.get('caller')!;
+    native(world);
+    const result = await call(world, 'complete', TREE, {});
+    expect(result).toMatchObject({ data: { status: 'completed', turnContinuity: 'preserved' } });
+    expect(terminal.checkoutContextId).toBe(MAIN.id);
+    expect(terminal.pty.kill).not.toHaveBeenCalled();
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+    expect(index(world.log, 'rebind')).toBeLessThan(index(world.log, 'release worktree'));
+    expect(index(world.log, 'release worktree')).toBeLessThan(index(world.log, 'removeWorktree'));
+  });
+
+  it('a native refusal keeps both checkouts, source authority and process intact', async () => {
+    const world = inMain({ live: true });
+    native(world).mockRejectedValue(new Error('unsupported'));
+    const result = await call(world, 'create', MAIN, { branch: 'task' });
+    expect(result.isError).toBe(true);
+    expect(world.terminals.get('caller')!.checkoutContextId).toBe(MAIN.id);
+    expect(world.contexts.has(TREE.id)).toBe(true);
+    expect(world.git.removeWorktree).not.toHaveBeenCalled();
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+  });
+});
 
 describe('create: main checkout -> new isolated worktree', () => {
   it('creates through the trusted Git path, resumes the same conversation in it, and only then retires the old process', async () => {
@@ -217,6 +290,24 @@ describe('create: main checkout -> new isolated worktree', () => {
     // The conversation is looked up from main's own record of the calling terminal, not from the model.
     expect(world.sessions.findSession).toHaveBeenCalledWith('ws', 'claude', 'native-1');
     expect(world.git.createCheckoutWorktree).toHaveBeenCalledWith('ws', 'feature-x', 'main');
+  });
+
+  it.each([{ ...SESSION, id: 'other-native' }, { ...SESSION, harness: 'codex' as const }])(
+    'refuses mismatched rediscovered native identity %j before creating any checkout', async (session) => {
+      const world = inMain({ session });
+      const result = await call(world, 'create', MAIN, { branch: 'task' });
+      expect(result.isError).toBe(true);
+      expect(world.git.createCheckoutWorktree).not.toHaveBeenCalled();
+      expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+    },
+  );
+
+  it('starts a replacement at the source pane geometry rather than provisional PTY defaults', async () => {
+    const world = inMain();
+    Object.assign(world.terminals.get('caller')!.pty, { cols: 147, rows: 39 });
+    await call(world, 'create', MAIN, { branch: 'geometry' });
+    expect(world.sessions.resumeInCheckout).toHaveBeenCalledWith('ws', expect.anything(),
+      expect.objectContaining({ initialGeometry: { cols: 147, rows: 39 } }));
   });
 
   it('takes workspace, terminal and checkout only from the authenticated caller', async () => {

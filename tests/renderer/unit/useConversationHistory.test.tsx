@@ -23,6 +23,33 @@ describe('useConversationHistory', () => {
     expect(window.electronAPI.discoverSessionHistory).toHaveBeenLastCalledWith('ws-1', true);
   });
 
+  it('displays partial refresh results with diagnostics without poisoning the last-good cache', async () => {
+    vi.mocked(window.electronAPI.discoverSessionHistory)
+      .mockResolvedValueOnce({ sessions: [session('complete')], issues: [] })
+      .mockResolvedValueOnce({ sessions: [session('partial')], issues: [{ harness: 'pi', message: 'Pi unavailable.' }] })
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { result } = renderHook(() => useConversationHistory('ws', { warmup: false }));
+    act(() => result.current.setOpen(true)); await flush();
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true)); await flush();
+    expect(result.current.sessions.map((entry) => entry.id)).toEqual(['partial']);
+    expect(result.current.error).toBe('Pi unavailable.');
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true));
+    expect(result.current.sessions.map((entry) => entry.id)).toEqual(['complete']);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('retries a partial idle warm-up when returning to the workspace', async () => {
+    vi.mocked(window.electronAPI.discoverSessionHistory)
+      .mockResolvedValueOnce({ sessions: [session('partial')], issues: [{ harness: 'pi', message: 'Pi unavailable.' }] })
+      .mockResolvedValueOnce({ sessions: [session('complete')], issues: [] });
+    const { rerender } = renderHook(({ id }) => useConversationHistory(id), { initialProps: { id: 'a' } });
+    act(() => vi.advanceTimersByTime(WARMUP_DELAY_MS)); await flush();
+    rerender({ id: 'b' }); rerender({ id: 'a' });
+    act(() => vi.advanceTimersByTime(WARMUP_DELAY_MS)); await flush();
+    expect(window.electronAPI.discoverSessionHistory).toHaveBeenCalledTimes(2);
+    expect(window.electronAPI.discoverSessionHistory).toHaveBeenLastCalledWith('a');
+  });
+
   it('a dismissed older response cannot replace a newer remembered list', async () => {
     let finishOld!: (value: { sessions: HarnessSession[]; issues: [] }) => void;
     vi.mocked(window.electronAPI.discoverSessionHistory)

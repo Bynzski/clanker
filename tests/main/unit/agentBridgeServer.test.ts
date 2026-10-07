@@ -6,6 +6,7 @@ import { AgentBridgeService, type AgentBridgeTerminalRecord } from '../../../src
 import { AGENT_BRIDGE_LIMITS } from '../../../src/main/agentBridge/server';
 import { defineCapability, type AgentBridgeCapability } from '../../../src/main/agentBridge/capabilities';
 import type { AgentBridgeIdentity } from '../../../src/main/agentBridge/credentials';
+import { commitCheckoutRelocation } from '../../../src/main/checkoutRelocationCommit';
 
 const MAIN: CheckoutContext = { id: 'w1::main', workspaceId: 'w1', environmentId: 'local', path: '/home/dev/project', kind: 'main', branch: 'main' };
 const TREE: CheckoutContext = { id: 'w1::wt', workspaceId: 'w1', environmentId: 'local', path: '/home/dev/project-worktrees/task', kind: 'worktree', branch: 'task' };
@@ -72,6 +73,47 @@ beforeEach(() => {
   });
 });
 afterEach(async () => { await service.shutdown(); });
+
+describe('main-owned live checkout authority commit', () => {
+  const commit = (identity: AgentBridgeIdentity, targetId: string) => commitCheckoutRelocation({
+    registry: { getCheckoutContext: (id: string) => contexts.get(id) ?? null } as never,
+    terminals, bridge: service,
+  }, identity, targetId);
+  it('atomically rebinds the same bearer to the new checkout, refusing a captured old grant', async () => {
+    const lease = await service.lease(identityFor('t1', MAIN));
+    const before = service.credentials.resolve(lease.token)!;
+    expect(commit(identityFor('t1', MAIN), TREE.id)).toBe(true);
+    expect(terminals.get('t1')!.checkoutContextId).toBe(TREE.id);
+    expect(contextData(await callContext(lease.url, lease.token)).checkout).toMatchObject({ kind: 'worktree', branch: 'task' });
+    expect((await service.callTool(before, 'clanker_context', {})).isError).toBe(true);
+    expect(commit(identityFor('t1', MAIN), MAIN.id)).toBe(false);
+    expect(commit(identityFor('t1', TREE), MAIN.id)).toBe(true);
+    expect((await service.callTool(before, 'clanker_context', {})).isError).toBe(true); // ABA cannot revive the captured grant
+    lease.release();
+    expect(service.credentials.resolve(lease.token)).toBeNull();
+  });
+
+  it.each(['another workspace', 'another harness', 'missing target', 'revoked credential'])(
+    'changes neither grant nor terminal for %s', async (kind) => {
+      const lease = await service.lease(identityFor('t1', MAIN));
+      const terminal = { ...terminals.get('t1')! };
+      const expected = identityFor('t1', MAIN);
+      const target = kind === 'another workspace' ? OTHER.id : kind === 'missing target' ? 'missing' : TREE.id;
+      if (kind === 'another harness') Object.assign(expected, { harnessId: 'codex' });
+      if (kind === 'revoked credential') lease.release();
+      expect(commit(expected, target)).toBe(false);
+      expect(terminals.get('t1')).toEqual(terminal);
+      if (kind !== 'revoked credential') expect(service.credentials.resolve(lease.token)!.identity).toEqual(identityFor('t1', MAIN));
+    },
+  );
+
+  it('an arbitrary reported/native cwd change never rebinds a bridge grant', async () => {
+    const lease = await service.lease(identityFor('t1', MAIN));
+    terminals.get('t1')!.cwd = TREE.path;
+    expect(service.credentials.resolve(lease.token)!.identity.checkoutContextId).toBe(MAIN.id);
+    expect(contextData(await callContext(lease.url, lease.token)).checkout).toMatchObject({ kind: 'main', branch: 'main' });
+  });
+});
 
 describe('transport', () => {
   it('binds the loopback interface only, on an ephemeral port, at /mcp', async () => {

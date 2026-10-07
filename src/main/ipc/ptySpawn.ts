@@ -43,10 +43,12 @@ export interface SpawnPtyOptions {
   /**
    * Bound on output held until the renderer reports its terminal ready. The default fits an ordinary
    * launch, whose pane exists before the process starts. A replacement process starts before its pane
-   * adopts it and replays a whole conversation, so it asks for more; output past the bound is
-   * forwarded as before (a later resize makes the TUI redraw).
+   * adopts it and replays a whole conversation, so it asks for more. At the bound, socket reads pause
+   * until READY (not XON/XOFF flow control), retaining at most the bound plus one native PTY chunk.
    */
   startupBufferLimit?: { bytes: number; chunks: number };
+  /** Best-known pane geometry, especially for a replacement adopting the very same pane. */
+  initialGeometry?: { cols: number; rows: number };
   filterData?: (data: string) => string;
 }
 
@@ -74,6 +76,9 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     cwd,
     env,
     handleFlowControl: false,
+    ...(opts.initialGeometry && Number.isInteger(opts.initialGeometry.cols) && Number.isInteger(opts.initialGeometry.rows)
+      && opts.initialGeometry.cols >= 2 && opts.initialGeometry.cols <= 1000 && opts.initialGeometry.rows >= 1 && opts.initialGeometry.rows <= 1000
+      ? opts.initialGeometry : {}),
   });
 
   const terminal: Terminal = {
@@ -116,6 +121,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     mainWindow.webContents.send(TERMINAL_DATA, { id, data: `${launchLabel}\r\n` });
   }
 
+  let startupBytes = 0;
   ptyProcess.onData((data: string) => {
     if (getIsShuttingDown()) return;
     const term = terminals.get(id);
@@ -127,11 +133,16 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     term.recipeCommandStartup?.onData(data);
 
     if (!term.startupBufferReady) {
-      const totalSize = term.startupBuffer.reduce((acc, chunk) => acc + chunk.length, 0);
-      if (totalSize < startupLimit.bytes && term.startupBuffer.length < startupLimit.chunks) {
-        term.startupBuffer.push(data);
-        return;
+      startupBytes += Buffer.byteLength(data);
+      term.startupBuffer.push(data);
+      if (!term.startupPaused && (startupBytes >= startupLimit.bytes || term.startupBuffer.length >= startupLimit.chunks)) {
+        // node-pty.pause() pauses its Node socket reads; it sends no XOFF and handleFlowControl stays
+        // false. Kernel backpressure bounds startup memory without dropping/reordering ANSI output or
+        // sending it before xterm exists. READY drains the prefix before resuming this same stream.
+        term.startupPaused = true;
+        ptyProcess.pause();
       }
+      return;
     }
 
     if (isWindowAvailable(mainWindow)) {

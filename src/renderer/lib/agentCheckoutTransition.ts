@@ -38,6 +38,17 @@ export function applyAgentCheckoutTransition(event: AgentCheckoutTransitionEvent
       }
       return;
     }
+    case 'terminal-checkout-changed': {
+      const workspace = store.getWorkspaceById(event.workspaceId);
+      const terminal = workspace?.terminals.find((entry) => entry.id === event.terminalId);
+      const context = workspace?.checkoutContexts?.find((entry) => entry.id === event.checkoutContextId);
+      if (!terminal || !context || context.path !== event.workingDir) return;
+      // Same identity: keep the cached xterm, pane, display name and all other live terminal metadata.
+      store.replaceTerminal(event.workspaceId, event.terminalId, {
+        ...terminal, checkoutContextId: context.id, workingDir: context.path,
+      });
+      return;
+    }
     case 'checkout-released':
       store.removeCheckoutContext(event.workspaceId, event.checkoutContextId);
       return;

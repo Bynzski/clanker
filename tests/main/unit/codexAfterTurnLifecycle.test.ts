@@ -259,6 +259,31 @@ const treeContext = () => contexts.find((context) => context.kind === 'worktree'
 const kinds = () => events.map((event) => event.kind);
 
 describe('create (after-turn)', () => {
+  it('does not retire a source that begins a newer turn while post-completion history discovery is pending', async () => {
+    const { id, spawn } = await launch();
+    await turn(spawn, 't1');
+    await call(spawn, 'clanker_create_isolated_checkout', { branch: 'feature' });
+    let began!: () => void;
+    let finish!: () => void;
+    const discovering = new Promise<void>((resolve) => { began = resolve; });
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    mockDiscover.mockImplementationOnce(async () => {
+      began(); await gate;
+      return [{ id: SESSION, harness: 'codex', title: 't', cwd: toPosixPath(appPath), timestamp: 1 }];
+    });
+    await frame(spawn, 'turn_completed', { turnId: 't1' });
+    await discovering;
+    await turn(spawn, 't2');
+    finish();
+    await finishMove();
+    expect(live()).toEqual([id]);
+    expect(terminals.get(id)!.pty.kill).not.toHaveBeenCalled();
+    expect(spawns).toHaveLength(1);
+    expect(broker.snapshot(id)!.runtime).toMatchObject({ status: 'running', turnId: 't2' });
+    expect((events.filter((event) => event.kind === 'notice').pop() as { message: string }).message).toContain('changed during discovery');
+    expect(removedPaths).toEqual([]);
+  });
+
   it('returns "scheduled" while the source is still fully alive: nothing is retired or resumed during the tool call', async () => {
     const { id, spawn } = await launch();
     await turn(spawn, 't1');

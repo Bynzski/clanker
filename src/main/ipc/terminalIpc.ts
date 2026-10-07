@@ -72,6 +72,8 @@ interface Terminal {
    */
   startupBuffer: string[];
   startupBufferReady: boolean;
+  /** Socket reads paused at the startup bound, never XON/XOFF flow control. */
+  startupPaused?: boolean;
   initialCommand?: string;
   recipeCommandStartup?: RecipeCommandStartup;
 }
@@ -430,6 +432,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     // Clear buffer and mark as ready
     terminal.startupBuffer = [];
     terminal.startupBufferReady = true;
+    if (terminal.startupPaused) {
+      terminal.startupPaused = false;
+      terminal.pty.resume();
+    }
 
     if (terminal.initialCommand) {
       terminal.pty.write(`${terminal.initialCommand}\r`);
@@ -555,7 +561,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       // interception from user pressing Ctrl+S), resume it on resize so the
       // terminal doesn't get stuck paused.
       try {
-        terminal.pty.resume();
+        if (!terminal.startupPaused) terminal.pty.resume();
       } catch {
         // PTY may have exited; ignore.
       }
