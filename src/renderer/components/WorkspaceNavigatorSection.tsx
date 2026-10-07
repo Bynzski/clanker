@@ -16,6 +16,9 @@ import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabe
 import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import WorkspaceCheckouts from './WorkspaceCheckouts';
+import DevServerRow, { DevServerControls } from './DevServerRow';
+import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
+import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import './WorkspaceNavigatorSection.css';
@@ -43,10 +46,13 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
           : `${name} · ${harness.label}${attentionSuffix}`}
         onClick={() => selectWorkspace(workspace.id, terminal.id)}
       >
-        <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
-        <span className="ws-agent-name">{name}</span>
-        {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
-        <span className="sr-only">{harness.label}</span>
+        <span className="ws-agent-primary">
+          <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
+          <span className="ws-agent-name">{name}</span>
+          {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
+          <span className="sr-only">{harness.label}</span>
+          {showAttention && <AgentAttentionState attention={attention} name={name} />}
+        </span>
         {branch && (
           <span
             className={`ws-agent-branch${removed ? ' missing' : ''}`}
@@ -56,8 +62,8 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
             <span>{worktree ? worktreeDisplayLabel(worktree) : branch}</span>
           </span>
         )}
-        {showAttention && <AgentAttentionState attention={attention} name={name} />}
       </button>
+      <DevServerRow workspace={workspace} terminal={terminal} />
     </li>
   );
 }
@@ -75,6 +81,7 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
+  const services = useWorkspaceServiceStore((state) => state.services);
   const seenByTerminalId = useAgentAttentionStore((state) => state.seenByTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);
 
@@ -256,6 +263,18 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                     ))}
                   </ul>
                 )}
+                {isExpanded && services.filter((service) => service.workspaceId === workspace.id && !workspace.terminals.some((terminal) => {
+                  const location = byTerminalId[terminal.id]?.location;
+                  return (location ? location.checkoutContextId : terminal.checkoutContextId ?? mainCheckoutContextId(workspace.id)) === service.checkoutContextId;
+                })).map((service) => (
+                  <div key={service.id} className="ws-detached-service" aria-label="Checkout service">
+                    <div className="ws-service-checkout" title={service.cwd}>
+                      <GitBranch size={10} aria-hidden="true" />
+                      <span>{workspace.checkoutContexts?.find((context) => context.id === service.checkoutContextId)?.branch || 'Main checkout'}</span>
+                    </div>
+                    <DevServerControls workspace={workspace} service={service} />
+                  </div>
+                ))}
                 <WorkspaceCheckouts workspace={workspace} expanded={isExpanded} label={label} />
               </li>
             );

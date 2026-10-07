@@ -63,6 +63,8 @@ export interface ReleaseCheckoutContextResult {
   error?: string;
   /** Present when release was refused because Clanker terminals are still using the checkout. */
   activeTerminals?: number;
+  /** Headless checkout services also prevent release until explicitly stopped. */
+  activeServices?: number;
 }
 
 /**

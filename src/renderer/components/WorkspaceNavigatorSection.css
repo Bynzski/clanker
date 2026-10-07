@@ -143,8 +143,9 @@
 .ws-agent-row {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
   width: 100%;
   min-height: 22px;
   padding: 1px 8px 1px 26px;
@@ -167,26 +168,51 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+.ws-agent-primary { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 20px; }
+.ws-agent-primary > :last-child:not(.ws-agent-name) { flex-shrink: 0; }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* An agent running in an isolated worktree names its branch, quietly, at the row's end. */
+/* Optional metadata belongs to the same click/selection/focus target, below the primary line. */
 .ws-agent-branch {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 96px;
-  color: var(--accent-interactive);
+  padding-left: 20px;
+  min-height: 16px;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
+  font-weight: 400;
 }
 .ws-agent-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A long branch truncates its text, never the glyph. */
 .ws-agent-branch svg { flex-shrink: 0; }
 /* Git no longer has this checkout: the agent's harness is still in a directory that is gone. */
-.ws-agent-branch.missing { color: var(--text-muted); }
+.ws-agent-branch.missing { color: var(--text-muted); opacity: 0.75; }
+
+/* Services share checkout hierarchy, but are never styled as agents or layout panes. */
+.ws-service-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 8px 0 48px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+.ws-service-row > svg { flex-shrink: 0; }
+.ws-service-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-service-row.failed, .ws-service-error { color: var(--status-error); }
+.ws-service-error { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.ws-service-checkout { display: flex; gap: 4px; align-items: center; padding: 2px 8px 0 28px; color: var(--text-muted); font-size: var(--font-size-xs); }
+.ws-service-checkout svg { flex-shrink: 0; }
+.ws-service-checkout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-service-spin { animation: ws-service-spin 1s linear infinite; }
+@keyframes ws-service-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ws-service-spin { animation: none; } }
 
 /* Inactive isolated checkouts: subdued rows under the agents, not agents themselves. */
 .ws-checkout-list,

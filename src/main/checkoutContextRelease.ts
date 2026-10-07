@@ -7,6 +7,8 @@ import type { WorkspaceRegistry } from './workspaceRegistry';
 
 /** The facts about a Clanker-owned terminal that decide whether a checkout is in use. */
 export interface TerminalUsage {
+  /** Headless services share the usage rule, but are stopped rather than closing an agent pane. */
+  resourceKind?: 'service';
   checkoutContextId?: string;
   environmentId?: string;
   /** Desktop directory of a local terminal (meaningless for SSH terminals). */
@@ -84,15 +86,19 @@ export function releaseCheckoutContext(params: {
     return { success: false, error: 'Only a worktree checkout context can be released' };
   }
 
-  let active = 0;
+  let active = 0, activeServices = 0;
   for (const terminal of terminals) {
-    if (isUsing(terminal, context, registry)) active++;
+    if (!isUsing(terminal, context, registry)) continue;
+    if (terminal.resourceKind === 'service') activeServices++; else active++;
   }
-  if (active > 0) {
+  if (active > 0 || activeServices > 0) {
     return {
       success: false,
       activeTerminals: active,
-      error: `${active} running terminal${active === 1 ? ' is' : 's are'} still using this checkout; close ${active === 1 ? 'it' : 'them'} first`,
+      ...(activeServices ? { activeServices } : {}),
+      error: activeServices
+        ? `${activeServices} dev server${activeServices === 1 ? '' : 's'}${active ? ` and ${active} running terminal${active === 1 ? '' : 's'}` : ''} still using this checkout; stop the dev server${activeServices === 1 ? '' : 's'}${active ? ' and close the terminals' : ''} first`
+        : `${active} running terminal${active === 1 ? ' is' : 's are'} still using this checkout; close ${active === 1 ? 'it' : 'them'} first`,
     };
   }
 

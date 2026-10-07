@@ -93,6 +93,7 @@ describe('IPC registration smoke test', () => {
     const { registerAccountIpc } = await import('../../../src/main/ipc/accountIpc');
     const { registerAssistantIpc } = await import('../../../src/main/ipc/assistantIpc');
     const { registerRecipeIpc } = await import('../../../src/main/ipc/recipeIpc');
+    const { registerWorkspaceServiceIpc } = await import('../../../src/main/ipc/workspaceServiceIpc');
     const { registerSshEnvironmentIpc } = await import('../../../src/main/ipc/sshEnvironmentIpc');
     interface MockStoreSchema {
       lastWorkspace: string;
@@ -267,6 +268,7 @@ describe('IPC registration smoke test', () => {
     });
 
     registerRemotePreviewIpc({ get: vi.fn(), start: vi.fn(), stop: vi.fn() } as never);
+    registerWorkspaceServiceIpc({ snapshot: vi.fn(), discover: vi.fn(), start: vi.fn(), stop: vi.fn() } as never);
 
     // ── Assert ──────────────────────────────────────────────────────────────
     const allRegistered = [

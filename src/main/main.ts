@@ -65,7 +65,9 @@ import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
 import { registerRemotePreviewIpc } from './ipc/remotePreviewIpc';
 import { RemotePreviewManager } from './remote/remotePreviewManager';
-import { REMOTE_PREVIEW_CHANGED } from '../shared/ipcChannels';
+import { WorkspaceServiceManager } from './services/workspaceServiceManager';
+import { registerWorkspaceServiceIpc } from './ipc/workspaceServiceIpc';
+import { WORKSPACE_SERVICE_CHANGED, REMOTE_PREVIEW_CHANGED } from '../shared/ipcChannels';
 import { RemoteFileWatcher } from './remote/remoteFileWatcher';
 import { REMOTE_FILES_CHANGED } from '../shared/ipcChannels';
 import { registerVcsIpc } from './ipc/vcsIpc';
@@ -215,6 +217,7 @@ const killAllTerminals = () => {
 };
 
 const cleanupWorkspaceResources = () => {
+  void workspaceServiceManager.reset().catch((error: unknown) => console.warn('[clanker-grid] dev service cleanup failed:', error));
   assistantService?.reset();
   // Pending sign-ins must not outlive the window that started them.
   void harnessAccountService.cancelAllAuth();
@@ -269,6 +272,16 @@ const agentBridge = new AgentBridgeService({
   version: () => app.getVersion(),
   capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(checkoutLifecyclePort.port)],
 });
+const workspaceServiceManager = new WorkspaceServiceManager({
+  registry: workspaceRegistry,
+  getTerminal: (id) => terminals.get(id),
+  getLocation: (id) => agentAttentionBroker.snapshot(id)?.location ?? null,
+  isShuttingDown: getAppShuttingDown,
+  changed: (update) => { if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(WORKSPACE_SERVICE_CHANGED, update); },
+});
+const checkoutUsages = () => [...terminals.values(), ...workspaceServiceManager.usages()];
+const releaseCheckoutWithUsages = (workspaceId: string, checkoutContextId: string) =>
+  releaseCheckoutContext({ registry: workspaceRegistry, terminals: checkoutUsages(), workspaceId, checkoutContextId });
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
@@ -282,7 +295,7 @@ const gitService: GitService = new GitService(
     }
   },
   (worktreePath) => shell.trashItem(worktreePath),
-  () => [...terminals.values()]
+  () => checkoutUsages()
     .map((terminal) => terminal.cwd)
     .filter((cwd): cwd is string => typeof cwd === 'string'),
   () => workspaceRegistry.getLocalOpenWorkspacePaths(),
@@ -408,6 +421,7 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
   });
 
+  registerWorkspaceServiceIpc(workspaceServiceManager);
   registerRecipeIpc({
     getStore: () => store,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
@@ -415,6 +429,7 @@ app.whenReady().then(() => {
 
   registerTerminalIpc({
     getTerminals: () => terminals,
+    getAdditionalCheckoutUsages: () => workspaceServiceManager.usages(),
     getMainWindow: () => mainWindow,
     getStore: () => store,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
@@ -483,8 +498,7 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
-    releaseCheckoutContext: (workspaceId, checkoutContextId) =>
-      releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    releaseCheckoutContext: releaseCheckoutWithUsages,
     // An agent whose harness runs hooks in its own (now removed) directory can never settle its turn.
     onCheckoutContextsGone: (_workspaceId, goneContextIds) => {
       for (const terminalId of strandedAgentTerminals({
@@ -493,7 +507,10 @@ app.whenReady().then(() => {
         hooksRunInAgentDirectory: (harness) => findHarnessProvider(harness)?.attention?.hooksRunInAgentDirectory === true,
       })) agentAttentionBroker.markLifecycleLost(terminalId);
     },
-    onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
+    onWorkspaceUnregistered: (id) => {
+      void workspaceServiceManager.closeWorkspace(id).catch((error: unknown) => console.warn('[clanker-grid] dev service cleanup failed:', error));
+      browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id);
+    },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
       const configurations = store.get('sshEnvironments') ?? [];
@@ -562,8 +579,7 @@ app.whenReady().then(() => {
     isAttentionEnabled: (harnessId) => isHarnessId(harnessId) && store.get('harnessDefaults')[harnessId]?.attentionEnabled === true,
     git: gitIpc,
     getSessions: () => sessionIpc,
-    releaseCheckoutContext: (workspaceId, checkoutContextId) =>
-      releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    releaseCheckoutContext: releaseCheckoutWithUsages,
     retireTerminal: (terminalId) => retireTerminal({ terminals, releaseAttention: (id) => agentAttentionBroker.release(id) }, terminalId),
     retireTerminalAndWait: (terminalId) => retireTerminalAndWait({ terminals, releaseAttention: (id) => agentAttentionBroker.release(id) }, terminalId),
     commitCheckoutRelocation: (identity, targetId) => commitCheckoutRelocation({ registry: workspaceRegistry, terminals, bridge: agentBridge }, identity, targetId),
@@ -640,6 +656,7 @@ app.on('before-quit', (event) => {
   if (closeGuard && !closeGuard.beforeQuit(event)) return;
   event.preventDefault();
   if (quitCleanup) return;
+  const servicesStopped = workspaceServiceManager.shutdown();
   const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
@@ -653,7 +670,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped]).then(() => undefined);
+  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

@@ -20,6 +20,7 @@ import { useKeybindingStore } from './store/keybindingStore';
 import { selectFocusedWorkspace } from './store/workspaceStoreHelpers';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { toggleFocusedWorkspaceExplorer } from './lib/explorerToggle';
+import { startWorkspaceServiceBridge } from './store/workspaceServiceStore';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { startRemoteFileWatcher } from './lib/remoteFileWatcher';
 import './App.css';
@@ -137,6 +138,7 @@ function App() {
   }, []);
 
   useEffect(() => startRemoteFileWatcher(), []);
+  useEffect(() => startWorkspaceServiceBridge(), []);
 
   useEffect(() => {
     const unsubscribe = startTerminalSessionBridge();

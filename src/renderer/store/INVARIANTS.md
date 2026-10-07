@@ -24,6 +24,19 @@ A workspace's persistent identity is its environment ID plus canonical POSIX pat
 
 A workspace owns `checkoutContexts` (validated working roots) and every terminal carries a `checkoutContextId`. The main context's id is `<workspaceId>::main` and its path equals `workspacePath`; `sanitizeWorkspace` adds it (and binds unbound terminals to it) for workspaces created without contexts. A legacy linked-worktree workspace is its own root, so its single context has `kind: 'worktree'`. A terminal's recorded context is never rewritten by backfill. The authoritative, validated copy lives in main's `WorkspaceRegistry`; the renderer's copy is descriptive and cannot change where a terminal may run. An agent's reported location (`AgentAttentionSnapshot.location`, resolved by main) only changes which checkout is *shown* for it; it never rewrites `checkoutContextId`. Main's reconciliation with Git may refresh a worktree context's `branch`, set `missing`, or drop it (`applyCheckoutContextReconciliation`); it never adds a context or changes a root.
 
+### Checkout Dev Service State
+
+`workspaceServiceStore` is runtime-only presentation state, not part of workspace persistence or
+layout ownership. Main snapshots have a monotonically increasing global revision; late hydration
+cannot overwrite a newer push. A service must reference an open workspace and that workspace's
+matching registered `checkoutRoot` (the actual canonical launch `cwd` may resolve a symlink). Every
+service is scoped to `workspaceId + checkoutContextId`, not the active
+workspace or source terminal's current location. Two conversations in one checkout expose the same
+service; a conversation moving or closing never moves/stops it. Orphaned services remain accessible
+as checkout-labelled rows. Main counts pending/live service processes as checkout usage, so a
+renderer-only inactive checkout row cannot bypass removal protections. Browser handoff re-probes
+readiness and respects newer destination/service selections.
+
 ## Workspace Lifecycle Model
 
 ### Lifecycle Vocabulary
@@ -63,6 +76,7 @@ These rules describe the implemented workspace residency system.
 | Workspace layout tree | All workspace shells render in one shared container; an LRU cap keeps three pane trees mounted and cold-unmounts older parked trees |
 | Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
 | Terminal input/focus | Active workspace only |
+| Local checkout dev services | Main-owned headless PTYs; app-scoped `workspaceServiceStore` snapshots continue while parked/cold, independent of agent and pane lifetime; workspace close stops them |
 | Editor file watchers | Local watched editor tabs across active and parked workspaces via `editorFileWatcher`; none on SSH workspaces |
 | Explorer watcher | Local active-workspace-only; SSH uses one bounded batched poll for the active workspace's visible/expanded directories and open editor files; parked workspaces retain cached contents |
 | SSH focus refresh | While the active SSH workspace's Explorer is visible, desktop focus refreshes Explorer contents and reloads clean editor tabs; dirty tabs are not automatically overwritten |
