@@ -105,7 +105,7 @@ describe('the lifecycle tools', () => {
   it('accept operation data only: a branch name, and a cleanup preference', () => {
     expect(Object.keys(create.inputSchema.properties)).toEqual(['branch']);
     expect(create.inputSchema.required).toEqual(['branch']);
-    expect(Object.keys(complete.inputSchema.properties)).toEqual(['deleteBranch']);
+    expect(Object.keys(complete.inputSchema.properties)).toEqual(['discardIgnored', 'deleteBranch']);
     expect(complete.inputSchema.required).toBeUndefined();
     for (const capability of [create, complete]) {
       expect(capability.inputSchema.additionalProperties).toBe(false);

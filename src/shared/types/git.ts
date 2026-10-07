@@ -164,10 +164,23 @@ export interface GitWorktreeCreateResult {
   error?: string;
 }
 
+/** Bounded relative examples; counts include entries omitted from the examples. */
+export interface GitWorktreeChanges {
+  tracked: { count: number; paths: string[] };
+  untracked: { count: number; paths: string[] };
+  ignored: { count: number; paths: string[] };
+}
+
+/** Main-owned removal preference; ordinary renderer removal remains strict. */
+export interface GitWorktreeRemovalOptions {
+  discardIgnored?: boolean;
+}
+
 export interface GitWorktreeInspectionResult {
   success: boolean;
   worktree?: GitWorktree;
   hasChanges?: boolean;
+  changes?: GitWorktreeChanges;
   error?: string;
 }
 

@@ -5,6 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GitService } from '../../../src/main/gitService';
 import { SshEnvironment } from '../../../src/main/remote/sshEnvironment';
 import { SshCommandExecutor, SshExecutionError } from '../../../src/main/remote/sshCommandExecutor';
 import { worktreeDirectoryName } from '../../../src/main/worktreePaths';
@@ -164,6 +165,21 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
     return { checkout, module: join(checkout, 'module with spaces') };
   }
 
+  it('local inspection also finds ignored submodule files and cannot override source changes', async () => {
+    const { checkout, module } = await submoduleCheckout(true);
+    const service = new GitService(() => undefined);
+    const leaf = join(module, 'nested with spaces');
+    await writeFile(join(leaf, 'ignored'), 'preserve');
+    expect(await service.inspectWorktree(root, checkout)).toMatchObject({ success: true, hasChanges: true,
+      changes: { tracked: { count: 0 }, untracked: { count: 0 }, ignored: { count: 1, paths: ['module with spaces/nested with spaces/ignored'] } } });
+    await writeFile(join(leaf, 'tracked.txt'), 'source work');
+    expect((await service.removeWorktree(root, checkout, 'task', [], { discardIgnored: true })).success).toBe(false);
+    expect(await readFile(join(leaf, 'tracked.txt'), 'utf8')).toBe('source work');
+    // Even ignored-only opt-in cannot enable unsupported SSH submodule removal.
+    await exec('git', ['-C', leaf, 'restore', 'tracked.txt']);
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID(), { discardIgnored: true })).toMatchObject({ success: false, error: expect.stringContaining('submodules') });
+  });
+
   it('detects ignored files inside an initialized submodule even when parent status is clean', async () => {
     const { checkout, module } = await submoduleCheckout();
     expect(await environment.inspectWorktree(root, checkout, [])).toMatchObject({ success: true, hasChanges: false });
@@ -240,6 +256,29 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
     expect(await environment.inspectWorktree(root, join(fixture, 'task'), [])).toMatchObject({ success: false, error: expect.stringContaining('Invalid remote') });
     vi.mocked(executor.exec).mockRejectedValueOnce(new Error('SSH disconnected'));
     expect(await environment.inspectWorktree(root, join(fixture, 'task'), [])).toMatchObject({ success: false, error: 'SSH disconnected' });
+  });
+
+
+  it('preserves ignored-only contents in SSH recovery on opt-in and refuses real work', async () => {
+    await writeFile(join(root, '.gitignore'), 'node_modules/\n');
+    await git(['add', '.gitignore']);
+    await git(['commit', '-m', 'Ignore dependencies']);
+    const checkout = join(fixture, 'ignored');
+    await git(['worktree', 'add', '-b', 'ignored', checkout]);
+    await mkdir(join(checkout, 'node_modules'));
+    await writeFile(join(checkout, 'node_modules', 'keep'), 'dependency');
+    expect(await environment.inspectWorktree(root, checkout, [])).toMatchObject({ hasChanges: true,
+      changes: { tracked: { count: 0 }, untracked: { count: 0 }, ignored: { count: 1, paths: ['node_modules/'] } } });
+    expect(await environment.removeWorktree(root, checkout, 'ignored', [], randomUUID())).toMatchObject({ success: false });
+    await writeFile(join(checkout, 'source.txt'), 'work');
+    expect(await environment.removeWorktree(root, checkout, 'ignored', [], randomUUID(), { discardIgnored: true })).toMatchObject({ success: false });
+    await rm(join(checkout, 'source.txt'));
+    await writeFile(join(checkout, 'tracked.txt'), 'work');
+    expect(await environment.removeWorktree(root, checkout, 'ignored', [], randomUUID(), { discardIgnored: true })).toMatchObject({ success: false });
+    await exec('git', ['-C', checkout, 'restore', 'tracked.txt']);
+    const result = await environment.removeWorktree(root, checkout, 'ignored', [], randomUUID(), { discardIgnored: true });
+    expect(result.success).toBe(true);
+    expect(await readFile(join(result.recoveryPath!, 'node_modules', 'keep'), 'utf8')).toBe('dependency');
   });
 
   it('preserves checkout files in a recovery folder and unregisters only the removed checkout', async () => {

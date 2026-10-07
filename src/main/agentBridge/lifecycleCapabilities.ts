@@ -14,7 +14,7 @@ export interface AgentCheckoutLifecyclePort {
   /** Move the calling conversation into a new Clanker-owned isolated checkout. */
   create(caller: AgentBridgeCaller, input: { branch: string }, signal: AbortSignal): Promise<AgentBridgeToolResult>;
   /** Move the calling conversation back to the main checkout and clean up the isolated one. */
-  complete(caller: AgentBridgeCaller, input: { deleteBranch?: boolean }, signal: AbortSignal): Promise<AgentBridgeToolResult>;
+  complete(caller: AgentBridgeCaller, input: { deleteBranch?: boolean; discardIgnored?: boolean }, signal: AbortSignal): Promise<AgentBridgeToolResult>;
 }
 
 /**
@@ -67,6 +67,7 @@ export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecycle
       requires: 'checkout-rehoming',
       timeoutMs: CHECKOUT_LIFECYCLE_TIMEOUT_MS,
       input: {
+        discardIgnored: { type: 'boolean', description: 'Allow removal only when all remaining changes are ignored files. Preserves them with the whole checkout in Trash/recovery; never discards tracked or ordinary untracked work.' },
         deleteBranch: { type: 'boolean', description: 'Also delete the isolated branch if Git considers it fully merged. It is never force-deleted.' },
       },
       run: (input, context) => port.complete(run(context).caller, input, run(context).signal),

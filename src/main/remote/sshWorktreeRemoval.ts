@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import type { GitWorktreeRemoveResult } from '../../shared/types/git';
+import type { GitWorktreeRemoveResult, GitWorktreeRemovalOptions } from '../../shared/types/git';
 import { WORKTREE_INSPECTION_PYTHON, validRemoteWorktreePath } from './sshWorktreeInspection';
 import { SshCommandExecutor } from './sshCommandExecutor';
 
@@ -23,6 +23,7 @@ def private_directory(directory, label):
 
 const REMOVE_SCRIPT = WORKTREE_INSPECTION_PYTHON + PRIVATE_DIRECTORY_PYTHON + String.raw`
 expected, operation = json.loads(sys.argv[4]), sys.argv[5]
+discard_ignored = len(sys.argv) > 6 and sys.argv[6] == 'true'
 stage, bundle, archive, journal = None, None, None, None
 try:
   common = os.fsdecode(git(workspace, ['rev-parse', '--path-format=absolute', '--git-common-dir']).rstrip(b'\n'))
@@ -44,7 +45,9 @@ try:
     inspection = inspect()
     if inspection['worktree']['branch'] != expected:
       raise RuntimeError('Worktree branch changed; inspect it again')
-    if inspection['hasChanges']:
+    changes = inspection['changes']
+    ignored_only = changes['ignored']['count'] > 0 and changes['tracked']['count'] == 0 and changes['untracked']['count'] == 0
+    if inspection['hasChanges'] and not (discard_ignored and ignored_only):
       raise RuntimeError('Worktree has uncommitted, untracked, or ignored files')
     if any(record.startswith(b'160000 ') for record in git(target, ['ls-files', '--stage', '-z']).split(b'\0')):
       raise RuntimeError('Remote removal of worktrees containing submodules is not supported')
@@ -102,7 +105,7 @@ if journal is not None:
 print(json.dumps(result))
 `;
 
-export async function removeSshWorktree(executor: SshCommandExecutor, target: string, workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }> {
+export async function removeSshWorktree(executor: SshCommandExecutor, target: string, workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string, options: GitWorktreeRemovalOptions = {}): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }> {
   if (!validRemoteWorktreePath(workspacePath) || !validRemoteWorktreePath(worktreePath) ||
       (typeof expectedBranch !== 'string' && expectedBranch !== null) || !Array.isArray(activePaths) || activePaths.length > 1024 ||
       !activePaths.every(validRemoteWorktreePath) || !/^[0-9a-f-]{36}$/.test(operationId)) {
@@ -110,7 +113,7 @@ export async function removeSshWorktree(executor: SshCommandExecutor, target: st
   }
   const { stagingPath, recoveryDirectory } = remoteRemovalPaths(worktreePath, operationId);
   try {
-    const { stdout } = await executor.exec(target, 'python3', ['-c', REMOVE_SCRIPT, workspacePath, worktreePath, JSON.stringify(activePaths), JSON.stringify(expectedBranch), operationId], { timeoutMs: 120000, maxBuffer: 128 * 1024 });
+    const { stdout } = await executor.exec(target, 'python3', ['-c', REMOVE_SCRIPT, workspacePath, worktreePath, JSON.stringify(activePaths), JSON.stringify(expectedBranch), operationId, JSON.stringify(options.discardIgnored === true)], { timeoutMs: 120000, maxBuffer: 128 * 1024 });
     const result: unknown = JSON.parse(stdout);
     if (!result || typeof result !== 'object' || !('success' in result) || typeof result.success !== 'boolean') throw new Error('Invalid removal response');
     if (result.success) {

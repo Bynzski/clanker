@@ -6,6 +6,7 @@ import type { HarnessSession } from '../../shared/types/session';
 import { UnverifiedProcessExitError } from '../harnesses/types';
 import { toNativePath } from '../../shared/pathNormalize';
 import type { AgentBridgeCaller, AgentBridgeToolResult } from '../agentBridge/capabilities';
+import { canRemoveWorktree } from '../worktreeChanges';
 import type { AgentCheckoutLifecyclePort } from '../agentBridge/lifecycleCapabilities';
 import { countTerminalsUsingContext, type TerminalUsage } from '../checkoutContextRelease';
 import { isCurrentCheckoutContext } from '../sessionResumeTarget';
@@ -130,6 +131,7 @@ interface PendingMove {
   label: string;
   createdNow: boolean;
   deleteBranch: boolean;
+  discardIgnored: boolean;
   /** Only a completed root turn recorded after this revision may trigger the move. */
   baselineOutcomeRevision: number;
 }
@@ -148,7 +150,9 @@ class ReplacementFailure extends Error {
 }
 
 /** Refused or rolled back; `message` is safe to show the agent and the user. */
-class TransitionFailure extends Error {}
+class TransitionFailure extends Error {
+  constructor(message: string, readonly detail: Record<string, unknown> = {}) { super(message); }
+}
 /** The caller cancelled or the call timed out before the commit point. */
 class TransitionAborted extends Error {}
 /** Cancelled after a checkout was already created and kept: said so, never "nothing changed". */
@@ -283,7 +287,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
       // A conversation that must not be replaced while it runs is moved after its turn instead.
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
-        return this.schedule(caller, session, signal, { kind: 'create', source: caller.checkoutContext, target, label: branch, createdNow, deleteBranch: false });
+        return this.schedule(caller, session, signal, { kind: 'create', source: caller.checkoutContext, target, label: branch, createdNow, deleteBranch: false, discardIgnored: false });
       }
 
       let launched: ResumedSessionLaunch;
@@ -302,7 +306,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     });
   }
 
-  complete(caller: AgentBridgeCaller, input: { deleteBranch?: boolean }, signal: AbortSignal): Promise<AgentBridgeToolResult> {
+  complete(caller: AgentBridgeCaller, input: { deleteBranch?: boolean; discardIgnored?: boolean }, signal: AbortSignal): Promise<AgentBridgeToolResult> {
     return this.exclusive(caller, async () => {
       const { workspaceId, main } = this.preflightCommon(caller);
       const old = caller.checkoutContext;
@@ -323,11 +327,11 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       // unlocked linked worktree (or no longer has its directory at all), and it holds nothing unsaved.
       const others = countTerminalsUsingContext(registry, old, this.deps.getTerminals().entries(), caller.terminalId);
       if (others > 0) throw new TransitionFailure(`${others} other running terminal${others === 1 ? ' is' : 's are'} still using this checkout; close ${others === 1 ? 'it' : 'them'} first`);
-      const checkout = await this.inspectCheckout(workspaceId, old);
+      const checkout = await this.inspectCheckout(workspaceId, old, input.discardIgnored === true);
       this.throwIfAborted(signal);
 
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
-        return this.schedule(caller, session, signal, { kind: 'complete', source: old, target: main, label: old.branch ?? 'HEAD', createdNow: false, deleteBranch: input.deleteBranch === true });
+        return this.schedule(caller, session, signal, { kind: 'complete', source: old, target: main, label: old.branch ?? 'HEAD', createdNow: false, deleteBranch: input.deleteBranch === true, discardIgnored: input.discardIgnored === true });
       }
 
       let launched: ResumedSessionLaunch;
@@ -341,7 +345,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
       await this.handOff(workspaceId, caller.terminalId, launched);
       // ---- past the commit point: the conversation lives in the main checkout; finish, never roll back ----
-      const cleanup = await this.cleanUp(workspaceId, old, checkout, input.deleteBranch === true);
+      const cleanup = await this.cleanUp(workspaceId, old, checkout, input.deleteBranch === true, input.discardIgnored === true);
       this.notice(workspaceId, cleanup.complete ? 'info' : 'warning', cleanup.summary);
       return ok({ status: cleanup.complete ? 'completed' : 'moved-with-cleanup-pending', checkout: this.describe(main), cleanup: cleanup.report });
     });
@@ -410,7 +414,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
   }
 
   /** What `complete` needs to know about the checkout before it commits to anything. */
-  private async inspectCheckout(workspaceId: string, context: CheckoutContext): Promise<{ missing: boolean; branch: string | null }> {
+  private async inspectCheckout(workspaceId: string, context: CheckoutContext, discardIgnored = false): Promise<{ missing: boolean; branch: string | null }> {
     const listing = await this.deps.git.listWorktrees(workspaceId);
     if (!listing.success) throw new TransitionFailure(listing.error || 'Git could not list the repository worktrees');
     const listed = findListedWorktree(listing, LOCAL_ENVIRONMENT_ID, context.path);
@@ -424,8 +428,12 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     if (listed.isPrunable || !onDisk) return { missing: true, branch: listed.branch ?? context.branch ?? null };
     const clean = await this.deps.git.checkWorktreeClean(workspaceId, context.path);
     if (!clean.success) throw new TransitionFailure(clean.error || 'Could not inspect the isolated checkout');
-    if (clean.hasChanges) {
-      throw new TransitionFailure('The isolated checkout has uncommitted, untracked or ignored files. Commit or remove them first; nothing was changed.');
+    if (!canRemoveWorktree(clean, discardIgnored)) {
+      const ignoredOnly = canRemoveWorktree(clean, true);
+      throw new TransitionFailure(ignoredOnly
+        ? 'The isolated checkout contains only ignored files. Retry with discardIgnored: true to preserve them in Trash while removing the checkout; nothing was changed.'
+        : 'The isolated checkout has uncommitted, untracked or ignored files. Commit or remove them first; nothing was changed.',
+      { status: 'blocked', reason: ignoredOnly ? 'ignored-only' : 'worktree-changes', changes: clean.changes, canCompleteWithDiscardIgnored: ignoredOnly });
     }
     return { missing: false, branch: listed.branch ?? null };
   }
@@ -537,11 +545,11 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    * existing validated paths. Reports instead of throwing: the conversation has already moved.
    */
   private async cleanUp(
-    workspaceId: string, old: CheckoutContext, checkout: { missing: boolean; branch: string | null }, deleteBranch: boolean,
+    workspaceId: string, old: CheckoutContext, checkout: { missing: boolean; branch: string | null }, deleteBranch: boolean, discardIgnored: boolean,
   ): Promise<CleanupOutcome> {
     const report: Record<string, unknown> = {};
     try {
-      return await this.runCleanUp(workspaceId, old, checkout, deleteBranch, report);
+      return await this.runCleanUp(workspaceId, old, checkout, deleteBranch, discardIgnored, report);
     } catch (error) {
       // Past the commit point nothing may surface as "the conversation was left where it was": it was
       // not. Whatever threw, the outcome is a partial cleanup, reported to the user.
@@ -554,7 +562,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
   }
 
   private async runCleanUp(
-    workspaceId: string, old: CheckoutContext, checkout: { missing: boolean; branch: string | null }, deleteBranch: boolean,
+    workspaceId: string, old: CheckoutContext, checkout: { missing: boolean; branch: string | null }, deleteBranch: boolean, discardIgnored: boolean,
     report: Record<string, unknown>,
   ): Promise<CleanupOutcome> {
     const label = old.branch ?? 'HEAD';
@@ -583,11 +591,15 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         report.worktreeRemoved = false;
         return partial(`${inspection.error ?? 'it could not be inspected'}. It was left on disk at ${old.path}.`);
       }
-      if (inspection.hasChanges) {
+      if (inspection.worktree.branch !== checkout.branch) {
+        report.worktreeRemoved = false;
+        return partial(`its branch changed after preflight. It was left on disk at ${old.path}.`);
+      }
+      if (!canRemoveWorktree(inspection, discardIgnored)) {
         report.worktreeRemoved = false;
         return partial(`it now holds uncommitted, untracked or ignored files. It was left on disk at ${old.path}.`);
       }
-      const removal = await this.deps.git.removeWorktree(workspaceId, inspection.worktree.path, inspection.worktree.branch, []);
+      const removal = await this.deps.git.removeWorktree(workspaceId, inspection.worktree.path, checkout.branch, [], { discardIgnored });
       report.worktreeRemoved = removal.success;
       if (!removal.success) return partial(`${removal.error ?? 'removal failed'}. It was left on disk at ${old.path}.`);
     }
@@ -634,7 +646,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    */
   private schedule(
     caller: AgentBridgeCaller, session: HarnessSession, signal: AbortSignal,
-    spec: Pick<PendingMove, 'kind' | 'source' | 'target' | 'label' | 'createdNow' | 'deleteBranch'>,
+    spec: Pick<PendingMove, 'kind' | 'source' | 'target' | 'label' | 'createdNow' | 'deleteBranch' | 'discardIgnored'>,
   ): AgentBridgeToolResult {
     // The last gate before a conversation move can exist: a cancelled or timed-out request never schedules one.
     if (signal.aborted) {
@@ -705,7 +717,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     if (pending.kind === 'complete') {
       const others = countTerminalsUsingContext(registry, pending.source, this.deps.getTerminals().entries(), terminalId);
       if (others > 0) return cancel(`${others} other running terminal${others === 1 ? ' is' : 's are'} using the checkout`);
-      try { checkout = await this.inspectCheckout(workspaceId, pending.source); }
+      try { checkout = await this.inspectCheckout(workspaceId, pending.source, pending.discardIgnored); }
       catch (error) { return cancel(messageOf(error, 'the checkout can no longer be removed')); }
     }
     const sessions = this.deps.getSessions();
@@ -742,7 +754,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         this.notice(workspaceId, 'info', `Moved this conversation into isolated checkout "${pending.label}".`);
         return;
       }
-      const cleanup = await this.cleanUp(workspaceId, pending.source, checkout, pending.deleteBranch);
+      const cleanup = await this.cleanUp(workspaceId, pending.source, checkout, pending.deleteBranch, pending.discardIgnored);
       this.notice(workspaceId, cleanup.complete ? 'info' : 'warning', cleanup.summary);
       return;
     }
@@ -821,7 +833,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       try {
         return await body();
       } catch (error) {
-        if (error instanceof TransitionFailure) return refuse(error.message);
+        if (error instanceof TransitionFailure) return { isError: true, data: { error: error.message, ...error.detail } };
         if (error instanceof TransitionAbortedAfterCreate) return refuse(error.message);
         if (error instanceof TransitionAborted) return refuse('The request was cancelled before the conversation was moved; nothing changed');
         // Unknown failures keep their detail in main; the agent gets a bounded generic error.

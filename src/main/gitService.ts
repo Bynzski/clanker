@@ -5,8 +5,9 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
-import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult } from '../shared/types/git';
+import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult, GitWorktreeRemovalOptions } from '../shared/types/git';
 import { utf8ByteLength } from '../shared/utf8';
+import { canRemoveWorktree, inspectWorktreeChanges } from './worktreeChanges';
 import { worktreeDirectoryName } from './worktreePaths';
 
 export interface GitStatusEntry {
@@ -485,14 +486,14 @@ export class GitService {
       if (options.skipOpenCheck !== true && this.isOpenWorkspace(worktree.path, openWorkspacePaths)) {
         return { success: false, error: 'Close this workspace tab before removing its worktree' };
       }
-      const { stdout } = await this.execGit(worktree.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored']);
-      return { success: true, worktree, hasChanges: stdout.length > 0 };
+      const changes = await inspectWorktreeChanges(worktree.path, (cwd, args) => this.execGit(cwd, args));
+      return { success: true, worktree, hasChanges: changes.tracked.count + changes.untracked.count + changes.ignored.count > 0, changes };
     } catch (error) {
       return { success: false, error: this.getGitErrorMessage(error, 'Could not inspect worktree') };
     }
   }
 
-  async removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[] = []): Promise<{ success: boolean; error?: string; warning?: string }> {
+  async removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[] = [], options: GitWorktreeRemovalOptions = {}): Promise<{ success: boolean; error?: string; warning?: string }> {
     let removalKey: string;
     try {
       const realPath = fs.realpathSync.native(worktreePath);
@@ -506,7 +507,7 @@ export class GitService {
       const inspection = await this.inspectWorktree(workspacePath, worktreePath, openWorkspacePaths);
       if (!inspection.success || !inspection.worktree) return { success: false, error: inspection.error };
       if (inspection.worktree.branch !== expectedBranch) return { success: false, error: 'Worktree branch changed; inspect it again' };
-      if (inspection.hasChanges) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
+      if (!canRemoveWorktree(inspection, options.discardIgnored === true)) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
       const listed = await this.listWorktrees(workspacePath);
       const gitCwd = listed.worktrees.find((entry) => entry.isMain && !entry.isPrunable)?.path;
       if (!listed.success || !gitCwd) return { success: false, error: listed.error || 'Repository main worktree is unavailable' };

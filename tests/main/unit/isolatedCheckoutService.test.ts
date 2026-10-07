@@ -505,6 +505,47 @@ describe('create: main checkout -> new isolated worktree', () => {
 });
 
 describe('complete: isolated worktree -> main checkout, then cleanup', () => {
+  const ignoredChanges = { tracked: { count: 0, paths: [] }, untracked: { count: 0, paths: [] }, ignored: { count: 1, paths: ['node_modules/'] } };
+  const ignoredInspection = () => ({ success: true, hasChanges: true, changes: ignoredChanges,
+    worktree: { path: toPosixPath(wtPath), branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
+
+  it('reports ignored-only blockers without moving, then preserves them on explicit opt-in', async () => {
+    const world = inTree({ clean: ignoredInspection(), inspect: ignoredInspection() });
+    const blocked = await call(world, 'complete', TREE, {});
+    expect(blocked).toMatchObject({ isError: true, data: { reason: 'ignored-only', changes: ignoredChanges, canCompleteWithDiscardIgnored: true } });
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+    const result = await call(world, 'complete', TREE, { deleteBranch: true, discardIgnored: true });
+    expect(JSON.parse(text(result))).toMatchObject({ status: 'completed', cleanup: { branchDeleted: true } });
+    expect(world.git.removeWorktree).toHaveBeenCalledWith(MAIN.workspaceId, toPosixPath(wtPath), 'task', [], { discardIgnored: true });
+  });
+
+  it.each(['tracked', 'untracked'] as const)('never allows %s work through ignored-only opt-in', async (kind) => {
+    const changes = { ...ignoredChanges, [kind]: { count: 1, paths: ['important.txt'] } };
+    const world = inTree({ clean: { ...ignoredInspection(), changes } });
+    const result = await call(world, 'complete', TREE, { discardIgnored: true });
+    expect(result).toMatchObject({ isError: true, data: { reason: 'worktree-changes', canCompleteWithDiscardIgnored: false } });
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+    expect(world.git.removeWorktree).not.toHaveBeenCalled();
+  });
+
+  it('keeps the checkout and branches when its branch changes after preflight', async () => {
+    const world = inTree({ clean: ignoredInspection(), inspect: { ...ignoredInspection(),
+      worktree: { ...ignoredInspection().worktree, branch: 'other' } } });
+    const result = await call(world, 'complete', TREE, { discardIgnored: true, deleteBranch: true });
+    expect(JSON.parse(text(result))).toMatchObject({ status: 'moved-with-cleanup-pending' });
+    expect(world.git.removeWorktree).not.toHaveBeenCalled();
+    expect(world.git.deleteBranch).not.toHaveBeenCalled();
+  });
+
+  it('leaves new source work intact when it appears after an ignored-only preflight', async () => {
+    const world = inTree({ clean: ignoredInspection(), inspect: { ...ignoredInspection(),
+      changes: { ...ignoredChanges, untracked: { count: 1, paths: ['important.txt'] } } } });
+    const result = await call(world, 'complete', TREE, { discardIgnored: true, deleteBranch: true });
+    expect(JSON.parse(text(result))).toMatchObject({ status: 'moved-with-cleanup-pending' });
+    expect(world.git.removeWorktree).not.toHaveBeenCalled();
+    expect(world.git.deleteBranch).not.toHaveBeenCalled();
+  });
+
   it('re-homes into main FIRST, retires the old process SECOND, and only then releases and removes the checkout', async () => {
     const world = inTree();
     const result = await call(world, 'complete', TREE, { deleteBranch: true });
@@ -572,7 +613,7 @@ describe('complete: isolated worktree -> main checkout, then cleanup', () => {
   });
 
   it('a branch Git reports differently from the registered one is not deleted', async () => {
-    const world = inTree({ listing: { success: true, worktrees: [
+    const world = inTree({ inspect: { success: true, hasChanges: false, worktree: { path: wtPath, branch: 'someone-switched-it' } }, listing: { success: true, worktrees: [
       { path: mainPath, branch: 'main', isMain: true, isLocked: false, isPrunable: false },
       { path: wtPath, branch: 'someone-switched-it', isMain: false, isLocked: false, isPrunable: false },
     ] } });

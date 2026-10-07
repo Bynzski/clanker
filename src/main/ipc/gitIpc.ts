@@ -14,7 +14,7 @@ import type { WorktreeProvenance } from '../worktreeProvenance';
 import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
 import type { ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type {
-  GitBranchStateResult, GitCreateWorktreeOptions, GitDeleteBranchResult, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult,
+  GitBranchStateResult, GitCreateWorktreeOptions, GitDeleteBranchResult, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreeRemovalOptions,
 } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -116,7 +116,7 @@ export interface GitIpcController {
   /** The full inspection removal requires (including the open-workspace/terminal check). */
   inspectWorktree(workspaceId: string, worktreePath: string, openWorkspacePaths: string[]): Promise<GitWorktreeInspectionResult>;
   /** Removal through `gitService.removeWorktree` with its own inspection, branch-identity and trash protections. */
-  removeWorktree(workspaceId: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]): Promise<{ success: boolean; error?: string; warning?: string }>;
+  removeWorktree(workspaceId: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], options?: GitWorktreeRemovalOptions): Promise<{ success: boolean; error?: string; warning?: string }>;
   /** Drops Git's record of one missing linked worktree (nothing else). */
   forgetMissingWorktree(workspaceId: string, worktreePath: string): Promise<{ success: boolean; error?: string }>;
   /** Safe `git branch -d` only: refuses an unmerged branch and the current one. */
@@ -438,14 +438,14 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
       : result;
   };
-  const removeLocalWorktree = async (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
+  const removeLocalWorktree = async (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], options: GitWorktreeRemovalOptions = {}) => {
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
     const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
     if (!safePath || !safeWorktreePath || !safeOpenPaths || (typeof expectedBranch !== 'string' && expectedBranch !== null)) {
       return getInvalidWorkspaceResult();
     }
-    return gitService.removeWorktree(safePath, safeWorktreePath, expectedBranch, safeOpenPaths);
+    return gitService.removeWorktree(safePath, safeWorktreePath, expectedBranch, safeOpenPaths, options);
   };
 
   registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
@@ -867,8 +867,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     inspectWorktree: (workspaceId, worktreePath, openWorkspacePaths) => withLocalScope(workspaceId,
       (ws) => inspectLocalWorktree(ws.location.path, worktreePath, openWorkspacePaths),
       (error) => ({ success: false, error })),
-    removeWorktree: (workspaceId, worktreePath, expectedBranch, openWorkspacePaths) => withLocalScope(workspaceId,
-      (ws) => removeLocalWorktree(ws.location.path, worktreePath, expectedBranch, openWorkspacePaths),
+    removeWorktree: (workspaceId, worktreePath, expectedBranch, openWorkspacePaths, options) => withLocalScope(workspaceId,
+      (ws) => removeLocalWorktree(ws.location.path, worktreePath, expectedBranch, openWorkspacePaths, options),
       (error) => ({ success: false, error })),
     forgetMissingWorktree: (workspaceId, worktreePath) => withLocalScope(workspaceId,
       (_ws, safePath) => gitService.forgetMissingWorktree(safePath, toNativePath(worktreePath, process.platform)),
