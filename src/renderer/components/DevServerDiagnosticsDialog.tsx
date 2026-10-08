@@ -6,12 +6,12 @@ import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import './DevServerDiagnosticsDialog.css';
 
-export function describeServiceExit(service: WorkspaceService): string {
+function describeServiceExit(service: WorkspaceService): string {
   return service.exitCode !== undefined ? `Exited with code ${service.exitCode}` : 'Failed';
 }
 
 /** Plain-text report meant to be pasted to an agent: what ran, where, and what it said. */
-export function buildDevServerReport(service: WorkspaceService): string {
+function buildDevServerReport(service: WorkspaceService): string {
   return [
     '## Dev server failure',
     `- Status: ${describeServiceExit(service)}`,
