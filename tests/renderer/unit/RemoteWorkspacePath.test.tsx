@@ -30,7 +30,7 @@ describe('RemoteWorkspacePath home lookup', () => {
     render(<Harness environmentId="alpha" />);
     expect((await screen.findByRole('alert')).textContent).toContain('SSH connection was refused');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(input().value).toBe('/home/alpha/workspaces'));
+    await waitFor(() => expect(input().value).toBe('/home/alpha/workspaces/'));
     expect(screen.queryByRole('alert')).toBeNull();
     expect(window.electronAPI.sshGetHomeDirectory).toHaveBeenCalledTimes(2);
     expect(window.electronAPI.sshGetHomeDirectory).toHaveBeenLastCalledWith('alpha');
@@ -69,9 +69,9 @@ describe('RemoteWorkspacePath home lookup', () => {
       : Promise.resolve(home('beta')));
     const { rerender } = render(<Harness environmentId="alpha" />);
     rerender(<Harness environmentId="beta" />);
-    await waitFor(() => expect(input().value).toBe('/home/beta/workspaces'));
+    await waitFor(() => expect(input().value).toBe('/home/beta/workspaces/'));
     await act(async () => resolveAlpha(home('alpha')));
-    expect(input().value).toBe('/home/beta/workspaces');
+    expect(input().value).toBe('/home/beta/workspaces/');
   });
 
   it('ignores a superseded failed lookup after Retry succeeds', async () => {
@@ -84,7 +84,7 @@ describe('RemoteWorkspacePath home lookup', () => {
     await waitFor(() => expect(window.electronAPI.sshGetHomeDirectory).toHaveBeenCalledTimes(1));
     await act(async () => rejectFirst(new Error('late failure')));
     fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(input().value).toBe('/home/alpha/workspaces'));
+    await waitFor(() => expect(input().value).toBe('/home/alpha/workspaces/'));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });

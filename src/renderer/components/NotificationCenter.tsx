@@ -76,7 +76,9 @@ export function ToastViewport() {
   const assistantBrowserVisible = useAssistantSurfaceStore((state) => destination.kind === 'assistant'
     && state.byId[destination.assistantId]?.browserVisible === true);
   // A WebContentsView is composited above renderer HTML regardless of z-index. Do not hide or
-  // resize a live Browser just to show a toast; the bell/history retains these notifications.
+  // resize a live Browser just to show a toast; BrowserToastSlot shows the newest one in the
+  // Browser's own header chrome and the bell/history retains the rest. Routine ones still
+  // expire from here, so the slot needs no timers of its own.
   const deferToHistory = workspaceBrowserVisible || assistantBrowserVisible;
   const notifications = useNotificationStore((state) => state.notifications);
   const pending = notifications.filter((entry) => !entry.dismissed);
@@ -104,6 +106,31 @@ export function ToastViewport() {
       {pending.length > visible.length && <span className="notification-overflow">{pending.length - visible.length} more in notification history</span>}
     </div>
   </section>;
+}
+
+/** Compact stacked notifications in the Browser header (renderer chrome above the native view). */
+export function BrowserToastSlot() {
+  const notifications = useNotificationStore((state) => state.notifications);
+  const [expanded, setExpanded] = useState(false);
+  const pending = notifications.filter((entry) => !entry.dismissed);
+  const latest = pending[0];
+  if (!latest && expanded) setExpanded(false);
+  if (!latest) return null;
+  const Icon = TONE_ICONS[latest.tone];
+  const extra = pending.length - 1;
+  return <div className={`browser-toast-slot${extra > 0 ? ' browser-toast-slot--stacked' : ''}`}>
+    {expanded ? <div className="browser-toast-panel toast-stack" aria-label="Notifications">
+      {pending.slice(0, MAX_VISIBLE_TOASTS).reverse().map((entry) => <NotificationCard key={entry.id} notification={entry} />)}
+      <Button variant="ghost" size="xs" className="browser-toast-collapse" onClick={() => setExpanded(false)}>Collapse</Button>
+    </div> : <>
+      <button type="button" className={`browser-toast-chip notification-${latest.tone}`} aria-expanded={false}
+        title={latest.message} onClick={() => setExpanded(true)}>
+        <Icon size={12} className="notification-tone-icon" aria-hidden="true" />
+        <span className="browser-toast-text">{latest.message}</span>
+        {extra > 0 && <span className="browser-toast-count">+{extra}</span>}
+      </button>
+    </>}
+  </div>;
 }
 
 function NotificationHistory() {

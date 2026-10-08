@@ -111,3 +111,5 @@
 .ssh-env-target { font-size: var(--font-size-md);
   color: var(--text-secondary); }
 .ssh-env-edit-btn, .ssh-env-delete-btn { width: 22px; height: 22px; }
+
+.cog-button.start-button { border-left: 1px solid var(--border-default); border-right: 0; }

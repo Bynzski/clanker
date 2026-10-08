@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NotificationCenter, ToastViewport } from '../../../src/renderer/components/NotificationCenter';
+import { BrowserToastSlot, NotificationCenter, ToastViewport } from '../../../src/renderer/components/NotificationCenter';
 import { useNotificationStore, MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../../../src/renderer/store/notificationStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useAssistantSurfaceStore } from '../../../src/renderer/store/assistantSurfaceStore';
@@ -264,5 +264,18 @@ describe('notifications', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
     expect(run).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('private diagnostic')).toBeNull();
+  });
+
+  it('shows the newest persistent notification as a compact Browser header chip that expands in place', () => {
+    render(<BrowserToastSlot />);
+    expect(screen.queryByRole('button')).toBeNull();
+    act(() => { store().show({ tone: 'warning', message: 'older' }); store().show({ tone: 'error', message: 'newest' }); });
+    const chip = screen.getByRole('button', { name: /newest/ });
+    expect(chip).toHaveTextContent('+1');
+    fireEvent.click(chip);
+    expect(screen.getByText('older')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification: newest' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification: older' }));
+    expect(screen.queryByText('older')).toBeNull();
   });
 });

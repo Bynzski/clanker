@@ -46,7 +46,6 @@
 
 /* Workspaces are separated by a rule, matching the collapsed rail. */
 .ws-nav-item + .ws-nav-item { border-top: 1px solid var(--border-subtle); }
-.ws-agent-list { padding-bottom: 2px; }
 
 .ws-nav-row {
   display: flex;
@@ -93,7 +92,6 @@
 
 .ws-nav-section-toggle:focus-visible,
 .ws-nav-select:focus-visible,
-.ws-agent-row:focus-visible,
 .ws-nav .ws-nav-action:focus-visible {
   outline: 1px solid var(--accent-interactive);
   outline-offset: -1px;
@@ -140,81 +138,71 @@
 .ws-nav-edit { display: flex; align-items: center; flex: 1; min-width: 0; gap: 4px; padding: 2px 0; }
 .ws-nav-edit-input { flex: 1; min-width: 0; }
 
-.ws-agent-row {
-  position: relative;
+.ws-agent-list { padding: 2px 0 4px; }
+
+/* One compact line per agent; dev controls sit inline at the right, extras wrap beneath. */
+.ws-agent-card {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  width: 100%;
-  min-height: 22px;
-  padding: 1px 8px 1px 26px;
-  background: none;
-  border: none;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-right: 4px;
   border-left: 2px solid transparent;
   color: var(--text-secondary);
+}
+.ws-agent-card:hover { background: var(--surface-control); color: var(--text-primary); }
+/* Quiet marker for the focused agent: a faint tint, nothing louder. */
+.ws-agent-card.current { background: var(--surface-selected); color: var(--text-primary); }
+
+.ws-agent-row {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 1px;
+  padding: 3px 4px 3px 26px;
+  background: none;
+  border: none;
+  color: inherit;
   font: inherit;
   font-size: var(--font-size-md);
   text-align: left;
   cursor: pointer;
 }
-
-.ws-agent-row:hover { background: var(--surface-control); color: var(--text-primary); }
-/* The focused agent is the only filled row. Its bar matches the active workspace's, so one
-   accent line links the workspace to the agent. Declared after :hover so hover keeps the tint. */
-.ws-agent-row.current {
-  background: var(--surface-selected);
-  border-left-color: var(--accent-interactive);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-.ws-agent-primary { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 20px; }
+.ws-agent-primary { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ws-agent-primary > :last-child:not(.ws-agent-name) { flex-shrink: 0; }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
-.ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-agent-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Optional metadata belongs to the same click/selection/focus target, below the primary line. */
+.ws-agent-meta { display: flex; min-width: 0; padding-left: 20px; }
 .ws-agent-branch {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  flex: 0 1 auto;
   min-width: 0;
-  padding-left: 20px;
-  min-height: 16px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   font-weight: 400;
 }
 .ws-agent-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A long branch truncates its text, never the glyph. */
 .ws-agent-branch svg { flex-shrink: 0; }
 /* Git no longer has this checkout: the agent's harness is still in a directory that is gone. */
-.ws-agent-branch.missing { color: var(--text-muted); opacity: 0.75; }
+.ws-agent-branch.missing { opacity: 0.75; text-decoration: line-through; }
 
-/* Services share checkout hierarchy, but are never styled as agents or layout panes. */
-.ws-service-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 20px;
-  padding: 0 8px 0 48px;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
+/* Dev server: just a control cluster. `display: contents` lets its notes wrap under the row. */
+.ws-service-item { display: contents; }
+.ws-service-row { display: flex; align-items: center; flex: none; gap: 2px; color: var(--text-muted); font-size: var(--font-size-xs); }
 .ws-service-row > svg { flex-shrink: 0; }
 .ws-service-row .ws-service-install { flex-shrink: 0; min-height: 18px; padding: 0 4px; font-size: var(--font-size-xs); }
-.ws-service-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-service-row.failed, .ws-service-error { color: var(--status-error); }
-.ws-service-error { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
-.ws-service-hint, .ws-service-diagnostics { padding: 2px 8px 2px 48px; font-size: var(--font-size-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.ws-service-label { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-service-light { flex-shrink: 0; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--status-success); box-shadow: 0 0 5px var(--status-success); }
+.ws-service-row.failed, .ws-service-row.failed .ws-nav-action { color: var(--status-error); }
+.ws-service-error, .ws-service-diagnostics { flex: 0 0 100%; padding: 2px 8px 4px 28px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.ws-service-error { color: var(--status-error); }
+.ws-service-diagnostics { color: var(--text-muted); }
 .ws-service-diagnostics summary { cursor: pointer; }
 .ws-service-diagnostics pre { max-height: 120px; overflow: auto; white-space: pre-wrap; font: inherit; font-family: var(--font-mono); margin: 4px 0; user-select: text; }
-.ws-service-checkout { display: flex; gap: 4px; align-items: center; padding: 2px 8px 0 28px; color: var(--text-muted); font-size: var(--font-size-xs); }
-.ws-service-checkout svg { flex-shrink: 0; }
-.ws-service-checkout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-service-spin { animation: ws-service-spin 1s linear infinite; }
+.ws-service-spin { margin: 0 2px; animation: ws-service-spin 1s linear infinite; }
 @keyframes ws-service-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ws-service-spin { animation: none; } }
 
@@ -262,3 +250,5 @@
 .ws-checkout-notice > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .ws-checkout-notice.error { color: var(--status-error); }
 .ws-checkout-notice.warning { color: var(--status-warning); }
+
+.ws-agent-row:focus-visible { outline: 1px solid var(--accent-interactive); outline-offset: -1px; }

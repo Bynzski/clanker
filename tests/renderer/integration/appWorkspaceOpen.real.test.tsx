@@ -18,8 +18,8 @@ async function openFolder(path: string) {
   vi.mocked(window.electronAPI.openDirectoryDialog).mockResolvedValue(path);
   fireEvent.click(screen.getAllByRole('button', { name: 'Open Workspace' })[0]);
   const dialog = await screen.findByRole('dialog', { name: 'Open Workspace' });
-  fireEvent.click(screen.getByText('Choose Folder…'));
-  await screen.findByText(path);
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Folder…' }));
+  await screen.findByDisplayValue(path);
   fireEvent.click(dialog.querySelector('.open-workspace-form > button:last-child')!);
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Open Workspace' })).toBeNull());
 }

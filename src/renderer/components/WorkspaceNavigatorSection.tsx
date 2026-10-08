@@ -37,7 +37,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
 
   return (
-    <li>
+    <li className={`ws-agent-card${isCurrent ? ' current' : ''}`}>
       <button
         type="button"
         className={`ws-agent-row${isCurrent ? ' current' : ''}`}
@@ -50,19 +50,20 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         <span className="ws-agent-primary">
           <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
           <span className="ws-agent-name">{name}</span>
-          {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
           <span className="sr-only">{harness.label}</span>
           {showAttention && <AgentAttentionState attention={attention} name={name} />}
         </span>
-        {branch && (
-          <span
-            className={`ws-agent-branch${removed ? ' missing' : ''}`}
-            aria-label={removed ? `on branch ${branch}, checkout removed` : `on branch ${branch}`}
-          >
-            <GitBranch size={10} strokeWidth={2} aria-hidden="true" />
-            <span>{worktree ? worktreeDisplayLabel(worktree) : branch}</span>
-          </span>
-        )}
+        {branch && <span className="ws-agent-meta">
+          {branch && (
+            <span
+              className={`ws-agent-branch${removed ? ' missing' : ''}`}
+              aria-label={removed ? `on branch ${branch}, checkout removed` : `on branch ${branch}`}
+            >
+              <GitBranch size={10} strokeWidth={2} aria-hidden="true" />
+              <span>{worktree ? worktreeDisplayLabel(worktree) : branch}</span>
+            </span>
+          )}
+        </span>}
       </button>
       <DevServerRow workspace={workspace} terminal={terminal} />
     </li>

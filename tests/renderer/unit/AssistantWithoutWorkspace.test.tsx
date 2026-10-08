@@ -50,7 +50,7 @@ const surfaceOf = (id: string) => document.querySelector(`[data-assistant-id="${
 const gate = () => document.querySelector('.workspace-gate');
 const openLocalWorkspace = async (scope: HTMLElement) => {
   fireEvent.click(within(scope).getByRole('button', { name: 'Choose Folder…' }));
-  await within(scope).findByText('/projects/b');
+  await within(scope).findByDisplayValue('/projects/b');
   fireEvent.click(within(scope).getByRole('button', { name: 'Open Workspace' }));
 };
 const openFredFromRoster = async () => {
@@ -147,7 +147,7 @@ describe('normal empty shell Assistants roster', () => {
     for (const button of buttons) {
       expect(button).toHaveClass('assistant-row');
     }
-    expect(roster.querySelector('.assistant-dot.live')).not.toBeNull();
+    expect(roster.querySelector('.assistant-dot, .assistant-offline')).toBeNull();
     expect(buttons[0]).toHaveAccessibleName(/A very long assistant display name that must stay bounded/);
     expect(buttons[0]).toHaveAttribute('title', expect.stringContaining('desc 0'));
     // Each chip opens its own opaque Assistant ID.
@@ -155,13 +155,13 @@ describe('normal empty shell Assistants roster', () => {
     expect(useAssistantNavStore.getState().activeAssistantId).toBe(`hermes:bot${count - 1}`);
   });
 
-  it('the sidebar roster keeps its row presentation and status dot', async () => {
+  it('the sidebar roster keeps its row presentation without a status dot', async () => {
     useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a' });
     render(<App />);
     const roster = await screen.findByRole('region', { name: 'Assistants' });
     const row = await within(roster).findByRole('button', { name: /Fred/ });
     expect(row).toHaveClass('assistant-row');
-    expect(row.querySelector('.assistant-dot.live')).not.toBeNull();
+    expect(row.querySelector('.assistant-dot, .assistant-offline')).toBeNull();
   });
 
   it('connected with no named profiles shows an empty state', async () => {
