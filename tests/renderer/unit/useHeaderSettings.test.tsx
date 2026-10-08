@@ -65,6 +65,29 @@ describe('useHeaderSettings harness availability', () => {
     expect(result.current.availableHarnessIds).toContain('codex');
   });
 
+  it.each(['', 'explicit-model'])('does not replace a configured AI commit provider/model (%s) during discovery', async (model) => {
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model });
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({ pi: option('pi') });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([{ id: 'first-model', label: 'First' }]);
+    const { result } = renderHook(() => useHeaderSettings({ harness: '', setHarness: vi.fn(), environmentId: 'local' }));
+    await settle();
+    expect(result.current.aiCommitProvider).toBe('codex');
+    expect(result.current.aiCommitModel).toBe(model);
+    expect(window.electronAPI.setAiCommitProvider).not.toHaveBeenCalled();
+    expect(window.electronAPI.setAiCommitModel).not.toHaveBeenCalled();
+  });
+
+  it('model discovery never persists its first row over the harness default', async () => {
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: '' });
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({ codex: option('codex') });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([{ id: 'first-model', label: 'First' }]);
+    const { result } = renderHook(() => useHeaderSettings({ harness: '', setHarness: vi.fn(), environmentId: 'local' }));
+    await settle();
+    expect(result.current.aiCommitModels).toHaveLength(1);
+    expect(result.current.aiCommitModel).toBe('');
+    expect(window.electronAPI.setAiCommitModel).not.toHaveBeenCalled();
+  });
+
   describe('selected harness ownership', () => {
     type Opts = Record<string, ReturnType<typeof option>>;
     const deferred = () => { let resolve!: (v: Opts) => void; let reject!: (e: Error) => void; const promise = new Promise<Opts>((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };

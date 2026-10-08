@@ -8,6 +8,7 @@ import { toNativePath } from '../../shared/pathNormalize';
 import { HarnessCapabilityError } from '../harnesses/types';
 import {
   normalizeHarnessCommand,
+  MAX_COMMAND_TIMEOUT_MS,
   type HarnessCommandRequest,
   type HarnessCommandResult,
   type HarnessCommandSession,
@@ -49,8 +50,9 @@ export function planLocalLaunch(command: NormalizedHarnessCommand, overrides: Lo
 }
 
 /** Local implementation of the bounded harness command boundary. */
-export function executeLocalHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal): Promise<HarnessCommandResult> {
-  const command = normalizeHarnessCommand(request);
+export function executeLocalHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal, maxTimeoutMs = MAX_COMMAND_TIMEOUT_MS): Promise<HarnessCommandResult> {
+  // Only trusted main callers can opt into a longer capability budget.
+  const command = normalizeHarnessCommand(request, maxTimeoutMs);
   if (signal?.aborted) return Promise.reject(new HarnessCapabilityError('aborted', 'Command aborted'));
   let launch: LocalLaunch;
   try { launch = planLocalLaunch(command); } catch (error) { return Promise.reject(error); }

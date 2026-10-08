@@ -197,7 +197,7 @@ export interface HarnessAiCommitInvocation {
   env?: Record<string, string>;
 }
 export interface HarnessAiCommitCapability {
-  parseOutput?(output: string): string;
+  parseOutput(output: string): string;
   buildInvocation(context: { model?: string; prompt: string }): HarnessAiCommitInvocation;
   /** Descriptive model flag for the legacy catalog; execution uses buildInvocation. */
   readonly modelArg: string;

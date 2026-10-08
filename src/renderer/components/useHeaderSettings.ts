@@ -124,25 +124,6 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   useEffect(() => {
     if (!hasLoadedAiCommitSettings) return;
 
-    const availableProviders = HARNESS_OPTIONS
-      .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as (typeof AI_COMMIT_PROVIDER_IDS)[number]))
-      .map((option) => option.id)
-      .filter((id) => availableHarnessIds.includes(id));
-
-    if (availableProviders.length === 0) return;
-
-    if (!aiCommitProvider || !availableProviders.includes(aiCommitProvider)) {
-      const nextProvider = availableProviders[0];
-      setAiCommitProvider(nextProvider);
-      void window.electronAPI.setAiCommitProvider(nextProvider);
-      setAiCommitModel('');
-      void window.electronAPI.setAiCommitModel('');
-    }
-  }, [availableHarnessIds, aiCommitProvider, hasLoadedAiCommitSettings]);
-
-  useEffect(() => {
-    if (!hasLoadedAiCommitSettings) return;
-
     let cancelled = false;
 
     const loadAiCommitModels = async () => {
@@ -157,17 +138,6 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
         if (cancelled) return;
 
         setAiCommitModels(models);
-        setAiCommitModel((current) => {
-          if (models.some((model) => model.id === current)) {
-            return current;
-          }
-
-          const nextModel = models[0]?.id ?? '';
-          if (nextModel !== current) {
-            void window.electronAPI.setAiCommitModel(nextModel);
-          }
-          return nextModel;
-        });
       } catch (error) {
         console.error('Failed to load AI commit models:', error);
         if (!cancelled) {
@@ -357,8 +327,9 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   const aiCommitProviderOptions = useMemo(
     () => HARNESS_OPTIONS
       .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as (typeof AI_COMMIT_PROVIDER_IDS)[number]))
-      .filter((option) => availableHarnessIds.includes(option.id)),
-    [availableHarnessIds],
+      .filter((option) => availableHarnessIds.includes(option.id) || option.id === aiCommitProvider)
+      .map((option) => availableHarnessIds.includes(option.id) ? option : { ...option, label: `${option.label} (unavailable)` }),
+    [availableHarnessIds, aiCommitProvider],
   );
 
   return {

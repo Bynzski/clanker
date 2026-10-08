@@ -283,6 +283,7 @@ const checkoutUsages = () => [...terminals.values(), ...workspaceServiceManager.
 const releaseCheckoutWithUsages = (workspaceId: string, checkoutContextId: string) =>
   releaseCheckoutContext({ registry: workspaceRegistry, terminals: checkoutUsages(), workspaceId, checkoutContextId });
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
+let stopAiCommitGeneration: (() => Promise<void>) | undefined;
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
   if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
@@ -415,7 +416,8 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
 
-  registerAiCommitIpc({
+  stopAiCommitGeneration = registerAiCommitIpc({
+    getHarnessAccountService: () => harnessAccountService,
     getStore: () => store,
     getGitService: () => gitService,
     getWorkspaceRegistry: () => workspaceRegistry,
@@ -664,6 +666,7 @@ app.on('before-quit', (event) => {
   const assistantsStopped = assistantService?.shutdown() ?? Promise.resolve();
   const agentBridgeStopped = Promise.all([isolatedCheckout?.shutdown(), agentBridge.shutdown()]).then(() => undefined);
   harnessUsageService.dispose();
+  const commitGenerationStopped = stopAiCommitGeneration?.() ?? Promise.resolve();
   const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();
   killAllTerminals();
@@ -671,7 +674,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped]).then(() => undefined);
+  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

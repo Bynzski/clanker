@@ -1712,7 +1712,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
 | Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin is persistent and inert: it is installed or refreshed (atomically, idempotently) when an attention-enabled Antigravity terminal launches and is never removed on release, shutdown or startup, because it is shared by every Clanker process and by Antigravity sessions that outlive them. Every hook runs the plugin's own `guard.mjs`, which forwards to the launch-scoped bridge (`CLANKER_ATTENTION_COMMAND`/`CLANKER_ATTENTION_INTERPRETER`) only for Clanker Antigravity launches whose resources still exist, and otherwise prints `{}` and exits 0, so missing or broken temp resources can never block a tool. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` with `fullyIdle === true` for the bound root conversation to `turn_completed`, and wrapper exit to `agent_exited`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory. On startup it removes the historical `clanker-attention` plugin only when its payload matches the known shape exactly, its script is gone and it holds no other files. |
-| AI commit | `--disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
+| AI commit | `--mode plan --sandbox --disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, model discovery, interactive launch, session history discovery/resume,
@@ -1736,8 +1736,45 @@ checks and saved SSH host checks were historical issue #60 verification, retaine
 in Git history and PR #66 rather than as current installation requirements.
 Current capability contracts and verification limits are documented here.
 
+### AI commit assistance
+
+AI commit generation is local-only and requires a registered workspace in the app.
+The main handler resolves the configured provider and selected managed account (where
+supported), builds Git context, and uses `bindHarnessExecution` with the canonical
+bounded local executor. Inference explicitly permits up to 90 seconds; ordinary
+catalog commands retain their 30-second ceiling. Output is capped at 1 MiB per
+stream. Concurrent requests for the same workspace are refused; renderer loss
+aborts inference, workspace identity is rechecked before/after inference, and quit
+aborts and drains outstanding requests. No terminal, attention hook, or MCP launch
+attachment is created.
+
+Model catalogs are advisory: an explicit model is preserved, and an empty selection
+uses the harness's native default. Discovery never silently persists a replacement
+provider/model. Generation summarizes the dialog's **Stage & Commit** scope: all
+staged, unstaged and untracked changes, without modifying the index. Tracked patches
+and confined regular untracked files are bounded and marked when omitted/truncated;
+the final prompt is bounded to leave room for structured stdin escaping. A failed
+stage-all prevents committing a narrower scope. Renderer responses are ignored after
+close/reopen, workspace replacement, a newer request, changes updating, or draft edits.
+
+Provider-owned invocations/parsers use these native output contracts:
+
+| Provider | Invocation / safety | Authoritative response |
+| --- | --- | --- |
+| Codex | `exec --json --ephemeral --sandbox read-only`, stdin prompt | Last completed `agent_message` in a completed turn, never reasoning items |
+| OpenCode | `run --pure --format json`, stdin prompt, all tool permissions denied | Text parts from the final step whose finish reason is `stop`, never reasoning/tool parts |
+| Pi / OMP | `--print --mode json --no-session --no-tools --no-extensions`, stdin prompt | Completed assistant `message_end` with `stopReason: stop`; only `text` content blocks |
+| Agy | `--mode plan --sandbox --disable-slash-commands --input-format stream-json --output-format stream-json` | Single successful native result response |
+
+Malformed, failed, incomplete, thinking-only, or decorated output fails closed; stderr
+is diagnostics only and is never substituted for an answer. Shared normalization
+preserves the subject and optional body, and generation validates the requested
+commit-subject format rather than guessing from the first stdout line. Tests cover
+these contracts without model inference; installed CLI help was checked, but live
+provider inference remains a separate smoke check.
+
 AI commit uses Codex `exec` stdin, OpenCode `run` stdin, Pi `--print` stdin,
-and the existing OMP print/no-session/no-tools/no-extensions stdin contract.
+and OMP print-mode stdin.
 OpenCode's [v1.18.34 run source](https://github.com/anomalyco/opencode/blob/v1.18.34/packages/opencode/src/cli/cmd/run.ts)
 reads piped input; its bare executable starts a TUI. Pi's installed print-mode
 help and main implementation confirm explicit print mode. OMP's

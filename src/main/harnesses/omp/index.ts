@@ -1,3 +1,4 @@
+import { parsePiCommitOutput } from '../aiCommitOutput';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
@@ -24,8 +25,8 @@ export const ompProvider = defineHarness({
   },
   attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', prepareResources, local, remote },
   usage: ompUsage,
-  aiCommit: { modelArg: '--model',
-    buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),
+  aiCommit: { modelArg: '--model', parseOutput: parsePiCommitOutput,
+    buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },
   launch: { command: 'omp', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

@@ -1175,7 +1175,7 @@ export class GitService {
     }
   }
 
-  async getCommitPromptContext(workspacePath: string): Promise<{
+  async getCommitPromptContext(workspacePath: string, scope: 'selected' | 'all' = 'selected'): Promise<{
     success: boolean;
     currentBranch: string | null;
     isDetached: boolean;
@@ -1211,9 +1211,23 @@ export class GitService {
 
     const stagedChanges = status.changes.filter((change) => change.staged);
     const workingChanges = status.changes.filter((change) => !change.staged);
-    const diffMode: 'staged' | 'working' = stagedChanges.length > 0 ? 'staged' : 'working';
-    const diff = await this.getDiff(workspacePath, diffMode);
-    const scopedChanges = diffMode === 'staged' ? stagedChanges : workingChanges;
+    const diffMode: 'staged' | 'working' = scope === 'all' ? 'working' : stagedChanges.length > 0 ? 'staged' : 'working';
+    const scopedChanges = scope === 'all' ? status.changes : diffMode === 'staged' ? stagedChanges : workingChanges;
+    let diff: { success: boolean; output: string; error?: string };
+    if (scope === 'all') {
+      try {
+        // The dialog commits the final working tree, including previously staged files.
+        const hasHead = await this.execGit(workspacePath, ['rev-parse', '--verify', 'HEAD']).then(() => true, () => false);
+        const args = ['--patch', '--no-color', '--no-ext-diff', '--no-textconv'];
+        const { stdout } = await this.execGit(workspacePath, ['diff', ...(hasHead ? ['HEAD'] : ['--cached']), ...args]);
+        const working = hasHead ? '' : (await this.execGit(workspacePath, ['diff', ...args])).stdout;
+        diff = { success: true, output: stdout + working };
+      } catch (error) {
+        diff = { success: false, output: '', error: this.getGitErrorMessage(error, 'Failed to load commit context') };
+      }
+    } else {
+      diff = await this.getDiff(workspacePath, diffMode);
+    }
 
     if (!diff.success) {
       return {

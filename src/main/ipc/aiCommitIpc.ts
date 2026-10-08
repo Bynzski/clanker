@@ -1,214 +1,107 @@
-import { HarnessCapabilityError, classifyHarnessFailure } from '../harnesses/types';
-import { findHarnessProvider } from '../harnesses/registry';
-/**
- * AI Commit IPC Handlers
- *
- * Registers IPC handlers for AI-powered commit message generation.
- * Separated from settingsIpc.ts per concern separation.
- */
-
-import { ipcMain, BrowserWindow } from 'electron';
-import { spawn } from 'child_process';
-import Store from 'electron-store';
-import { type StoreSchema } from '../../shared/types/store';
-import {
-  resolveExistingDirectory,
-} from '../security';
+import { ipcMain } from 'electron';
+import type Store from 'electron-store';
+import type { StoreSchema } from '../../shared/types/store';
+import { GENERATE_COMMIT_MESSAGE } from '../../shared/ipcChannels';
 import { toNativePath } from '../../shared/pathNormalize';
+import { resolveExistingDirectory } from '../security';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { resolveHarnessSpawn } from '../harnessLaunch';
-import { prependUserCliBinsToPath } from '../platformShell';
-import {
-  buildCommitPrompt,
-  normalizeCommitMessageOutput,
-  type AiCommitProvider,
-} from '../aiCommit';
-import type { GitService, GitStatusEntry } from '../gitService';
-import {
-  GENERATE_COMMIT_MESSAGE,
-} from '../../shared/ipcChannels';
+import type { HarnessAccountService } from '../accounts/harnessAccountService';
+import { bindHarnessExecution } from '../accounts/accountExecution';
+import { executeLocalHarnessCommand } from '../environment/localCommandExecutor';
+import { requireSuccess } from '../harnesses/commandExecution';
+import { findHarnessProvider } from '../harnesses/registry';
+import { buildCommitPrompt, normalizeCommitMessageOutput } from '../aiCommit';
+import { buildCommitDiffContext } from '../aiCommitContext';
+import type { GitService } from '../gitService';
 
 interface RegisterAiCommitIpcDeps {
   getStore: () => Store<StoreSchema>;
   getGitService: () => GitService;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  getHarnessAccountService?: () => HarnessAccountService;
 }
 
-function runCommandWithInput(
-  command: string,
-  args: string[],
-  input: string | undefined,
-  timeoutMs = 30000,
-  extraEnv?: Record<string, string>,
-  cwd?: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
-    const child = spawn(spawnCmd, spawnArgs, {
-      cwd,
-      env: {
-        ...process.env,
-        PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
-        ...extraEnv,
-      } as { [key: string]: string },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new HarnessCapabilityError('timeout', `Command timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    child.stdout.on('data', (data) => {
-      stdout += String(data);
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += String(data);
-    });
-
-    child.on('error', (error) => {
-      clearTimeout(timer);
-      reject(Object.assign(classifyHarnessFailure(error), { stdout, stderr }));
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const error = new HarnessCapabilityError('command-failed', `Command failed with exit code ${code ?? 'unknown'}`);
-        reject(Object.assign(error, { stdout, stderr, code }));
-        return;
-      }
-
-      resolve(stdout || stderr);
-    });
-
-    child.stdin.end(input === undefined ? undefined : input.endsWith('\n') ? input : `${input}\n`);
-  });
-}
-
-function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
-  return changes.map((change) => `${change.staged ? 'staged' : 'unstaged'} ${change.status}: ${change.path}`);
-}
-
-function getValidatedWorkspacePath(workspacePath: string | null | undefined): string | null {
-  if (typeof workspacePath !== 'string' || workspacePath.trim().length === 0) {
-    return null;
-  }
-
+export function getValidatedWorkspacePath(workspacePath: string | null | undefined): string | null {
+  if (typeof workspacePath !== 'string' || !workspacePath.trim()) return null;
   return resolveExistingDirectory(toNativePath(workspacePath, process.platform));
 }
 
-function getInvalidWorkspaceResult() {
+export function getInvalidWorkspaceResult() {
   return { success: false, error: 'Workspace path is invalid or not a directory' };
 }
 
-async function resolveAiCommitModel(provider: AiCommitProvider, configuredModel: string): Promise<string | null> {
-  const { discoverHarnessModels } = await import('../harnessCatalog');
-  const models = await discoverHarnessModels(provider);
-  if (configuredModel && models.some((model) => model.id === configuredModel)) {
-    return configuredModel;
-  }
-
-  return models[0]?.id ?? null;
-}
-
-async function generateAiCommitMessage(
-  workspacePath: string,
-  store: Store<StoreSchema>,
-  gitService: GitService
-): Promise<{ success: boolean; message?: string; error?: string }> {
-  const enabled = store.get('aiCommitEnabled');
-  if (!enabled) {
-    return { success: false, error: 'AI commit message generation is disabled' };
-  }
-
-  const provider = store.get('aiCommitProvider');
-  const providerConfig = findHarnessProvider(provider)?.aiCommit;
-  if (!providerConfig) {
-    return { success: false, error: 'Unsupported AI commit provider' };
-  }
-
-  const context = await gitService.getCommitPromptContext(workspacePath);
-  if (!context.success) {
-    return { success: false, error: context.error || 'Unable to build commit context' };
-  }
-
-  const model = await resolveAiCommitModel(provider, store.get('aiCommitModel'));
-  if (!model) {
-    return { success: false, error: `No models available for ${provider}` };
-  }
-
-  const prompt = buildCommitPrompt({
-    workspacePath,
-    branchName: context.currentBranch,
-    isDetached: context.isDetached,
-    changeSummary: formatCommitChangeSummary(context.changes),
-    diffMode: context.diffMode,
-    diffSummary: context.diffSummary,
-  });
-
-  const invocation = providerConfig.buildInvocation({ model, prompt });
-  const output = await runCommandWithInput(
-    invocation.command, invocation.args, invocation.stdin, invocation.timeoutMs,
-    invocation.env, workspacePath,
-  );
-  const message = normalizeCommitMessageOutput(providerConfig.parseOutput?.(output) ?? output);
-
-  if (!message) {
-    return { success: false, error: 'AI model returned an empty commit message' };
-  }
-
-  return { success: true, message };
-}
-
-export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): void {
-  const { getStore, getGitService } = deps;
-
-  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (_, workspacePath: string, workspaceId?: string) => {
+export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promise<void> {
+  const pending = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  let shuttingDown = false;
+  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (event, workspacePath: string, workspaceId?: string) => {
+    if (shuttingDown) return { success: false, error: 'Application is shutting down' };
     const registry = deps.getWorkspaceRegistry?.();
     const ws = workspaceId ? registry?.getWorkspace(workspaceId) : null;
-    if (workspaceId && registry && !ws) {
-      return { success: false, error: 'Workspace is not registered' };
-    }
-    if (ws?.location.environmentId !== undefined && ws.location.environmentId !== 'local') {
+    if (registry && !ws) return { success: false, error: 'Select a registered local workspace to generate an AI commit message' };
+    if (ws && ws.location.environmentId !== 'local') {
       return { success: false, error: 'AI commit message generation is not supported for remote workspaces in this version' };
     }
-    if (!workspaceId && registry?.getAllWorkspaces().some(
-      (entry) => entry.location.environmentId !== 'local' && entry.location.path === workspacePath
-    )) {
-      return { success: false, error: 'Select a registered local workspace to generate an AI commit message' };
+    const root = getValidatedWorkspacePath(ws?.location.path ?? workspacePath);
+    if (!root) return getInvalidWorkspaceResult();
+    const key = workspaceId ?? root;
+    if (pending.has(key)) return { success: false, error: 'Commit message generation is already running for this workspace' };
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    event?.sender?.once('destroyed', abort);
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => { finish = resolve; });
+    pending.set(key, { controller, done });
+    const isCurrent = () => !controller.signal.aborted && (!ws || registry?.getWorkspace(ws.workspaceId) === ws);
+    try {
+      const store = deps.getStore();
+      if (!store.get('aiCommitEnabled')) return { success: false, error: 'AI commit message generation is disabled' };
+      const provider = findHarnessProvider(store.get('aiCommitProvider'));
+      if (!provider?.aiCommit) return { success: false, error: 'Unsupported AI commit provider' };
+      const binding = deps.getHarnessAccountService?.().resolveBinding({
+        environmentId: 'local', harness: provider.descriptor.id, forLaunch: true,
+      });
+      // Commit inference has an explicit 90-second budget; normal catalogs retain 30 seconds.
+      const execution = bindHarnessExecution({
+        executeHarnessCommand: (request, signal) => executeLocalHarnessCommand(request, signal, 90_000),
+      }, binding?.environment, controller.signal);
+      const git = deps.getGitService();
+      const gitPath = ws?.location.path ?? root;
+      const collectContext = () => git.getCommitPromptContext(gitPath, 'all');
+      const context = ws ? await git.withWorkspace({
+        workspaceId: ws.workspaceId, workspacePath: gitPath, environmentId: ws.location.environmentId,
+      }, collectContext) : await collectContext();
+      if (!context.success) return { success: false, error: context.error || 'Unable to build commit context' };
+      const diffSummary = await buildCommitDiffContext(root, context.diffSummary, context.changes);
+      const prompt = buildCommitPrompt({
+        workspacePath: root, branchName: context.currentBranch, isDetached: context.isDetached,
+        changeSummary: context.changes.slice(0, 32).map((change) => `${change.status}: ${change.path.slice(0, 256)}`),
+        diffMode: 'working', diffSummary,
+      });
+      if (!isCurrent()) return { success: false, error: 'Workspace closed during commit message generation' };
+      // A catalog is discovery, not authority: preserve explicit selection, or let the CLI use its default.
+      const model = store.get('aiCommitModel') || undefined;
+      const invocation = provider.aiCommit.buildInvocation({ model, prompt });
+      const result = await execution.executor.run({ ...invocation, cwd: root, maxOutputBytes: 1024 * 1024 });
+      const output = requireSuccess(result, 'Commit message generation');
+      const message = normalizeCommitMessageOutput(provider.aiCommit.parseOutput(output));
+      if (!isCurrent()) return { success: false, error: 'Workspace closed during commit message generation' };
+      if (!/^(?:feature|feat|fix|restructure|refactor|chore|docs|test|build|ci|perf|style|revert)(?:\([^\r\n()]+\))?!?:\s+\S/.test(message)
+        || /<\/?(?:think|thinking|analysis)>/i.test(message) || message.includes('\0')) {
+        return { success: false, error: 'The harness did not return a valid commit message. No thinking trace was used.' };
+      }
+      return { success: true, message };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Commit message generation failed' };
+    } finally {
+      pending.delete(key);
+      event?.sender?.removeListener('destroyed', abort);
+      finish();
     }
-
-    const safeWorkspacePath = getValidatedWorkspacePath(ws?.location.path ?? workspacePath);
-    if (!safeWorkspacePath) {
-      return getInvalidWorkspaceResult();
-    }
-    return generateAiCommitMessage(safeWorkspacePath, getStore(), getGitService());
   });
+  return async () => {
+    shuttingDown = true;
+    const requests = [...pending.values()];
+    for (const request of requests) request.controller.abort();
+    await Promise.all(requests.map((request) => request.done));
+  };
 }
-
-async function refreshGitStatus(
-  workspacePath: string,
-  getMainWindow: () => BrowserWindow | null,
-  gitService: GitService
-) {
-  const status = await gitService.getStatus(workspacePath);
-  const mainWindow = getMainWindow();
-  if (mainWindow) {
-    mainWindow.webContents.send('git-status-update', status);
-  }
-  return status;
-}
-
-export {
-  runCommandWithInput,
-  formatCommitChangeSummary,
-  getValidatedWorkspacePath,
-  getInvalidWorkspaceResult,
-  resolveAiCommitModel,
-  generateAiCommitMessage,
-  refreshGitStatus,
-};

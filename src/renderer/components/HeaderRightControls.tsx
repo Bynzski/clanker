@@ -277,15 +277,16 @@ export default function HeaderRightControls({
                 aria-label="AI commit model"
                 value={aiCommitModel}
                 onChange={(e) => void onAiCommitModelChange(e.target.value)}
-                disabled={!aiCommitEnabled || isLoadingAiCommitModels || aiCommitModels.length === 0}
+                disabled={!aiCommitEnabled || isLoadingAiCommitModels}
               >
                 {isLoadingAiCommitModels ? (
                   <option value="">Loading models…</option>
-                ) : aiCommitModels.length === 0 ? (
-                  <option value="">No models available</option>
                 ) : (
                   <>
-                    <option value="">Default model</option>
+                    <option value="">Harness default</option>
+                    {aiCommitModel && !aiCommitModels.some((model) => model.id === aiCommitModel) && (
+                      <option value={aiCommitModel}>{aiCommitModel} (not in catalog)</option>
+                    )}
                     {aiCommitModels.map((model) => (
                       <option key={model.id} value={model.id}>
                         {model.label}

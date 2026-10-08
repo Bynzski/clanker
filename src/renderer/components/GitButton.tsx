@@ -506,9 +506,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
 
   const handleCommit = async (message: string) => window.electronAPI.gitCommit(workspacePath, message, workspaceId);
 
-  const handleStage = async () => {
-    await window.electronAPI.gitStage(workspacePath, undefined, workspaceId);
-  };
+  const handleStage = async () => window.electronAPI.gitStage(workspacePath, undefined, workspaceId);
 
   const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
     const result = await window.electronAPI.gitUnstage(workspacePath, [path], workspaceId);

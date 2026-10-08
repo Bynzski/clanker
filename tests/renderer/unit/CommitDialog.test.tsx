@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CommitDialog from '../../../src/renderer/components/CommitDialog';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -362,6 +362,15 @@ describe('CommitDialog', () => {
     expect(screen.queryByText('Generate')).toBeNull();
   });
 
+  it('does not commit an incomplete scope when stage-all fails', async () => {
+    mockOnStageAll.mockResolvedValueOnce({ success: false, error: 'Index is locked' });
+    renderDialog({ changes: [{ path: 'file.ts', status: 'modified', staged: false }] });
+    fireEvent.change(screen.getByPlaceholderText('Describe your changes…'), { target: { value: 'fix: all changes' } });
+    fireEvent.click(screen.getByText('Stage All & Commit'));
+    await waitFor(() => expect(screen.getByText('Index is locked')).toBeTruthy());
+    expect(mockOnCommit).not.toHaveBeenCalled();
+  });
+
   it('generates commit message when Generate is clicked', async () => {
     vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: '' });
     vi.mocked(window.electronAPI.generateCommitMessage).mockResolvedValue({
@@ -385,6 +394,31 @@ describe('CommitDialog', () => {
       const textarea = screen.getByPlaceholderText('Describe your changes…') as HTMLTextAreaElement;
       expect(textarea.value).toBe('fix: auto-generated message');
     });
+  });
+
+  it.each(['edit', 'reopen', 'workspace', 'changes'] as const)('does not overwrite a newer draft after %s', async (transition) => {
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: '' });
+    let finish!: (result: { success: boolean; message: string }) => void;
+    vi.mocked(window.electronAPI.generateCommitMessage).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const props = {
+      isOpen: true, onClose: mockOnClose, onCommit: mockOnCommit, onStageAll: mockOnStageAll,
+      onUnstage: mockOnUnstage, onUnstageAll: mockOnUnstageAll, workspacePath: '/workspace',
+      changes: [{ path: 'file.ts', status: 'modified' as const, staged: true }],
+    };
+    const { rerender } = render(<CommitDialog {...props} />);
+    await waitFor(() => expect(screen.getByText('Generate')).toBeTruthy());
+    fireEvent.click(screen.getByText('Generate'));
+    if (transition === 'reopen') {
+      rerender(<CommitDialog {...props} isOpen={false} />);
+      rerender(<CommitDialog {...props} />);
+    } else if (transition === 'workspace') {
+      rerender(<CommitDialog {...props} workspacePath="/different" />);
+    } else if (transition === 'changes') {
+      rerender(<CommitDialog {...props} changes={[...props.changes, { path: 'new.ts', status: 'added', staged: true }]} />);
+    }
+    fireEvent.change(screen.getByPlaceholderText('Describe your changes…'), { target: { value: 'fix: my newer draft' } });
+    await act(async () => { finish({ success: true, message: 'fix: old generated response' }); });
+    expect((screen.getByPlaceholderText('Describe your changes…') as HTMLTextAreaElement).value).toBe('fix: my newer draft');
   });
 
   it('shows error when AI generation fails', async () => {
