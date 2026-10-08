@@ -14,7 +14,10 @@ notes and services. A page owns **presentation**, not processes or filesystem au
   Valid targets highlight during dragging. Pending launch/resume placeholders remain reserved, and
   maximized-source topology edits stay disabled. Existing within-page docking remains unchanged.
 - The selected page uses a theme-accent inset border/background, without changing button/footer size.
-  Usage percentages sit above their bars in the existing 20px widget height; provider icons/status/time remain.
+  Usage percentages sit above their bars in the existing 20px widget height; each provider is a
+  subtle 18px group with its own icon, meter and clock-labelled reset time. The footer is fixed at
+  26px total height. Project, branch and environment labels have no arbitrary width caps; ellipsis
+  applies only when the center actually runs out of space between neighboring controls.
 - Pane headers offer Minimize and Maximize/Restore size. Maximize is temporary, per-page, and
   leaves the split tree, ratios, revision and undo history untouched. Layout edits are disabled
   until size is restored. Switching pages retains each page's maximize state.
@@ -125,5 +128,6 @@ capture, hidden readiness, detached cached output, zero ready background views a
 workspace closure. It also performs real pointer drags onto an empty page, `+`, and a populated
 page, preserves native Browser form/JS state and notes, and exercises within-page swapping. Active
 page dimensions/accent and representative stacked-usage CSS are checked against unchanged footer
-geometry (this is not live account telemetry). The other checks cover native visibility/state and xterm geometry.
+geometry, including a fixed 26px footer and last-resort label truncation under space pressure
+(this is not live account telemetry). The other checks cover native visibility/state and xterm geometry.
 Live SSH/native-harness acceptance remains separate; no automated remote claim is made here.

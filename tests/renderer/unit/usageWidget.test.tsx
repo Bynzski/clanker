@@ -53,5 +53,9 @@ describe('UsageWidget', () => {
     expect(meter.children[1]).toHaveClass('usage-chip-bar');
     expect(chip.querySelector('.harness-logo-icon')).not.toBeNull();
     expect(chip.querySelector('.usage-chip-time')).toHaveTextContent('3h');
+    expect(chip).toHaveAttribute('role', 'group');
+    expect(chip.getAttribute('aria-label')).toContain('Claude');
+    expect(chip.getAttribute('title')).toContain('resets in 3h');
+    expect(chip.querySelector('.usage-chip-time svg')).toHaveAttribute('aria-hidden', 'true');
   });
 });

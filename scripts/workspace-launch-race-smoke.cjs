@@ -64,19 +64,36 @@ let app;
       const before = footer.getBoundingClientRect(), ready = document.querySelector('.status-right > .status-item').getBoundingClientRect();
       const fixtures = [55, 100, 7].map(percent => {
         const chip = document.createElement('span'); chip.className = 'usage-chip ok';
-        chip.innerHTML = `<svg width="11" height="11"></svg><span class="usage-chip-meter"><span class="usage-chip-percent">${percent}%</span><span class="usage-chip-bar"><span class="usage-chip-fill"></span></span></span><span class="usage-chip-time">4h</span>`;
+        chip.innerHTML = `<svg width="11" height="11"></svg><span class="usage-chip-meter"><span class="usage-chip-percent">${percent}%</span><span class="usage-chip-bar"><span class="usage-chip-fill"></span></span></span><span class="usage-chip-time"><svg width="8" height="8"></svg>4h</span>`;
         widget.append(chip); return chip;
       });
       const box = widget.getBoundingClientRect(), after = footer.getBoundingClientRect();
       const valid = fixtures.every(chip => {
         const label = chip.querySelector('.usage-chip-percent').getBoundingClientRect();
         const bar = chip.querySelector('.usage-chip-bar').getBoundingClientRect();
-        return label.bottom <= bar.top && label.top >= box.top && bar.bottom <= box.bottom && bar.width === 28;
+        return label.bottom <= bar.top && label.top >= box.top && bar.bottom <= box.bottom && bar.width === 28
+          && chip.getBoundingClientRect().height === 18 && getComputedStyle(chip).boxShadow !== 'none';
       });
       const afterReady = document.querySelector('.status-right > .status-item').getBoundingClientRect();
       fixtures.forEach(chip => chip.remove());
-      return valid && box.height === 20 && before.height === after.height && before.top === after.top && ready.x === afterReady.x;
-    }), 'Stacked usage meters enlarge/wrap the footer or shift Ready');
+      return valid && box.height === 20 && before.height === 26 && after.height === 26 && before.top === after.top && ready.x === afterReady.x;
+    }), 'Grouped usage meters exceed the 26px footer, wrap, or shift Ready');
+    assert(await page.evaluate(() => {
+      const center = document.querySelector('.status-center'), name = center.querySelector('.status-project-name');
+      const original = name.textContent;
+      const branch = document.createElement('span'); branch.className = 'status-branch';
+      branch.innerHTML = '<svg width="12" height="12"></svg><span>feature/workspace-pages-ui</span>';
+      center.append(branch); name.textContent = 'clanker';
+      const label = branch.querySelector('span');
+      const fullWhenRoom = name.scrollWidth <= name.clientWidth + 1 && label.scrollWidth <= label.clientWidth + 1;
+      name.textContent = 'long-project-name-'.repeat(50); label.textContent = 'feature/long-branch-name-'.repeat(50);
+      const left = document.querySelector('.status-left').getBoundingClientRect(), middle = center.getBoundingClientRect();
+      const right = document.querySelector('.status-right').getBoundingClientRect();
+      const constrained = name.scrollWidth > name.clientWidth && label.scrollWidth > label.clientWidth
+        && left.right <= middle.left + 1 && middle.right <= right.left + 1;
+      branch.remove(); name.textContent = original;
+      return fullWhenRoom && constrained;
+    }), 'Folder/branch truncate with free space or overlap neighboring controls under pressure');
     await until(async () => {
       const bounds = await app.evaluate(({ BrowserWindow }) => {
         const window = BrowserWindow.getAllWindows()[0];
@@ -203,7 +220,7 @@ let app;
       readyBackgroundViews: 0, cachedOutput: true, lateSpawnKilled: true,
       browserControlsInHeader: true, browserWithinFooter: true, pagesAfterVersion: true,
       realCrossPageDrag: true, plusDropCreatesPage: true, browserMovePreservesState: true,
-      populatedDestinationNotesPreserved: true, stackedUsageFitsFooter: true, withinPageSwap: true }, null, 2));
+      populatedDestinationNotesPreserved: true, stackedUsageFitsFooter: true, groupedUsageFits26px: true, truncationOnlyWhenConstrained: true, withinPageSwap: true }, null, 2));
   } finally {
     if (app) {
       // Only fixture-owned terminals, including a gated one if an assertion failed.
