@@ -570,4 +570,88 @@ describe('workspace-owned dev services', () => {
       expect(await shutdown).toBeInstanceOf(Error); // Reported, not swallowed, and returned within the bounded window.
     });
   });
+
+  describe('probe errors and exit/cleanup races', () => {
+    const plainManager = () => new WorkspaceServiceManager({ registry, getTerminal: (id) => terminals.get(id), getLocation: () => null, isShuttingDown: () => false,
+      spawn, probe, changed, canonicalRoot: (path) => path, timing: { graceMs: 100, killMs: 100, pollMs: 10 } });
+    it.each([
+      ['EPERM', 'EPERM'], ['an unexpected errno', 'EINVAL'], ['an error without a code', undefined],
+    ])('treats %s from the real probe as "still alive", never as proof of exit', async (_label, code) => {
+      const kill = vi.spyOn(process, 'kill').mockImplementation((_pid: number, signal?: string | number) => {
+        if (signal === 0) throw Object.assign(new Error('probe failed'), code ? { code } : {});
+        return true; // Signals themselves are accepted.
+      });
+      try {
+        const plain = plainManager();
+        const started = await plain.start(request());
+        const stopping = plain.stop('ws', started.service!.id);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect((await stopping).success).toBe(false);
+        expect(plain.snapshot().services[0]).toMatchObject({ status: 'failed', cleanupIncomplete: true });
+        expect(plain.usages()).toHaveLength(1);
+        expect(kill.mock.calls.every(([pid]) => pid === -1000)).toBe(true);
+      } finally { kill.mockRestore(); }
+    });
+    it('only ESRCH from the real probe proves the group is gone', async () => {
+      const kill = vi.spyOn(process, 'kill').mockImplementation((_pid: number, signal?: string | number) => {
+        if (signal === 0) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        return true;
+      });
+      try {
+        const plain = plainManager();
+        const started = await plain.start(request());
+        const stopping = plain.stop('ws', started.service!.id);
+        await vi.advanceTimersByTimeAsync(500);
+        expect((await stopping).success).toBe(true);
+        expect(kill.mock.calls.filter(([, signal]) => signal !== 0)).toEqual([]); // Gone before anything was signalled.
+      } finally { kill.mockRestore(); }
+    });
+    it('keeps the unexpected-exit diagnosis when an explicit Stop takes over before finishUnexpected() runs', async () => {
+      const started = await manager.start(request());
+      resistTerm = true; // Cleanup of the orphaned descendant is in flight when Stop arrives.
+      children[0].data('Error: cannot find module "vite"\n'); children[0].exitLeader(1);
+      expect(manager.snapshot().services[0].status).toBe('stopping');
+      const stopping = manager.stop('ws', started.service!.id);
+      children[0].data('later line from the orphan\n'); // Output that arrives while it is being torn down is kept too.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await stopping).success).toBe(true);
+      const service = manager.snapshot().services[0];
+      expect(service).toMatchObject({ status: 'failed', exitCode: 1 });
+      expect(service.cleanupIncomplete).toBeUndefined();
+      expect(service.error).toContain('cannot find module "vite"');
+      expect(service.error).toContain('later line from the orphan');
+      expect(manager.usages()).toEqual([]);
+    });
+    it('keeps the diagnosis, plus the cleanup failure, when the takeover cannot verify termination', async () => {
+      const started = await manager.start(request());
+      stubborn = true;
+      children[0].data('EADDRINUSE: address already in use :::4321\n'); children[0].exitLeader(1);
+      const stopping = manager.stop('ws', started.service!.id);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await stopping).success).toBe(false);
+      expect(manager.snapshot().services[0]).toMatchObject({ status: 'failed', cleanupIncomplete: true, portConflict: { port: 4321 } });
+      expect(manager.snapshot().services[0].error).toContain('Port 4321 is already in use');
+      expect(manager.snapshot().services[0].error).toContain('try Stop again');
+    });
+    it('keeps the diagnosis when workspace close takes over while descendants are being cleaned up', async () => {
+      await manager.start(request());
+      stubborn = true;
+      children[0].data('Error: listen EADDRINUSE: address already in use 127.0.0.1:8123\n'); children[0].exitLeader(2);
+      const closing = manager.closeWorkspace('ws').catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await closing).toBeInstanceOf(Error);
+      expect(manager.snapshot().services[0]).toMatchObject({ status: 'failed', exitCode: 2, cleanupIncomplete: true });
+      expect(manager.snapshot().services[0].error).toContain('Port 8123 is already in use');
+      expect(manager.snapshot().services[0].error).toContain('EADDRINUSE');
+    });
+    it('does not blame an explicit Stop on an unexpected exit, and an exit after Stop was requested is not "unexpected"', async () => {
+      const started = await manager.start(request());
+      resistTerm = true;
+      const stopping = manager.stop('ws', started.service!.id);
+      children[0].data('terminating\n'); children[0].exitLeader(143);
+      await vi.advanceTimersByTimeAsync(1000); await stopping;
+      expect(manager.snapshot().services[0]).toMatchObject({ status: 'stopped' });
+      expect(manager.snapshot().services[0].error).toBeUndefined();
+    });
+  });
 });

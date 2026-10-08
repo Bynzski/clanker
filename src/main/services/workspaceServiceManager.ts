@@ -51,6 +51,8 @@ interface Runtime {
   candidates: Set<string>;
   tail: DiagnosticTail;
   portConflict?: PortConflict;
+  /** The process ended without an explicit stop being requested first; its diagnosis survives any later takeover. */
+  unexpected?: boolean;
   /** Diagnosis of an unexpected exit, kept so a later Stop of an unresolved cleanup does not erase why it failed. */
   failure?: string;
   /** A signal was refused with EPERM (a member runs as another user): reported, since it cannot be fixed by retrying. */
@@ -60,9 +62,12 @@ const message = (error: unknown) => error instanceof Error ? error.message : 'De
 const SIGNAL_NAMES = new Map(Object.entries(os.constants.signals).map(([name, value]) => [value, name]));
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Process-group existence probe: signal 0 delivers nothing. EPERM still means the group exists. */
+/**
+ * Process-group existence probe: signal 0 delivers nothing. Only ESRCH proves the group is gone; EPERM (it exists,
+ * owned by someone else) and any unexpected error fail closed as "still alive".
+ */
 const defaultGroupAlive = (pgid: number): boolean => {
-  try { process.kill(-pgid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+  try { process.kill(-pgid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
 };
 
 /** Headless PTYs: no TerminalPane, TERMINAL_READY, pane state, or attention/bridge credentials. */
@@ -308,6 +313,7 @@ export class WorkspaceServiceManager {
     // An explicit stop is polling the group already; it owns the final state.
     if (live.cancelled || live.exited) { if (this.runtimes.get(live.service.id) === live) this.publish(); return; }
     // Unexpected exit. The leader going away says nothing about its descendants (npm commonly exits first).
+    live.unexpected = true;
     if (this.isGone(live)) { this.finishUnexpected(live, true); return; }
     live.service.status = 'stopping';
     if (this.runtimes.get(live.service.id) === live) this.publish();
@@ -318,22 +324,25 @@ export class WorkspaceServiceManager {
       ? 'Some processes started by this dev server could not be signalled (permission denied) and are still running. Stop them outside Clanker, then Stop again.'
       : 'Some processes started by this dev server could not be confirmed terminated. Stop it again before restarting.';
   }
-  private finishUnexpected(live: Runtime, cleaned: boolean) {
-    if (live.cancelled) return; // An explicit stop took over meanwhile.
+  /** Builds the failure record from the exit and the output captured so far (descendants may still be writing). */
+  private diagnose(live: Runtime) {
     const { exitCode, exitSignal } = live.service;
     const how = exitSignal ? `terminated by ${exitSignal}` : `exited with code ${exitCode}`;
-    const output = live.tail.text();
-    live.exited = cleaned;
-    live.cleanupFailed = !cleaned;
-    live.service.cleanupIncomplete = cleaned ? undefined : true;
-    live.service.status = 'failed';
     live.service.portConflict = live.portConflict;
     live.failure = [
       live.portConflict && describePortConflict(live.portConflict),
       live.service.preparationHint,
-      output || `Command ${how}`,
+      live.tail.text() || `Command ${how}`,
       exitCode === 0 && !exitSignal ? 'The dev server exited on its own (code 0); it was not stopped from Clanker.' : undefined,
     ].filter(Boolean).join('\n');
+  }
+  private finishUnexpected(live: Runtime, cleaned: boolean) {
+    if (live.cancelled) return; // An explicit stop took over; stopRuntime() reports the same diagnosis.
+    this.diagnose(live);
+    live.exited = cleaned;
+    live.cleanupFailed = !cleaned;
+    live.service.cleanupIncomplete = cleaned ? undefined : true;
+    live.service.status = 'failed';
     live.service.error = [live.failure, cleaned ? undefined : this.incompleteNote(live)].filter(Boolean).join('\n');
     if (this.runtimes.get(live.service.id) === live) this.publish();
   }
@@ -361,6 +370,8 @@ export class WorkspaceServiceManager {
     this.publish();
     const stopping = this.runCleanup(runtime).then((cleaned) => {
       runtime.stop = undefined;
+      // An explicit stop that took over after an unexpected exit must not erase why the service died.
+      if (runtime.unexpected) this.diagnose(runtime);
       runtime.exited = cleaned;
       runtime.cleanupFailed = !cleaned;
       // A service that had already failed on its own stays failed (with its diagnosis) once its leftovers are gone.
