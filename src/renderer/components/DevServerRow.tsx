@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, ExternalLink, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
+import { Download, ExternalLink, LoaderCircle, Play, Settings2, Square, TriangleAlert } from 'lucide-react';
 import { isLiveWorkspaceService, type DevServiceCommand, type WorkspaceService } from '../../shared/types/workspaceServices';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
@@ -11,6 +11,7 @@ import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import DevServerDiagnosticsDialog from './DevServerDiagnosticsDialog';
+import DevServerSettingsDialog from './DevServerSettingsDialog';
 import { devDependencyInstallCommand, installDevServiceDependencies } from '../lib/devServiceInstall';
 
 export function DevServerControls({ workspace, command, service, terminalId, onStartFinished }: {
@@ -19,6 +20,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmingInstall, setConfirmingInstall] = useState<DevServiceCommand | null>(null);
   const live = service && isLiveWorkspaceService(service);
   const stopping = service?.status === 'stopping';
@@ -31,7 +33,9 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
     try { await run(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Dev server operation failed'); }
     finally { setBusy(false); }
   };
-  const title = `${service?.cwd ?? command?.cwd ?? ''}\n${service?.command ?? command?.command ?? ''}${service?.error ? `\n${service.error}` : command?.preparationHint ? `\n${command.preparationHint}` : ''}`;
+  const environmentKeys = command?.environmentKeys ?? service?.environmentKeys ?? [];
+  const environmentHint = environmentKeys.length ? `\nConfigured environment: ${environmentKeys.join(', ')}` : '';
+  const title = `${service?.cwd ?? command?.cwd ?? ''}\n${service?.command ?? command?.command ?? ''}${service?.error ? `\n${service.error}` : command?.preparationHint ? `\n${command.preparationHint}` : ''}${environmentHint}`;
   return <div className="ws-service-item">
     <div className={`ws-service-row${failed ? ' failed' : ''}`} title={title}>
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
@@ -41,11 +45,12 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
       {!live && command?.preparationHint && terminalId && <IconButton className="ws-nav-action" disabled={busy}
         aria-label="Install dependencies…" title={`Install dependencies (${devDependencyInstallCommand(command.packageManager)})\n${command.cwd}`}
         onClick={() => setConfirmingInstall({ ...command })}><Download size={12} /></IconButton>}
-      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`${failed ? 'Restart' : 'Run'} ${command.command}\n${command.cwd}`} onClick={() => void action(async () => {
-        const result = await window.electronAPI.workspaceServiceStart({ workspaceId: workspace.id, terminalId, checkoutContextId: command.checkoutContextId, cwd: command.cwd, command: command.command });
+      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`${failed ? 'Restart' : 'Run'} ${command.command}\n${command.cwd}${environmentHint}`} onClick={() => void action(async () => {
+        const result = await window.electronAPI.workspaceServiceStart({ workspaceId: workspace.id, terminalId, checkoutContextId: command.checkoutContextId, cwd: command.cwd, command: command.command, ...(command.settingsRevision ? { settingsRevision: command.settingsRevision } : {}) });
         onStartFinished?.();
         if (!result.success) throw new Error(result.error || 'Could not start dev server');
       })}><Play size={12} /></IconButton>}
+      {command && terminalId && <IconButton className="ws-nav-action" disabled={busy || Boolean(live)} aria-label="Configure Dev Server" title={live ? 'Stop the dev server before changing settings' : `Checkout dev server settings\n${command.cwd}${environmentHint}`} onClick={() => setSettingsOpen(true)}><Settings2 size={12} /></IconButton>}
       {live && service && <IconButton className="ws-nav-action" disabled={busy || (stopping && !service.error)} aria-label="Stop Dev Server" title="Stop Dev Server" onClick={() => void action(async () => {
         const result = await window.electronAPI.workspaceServiceStop({ workspaceId: workspace.id, serviceId: service.id });
         if (!result.success) throw new Error(result.error || 'Could not stop dev server');
@@ -65,6 +70,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
     {!live && !failed && command?.preparationHint && <div className="ws-service-hint sr-only" title={command.preparationHint}>Dependencies may need installation</div>}
     {failed && service && <DevServerDiagnosticsDialog service={service} open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />}
     {(error || (stopping && service?.error)) && <div className="ws-service-error" role="alert">{error || service?.error}</div>}
+    {settingsOpen && !live && command && terminalId && <DevServerSettingsDialog key={`${terminalId}:${command.checkoutContextId}:${command.cwd}`} command={command} terminalId={terminalId} onClose={() => setSettingsOpen(false)} onSaved={() => onStartFinished?.()} />}
     <ConfirmCloseDialog
       isOpen={confirmingInstall !== null}
       title="Install dependencies in this checkout?"

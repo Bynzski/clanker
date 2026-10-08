@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
-import { WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET, WORKSPACE_SERVICE_CHANGED } from '../../shared/ipcChannels';
+import { WORKSPACE_SERVICE_SETTINGS_SAVE, WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET, WORKSPACE_SERVICE_CHANGED } from '../../shared/ipcChannels';
 import type { WorkspaceServiceManager } from '../services/workspaceServiceManager';
+import { validateDevServiceEnvironment } from '../../shared/devServiceEnvironment';
 
 export function registerWorkspaceServiceIpc(manager: WorkspaceServiceManager): void {
   const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -16,7 +17,19 @@ export function registerWorkspaceServiceIpc(manager: WorkspaceServiceManager): v
   ipcMain.handle(WORKSPACE_SERVICE_START, (_event, request: unknown) => {
     if (!record(request) || !text(request.workspaceId) || !text(request.terminalId) || !text(request.checkoutContextId) || !text(request.command)
       || typeof request.cwd !== 'string' || request.cwd.length > 4096 || !request.cwd || /[\u0000-\u001f\u007f]/.test(request.cwd)) return invalid();
-    return manager.start({ workspaceId: request.workspaceId, terminalId: request.terminalId, checkoutContextId: request.checkoutContextId, cwd: request.cwd, command: request.command });
+    if (request.settingsRevision !== undefined && (typeof request.settingsRevision !== 'string' || !/^[a-f0-9]{64}$/.test(request.settingsRevision))) return invalid();
+    return manager.start({ workspaceId: request.workspaceId, terminalId: request.terminalId, checkoutContextId: request.checkoutContextId, cwd: request.cwd, command: request.command,
+      ...(request.settingsRevision !== undefined ? { settingsRevision: request.settingsRevision } : {}) });
+  });
+  ipcMain.handle(WORKSPACE_SERVICE_SETTINGS_SAVE, (_event, request: unknown) => {
+    if (!record(request) || !text(request.workspaceId) || !text(request.terminalId) || !text(request.checkoutContextId) || !text(request.command)
+      || typeof request.cwd !== 'string' || !request.cwd || request.cwd.length > 4096 || /[\u0000-\u001f\u007f]/.test(request.cwd)
+      || typeof request.settingsRevision !== 'string' || !/^[a-f0-9]{64}$/.test(request.settingsRevision)) return invalid();
+    try {
+      const environment = validateDevServiceEnvironment(request.environment);
+      return manager.saveSettings({ workspaceId: request.workspaceId, terminalId: request.terminalId, checkoutContextId: request.checkoutContextId,
+        cwd: request.cwd, command: request.command, settingsRevision: request.settingsRevision, environment });
+    } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Invalid dev server settings' }; }
   });
   ipcMain.handle(WORKSPACE_SERVICE_STOP, (_event, request: unknown) => {
     if (!record(request) || !text(request.workspaceId) || !text(request.serviceId)) return invalid();

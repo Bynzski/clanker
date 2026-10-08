@@ -104,6 +104,44 @@ describe('workspace-owned dev services', () => {
     expect(signalGroup).not.toHaveBeenCalledWith(1000, 'SIGKILL'); // Graceful termination was enough.
     expect(signalGroup).not.toHaveBeenCalledWith(1001, expect.anything());
   });
+  it('applies persisted checkout environment only to its own service and requires fresh confirmation', async () => {
+    const discovery = await manager.discover({ workspaceId: 'ws', terminalId: 'a' });
+    const saved = await manager.saveSettings({ ...request(), settingsRevision: discovery.command!.settingsRevision, environment: { PORT: '8788', VITE_DEV_PORT: '5174' } });
+    expect(saved.success).toBe(true);
+    expect((await manager.start(request())).error).toContain('settings changed');
+    expect((await manager.start({ ...request(), settingsRevision: saved.command!.settingsRevision })).success).toBe(true);
+    await manager.start(request('main'));
+    expect(spawn.mock.calls[0][2].env).toMatchObject({ PORT: '8788', VITE_DEV_PORT: '5174' });
+    expect(spawn.mock.calls[1][2].env?.VITE_DEV_PORT).toBe(process.env.VITE_DEV_PORT);
+    expect(manager.snapshot().services[0]).not.toHaveProperty('environment');
+  });
+  it('refuses settings edits during pending/live services, including another workspace for the same physical root', async () => {
+    const discovery = await manager.discover({ workspaceId: 'ws', terminalId: 'a' });
+    const edit = { ...request(), settingsRevision: discovery.command!.settingsRevision, environment: { PORT: '8788' } };
+    let finish!: (value: { success: boolean; content: string }) => void;
+    vi.mocked(env.readFile).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const starting = manager.start(request());
+    expect((await manager.saveSettings(edit)).error).toContain('Stop');
+    finish({ success: true, content: '{"scripts":{"dev":"vite"}}' });
+    await starting;
+    expect((await manager.saveSettings(edit)).error).toContain('Stop');
+    await registry.registerWorkspace({ workspaceId: 'other', workspacePath: a.path });
+    terminals.set('other', { workspaceId: 'other', checkoutContextId: 'other::main' });
+    expect((await manager.saveSettings({ ...edit, workspaceId: 'other', terminalId: 'other', checkoutContextId: 'other::main' })).error).toContain('Stop');
+  });
+  it('rechecks checkout identity and concurrent edits after asynchronous settings discovery', async () => {
+    const discovery = await manager.discover({ workspaceId: 'ws', terminalId: 'a' });
+    const edit = { ...request(), settingsRevision: discovery.command!.settingsRevision, environment: { PORT: '8788' } };
+    const results = await Promise.all([manager.saveSettings(edit), manager.saveSettings({ ...edit, environment: { PORT: '8789' } })]);
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    let finish!: (value: { success: boolean; content: string }) => void;
+    vi.mocked(env.readFile).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const saving = manager.saveSettings({ ...edit, settingsRevision: results[0].command!.settingsRevision });
+    registry.unregisterCheckoutContext(a.id);
+    finish({ success: true, content: '{"scripts":{"dev":"vite"}}' });
+    expect((await saving).success).toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+  });
   it('coalesces two conversations sharing a checkout into one service', async () => {
     terminals.set('other', { workspaceId: 'ws', checkoutContextId: a.id });
     const [one, two] = await Promise.all([manager.start(request()), manager.start(request('other'))]);
