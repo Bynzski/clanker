@@ -20,7 +20,7 @@ interface CommitDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onCommit: (message: string) => Promise<{ success: boolean; error?: string }>;
-  onStageAll: () => void;
+  onStageAll: () => void | Promise<{ success: boolean; error?: string }>;
   onUnstage: (path: string) => Promise<{ success: boolean; error?: string }>;
   onUnstageAll: () => Promise<{ success: boolean; error?: string }>;
   changes: GitStatus[];
@@ -51,6 +51,11 @@ export default function CommitDialog({
   const [error, setError] = useState<string | null>(null);
   const [commitStatus, setCommitStatus] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const generationRef = useRef(0);
+  const draftRevisionRef = useRef(0);
+  const changesIdentity = JSON.stringify(changes);
+  const changesIdentityRef = useRef(changesIdentity);
+  changesIdentityRef.current = changesIdentity;
   const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
   const [diffState, setDiffState] = useState<DiffViewerState>(initialDiffViewerState);
   // Reset state when dialog opens
@@ -64,7 +69,9 @@ export default function CommitDialog({
       setCommitStatus(null);
       setUnstagingPaths(new Set());
     }
-  }, [isOpen]);
+    generationRef.current += 1;
+    return () => { generationRef.current += 1; };
+  }, [isOpen, workspaceId, workspacePath]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -109,7 +116,8 @@ export default function CommitDialog({
 
     try {
       if (hasUnstagedChanges) {
-        await onStageAll();
+        const staged = await onStageAll();
+        if (staged && !staged.success) throw new Error(staged.error || 'Failed to stage changes');
         setCommitStatus('Running git hooks…');
       }
 
@@ -136,19 +144,28 @@ export default function CommitDialog({
 
     setIsGenerating(true);
     setError(null);
+    const generation = ++generationRef.current;
+    const draftRevision = draftRevisionRef.current;
+    const changeSnapshot = changesIdentityRef.current;
+    const isCurrent = () => generationRef.current === generation;
 
     try {
       const result = await window.electronAPI.generateCommitMessage(workspacePath, workspaceId);
-      if (result.success && result.message) {
+      if (!isCurrent()) return;
+      if (changesIdentityRef.current !== changeSnapshot) {
+        setError('Changes updated during generation. Generate the message again.');
+      } else if (draftRevisionRef.current !== draftRevision) {
+        // Preserve text the user edited while the harness was working.
+      } else if (result.success && result.message) {
         setMessage(result.message);
         window.setTimeout(() => inputRef.current?.focus(), 0);
       } else {
         setError(result.error || 'Failed to generate commit message');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to generate commit message');
+      if (isCurrent()) setError(err instanceof Error ? err.message : 'Failed to generate commit message');
     } finally {
-      setIsGenerating(false);
+      if (isCurrent()) setIsGenerating(false);
     }
   };
 
@@ -330,7 +347,7 @@ export default function CommitDialog({
                 variant="mono"
                 className="commit-message-input"
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e) => { draftRevisionRef.current += 1; setMessage(e.target.value); }}
                 placeholder="Describe your changes…"
                 disabled={isCommitting}
                 rows={3}

@@ -6,7 +6,7 @@ export const aiCommit: HarnessAiCommitCapability = {
   modelArg: '--model',
   buildInvocation: ({ model, prompt }) => ({
     command: 'agy',
-    args: ['--disable-slash-commands', ...(model ? ['--model', model] : []), '--input-format', 'stream-json', '--output-format', 'stream-json'],
+    args: ['--mode', 'plan', '--sandbox', '--disable-slash-commands', ...(model ? ['--model', model] : []), '--input-format', 'stream-json', '--output-format', 'stream-json'],
     stdin: JSON.stringify({ event: 'user', message: { content: prompt } }),
     timeoutMs: 60000,
   }),

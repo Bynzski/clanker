@@ -1,3 +1,4 @@
+import { parseOpenCodeCommitOutput } from '../aiCommitOutput';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
@@ -27,8 +28,8 @@ export const opencodeProvider = defineHarness({
   attention: { resumePreservesSessionId: true, source: 'native', prepareResources, local, remote },
   agentBridge,
   checkoutRehome,
-  aiCommit: { modelArg: '-m',
-    buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: [...['run'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 90000 }),
+  aiCommit: { modelArg: '-m', parseOutput: parseOpenCodeCommitOutput,
+    buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: ['run', '--pure', '--format', 'json', ...(model ? ['-m', model] : [])], env: { OPENCODE_PERMISSION: JSON.stringify({ '*': 'deny' }) }, stdin: prompt, timeoutMs: 90000 }),
   },
   launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
 } satisfies HarnessProvider);

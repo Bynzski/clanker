@@ -146,6 +146,32 @@ describe('getCommitPromptContext - happy path with real git', () => {
     expect(ctx.diffSummary).toContain('file1.ts');
   });
 
+  it('summarizes the final tracked working tree for the dialog all-changes scope', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'staged.ts': 'old', 'working.ts': 'old' } });
+    await modifyFile(repo.path, 'staged.ts', 'staged addition');
+    await git(repo.path, ['add', 'staged.ts']);
+    await modifyFile(repo.path, 'working.ts', 'unstaged addition');
+    await createFile(repo.path, 'untracked.ts', 'new content');
+    const ctx = await service.getCommitPromptContext(repo.path, 'all');
+    expect(ctx.success).toBe(true);
+    expect(ctx.changes.map((change) => change.path)).toEqual(expect.arrayContaining(['staged.ts', 'working.ts', 'untracked.ts']));
+    expect(ctx.diffSummary).toContain('+staged addition');
+    expect(ctx.diffSummary).toContain('+unstaged addition');
+    expect((await service.getStatus(repo.path)).changes.some((change) => !change.staged)).toBe(true);
+  });
+
+  it('all-changes scope works before the initial commit', async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clanker-unborn-'));
+    try {
+      await git(root, ['init']);
+      await fs.promises.writeFile(path.join(root, 'new.ts'), 'first version');
+      await git(root, ['add', 'new.ts']);
+      const ctx = await service.getCommitPromptContext(root, 'all');
+      expect(ctx.success).toBe(true);
+      expect(ctx.diffSummary).toContain('+first version');
+    } finally { await fs.promises.rm(root, { recursive: true, force: true }); }
+  });
+
   it('returns context with staged deleted file', async () => {
     repo = await createTempGitRepo({
       initialFiles: { 'file.ts': 'content', 'keep.ts': 'keep content' },

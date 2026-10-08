@@ -1,6 +1,5 @@
 import type { HarnessAiCommitCapability } from '../../../src/main/harnesses/types';
-import { EventEmitter } from 'node:events';
-import { spawn } from 'child_process';
+import { executeLocalHarnessCommand } from '../../../src/main/environment/localCommandExecutor';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 /**
  * AI Commit IPC Registration Tests
@@ -77,15 +76,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('child_process', () => ({
-  spawn: vi.fn(() => ({
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    stdin: { end: vi.fn() },
-    on: vi.fn(),
-    kill: vi.fn(),
-  })),
-}));
+vi.mock('../../../src/main/environment/localCommandExecutor', () => ({ executeLocalHarnessCommand: vi.fn() }));
 
 const { mockGitServiceGetStatus, mockGitServiceGetCommitPromptContext } = vi.hoisted(() => ({
   mockGitServiceGetStatus: vi.fn(),
@@ -286,11 +277,7 @@ test('IPC executes the provider invocation without assuming stdin prompt transpo
   const invocation = vi.spyOn(capability, 'buildInvocation').mockReturnValue({
     command: 'different-cli', args: ['--prompt', 'provider prompt'], env: { PROVIDER_SETTING: 'set' }, timeoutMs: 12345,
   });
-  const child = Object.assign(new EventEmitter(), {
-    stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),
-    stdin: { end: vi.fn(() => queueMicrotask(() => { child.stdout.emit('data', 'fix: provider invocation'); child.emit('close', 0); })) },
-  });
-  vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
+  vi.mocked(executeLocalHarnessCommand).mockResolvedValueOnce({ stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"fix: provider invocation"}}\n{"type":"turn.completed"}', stderr: 'thinking trace', exitCode: 0 });
   mockResolveExistingDirectory.mockReturnValue(testHome());
   mockDiscoverHarnessModels.mockResolvedValue([{ id: 'selected-model', label: 'Selected' }]);
   const store = { get: (key: string) => ({ aiCommitEnabled: true, aiCommitProvider: 'codex', aiCommitModel: 'selected-model' })[key as 'aiCommitEnabled'] };
@@ -300,7 +287,87 @@ test('IPC executes the provider invocation without assuming stdin prompt transpo
     const handler = calls[calls.length - 1][1];
     expect(await handler({} as never, testHome())).toEqual({ success: true, message: 'fix: provider invocation' });
     expect(invocation).toHaveBeenCalledWith({ model: 'selected-model', prompt: expect.stringContaining('context') });
-    expect(spawn).toHaveBeenLastCalledWith(process.platform === 'win32' ? 'cmd.exe' : 'different-cli', [...(process.platform === 'win32' ? ['/c', 'different-cli'] : []), '--prompt', 'provider prompt'], expect.objectContaining({ env: expect.objectContaining({ PROVIDER_SETTING: 'set', PATH: expect.any(String) }) }));
-    expect(child.stdin.end).toHaveBeenCalledWith(undefined);
+    expect(executeLocalHarnessCommand).toHaveBeenLastCalledWith(expect.objectContaining({ command: 'different-cli', args: ['--prompt', 'provider prompt'], env: { PROVIDER_SETTING: 'set' }, cwd: testHome(), timeoutMs: 12345, maxOutputBytes: 1024 * 1024 }), expect.any(AbortSignal), 90_000);
   } finally { invocation.mockRestore(); }
+});
+
+describe('canonical commit execution', () => {
+  const output = '{"type":"item.completed","item":{"type":"agent_message","text":"fix: completed answer"}}\n{"type":"turn.completed"}';
+  function setup(model = '') {
+    mockResolveExistingDirectory.mockReturnValue(testHome());
+    mockGitServiceGetCommitPromptContext.mockResolvedValue({ success: true, currentBranch: 'main', changes: [], diffMode: 'working', diffSummary: 'patch' });
+    const store = { get: (key: string) => ({ aiCommitEnabled: true, aiCommitProvider: 'codex', aiCommitModel: model })[key as 'aiCommitEnabled'] };
+    const deps = { getStore: () => store as never, getGitService: () => ({ getCommitPromptContext: mockGitServiceGetCommitPromptContext, withWorkspace: (_identity: unknown, run: () => Promise<unknown>) => run() }) as never };
+    return { deps, handler: () => vi.mocked(ipcMain.handle).mock.calls.slice(-1)[0][1] };
+  }
+  beforeEach(() => { vi.mocked(executeLocalHarnessCommand).mockReset(); });
+
+  test('uses the CLI default without model discovery and summarizes all changes', async () => {
+    const { deps, handler } = setup();
+    registerAiCommitIpc(deps);
+    vi.mocked(executeLocalHarnessCommand).mockResolvedValue({ stdout: output, stderr: 'thinking', exitCode: 0 });
+    expect(await handler()({} as never, testHome())).toEqual({ success: true, message: 'fix: completed answer' });
+    expect(mockGitServiceGetCommitPromptContext).toHaveBeenLastCalledWith(testHome(), 'all');
+    expect(vi.mocked(executeLocalHarnessCommand).mock.calls.slice(-1)[0][0].args).not.toContain('-m');
+  });
+
+  test('preserves explicit model and binds the selected managed account', async () => {
+    const { deps, handler } = setup('not-in-catalog');
+    const resolveBinding = vi.fn(() => ({ environment: { CODEX_HOME: '/owned/account' } }));
+    registerAiCommitIpc({ ...deps, getHarnessAccountService: () => ({ resolveBinding }) as never });
+    vi.mocked(executeLocalHarnessCommand).mockResolvedValue({ stdout: output, stderr: '', exitCode: 0 });
+    expect((await handler()({} as never, testHome())).success).toBe(true);
+    expect(resolveBinding).toHaveBeenCalledWith({ environmentId: 'local', harness: 'codex', forLaunch: true });
+    expect(executeLocalHarnessCommand).toHaveBeenCalledWith(expect.objectContaining({ env: { CODEX_HOME: '/owned/account' }, args: expect.arrayContaining(['-m', 'not-in-catalog']) }), expect.any(AbortSignal), 90_000);
+  });
+
+  test.each([
+    { stdout: '', stderr: 'fix: stderr is not an answer', exitCode: 0 },
+    { stdout: 'First thinking trace\nfix: guess', stderr: '', exitCode: 0 },
+    { stdout: output, stderr: 'failed', exitCode: 1 },
+    { stdout: output.replace('fix: completed answer', 'Let me think'), stderr: '', exitCode: 0 },
+  ])('returns an explicit failure instead of a thinking/log/failed response: %j', async (result) => {
+    const { deps, handler } = setup();
+    registerAiCommitIpc(deps);
+    vi.mocked(executeLocalHarnessCommand).mockResolvedValue(result);
+    expect(await handler()({} as never, testHome())).toEqual({ success: false, error: expect.any(String) });
+  });
+
+  test('refuses concurrent inference for the same workspace', async () => {
+    const { deps, handler } = setup();
+    registerAiCommitIpc(deps);
+    let finish!: (result: { stdout: string; stderr: string; exitCode: number }) => void;
+    vi.mocked(executeLocalHarnessCommand).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const first = handler()({} as never, testHome());
+    expect(await handler()({} as never, testHome())).toMatchObject({ success: false, error: expect.stringContaining('already running') });
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    finish({ stdout: output, stderr: '', exitCode: 0 });
+    expect((await first).success).toBe(true);
+  });
+
+  test('shutdown aborts inference, drains it, and refuses new requests', async () => {
+    const { deps, handler } = setup();
+    const shutdown = registerAiCommitIpc(deps);
+    vi.mocked(executeLocalHarnessCommand).mockImplementation((_request, signal) => new Promise((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(new Error('Command aborted')), { once: true });
+    }));
+    const request = handler()({} as never, testHome());
+    await vi.waitFor(() => expect(executeLocalHarnessCommand).toHaveBeenCalled());
+    await shutdown();
+    expect(await request).toEqual({ success: false, error: 'Command aborted' });
+    expect(await handler()({} as never, testHome())).toMatchObject({ success: false, error: expect.stringContaining('shutting down') });
+  });
+
+  test('does not spawn after a registered workspace closes during context collection', async () => {
+    const { deps, handler } = setup();
+    const ws = { workspaceId: 'ws', location: { environmentId: 'local', path: testHome() } };
+    const getWorkspace = vi.fn().mockReturnValue(ws);
+    mockGitServiceGetCommitPromptContext.mockImplementationOnce(async () => {
+      getWorkspace.mockReturnValue(null);
+      return { success: true, changes: [], diffSummary: 'patch' };
+    });
+    registerAiCommitIpc({ ...deps, getWorkspaceRegistry: () => ({ getWorkspace }) as never });
+    expect(await handler()({} as never, testHome(), 'ws')).toMatchObject({ success: false, error: expect.stringContaining('closed') });
+    expect(executeLocalHarnessCommand).not.toHaveBeenCalled();
+  });
 });

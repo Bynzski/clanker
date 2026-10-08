@@ -1,3 +1,4 @@
+import { parsePiCommitOutput } from '../aiCommitOutput';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { agentBridge } from './agentBridge';
 import { remote } from './remoteAttention';
@@ -22,8 +23,8 @@ export const piProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverPiSessions(workspace),
   },
   attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', prepareResources, local, remote },
-  aiCommit: { modelArg: '--model',
-    buildInvocation: ({ model, prompt }) => ({ command: 'pi', args: [...['--print'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 45000 }),
+  aiCommit: { modelArg: '--model', parseOutput: parsePiCommitOutput,
+    buildInvocation: ({ model, prompt }) => ({ command: 'pi', args: ['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions', ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 45000 }),
   },
   agentBridge,
   launch: { command: 'pi', args: [], modelArg: '--model' },

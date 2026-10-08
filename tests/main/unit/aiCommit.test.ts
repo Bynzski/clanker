@@ -57,19 +57,19 @@ describe('AI_COMMIT_COMMANDS structure', () => {
 
   it('OMP uses isolated print mode', () => {
     expect(AI_COMMIT_COMMANDS.omp).toEqual({
-      command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model',
+      command: 'omp', args: ['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model',
     });
     expect(buildAiCommitArgs('omp', 'openai-codex/gpt-5.5')).toEqual([
-      '--print', '--no-session', '--no-tools', '--no-extensions', '--model', 'openai-codex/gpt-5.5',
+      '--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions', '--model', 'openai-codex/gpt-5.5',
     ]);
   });
 
   it('Antigravity uses disabled slash commands', () => {
     expect(AI_COMMIT_COMMANDS.agy).toEqual({
-      command: 'agy', args: ['--disable-slash-commands', '--input-format', 'stream-json', '--output-format', 'stream-json'], modelArg: '--model',
+      command: 'agy', args: ['--mode', 'plan', '--sandbox', '--disable-slash-commands', '--input-format', 'stream-json', '--output-format', 'stream-json'], modelArg: '--model',
     });
     expect(buildAiCommitArgs('agy', 'gemini-3.8-flash-high')).toEqual([
-      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json',
+      '--mode', 'plan', '--sandbox', '--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json',
     ]);
   });
 });
@@ -119,51 +119,50 @@ describe('buildAiCommitArgs', () => {
   describe('happy path - with model', () => {
     it('prepends model arg before harness args for codex', () => {
       const args = buildAiCommitArgs('codex', 'gpt-4');
-      expect(args).toEqual(['exec', '-m', 'gpt-4']);
+      expect(args).toEqual(['exec', '--json', '--ephemeral', '--sandbox', 'read-only', '-m', 'gpt-4']);
     });
 
     it('prepends model arg before harness args for opencode', () => {
       const args = buildAiCommitArgs('opencode', 'claude-3.5-sonnet');
-      expect(args).toEqual(['run', '-m', 'claude-3.5-sonnet']);
+      expect(args).toEqual(['run', '--pure', '--format', 'json', '-m', 'claude-3.5-sonnet']);
     });
 
     it('prepends model arg before harness args for pi', () => {
       const args = buildAiCommitArgs('pi', 'anthropic/sonnet');
-      expect(args).toEqual(['--print', '--model', 'anthropic/sonnet']);
+      expect(args).toEqual(['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions', '--model', 'anthropic/sonnet']);
     });
 
     it('includes model for agy', () => {
       const args = buildAiCommitArgs('agy', 'gemini-3.8-flash-high');
-      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json']);
+      expect(args).toEqual(['--mode', 'plan', '--sandbox', '--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json']);
     });
 
     it('includes both exec and model for codex', () => {
       const args = buildAiCommitArgs('codex', 'gpt-5.4-mini');
       expect(args[0]).toBe('exec');
-      expect(args[1]).toBe('-m');
-      expect(args[2]).toBe('gpt-5.4-mini');
+      expect(args[args.indexOf('-m') + 1]).toBe('gpt-5.4-mini');
     });
   });
 
   describe('edge cases - without model', () => {
     it('returns just harness args when no model provided for codex', () => {
       const args = buildAiCommitArgs('codex', undefined);
-      expect(args).toEqual(['exec']);
+      expect(args).toEqual(['exec', '--json', '--ephemeral', '--sandbox', 'read-only']);
     });
 
-    it('returns empty array when no model provided for opencode', () => {
+    it('returns harness args when no model provided for opencode', () => {
       const args = buildAiCommitArgs('opencode', undefined);
-      expect(args).toEqual(['run']);
+      expect(args).toEqual(['run', '--pure', '--format', 'json']);
     });
 
     it('returns empty array when no model provided for pi', () => {
       const args = buildAiCommitArgs('pi', undefined);
-      expect(args).toEqual(['--print']);
+      expect(args).toEqual(['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions']);
     });
 
     it('returns just harness args for empty string model', () => {
       const args = buildAiCommitArgs('codex', '');
-      expect(args).toEqual(['exec']);
+      expect(args).toEqual(['exec', '--json', '--ephemeral', '--sandbox', 'read-only']);
     });
   });
 
@@ -484,19 +483,19 @@ describe('normalizeCommitMessageOutput', () => {
   });
 
   describe('edge cases - multiline input', () => {
-    it('extracts first line only from multiline', () => {
+    it('preserves a completed commit body', () => {
       const input = `feat: add new feature
 
 This is a longer description that should be ignored`;
-      expect(normalizeCommitMessageOutput(input)).toBe('feat: add new feature');
+      expect(normalizeCommitMessageOutput(input)).toBe(input);
     });
 
     it('handles CRLF line endings', () => {
-      expect(normalizeCommitMessageOutput('feat: test\r\nanother line')).toBe('feat: test');
+      expect(normalizeCommitMessageOutput('feat: test\r\nanother line')).toBe('feat: test\nanother line');
     });
 
     it('handles mixed line endings', () => {
-      expect(normalizeCommitMessageOutput('feat: test\nline2\r\nline3')).toBe('feat: test');
+      expect(normalizeCommitMessageOutput('feat: test\nline2\r\nline3')).toBe('feat: test\nline2\nline3');
     });
 
     it('handles trailing empty lines', () => {

@@ -1,3 +1,4 @@
+import { parseCodexCommitOutput } from '../aiCommitOutput';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local, INTERPRETER } from './attention';
@@ -30,8 +31,8 @@ export const codexProvider = defineHarness({
   agentBridge,
   checkoutRehome,
   accounts: codexAccounts,
-  aiCommit: { modelArg: '-m',
-    buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: [...['exec'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),
+  aiCommit: { modelArg: '-m', parseOutput: parseCodexCommitOutput,
+    buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: ['exec', '--json', '--ephemeral', '--sandbox', 'read-only', ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },
   launch: { command: 'codex', args: [], modelArg: '-m' },
 } satisfies HarnessProvider);
