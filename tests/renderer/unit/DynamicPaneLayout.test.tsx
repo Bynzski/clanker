@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { LayoutNode, LayoutLeaf, LayoutSplit } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { clearTerminalCache, markTerminalRuntimeReady } from '../../../src/renderer/lib/terminalRuntimeCache';
 
 // ---------------------------------------------------------------------------
 // Hoisted mutable references shared with mock factories.
@@ -214,6 +215,27 @@ const resetNoop = (...args: unknown[]): unknown => { void args; return undefined
 // Tests
 // ---------------------------------------------------------------------------
 describe('DynamicPaneLayout', () => {
+  it('mounts only pending hidden agents and drops their bootstrap surfaces immediately on readiness', async () => {
+    clearTerminalCache();
+    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+    installElectronApiMock();
+    const terminals = Array.from({ length: 40 }, (_, index) => ({ id: `agent-${index}`, pid: index + 1, workingDir: '/workspace' }));
+    useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({ id: 'many', terminals,
+      panes: terminals.map((terminal) => ({ id: `pane-${terminal.id}`, terminalId: terminal.id })) }));
+    const page = useWorkspaceStore.getState().getWorkspaceById('many')!.activePageId!;
+    useWorkspaceStore.getState().addWorkspacePage('many');
+    for (const terminal of terminals.slice(0, -1)) markTerminalRuntimeReady(terminal.id);
+    render(<DynamicPaneLayout workspaceId="many" />);
+    await waitFor(() => expect(screen.getAllByTestId('terminal-pane')).toHaveLength(1));
+    expect(screen.getByTestId('terminal-pane')).toHaveTextContent('pane-agent-39');
+    // This fixture has no pendingTerminalIds, so readiness itself must notify the parent.
+    act(() => { markTerminalRuntimeReady('agent-39'); });
+    await waitFor(() => expect(screen.queryAllByTestId('terminal-pane')).toHaveLength(0));
+    act(() => { useWorkspaceStore.getState().selectWorkspacePage('many', page); });
+    await waitFor(() => expect(screen.getAllByTestId('terminal-pane')).toHaveLength(40));
+    act(() => { useWorkspaceStore.getState().addWorkspacePage('many'); });
+    await waitFor(() => expect(screen.queryAllByTestId('terminal-pane')).toHaveLength(0));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     installElectronApiMock();

@@ -22,6 +22,7 @@ import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 import { resolveToolbarLaunch } from '../lib/toolbarLaunch';
+import { launchWorkspaceTerminal } from '../lib/workspaceTerminalLaunch';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 
@@ -115,22 +116,11 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
         environmentId: focusedWorkspace?.environmentId,
       });
 
-      const info = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
-        ? await window.electronAPI.spawnTerminal(
-          workspacePath, resolvedHarness, resolvedModel, undefined, undefined,
-          focusedWorkspace.id, focusedWorkspace.environmentId,
-        )
-        : await window.electronAPI.spawnTerminal(workspacePath, resolvedHarness, resolvedModel, undefined, undefined, focusedWorkspace.id, focusedWorkspace.environmentId || 'local');
-      addTerminal({
-        id: info.id,
-        pid: info.pid,
-        workingDir: workspacePath,
-        workspaceId: focusedWorkspace.id,
-        checkoutContextId: info.checkoutContextId,
-        environmentId: focusedWorkspace.environmentId,
-        harnessId: info.harnessId ?? resolvedHarness ?? null,
-        attentionEnabled: info.attentionEnabled === true,
-      }, focusedWorkspace.id);
+      await launchWorkspaceTerminal(focusedWorkspace, workspacePath, {
+        harness: resolvedHarness,
+        model: resolvedModel,
+        pageId: focusedWorkspace.activePageId,
+      });
     } catch (err) {
       console.error('Failed to spawn terminal:', err);
     }

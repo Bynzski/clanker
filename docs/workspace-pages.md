@@ -37,11 +37,14 @@ and minimized panes, and undo only repairs current page membership.
 `lib/terminalRuntimeCache.ts` owns xterm buffers/readiness/disposal independently of UI imports,
 so terminal close, replacement and global output delivery do not depend on a mounted pane.
 Terminal identity and checkout launch binding do not change on presentation operations. Pending
-launches capture/reserve their destination; measured history resume cancels preparation if its page
+launches (including ordinary toolbar shells/agents) share `lib/workspaceTerminalLaunch.ts` to
+capture/reserve their destination, revalidate ownership and confirm registration after spawn; an
+unregistrable returned PTY is explicitly terminated. Measured history resume cancels preparation if its page
 becomes unavailable and respects accepted launches after dispatch. Background terminal surfaces
 are invisible, inert and non-zero-sized: never-ready hidden/replaced terminals complete their
-normal startup handshake without taking focus. Already-ready hidden terminals retain their last
-PTY geometry. Protocol replies/output continue separately from user-key handling. A newly spawned
+normal startup handshake without taking focus. Background views exist only until readiness is
+confirmed; one readiness subscription per workspace surface removes them immediately. Already-ready
+hidden terminals remain cached without pane components/attachments and retain their last PTY geometry. Protocol replies/output continue separately from user-key handling. A newly spawned
 or replaced terminal can temporarily keep a cold workspace warm until startup completes; ordinary
 workspace residency still uses the three-surface LRU.
 
@@ -85,7 +88,10 @@ Use a temporary workspace/profile; do not alter an existing user's saved state.
    Repeat a native checkout replacement on a hidden/minimized page. Verify output does not remain
    stuck until restore and hidden terminal keys do not reach the PTY. Switch enough workspaces to
    make the source cold while a launch is pending; startup must still complete.
-6. Close a minimized chat while switching workspaces during the kill response. Only its original
+6. Delay a toolbar shell/harness spawn, switch pages, and confirm it attaches to the initiating
+   page without stealing selection. Repeat with workspace closure: the returned PTY must be killed,
+   including silent registration failure or replacement of a workspace with the same id. Repeat over SSH.
+   Close a minimized chat while switching workspaces during the kill response. Only its original
    workspace loses the entry. History remains discoverable; worktree/branch/dev server survives.
 7. Verify checkout-aware files and dirty buffers across pages, including same-relative-name files
    in two checkouts and SSH focused-checkout polling. SSH launch/attention identity stays unchanged.
@@ -94,6 +100,10 @@ Use a temporary workspace/profile; do not alter an existing user's saved state.
 
 Run `npm run validate`. Real Electron checks (after build):
 `npx electron scripts/workspace-pages-smoke.cjs` and
-`npx electron scripts/terminal-geometry-smoke.cjs`.
-The automated smoke checks exercise real native Browser visibility/state and shared page predicates;
-the interactive checklist additionally covers the full app UI, SSH and native harness integrations.
+`npx electron scripts/terminal-geometry-smoke.cjs`, and
+`node scripts/workspace-launch-race-smoke.cjs`.
+The launch-race check uses the full built app and real local shell PTYs in a disposable profile/HOME.
+A test-only gate delays the real main spawn handler's response (not PTY creation); it verifies page
+capture, hidden readiness, detached cached output, zero ready background views and process death after
+workspace closure. The other checks exercise real native Browser visibility/state and xterm geometry.
+Live SSH/native-harness acceptance remains separate; no automated remote claim is made here.

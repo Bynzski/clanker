@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { DragHandleContext } from './dragHandleContext';
 import ErrorBoundary from './ErrorBoundary';
 import {
@@ -40,6 +40,7 @@ import { DockEdgeTargets } from './DockEdgeTargets';
 import { collectLeafPaneIds } from '../store/workspaceLayout';
 import { activePage, paneIsPresented } from '../store/workspacePages';
 import { PanePresentationControls } from './WorkspacePageControls';
+import { getTerminalReadinessRevision, subscribeTerminalReadiness, terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
 import './DynamicPaneLayout.css';
 
 const TerminalPane = lazy(() => import('./TerminalPane'));
@@ -470,8 +471,10 @@ function getPaneLabel(workspace: WorkspaceTab | null, paneId: string): string {
 }
 
 function BackgroundTerminals({ workspace, visibleIds }: { workspace: WorkspaceTab; visibleIds: Set<string> }) {
+  // One subscription per workspace surface, not one mounted view per cached terminal.
+  useSyncExternalStore(subscribeTerminalReadiness, getTerminalReadinessRevision);
   return <div className="background-terminal-surfaces" aria-hidden="true" inert>
-    {workspace.panes.filter((pane) => pane.terminalId && !visibleIds.has(pane.id)).map((pane) => <div key={pane.id}>
+    {workspace.panes.filter((pane) => pane.terminalId && !visibleIds.has(pane.id) && terminalNeedsBootstrap(pane.terminalId)).map((pane) => <div key={pane.id}>
       <Suspense fallback={null}><TerminalPane workspaceId={workspace.id} paneId={pane.id} background /></Suspense>
     </div>)}
   </div>;

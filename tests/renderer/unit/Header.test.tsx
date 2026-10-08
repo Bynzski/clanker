@@ -93,7 +93,7 @@ describe('Header', () => {
       browserVisible: false,
       terminals: [{ id: 't1', pid: 1, workingDir: '/workspace' }],
       panes: [{ id: 'p1', terminalId: 't1', position: { x: 0, y: 0, w: 6, h: 6 } }],
-      addTerminal: vi.fn(),
+      addTerminal: vi.fn(useWorkspaceStore.getInitialState().addTerminal),
       closeWorkspace: vi.fn(),
       fitAllPanes: vi.fn(),
       setHarness: vi.fn(),
@@ -352,7 +352,7 @@ describe('Header', () => {
           workingDir: '/workspace',
           harnessId: null,
           workspaceId: 'ws-1',
-        }), 'ws-1');
+        }), 'ws-1', expect.any(String), undefined);
       });
     });
 

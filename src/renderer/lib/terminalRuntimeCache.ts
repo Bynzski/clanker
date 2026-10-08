@@ -9,11 +9,26 @@ interface CachedTerminal { xterm: XTerm; fitAddon: Fit; input?: { dispose(): voi
 const cache = new Map<string, CachedTerminal>();
 const disposedIds = new Set<string>();
 const readyIds = new Set<string>();
+const readinessListeners = new Set<() => void>();
+let readinessRevision = 0;
+function notifyReadiness(): void {
+  readinessRevision++;
+  for (const listener of readinessListeners) listener();
+}
+export function subscribeTerminalReadiness(listener: () => void): () => void {
+  readinessListeners.add(listener);
+  return () => { readinessListeners.delete(listener); };
+}
+export function getTerminalReadinessRevision(): number { return readinessRevision; }
 
 export function getCachedTerminal(terminalId: string): CachedTerminal | undefined { return cache.get(terminalId); }
 export function isTerminalDisposed(terminalId: string): boolean { return disposedIds.has(terminalId); }
 export function terminalNeedsBootstrap(terminalId: string): boolean { return !readyIds.has(terminalId) && !disposedIds.has(terminalId); }
-export function markTerminalRuntimeReady(terminalId: string): void { if (!disposedIds.has(terminalId)) readyIds.add(terminalId); }
+export function markTerminalRuntimeReady(terminalId: string): void {
+  if (disposedIds.has(terminalId) || readyIds.has(terminalId)) return;
+  readyIds.add(terminalId);
+  notifyReadiness();
+}
 
 export function cacheTerminalInstance(terminalId: string, xterm: XTerm, fitAddon: Fit): void {
   if (disposedIds.has(terminalId)) { unregisterThemedTerminal(xterm); xterm.dispose(); return; }
@@ -60,10 +75,12 @@ export function markTerminalDisposed(terminalId: string): void {
   disposedIds.add(terminalId);
   readyIds.delete(terminalId);
   evict(terminalId);
+  notifyReadiness();
 }
 /** Retain the tombstone until a mounted pane's async import/teardown has declined to cache it. */
 export function finishTerminalDisposal(terminalId: string): void { disposedIds.delete(terminalId); }
 export function clearTerminalCache(): void {
   for (const id of cache.keys()) evict(id);
   disposedIds.clear(); readyIds.clear();
+  notifyReadiness();
 }
