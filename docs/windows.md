@@ -64,7 +64,7 @@ Restart the machine after enabling.
 
 ## UNC workspaces and file watching
 
-Clanker Grid accepts UNC-style workspace paths (`\\server\share\project`) and Windows drive-letter paths (`C:\projects\foo`) in the workspace gate. Backslashes are normalized to forward slashes at the IPC boundary; you do not need to convert them by hand.
+Clanker Grid accepts UNC-style workspace paths (`\\server\share\project`) and Windows drive-letter paths (`C:\projects\foo`) in Open Workspace. Backslashes are normalized to forward slashes at the IPC boundary; you do not need to convert them by hand.
 
 For UNC paths, the explorer file watcher automatically falls back to **polling** because native `fs.watch` events are unreliable across SMB. To force polling on any workspace (for example when debugging watcher issues on a local path):
 

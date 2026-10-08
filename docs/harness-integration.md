@@ -45,14 +45,16 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. AI commit remains local-only.
-Model discovery is local for every provider; Codex, OpenCode, Pi, OMP and Agy also expose an optional
+Local model discovery is available where the provider declares it (Claude has no native list command).
+Codex, OpenCode, Pi, OMP and Agy also expose an optional
 `models.discoverInEnvironment(executor)` that runs their own list command and parser through the
 selected environment's bound `HarnessCommandExecutor` (never an SSH target). Claude has no list command
 and Hermes is not queried remotely; a failed or unsupported remote discovery yields no catalog, with no
 local cache or static fallback. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
 "Usage capability"); OpenCode and Pi remain without it. Only Codex and Claude implement the
-optional `accounts` capability (see "Accounts capability"). Only Codex, Claude and OpenCode implement the
-optional, opt-in `agentBridge` capability (see "Agent MCP bridge"); Pi, OMP, Hermes and Agy do not.
+optional `accounts` capability (see "Accounts capability"). Codex, Claude, OpenCode and Pi implement the
+optional, opt-in `agentBridge` capability (see "Agent MCP bridge"); Pi exposes context only.
+OMP, Hermes and Agy do not implement it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1618,12 +1620,12 @@ installed/authenticated; automated transport tests are not evidence of that live
 - Agy: fixed SQLite schema, version-sensitive model list and no native fork.
   AI commit now uses documented JSON stdin/output, avoiding Windows shell quoting
   and argument-size limits. Native attention hooks still need real-turn smoke
-  testing. Global plugin ownership is process-local: Clanker currently has no
-  `requestSingleInstanceLock`. Concurrent app processes can overwrite/remove
-  another process's owned plugin; address single-instance policy or ownership
-  separately without introducing a lease framework here.
-- OpenCode: local session-list pagination remains its CLI default; SSH explicitly
-  requests the extra row to reject truncation. SQLite/legacy storage is CLI-owned.
+  testing. The owned plugin is persistent and inert without valid launch credentials; it is
+  not removed when a process releases attention. Clanker refuses unowned plugin
+  directories and does not guarantee single-instance execution.
+- OpenCode: local and SSH session listing explicitly request 4,097 rows and reject
+  results above 4,096 rather than accepting the CLI default page. SQLite/legacy
+  storage is CLI-owned.
 - Hermes: local attention/history/inference remain unsupported; remote attention
   requires its default profile. Provider-qualified models and refresh behavior
   remain intact.
@@ -1646,7 +1648,7 @@ attention events, and session history do not collide with Pi.
 | Models | `omp models --json` returns a `models` array with `selector`, `name`, `kind`, and provider fields; 561 chat entries on this installation | Use `selector` as the ID and accept chat entries only. The catalog can contain models without available credentials, so selection can still fail at launch. |
 | Sessions | Default profile: `~/.omp/agent/sessions/<project>/*.jsonl`; sampled file begins with `title`, then `session` (`id`, `cwd`, `timestamp`); `model_change` uses `model` | Stream metadata extraction with at most 16 files open per batch. Pi's first-line parser is incompatible. Current discovery reads only the default root. |
 | Resume/fork | `omp --resume <path>` and `omp --fork <path>` | Use a saved `.jsonl` path after checking it stays inside the default OMP session store. Fork is present in the installed CLI's session resolution code even though top-level help omits it. |
-| Attention | `--extension <path>` with `agent_start`, `agent_settled`, and `session_shutdown` events | The dedicated extension maps agent start to running, `agent_settled` (no retry, compaction or queued continuation left) to turn complete, and session shutdown to a session boundary. It does not report input requests. |
+| Attention | `--extension <path>` with main-agent `agent_start`, main-session `session_stop`, and `session_shutdown` events | The dedicated extension reports running, main-session completion after background jobs drain, and shutdown. `agent_end` does not settle the turn. It does not report input requests. |
 | AI commit | `--print --no-session --no-tools --no-extensions` | The commit pipeline pipes the prompt through stdin. OMP 18.3.4's source reads piped input as the initial prompt. No billable model request was made during verification. |
 
 The code and tests cover registration, parsing, session invocation arguments,
@@ -1678,21 +1680,21 @@ the local Hermes TUI gateway using its standard Python environment
 (`~/.hermes/hermes-agent/venv`, or `HERMES_PYTHON` for the interpreter).
 Normal discovery is bounded and reads Hermes's nonblocking cached catalog, which
 may omit newly available subscription models. An explicit **Refresh Hermes
-models** in settings or the gate requests live provider catalogs, bypasses
+models** in Settings requests live provider catalogs, bypasses
 Clanker's one-hour cache, and is bounded to 45 seconds; failure preserves the
 last usable list. The picker shows model IDs before provider names so variants
 remain legible even when the menu is narrow. Neither mode makes a model call.
 Provider/model selections preserve both identifiers, launching the TUI with
 `-m <model> --provider <provider>`; previously saved manual IDs continue to
-launch with `-m <model>`. Settings and the workspace gate use the existing
-model picker and favorites; the manual field remains available if discovery
+launch with `-m <model>`. Settings uses the model picker and favorites;
+the manual field remains available if discovery
 fails or the user needs a custom model.
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, provider-aware discovery, manual model overrides, and interactive launch. Hermes history,
 resume/fork, local attention hooks, and AI commit remain unintegrated. SSH attention now uses the Hermes observer plugin API; see [Remote Agent Attention](workspaces.md#remote-agent-attention). The agent
-attention toggle applies to SSH launches, and the workspace gate has no Hermes keyboard
-shortcut. Do not use the installed CLI's `--oneshot` or `chat -q` just to
+attention toggle applies to SSH launches. Open Workspace has no harness shortcuts
+or model selection. Do not use the installed CLI's `--oneshot` or `chat -q` just to
 probe capability: those commands can incur model charges. Windows and macOS
 launches, authenticated TUI sessions, live model calls, and exit-to-shell
 behavior in Clanker's window remain unverified. On Linux, a `script`-allocated
@@ -1714,8 +1716,8 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, model discovery, interactive launch, session history discovery/resume,
-agent attention, and AI commit message generation. The workspace gate assigns
-`a` / `A` to Antigravity when visible.
+agent attention, and AI commit message generation. The Header offers Antigravity
+when installed and enabled; Open Workspace does not launch harnesses.
 
 ## SSH attention transport
 
@@ -1730,10 +1732,9 @@ Tests exercise all seven adapters with synthetic lifecycle events over real pseu
 Installed versions checked without model prompts: Codex 0.159.3, OpenCode
 1.18.34, Pi 0.87.1, OMP 18.4.4, Hermes 0.21.5 and Agy 1.2.14. Claude's shim
 exists but its native optional binary is missing. Local PTY startup/resume/fork
-checks and the saved SSH host checks are recorded in
-[the historical follow-up report](issue-60-followup-report.md). The final
-architecture and validation state is recorded in
-[the final hardening report](issue-60-final-hardening-report.md).
+checks and saved SSH host checks were historical issue #60 verification, retained
+in Git history and PR #66 rather than as current installation requirements.
+Current capability contracts and verification limits are documented here.
 
 AI commit uses Codex `exec` stdin, OpenCode `run` stdin, Pi `--print` stdin,
 and the existing OMP print/no-session/no-tools/no-extensions stdin contract.

@@ -10,8 +10,9 @@ Active work means entries in main's live PTY table (local shells, harnesses and
 SSH sessions), pending account sign-in, or a live Clanker-owned Hermes service.
 Exited panes and cached xterm instances have no PTY entry. An adopted external
 Hermes service survives socket disconnect and does not count. SSH forwards are
-transport helpers; the remote preview service is not owned by Clanker. Future
-owned dev services (#91) should extend the main ownership predicate.
+transport helpers; the remote preview service is not owned by Clanker. Local checkout dev services are cleaned up on quit, but currently do not participate
+in this confirmation predicate. A server left running after its conversation closes
+can therefore stop on app close without a confirmation if no other guarded work remains.
 
 On macOS, closing the window preserves the owned Hermes service; quitting the
 app includes it in the check. Fatal main-process exits are explicitly authorized

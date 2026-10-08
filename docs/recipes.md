@@ -84,14 +84,14 @@ Chat History lists the harness's own conversations. Nothing about a launch is st
 
 ### 6.1 Local discovery
 
-`SESSION_DISCOVER` calls `discoverSessions()` (`src/main/sessionHistory.ts`) for the selected local workspace. Discovery scans each supported harness's native store, keeps only sessions whose canonical `cwd` belongs to the workspace, filters to currently available harnesses, sorts by timestamp, and returns the combined list. The renderer groups the returned sessions by harness and renders one collapsible group per harness with discovered sessions; an installed harness with no discovered sessions has no group. Local discovery uses a short-lived in-memory cache; harness sessions are re-read when the cache expires or when discovery is forced.
+`SESSION_DISCOVER` calls `discoverSessions()` (`src/main/sessionHistory.ts`) for the selected local workspace. Discovery scans each supported harness's native store, keeps sessions whose canonical `cwd` belongs to the workspace or a main-owned attributable linked-worktree scope, filters to currently available harnesses, sorts by timestamp, and returns the combined list. The renderer groups the returned sessions by harness and renders one collapsible group per harness with discovered sessions; an installed harness with no discovered sessions has no group. Local discovery uses a short-lived in-memory cache; harness sessions are re-read when the cache expires or when discovery is forced.
 
 ### 6.2 Resume
 
 `SESSION_INVOKE` starts a new PTY that attaches to the harness-native conversation (for example `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`). It never replays a prompt.
 
 Validation happens in main before any process starts:
-- The workspace must be registered and its canonical root must contain the session `cwd`.
+- The workspace must be registered, the native session must be freshly rediscovered, and main must resolve its canonical cwd to the workspace or a proven linked-worktree checkout. Removed-checkout routes use only the provider's declared fallback or a confirmed, validated recreation.
 - The harness must be installed, available, and support the requested operation; the installed CLI alone never implies an integrated session format or resume command.
 - Per-harness session validation (for example Antigravity's UUID requirement) runs on the resolved metadata.
 - Supported native forks create a new conversation on the host; unsupported forks are refused.
@@ -118,4 +118,4 @@ The former task-session subsystem — `TaskSessionRecord`, `TaskSessionCoordinat
 - `taskSessions` was removed from `StoreSchema`. Because electron-store keeps unknown keys in the persisted JSON, `purgeLegacyTaskSessions()` (`src/main/storeMigrations.ts`) deletes the legacy key once at startup rather than leaving an ever-growing dead store on disk.
 - The `TASK_SESSION_LIST` / `TASK_SESSION_DELETE` / `TASK_SESSION_UPDATE` channels, their preload methods, and the renderer typings were removed.
 
-Future SSH persistent-process or reconnect work ([proposal](remote-process-persistence-design.md)) will model only explicitly detached processes. It must not reintroduce blanket per-launch task tracking.
+Future SSH persistent-process or reconnect work ([deferred design](design/remote-process-persistence.md)) will model only explicitly detached processes. It must not reintroduce blanket per-launch task tracking.

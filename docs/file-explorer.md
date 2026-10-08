@@ -4,11 +4,17 @@ Navigate and manage files in your workspace with the integrated file explorer.
 
 ## Opening the Explorer
 
-In **Sidebar** navigation (the default), files live in the **FILES** section pinned to the bottom of the workspace sidebar. It starts collapsed; click **Files** to open it, and it grows upward to at most half the sidebar. FILES always shows the active workspace. From the collapsed sidebar rail, **Show Files** expands the sidebar and opens FILES.
+In **Sidebar** navigation (the default), files live in the **FILES** section pinned to the bottom of the workspace sidebar. It starts collapsed; click **Files** to open it, and it grows upward to at most half the sidebar. FILES shows the active workspace's focused checkout. From the collapsed sidebar rail, **Show Files** expands the sidebar and opens FILES.
 
 In **Tabs** navigation, click the **Explorer** button in the header toolbar to toggle a separate, resizable Explorer dock.
 
 `Cmd/Ctrl+B` toggles either one.
+
+## Checkout selection
+
+Focusing a terminal selects its registered launch checkout for Explorer; focusing an editor tab selects that tab's pinned checkout instead. Terminal focus clears the editor override. Missing, released or unknown checkout contexts fall back to the workspace root. A harness's printed or reported cwd does not grant Explorer access to another directory.
+
+Editor tabs pin their checkout when opened: saving, reloading and relative Markdown links use that root regardless of later focus changes. Files with the same relative name in different checkouts remain separate tabs. If a checkout is released, dirty buffers remain available with an unavailable-checkout notice; operations cannot silently switch to the main checkout.
 
 ## Features
 
@@ -86,7 +92,7 @@ The file explorer integrates with git to show file status:
 
 - **Modified files** — Display with a git status indicator
 - **Untracked files** — Visually distinguished from tracked files
-- **File updates** — Local file changes are detected by a local watcher. The active SSH workspace uses one batched poll about every three seconds for up to 128 open editor files and 128 visible/expanded directories (at most 2,000 direct children each). Clean editor tabs reload; dirty buffers are preserved and flagged when their files change. SSH failures back off without treating files as deleted. Remote contents also refresh after Clanker-managed mutations and on desktop focus while Explorer is visible. Use Refresh for immediate updates or directories beyond the polling limits.
+- **File updates** — Local Explorer watches follow the selected checkout; local editor tabs retain individual watches across checkouts. The active SSH workspace uses one batched poll about every three seconds for its focused checkout, up to 128 editor files and 128 visible/expanded directories (at most 2,000 direct children each). Other-checkout tabs are parked until that checkout is focused. Clean tabs reload; dirty buffers are preserved and flagged. SSH failures back off without treating files as deleted. Remote contents also refresh after Clanker-managed mutations and on desktop focus while Explorer is visible. Use Refresh for immediate updates or directories beyond the polling limits.
 
 ## Editor Integration
 
@@ -96,13 +102,13 @@ Double-click a file or select **Open in Editor** to:
 - Switch to an existing tab if the file is already open
 - Display syntax highlighting based on file type
 
-## State Persistence
+## Markdown preview
 
-The explorer state is preserved per workspace identity (SSH environment plus canonical root path, or local root path):
+Markdown tabs offer **Edit** and **Preview**. Preview renders the current buffer, including unsaved edits, without saving or replacing editor history. Tables, task lists and code blocks are supported. HTTP(S) links open externally; relative file links stay inside the tab's pinned checkout and use normal validated file reads. Raw HTML is disabled, unsafe/outside-root links are unavailable, and images show alt-text placeholders rather than loading files or remote resources.
 
-- Expanded directory paths
-- Last selected file path
-- Directory entries cache
+## Runtime state
+
+Expanded paths, selection and directory caches are retained while the workspace is open, using absolute paths to distinguish checkouts. Released checkouts lose their tree caches, not dirty editor buffers. Explorer state and editor tabs are not reopened after an app restart.
 
 ## Technical Details
 

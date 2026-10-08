@@ -7,4 +7,4 @@ Keep captures grouped by date and theme, with a capture index and environment de
 - [2026-10-01: fullscreen launcher and multi-pane workspaces in Dark, Light, and Slate](2026-10-01/fullscreen/README.md)
 - [2026-10-03: Sidebar vs Tabs navigation, multi-pane workspaces, and the collapsed rail in Dark, Light, and Slate](2026-10-03/README.md)
 
-The 2026-10-03 set shows the current Sidebar and Tabs layouts. The 2026-09-30 and 2026-10-01 sets are dated historical captures that predate Sidebar navigation and the docked toolbar; no guide in `docs/` embeds them.
+All sets are dated historical captures, not acceptance evidence for the upcoming release. The 2026-10-03 set documents Sidebar and Tabs at the 0.10.0 preflight snapshot; later startup, checkout, dev-server and UI changes are not shown. The earlier sets also predate Sidebar navigation and the docked toolbar. Keep the images as historical assets; do not present removed startup-gate controls as current behavior.

@@ -8,8 +8,8 @@ own `npm run dev` as the fixture: that starts another Electron application.
 ## Sidebar hierarchy
 
 1. Open the fixture and launch a main-checkout agent and an isolated worktree agent.
-2. Confirm the main-checkout agent has one primary line; the isolated agent has a
-   compact muted branch line below its name. Selection/hover/focus covers both lines.
+2. Confirm agent rows use one compact line with inline dev-server controls;
+   isolated agents retain a muted checkout branch label without hiding the name.
 3. Try long branch names, missing checkout state, attention spinner/check/question,
    and narrow/wide sidebar widths. Name/attention and branch glyph must remain usable.
 4. Collapse the sidebar to the rail: existing agent/branch tooltips remain intact;
@@ -53,9 +53,10 @@ own `npm run dev` as the fixture: that starts another Electron application.
   fixed npm/pnpm/yarn/bun install command. Watch its output, then retry Run yourself;
   there is no automatic server launch. Cancel must open no shell or execute anything.
   You can still install manually in an existing checkout terminal instead.
-- Failed script / unavailable package manager: failed state, with an expandable
-  `Why it failed` diagnostic (bounded 2 KiB output tail); another checkout's service
-  must remain unaffected. If the package manager or effective checkout changes
+- Failed script / unavailable package manager: failed state with an info button
+  opening a diagnostics dialog (status, command, checkout directory and bounded
+  output tail). **Copy for agent** copies a Markdown report; no stack trace expands
+  inside the sidebar. Another checkout's service must remain unaffected. If the package manager or effective checkout changes
   while the install confirmation is open, setup must refuse the stale confirmation
   rather than executing in another checkout. Switching to another destination during
   setup discovery must not launch a shell there or reclaim focus.

@@ -18,7 +18,7 @@ Keyboard bindings are edited from **Keyboard shortcuts...** in the same menu; se
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable AI Commit | Generate commit messages with AI | Disabled |
-| Provider | AI service (Codex, OpenCode, Pi, Oh My Pi) | Codex |
+| Provider | AI service (Codex, OpenCode, Pi, Oh My Pi, Antigravity) | Codex |
 | Model | Model variant per provider | Varies |
 
 ### Harness Defaults
@@ -34,6 +34,7 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has it
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
 | Agent attention | Show supported harness turn and input status on new panes | Disabled |
+| Clanker bridge (MCP) | Local authenticated workspace context for Claude, Codex, OpenCode and Pi; eligible providers also offer checkout lifecycle tools with attention enabled | Disabled |
 | Show in Usage | Include a supported harness in the Usage popover and its usage requests | Enabled |
 
 **Show in Usage** is available for Codex, Claude, Oh My Pi, Hermes, and Antigravity. It is independent of **Visible**: hiding a launch button does not hide its usage row. Disabling **Show in Usage** removes that provider from usage reads, polling, and manual refresh. See [Subscription usage](terminals.md#subscription-usage).
@@ -78,6 +79,12 @@ Favorites are **never** used at spawn time — they only affect the picker/disco
 
 For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; Header launchers use the remote CLI's own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
 
+### Managed accounts and Hermes Assistants
+
+Codex and Claude can use manually selected managed accounts under **Harness Defaults**. Selection affects future local launches; resume/fork use the account owning the conversation, and there is no automatic fallback. The native/default account remains available without an app-managed home. Managed accounts are unavailable for SSH workspaces.
+
+**Hermes Assistants** is a separate optional setting, hidden when the Hermes CLI is missing. Enable it to connect named profiles to their persistent Bot Chat; **Start Hermes service when needed** permits Clanker to start and stop only its own backend. This does not change the ordinary Hermes launcher. See [Hermes Assistants](terminals.md#hermes-assistants).
+
 ### VCS Credentials
 
 Manage authentication for remote VCS operations.
@@ -116,11 +123,12 @@ The app can automatically configure your SSH config to use the generated key for
 ## Persistence
 
 Settings are stored locally via `electron-store` (`clanker-grid.json`):
-- Last workspace path
+- Starting-directory preferences for workspace opening (the open workspace set/order/active identity is kept separately in renderer localStorage)
 - Theme, workspace navigation mode (Sidebar or Tabs), and sidebar width
 - Base directory for workspace suggestions
 - AI commit configuration
-- Harness defaults (per-harness visibility, model, favorites, flags, agent attention)
+- Harness defaults (visibility, model, favorites, flags, attention, bridge opt-in and usage visibility)
+- Main-owned managed-account metadata/selections and optional Hermes Assistant settings
 - Saved SSH environment labels and targets (no passwords or private keys)
 - Keyboard shortcut overrides (only bindings you changed)
 

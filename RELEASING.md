@@ -32,7 +32,7 @@ Linux-only releases are allowed at any semantic version when the artifact scope 
 
 ### 1. Prepare the release commit (Linux host)
 
-1. Confirm `main` is green: run `npm ci`, then `npm run validate` (branding check, lint, typecheck, security check, build, tests). The CI `validate` check must be green; it requires Ubuntu validation (lint, typecheck, build, full tests with coverage, including Windows simulation tests). See [Security gate](#security-gate) for what the security check enforces.
+1. Confirm `main` is green: run `npm ci`, then `npm run validate` (branding check, lint, typecheck, Fallow dead-code regression check, security check, build, tests). The CI `validate` check must be green; it requires Ubuntu validation (lint, typecheck, Fallow dead-code regression check, build, full tests with coverage, including Windows simulation tests). See [Security gate](#security-gate) for what the security check enforces.
 2. Edit `CHANGELOG.md`: rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`. Add a fresh empty `## [Unreleased]` section above it. Update the link references at the bottom.
 3. Bump `version` in `package.json` to `X.Y.Z`. Update `package-lock.json` to match (the top-level `version` and the root package entry).
 4. Run `npm run validate` again.

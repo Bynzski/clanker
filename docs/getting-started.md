@@ -49,7 +49,7 @@ Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows*
 
 1. Open the installed app, or run `npm run dev` from a source checkout
 2. Clanker shows its normal shell immediately, including navigation and Settings
-3. Click **Open Workspace** (`+`) and choose **This PC**, then **Choose Folder…**, or choose a saved SSH environment and enter/browse an absolute remote directory
+3. Click **Open Workspace** (`+`) and choose **This PC**, then type an absolute local directory or use **Choose Folder…**; alternatively select a saved SSH environment and enter/browse an absolute remote directory
 4. Click **Open Workspace**. The workspace opens empty
 5. Choose **Terminal** or an AI harness in the Header to start work explicitly. Configure local harness defaults in Settings
 
@@ -57,7 +57,7 @@ On subsequent launches Clanker revalidates and reopens the previously open works
 
 ## Opening Workspaces
 
-Click **Open Workspace** (`+`) in the Workspaces sidebar, collapsed rail, or tab strip. Local folders use the operating-system folder picker. For SSH, use **Add server…** or **Server settings…** to manage environments and **Browse remote directories** to navigate or create a direct child folder. Clanker starts at the saved default root when accessible, then `$HOME/workspaces`, then `$HOME`.
+Click **Open Workspace** (`+`) in the Workspaces sidebar, collapsed rail, or tab strip. Local paths can be typed with directory suggestions or selected with the operating-system folder picker; the gear chooses the local starting directory. For SSH, use **Add server…** or **Server settings…** to manage environments and **Browse remote directories** to navigate or create a direct child folder. Clanker starts at the saved default root when accessible, then `$HOME/workspaces`, then `$HOME`.
 
 Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. Opening only registers the root; harness discovery and runtime launch belong to the normal Header. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and limitations.
 
@@ -74,7 +74,7 @@ New installs use **Sidebar** navigation. Choose **Tabs** under **Settings → Ap
 | Main Area | Terminals, browser, editor, and notes panes | Terminals, browser, editor, and notes panes |
 | Status Bar | Bottom | Bottom |
 
-The toolbar holds the new-terminal launchers and Git, then layout undo, Fit All, launch recipes, the **Browser** and **Notes** toggles, Chat History, Usage, and Settings. In Tabs mode it also has an **Explorer** toggle. Drag the sidebar's edge narrow (or use **Collapse sidebar**) to shrink it to an icon rail; drag it out or use **Expand sidebar** to restore it. See [Workspaces](workspaces.md#managing-workspaces).
+The toolbar holds the new-terminal launchers, **New isolated agent** and Git, then layout undo, Fit All, launch recipes, the **Browser** and **Notes** toggles, Chat History, Usage, and Settings. Agent rows can also run [local checkout dev servers](dev-services.md). Enabled Hermes Assistants remain reachable through navigation even without an open workspace; their toolbar exposes only Browser and Settings. In Tabs mode it also has an **Explorer** toggle. Drag the sidebar's edge narrow (or use **Collapse sidebar**) to shrink it to an icon rail; drag it out or use **Expand sidebar** to restore it. See [Workspaces](workspaces.md#managing-workspaces).
 
 ## Quick Commands
 

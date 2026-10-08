@@ -5,18 +5,24 @@ Workspaces provide isolated development environments within a single window.
 ## Opening a Workspace
 
 1. Click **Open Workspace** (`+`) in the **WORKSPACES** sidebar header (in the collapsed rail it sits directly under the open workspaces), or beside the workspace tabs in Tabs mode
-2. Select **This PC → Choose Folder…**, or choose an SSH environment and enter/browse its absolute remote path
+2. Select **This PC** and type an absolute local directory (with directory suggestions) or use **Choose Folder…**; alternatively choose an SSH environment and enter/browse its absolute remote path
 3. Click **Open Workspace**. An empty workspace is added to the sidebar (or the tab strip); launch terminals afterward from the Header
+
+The path-field gear sets the starting directory: choose a folder locally, or save the entered path for the selected SSH server. This preference does not grant access beyond a registered workspace root.
 
 For local workspaces, the native directory picker can create a new directory before opening the workspace on platforms that support it. SSH workspaces use Clanker's own remote chooser and **New Folder** action.
 
 ### Isolated agents and linked worktrees
 
-Use **New isolated agent** beside the Header harness pills to create a branch/check-out or use an existing linked worktree inside the same workspace. Creation and adoption attach a validated checkout context; they never widen the workspace root. Manage linked worktrees through the Git menu, with the existing activity, cleanliness, and removal protections. A linked worktree can also be opened directly as an empty standalone workspace by choosing its checkout folder. Generated `*-worktrees` containers are not workspace roots.
+Use **New isolated agent** beside the Header harness pills to select a harness and working copy, then **Launch**. Choose a new branch, an existing local branch with no worktree, or an existing linked worktree. Selection alone runs nothing. Reusing a checkout lets multiple agents share it; creation and adoption attach a validated checkout context without widening the workspace root. Missing and locked checkouts offer **Repair…** rather than launch.
+
+Agents show the branch of their native reported location when available, otherwise their launch checkout. Labels do not change launch authority. Git changes made outside Clanker are reconciled on focus, lifecycle events and worktree refresh; gone checkouts show `branch · removed`. Unused attached checkouts remain in the sidebar until explicitly removed or safely retired after Git no longer lists them.
+
+Manage linked worktrees through the [Git menu](git-integration.md#worktrees), with activity, cleanliness and removal protections. A linked worktree can also be opened directly as an empty standalone workspace by choosing its checkout folder. Generated `*-worktrees` containers are not workspace roots.
 
 Remote removal preserves checkout files under `<checkout-parent>/.clanker-worktree-recovery/removed-<id>/checkout` and records the original path and branch in `recovery.json` beside that folder. The preserved folder is a file recovery copy, not a registered Git worktree; its old `.git` pointer is no longer valid. The branch remains available, so you can create a new worktree for it and copy needed files from the recovery folder. Recovery and operation-journal folders must be owned by the SSH account with private permissions (`0700`). Existing unsafe folders are rejected before the checkout is moved; Clanker does not change their permissions. Recovery folders are not automatically purged. If SSH loses the removal result, paths stay reserved until **Refresh worktrees** verifies that operation's completion journal on the host. If verification cannot complete, Clanker shows the staging and recovery paths for manual host inspection. Do not reopen them while the operation may still be running.
 
-Closing a workspace stops its live terminals and closes its UI; it leaves the checkout and branch on disk. Remove linked worktrees through the Git menu after their terminals are closed. Local removal checks uncommitted, untracked and ignored files, confirms the path and branch, moves checkout files to Trash and keeps the branch.
+Closing a workspace stops its live terminals and closes its UI; it leaves the checkout and branch on disk. Remove linked worktrees through the Git menu after their terminals are closed. Local removal checks uncommitted, untracked and ignored files, confirms the path and branch, preserves checkout files through the protected removal flow and keeps the branch.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
 
@@ -77,7 +83,7 @@ Saved SSH targets cannot be edited or deleted while an open workspace uses them.
 - **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
 - **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
 
-Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and desktop Agent Attention credentials are not forwarded. Remote attention uses host-side adapters when enabled in harness defaults. Remote launches use the host's default model unless you pick one. For Codex, OpenCode, Pi, OMP and Antigravity the launcher asks the selected host for its own model list (the harness's list command, run over the existing SSH transport) and shows the model picker only when that returns a real catalog; otherwise it shows **Host default**. Claude has no reliable list command and Hermes is not queried, so both stay on the host default. Remote catalogs are never cached on the desktop or filled from the local list or a static fallback, and a locally saved default model is never applied to a remote launch. A chosen model is scoped to the selected host and cleared when you switch hosts.
+Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and desktop Agent Attention credentials are not forwarded. Remote attention uses host-side adapters when enabled in harness defaults. SSH Header launchers use the host CLI's configured model; a locally saved default model is never applied. Open Workspace has no model picker. Codex, OpenCode, Pi, OMP and Antigravity expose remote model-discovery capabilities for supported runtime callers; these use the host CLI without desktop cache or static fallback. Claude has no reliable list command and Hermes is not queried remotely.
 
 ### Remote Agent Attention
 
@@ -86,9 +92,9 @@ Enable **Agent attention** in the harness defaults before launching a new SSH ag
 | Harness | Native events used |
 | --- | --- |
 | Codex | Native hooks: prompt submission, permission requests correlated with tool start/completion, root stop (subagent stop is ignored), user interrupt, and session end. Codex asks you to review the hooks once (`/hooks`) before it runs them. |
-| Claude | Prompt submission, permission requests (resolved when the tool batch completes), root stop (only when no background work is pending) or stop-on-API-error, and session end. Needs Claude Code 2.1.196+ for prompt IDs. |
+| Claude | Prompt submission, permission requests (resolved when the tool batch completes), root stop or explicit API failure, and session end. Child events are ignored; background tasks do not hold the foreground turn open. Needs Claude Code 2.1.196+ for prompt IDs. |
 | OpenCode | Busy/idle of the verified top-level session (child sessions are ignored), permission/question requests and replies, and session deletion. |
-| Pi | Agent start, agent settled, and session shutdown. |
+| Pi | Agent start, foreground extension-owned dialog waits, final settled outcome (completed, interrupted or failed), and session shutdown. Not every built-in prompt emits a supported event. |
 | OMP | Main-agent start, main-session stop (after background jobs drain), and session shutdown. |
 | Antigravity | Initial invocation, interactive ask-tool requests/replies, and stop only when fully idle for the root conversation. |
 | Hermes | Root turn start/completion (child turns are ignored; a compression session rotation is followed only when proven), human approval requests/replies tied to their turn (smart approvals and child sessions are ignored), and session finalize through observer hooks. |
@@ -109,7 +115,7 @@ Renderer crashes release workspace registrations, polling, terminals, and previe
 
 Open **Chat history** in an SSH workspace to browse that host's sessions for the workspace and its subdirectories. Clanker discovers installed Codex, Claude, OpenCode, Pi, OMP, and Antigravity harnesses and reads their native metadata remotely. Desktop history is never used for an SSH workspace. Antigravity requires a conversation with an explicit matching workspace path. Hermes session history remains unsupported.
 
-Click a remote history entry to resume its conversation in a new SSH terminal in the same environment. Clanker re-reads the host session before launching and validates the workspace, working directory, installed harness, and session file. A missing session, conflicting session-selection flags in harness defaults, or a closed/removed workspace produces an error. Switching workspaces while a resume is pending attaches the terminal to the original workspace; closing that workspace cancels or cleans up the launch. Clanker keeps no record of the launch itself, so the history shown is always the host's own current metadata. SSH/discovery failures appear in the history menu; close and reopen it to retry. Switching workspaces closes the menu and discards pending results from the previous workspace.
+Click a remote history entry to resume its conversation in a new SSH terminal in the same environment. Clanker re-reads the host session before launching and validates the workspace, working directory, installed harness, and session file. A missing session, conflicting session-selection flags in harness defaults, or a closed/removed workspace produces an error. Switching workspaces while a resume is pending attaches the terminal to the original workspace; closing that workspace cancels or cleans up the launch. Clanker keeps no record of the launch itself, so the history shown is always the host's own current metadata. SSH/discovery failures appear in the history menu alongside usable results where available; reopen it to refresh. Failed refreshes keep the last useful list. Switching workspaces closes the menu and discards pending results from the previous workspace.
 
 Discovery uses bounded metadata reads and omits messages beyond the first 256 KiB of each JSONL file. OpenCode requests up to 4,097 rows to detect histories beyond the 4,096-row scan limit; it does not rely on the CLI default page. Conflicting metadata for the same harness/session ID reports an error. Large histories can exceed the scan/result limits and report an error. Custom session-store locations are not supported in this slice.
 
@@ -132,8 +138,8 @@ Remote capabilities have the following limits in V1:
 1. **Submodule Worktree Removal**: Remote worktrees containing submodules cannot be removed through Clanker. Other clean remote checkouts can be removed with a preserved file recovery copy; discovery, creation, and inspection are available from open SSH repositories.
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
-4. **File Refresh**: One batched SSH poll checks the active workspace about every three seconds. It monitors up to 128 open editor files and 128 visible/expanded Explorer directories, scanning only direct directory children (up to 2,000 entries per directory). Changes refresh Explorer and reload clean editor tabs; dirty tabs keep their buffers and receive an external-change indicator. Polls do not overlap, back off after connection failures, and stop when their workspace closes. Parked workspaces are checked again when activated. Manual Refresh and the existing desktop-focus refresh remain available for larger directories and immediate updates.
-5. **Remote Session Recovery**: Host discovery, manual resume, known-ID verification, and conservative association of newly launched tasks are supported for six harnesses. Legacy tasks, failed pre-launch scans, and ambiguous matches need manual session selection. Hermes history remains unsupported.
+4. **File Refresh**: One batched SSH poll checks the active workspace's focused checkout about every three seconds. It monitors up to 128 editor files in that checkout and 128 visible/expanded Explorer directories, scanning only direct children (up to 2,000 entries per directory). Clean tabs reload; dirty buffers are preserved and flagged. Other-checkout tabs are parked until their checkout is focused. Polls do not overlap and back off after connection failures without inferring deletion. Manual Refresh and desktop-focus refresh remain available.
+5. **Remote Conversation Resume**: Host-native discovery and manual resume are supported for six harnesses, including attributable linked-worktree conversations. No durable launch/task record or original process is restored. Hermes history remains unsupported.
 6. **Persisted Forwarding Rules**: SSH web service discovery and automatic forwarding are supported while Browser is active; saved forwarding rules remain deferred.
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
 8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
@@ -182,13 +188,9 @@ Each workspace retains:
 
 ### Harness and Model Selection
 
-Workspaces store their own harness and model selection independently:
+Opening a workspace starts no harness and selects no model. Click a Header harness pill to launch that installed CLI into the current checkout; the Terminal pill launches a plain shell. **New isolated agent** chooses a harness and working copy without switching the main checkout.
 
-- **Workspace harness + model** — highest priority at spawn time
-- **No harness set** — spawns a plain shell; global harness defaults are not inferred
-- **Flags** — read from global store defaults (not per-workspace)
-
-Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, and Agent Attention can be enabled per harness, and SSH launches can select a model from the host's own catalog where the harness supports discovery. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, attention and bridge opt-in) are configured in Settings. Local launches use the harness default unless an explicit runtime launch, such as a recipe, provides a model. SSH Header launches use the host CLI's model configuration; saved flags and supported remote attention settings still apply. See [Configuration](configuration.md#harness-defaults).
 
 ## Layout Controls
 
@@ -221,9 +223,9 @@ The Explorer never joins the pane layout tree: in Sidebar mode it is the FILES s
 
 ## Persistence
 
-The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly. Workspaces can be reordered by dragging (or `Alt+Shift+←/→` on tabs, `Alt+Shift+↑/↓` in the sidebar); their chosen order is remembered by workspace identity when those workspaces are reopened. The app does not automatically reopen all workspaces after restart.
+The app remembers the open workspace identities, their order and active selection, then revalidates and reopens them as empty shells on restart. Closing a workspace removes it from that saved set. Invalid or unavailable roots are omitted with a warning.
 
-Terminal processes and their runtime state are not reconstructed from layout persistence.
+Terminal processes, conversations, dev servers, Browser views, editor tabs, Explorer presentation, Notes visibility and pane topology are not restored. Notes content remains keyed by environment and canonical workspace path, with legacy local Notes migration retained. Old ordinary-workspace layout and Notes-visibility records are ignored. Recipes can still explicitly launch their steps and apply captured layouts.
 
 ## Workspace Launch Recipes
 
@@ -255,13 +257,15 @@ Chat History lists each harness's own conversations for the active workspace. Cl
 
 - **PTY processes do not survive application restarts**. Clanker does not implement terminal daemons or pretend disconnected PTYs are alive.
 - **Conversations do survive**, because the harness writes them, not Clanker. Resuming always starts a fresh process attached to that native conversation.
-- **Remote Process Persistence Proposal**: SSH process persistence/reconnect is not implemented. The [architecture proposal](remote-process-persistence-design.md) evaluates transports and recommends opt-in tmux sessions with separate process and attachment lifetimes. It defines disconnect/stop behavior, worktree protections, and the Agent Attention release gate; this is a design for review, not an available launch setting.
+- **No process reconnect**: SSH process persistence is not implemented. Native resume starts a fresh process; it does not reconnect a surviving remote terminal.
 
 ### Native Conversation Resume
 
 Selecting a history entry attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
 
-Native conversation resume is supported locally and over SSH for the harnesses above. Main re-validates the workspace, working directory, installed harness, and harness-specific session metadata before spawning; a missing session, conflicting session-selection flags, or a closed/removed workspace produces an error in the dropdown rather than an empty history. Supported native forks create a new conversation on the host. This never reconnects the original process.
+Native conversation resume is supported locally and over SSH for the harnesses above. History includes linked-worktree conversations proven by Git, registered checkouts or remembered worktree provenance, not arbitrary sibling directories. Live worktree sessions resume into that validated checkout. For a removed checkout, Claude, Codex and OMP can resume in the main checkout with a notice; Pi, OpenCode and Antigravity require confirmed recreation from the original branch or report why it is unavailable.
+
+Main revalidates native identity, checkout routing, installed harness and session metadata before spawning; missing sessions, conflicting flags or closed workspaces produce an error. Supported native forks create a new conversation on the host. This never reconnects the original process.
 
 - **No Prompt Replay**: The user's original prompt is never replayed or re-executed.
 - **Scoped Launch**: The resumed terminal is attached to the workspace that owns the conversation. Switching workspaces mid-resume does not move it, and closing that workspace kills the orphaned terminal.

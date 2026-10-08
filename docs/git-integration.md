@@ -7,6 +7,7 @@ Built-in git tools for common operations without leaving the app.
 Click the **Git** button in the header to access:
 - Status summary (with change count)
 - Branch operations
+- Linked worktree management
 - Merge tools
 - Stash management
 - Commit history
@@ -35,6 +36,19 @@ From the Git menu → **Branches**:
 - Switch branches
 - Create new branch
 - Delete branch
+
+## Worktrees
+
+Create or adopt a working copy through **New isolated agent** beside the harness launchers, not the Git menu. Selecting a harness and a new branch, available existing branch or linked worktree runs nothing until **Launch**. The main checkout is not switched.
+
+The Git menu's **Worktrees** section lists linked checkouts (not the main checkout) and reloads with the menu's refresh. Rows distinguish **In use**, **Managed** (attached to this workspace) and **Unmanaged**, with **Locked** or **Missing** where applicable.
+
+- **Remove…** is unavailable for the workspace's own checkout, active, locked or missing rows. Removal checks branch identity, dirty/untracked/ignored contents and workspace, terminal and dev-server usage. Managed removal first releases the unused checkout context; if later removal fails, files remain on disk as unmanaged. The branch is retained.
+- **Unlock…** confirms Git's recorded lock reason and unlocks that listed linked worktree only. Removal is a separate action.
+- **Prune missing worktrees…** confirms repository-wide cleanup of stale Git metadata. It deletes no branch or directory and refuses while conflicting usage or removal operations remain.
+- **Repair…** in the isolated-agent picker opens this same management flow. **Forget stale checkout…** rechecks reconciliation and only forgets an unused checkout that is still gone.
+
+Local removal preserves checkout files; SSH removal uses private host recovery folders and completion journals. See [Workspaces](workspaces.md#isolated-agents-and-linked-worktrees) for recovery and reservation behavior.
 
 ## Stashing
 
@@ -104,7 +118,7 @@ The **Remotes** section allows you to manage git remote connections:
 Optional AI-assisted commit messages:
 
 1. Enable in **Settings** → **AI Commit**
-2. Select provider (Codex, OpenCode, or Pi)
+2. Select provider (Codex, OpenCode, Pi, Oh My Pi, or Antigravity)
 3. Select model
 4. In commit dialog, click **Generate Message**
 

@@ -25,13 +25,13 @@ npm run validate
 
 Clanker Grid's primary development and required CI platform is **Linux (x64)**. **Windows 10 1809+ / Windows 11 (x64)** remains **best-effort supported, not CI-gated**. Preserve Windows platform abstractions, packaging and useful regression tests, review new filesystem/process/path code for Windows assumptions, and fix reproducible Windows bugs when practical. Windows artifacts may lag Linux releases; native Windows runner availability or test status does not automatically block PRs or releases.
 
-The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), lint, typecheck, build, and the full Vitest suite with coverage. This includes deterministic Windows compatibility tests using `path.win32`, mocked platforms and injected subprocess/path seams, plus the jsdom renderer suite. There is no automatic per-PR Windows runner. The final `validate` job is the stable check to require in branch protection: code changes require Ubuntu success; docs-only changes require the heavy job to be skipped. A failed/cancelled Ubuntu job or invalid change-detection result fails the gate. CI does not run `npm run branding:check` or the `security-check` policy gate, so run `npm run validate` locally, where high/critical audit findings fail the run apart from the documented exception in [RELEASING.md](RELEASING.md#security-gate).
+The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), lint, typecheck, the Fallow dead-code regression check, build, and the full Vitest suite with coverage. This includes deterministic Windows compatibility tests using `path.win32`, mocked platforms and injected subprocess/path seams, plus the jsdom renderer suite. There is no automatic per-PR Windows runner. The final `validate` job is the stable check to require in branch protection: code changes require Ubuntu success; docs-only changes require the heavy job to be skipped. A failed/cancelled Ubuntu job or invalid change-detection result fails the gate. CI does not run `npm run branding:check` or the `security-check` policy gate, so run `npm run validate` locally, where high/critical audit findings fail the run apart from the documented exception in [RELEASING.md](RELEASING.md#security-gate).
 
 When adding code that touches the filesystem, terminals, harness launch, credentials, or paths, follow the platform patterns in [AGENTS.md](AGENTS.md#windows-support) and [docs/windows.md](docs/windows.md). Key rules:
 
 - All paths crossing IPC use POSIX separators (`src/shared/pathNormalize.ts`).
 - Default shell selection lives in `src/main/platformShell.ts` — never branch on `process.platform` ad hoc.
-- Harness commands spawn through `resolveHarnessSpawn()` so `.cmd` shims resolve on Windows.
+- Harness commands spawn through `resolveHarnessPtySpawn()` for PTYs and the shared bounded spawn planner for command execution, so `.cmd` shims resolve safely on Windows.
 - Filesystem-mutating tests must use `os.tmpdir()` / `os.homedir()` via `tests/_helpers/tempPaths.ts` — no hardcoded `/home`, `/tmp`, or `/Users`.
 - Remote runtime operations must resolve `workspaceId` through `WorkspaceRegistry`; treat `environmentId` plus canonical path as the persistent identity. Keep remote pre-workspace browsing separate from root-confined workspace file operations.
 
@@ -53,7 +53,9 @@ When adding code that touches the filesystem, terminals, harness launch, credent
 - Path validation before file system access
 - Duplicate logic is a code smell — check existing modules before adding local logic
 
-For appearance changes, follow the [theming architecture guide](docs/theming.md), including the semantic token contract and state-preserving subsystem adapters.
+For appearance changes, follow the [theming architecture guide](docs/theming.md), including the semantic token contract and state-preserving subsystem adapters. Use the [documentation index](docs/README.md) for current developer references and smoke tests; [Fallow maintenance checks](docs/fallow.md) explains baseline review and narrow analyzer exceptions.
+
+Keep user-facing changes in `CHANGELOG.md` under **Unreleased** until a release is prepared. Update the corresponding user guide, distinguish deferred designs from available features, and avoid adding completed issue reports, transient test counts or implementation inventories to the current docs. Git history and PRs retain that historical material.
 
 ## Project Structure
 
@@ -104,7 +106,7 @@ The GPU diagnostic launches the installed Electron runtime with an isolated temp
 
 For a live SSH workspace check, use the guarded [remote VPS smoke procedure](docs/remote-vps-smoke-test.md). Create a unique temporary directory for any destructive test and leave the persistent fixture intact.
 
-**Important:** Always use `npm run test`, not bare `npm test`. `npm run validate` runs branding check → lint → typecheck → security check → build → test. CI runs the full suite with coverage on Ubuntu, including Windows simulation tests; see [Platform support](#platform-support).
+**Important:** Always use `npm run test`, not bare `npm test`. `npm run validate` runs branding check → lint → typecheck → Fallow dead-code regression check → security check → build → test. CI runs the full suite with coverage on Ubuntu, including Windows simulation tests; see [Platform support](#platform-support).
 
 Test directories:
 - `tests/main/unit/` — Main process unit tests
@@ -143,4 +145,4 @@ Before submitting, run:
 npm run validate
 ```
 
-This executes: branding check → lint → typecheck → security check (`node scripts/security-audit.cjs`: `npm audit` at the high threshold, plus one documented dev-only exception) → build → test.
+This executes: branding check → lint → typecheck → Fallow dead-code regression check → security check (`node scripts/security-audit.cjs`: `npm audit` at the high threshold, plus one documented dev-only exception) → build → test.

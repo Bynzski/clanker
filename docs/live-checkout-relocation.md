@@ -1,4 +1,4 @@
-# Checkout relocation: review checkpoint
+# Checkout relocation contracts and verification limits
 
 Tracking: #131, superseding #118 (live relocation), #114 (resume redraw) and
 #116 (history reliability). Those originals were closed as superseded, not completed.
@@ -117,7 +117,7 @@ Use a disposable repository/worktree and a normal user-requested root turn:
   remain; no transcript renderer or bigger default buffer is introduced. See `terminal-geometry.md`.
 - #131 / former #116: partial-cache behavior, lifecycle integrity and ordinary default-account local
   handoff authority are covered, not the complete live local/SSH/removed-checkout resume/fork matrix.
-- #91 dev services, #89 pages and #104 recovery UX are separate features, not prerequisites for this gate.
+- Checkout dev services and missing/locked worktree repair are separate shipped features, not proof that a provider supports live relocation.
 
 The existing large `isolatedCheckoutService.ts` remains the transaction integration point; new proof and
 caller validation live in focused `liveRelocation.ts` / `liveRelocationCaller.ts` modules rather than

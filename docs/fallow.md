@@ -35,4 +35,4 @@ The save command may exit 1 because existing findings remain; inspect the output
 
 No broad source exclusion, global unresolved-import disabling, complexity suppression, or new dependency removal was introduced. Architecture boundary rules remain unconfigured; a zero boundary count is not architectural proof.
 
-See [the initial repository review](repo-health-report.md) for the original measurements and remaining priorities.
+Historical repository measurements and completed cleanup reports remain in Git history. Use fresh report output, not old grades or test counts, when assessing the current tree.

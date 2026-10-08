@@ -12,9 +12,16 @@ Switching tabs keeps the other tabs' pages alive. Closing an active tab selects 
 
 The toolbar provides Back, Forward, Refresh, Stop, a URL field, an external-browser button, and annotation mode. The address bar can open HTTP(S) URLs and local `file:` URLs or absolute paths. Pages cannot navigate themselves to local files; web-initiated navigation is limited to HTTP(S). Page URLs and titles from HTTP(S) navigation are stored in a global history across workspaces and app restarts. History keeps the most recent 100 distinct URLs and returns up to 8 suggestions; local files are not stored.
 
-The browser runs in the desktop app even when the workspace is on SSH. A `file:` URL refers to a local desktop file, and a remote service bound to the host's `localhost` is not forwarded automatically in V1.
+The browser runs in the desktop app even when the workspace is on SSH. A `file:` URL refers to a local desktop file. Workspace-owned remote HTTP(S) services can be discovered and forwarded automatically while Browser is active; ambiguous listeners require selection. See [SSH browser previews](workspaces.md#ssh-browser-previews). Local checkout servers use the explicit [dev-server Browser action](dev-services.md).
 
 Type at least two characters in the URL field to see matching history entries. Suggestions appear after a 300 ms debounce. Use the arrow keys and Enter, click a suggestion, or press Escape to dismiss them. History matches URL and hostname prefixes, including hostnames without `www.`.
+
+## Notifications
+
+When Browser is visible, pending app notifications appear as a compact chip in its
+header above the native page. Expand it for the recent stack and actions; the
+app's notification-history control retains other recent messages. Browser
+notification chrome does not redirect the active page or change workspace ownership.
 
 ## DevTools and shortcuts
 

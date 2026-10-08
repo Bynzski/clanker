@@ -17,7 +17,9 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **AI harnesses** — launch Claude, Codex, OpenCode, Pi, OMP, Antigravity, or Hermes straight into a pane. Search and resume supported harness conversations locally or on an SSH host.
 - **Optional Hermes Assistants** — connect your named Hermes profiles through `hermes serve`, keep each one's persistent Bot Chat open, and pair it with its own embedded Browser. Ordinary Hermes launching is unchanged and needs none of this.
 - **Harness usage** — check subscription usage and remaining quota for Codex, Claude, OMP, Hermes, and Antigravity in the active local or SSH workspace. The Usage popover refreshes while open; choose which providers appear in Harness Defaults.
-- **Git, built in** — branches, stashes, merges, diffs, remotes, and AI-assisted commits without leaving the app.
+- **Isolated agents** — launch agents into new or existing linked worktrees inside one workspace, with checkout labels, native conversation history, and protected cleanup.
+- **Local dev servers** — run a detected `dev` script per checkout from the sidebar, preview it in Browser, and inspect/copy failure diagnostics without adding a terminal pane.
+- **Git, built in** — branches, stashes, merges, diffs, remotes, worktree management, and AI-assisted commits without leaving the app.
 - **VCS at a glance** — PR status, CI checks, and quick links from GitHub, GitLab, and Bitbucket.
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting, Markdown preview, and a familiar explorer.
@@ -68,14 +70,15 @@ On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS
 
 ## Documentation
 
-The full docs are in [`docs/`](docs/):
+The [documentation index](docs/README.md) separates current user guides, developer references, smoke tests, and deferred designs. Release notes are in [CHANGELOG.md](CHANGELOG.md); source-checkout features under **Unreleased** are not yet a published release.
 
 - [Getting Started](docs/getting-started.md) — installation and first launch
 - [Workspaces](docs/workspaces.md) — opening, switching, and managing workspaces (sidebar or tabs)
 - [SSH Workspaces](docs/workspaces.md#remote-workspaces-ssh) — remote setup, directory browsing, and V1 limits
 - [Terminals & Harnesses](docs/terminals.md) — terminal panes and AI integrations
 - [Harness Usage](docs/terminals.md#subscription-usage) — quota windows, refresh behavior, and provider visibility
-- [Git Integration](docs/git-integration.md) — built-in git tools
+- [Local Dev Servers](docs/dev-services.md) — checkout-scoped Run, Install, Browser, and failure diagnostics
+- [Git Integration](docs/git-integration.md) — built-in git tools and worktree management
 - [VCS Providers](docs/vcs-providers.md) — GitHub, GitLab, Bitbucket
 - [Browser Tabs & History](docs/browser-tabs.md) — tabs, navigation, and DevTools
 - [Browser Annotation](docs/browser-annotation.md) — element selection for AI agents
