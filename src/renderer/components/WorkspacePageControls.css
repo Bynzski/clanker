@@ -1,6 +1,10 @@
 .workspace-page-switcher { display: flex; align-items: center; gap: 3px; }
 .workspace-page-switcher > button, .pane-presentation-button { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); min-width: 22px; height: 22px; cursor: pointer; }
-.workspace-page-switcher > button[aria-current], .workspace-page-switcher > button:hover, .pane-presentation-button:hover { background: var(--surface-control); color: var(--text-primary); }
+.workspace-page-switcher > button:hover, .pane-presentation-button:hover { background: var(--surface-control); color: var(--text-primary); }
+.workspace-page-switcher > button[aria-current="page"] { background: color-mix(in srgb, var(--accent-interactive) 18%, var(--surface-control)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-interactive) 60%, transparent); color: var(--text-primary); }
+.workspace-page-switcher > button.page-drop-valid { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-interactive) 50%, transparent); }
+.workspace-page-switcher > button.page-drop-over { background: color-mix(in srgb, var(--accent-interactive) 32%, var(--surface-control)); box-shadow: inset 0 0 0 1px var(--accent-interactive); color: var(--text-primary); }
+.workspace-page-switcher > button:focus-visible { outline: 1px solid var(--accent-interactive); outline-offset: 1px; }
 .workspace-page-switcher button:disabled { opacity: .35; cursor: default; }
 .minimized-pane-menu { position: relative; font-size: 11px; }
 .minimized-pane-menu summary { cursor: pointer; padding: 3px 6px; }

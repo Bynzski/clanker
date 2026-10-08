@@ -1,12 +1,12 @@
 import type { StoreApi } from 'zustand';
 import type { WorkspaceState } from './workspaceStoreTypes';
 import { patchWorkspaceById } from './workspaceStoreHelpers';
-import { activePage, MAX_WORKSPACE_PAGES, minimizePane, restorePane, selectPage } from './workspacePages';
+import { activePage, MAX_WORKSPACE_PAGES, minimizePane, movePaneToPage, restorePane, selectPage } from './workspacePages';
 import { collectLeafPaneIds } from './workspaceLayout';
 import { useAssistantNavStore } from './assistantNavStore';
 
 export function workspacePageActions(set: StoreApi<WorkspaceState>['setState']): Pick<WorkspaceState,
-  'addWorkspacePage' | 'selectWorkspacePage' | 'removeWorkspacePage' | 'minimizeWorkspacePane' | 'restoreWorkspacePane' | 'toggleMaximizedPane'> {
+  'addWorkspacePage' | 'selectWorkspacePage' | 'removeWorkspacePage' | 'minimizeWorkspacePane' | 'restoreWorkspacePane' | 'toggleMaximizedPane' | 'movePaneToWorkspacePage'> {
   const allowed = () => !useAssistantNavStore.getState().activeAssistantId;
   return {
     addWorkspacePage: (workspaceId) => set((state) => {
@@ -17,6 +17,10 @@ export function workspacePageActions(set: StoreApi<WorkspaceState>['setState']):
         const page = { id, layoutRoot: null, layoutRevision: 0, layoutUndoStack: [], activeTerminalId: null };
         return selectPage({ ...workspace, pages: [...workspace.pages, page] }, id);
       });
+    }),
+    movePaneToWorkspacePage: (workspaceId, paneId, pageId, sourcePageId) => set((state) => {
+      if (!allowed() || state.activeWorkspaceId !== workspaceId) return state;
+      return patchWorkspaceById(state, workspaceId, (workspace) => movePaneToPage(workspace, paneId, pageId, sourcePageId));
     }),
     selectWorkspacePage: (workspaceId, pageId) => set((state) => allowed()
       ? patchWorkspaceById(state, workspaceId, (workspace) => selectPage(workspace, pageId)) : state),

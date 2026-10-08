@@ -27,7 +27,11 @@ other-page/minimized membership before using the existing algorithms.
 Every terminal pane is tiled exactly once or has one minimized record, whose original page cannot
 be removed. Utility panes are workspace-owned singletons; Explorer remains outside the split tree.
 Minimize/restore/page switch/maximize do not spawn or terminate resources or change checkout identity.
-Undo repairs only the current tiled membership; it cannot resurrect closed/minimized panes.
+Page drops move one tiled pane within its owning workspace, select its destination and never
+clone resources. Pending placeholders and maximized-source topology edits remain protected; a new
+destination still obeys the nine-page cap. Source/destination revisions change, not resource IDs.
+The App drag domain includes the footer; inactive warm surfaces use disabled, scoped edge targets.
+Undo repairs only the current tiled membership; it cannot resurrect closed/minimized/other-page panes.
 Maximize never changes the stored tree or ratios and remains per-page until explicitly restored.
 Attention is acknowledged only for the presented, focused terminal in the active app destination.
 Terminal dispatch reserves its original page's pane before awaiting spawn, even if the captured

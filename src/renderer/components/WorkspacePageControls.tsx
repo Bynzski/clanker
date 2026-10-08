@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { useDndContext, useDroppable } from '@dnd-kit/core';
+import { useSharedPaneDrag } from './WorkspacePaneDragProvider';
+import { currentPaneDrag } from '../lib/workspacePaneDrag';
 import { useBrowserOverlaySuppression } from '../lib/useBrowserOverlaySuppression';
 import { Maximize2, Minimize2, Minus, Plus, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -31,9 +34,24 @@ function MinimizedPaneEntry({ workspace, entry }: { workspace: WorkspaceTab; ent
   </button>{terminal && <button type="button" aria-label={`Close ${name}`} onClick={() => void closeWorkspaceTerminal(workspace.id, terminal.id)}><X size={12} /></button>}</li>;
 }
 
-export function WorkspacePageSwitcher({ workspace }: { workspace: WorkspaceTab }) {
+function PageDropButton({ workspace, pageId, index }: { workspace: WorkspaceTab; pageId?: string; index?: number }) {
   const select = useWorkspaceStore((state) => state.selectWorkspacePage);
   const add = useWorkspaceStore((state) => state.addWorkspacePage);
+  const { active } = useDndContext();
+  const shared = useSharedPaneDrag();
+  const capped = pageId === undefined && (workspace.pages?.length ?? 0) >= MAX_WORKSPACE_PAGES;
+  const available = shared && !capped && Boolean(currentPaneDrag(active?.data.current, workspace));
+  const { setNodeRef, isOver } = useDroppable({ id: `workspace-page-drop-${workspace.id}-${pageId ?? 'new'}`,
+    data: { intent: { kind: 'workspace-page', workspaceId: workspace.id, pageId } }, disabled: !available });
+  return <button ref={setNodeRef} type="button" className={`${available ? 'page-drop-valid' : ''}${available && isOver ? ' page-drop-over' : ''}`}
+    aria-label={pageId ? `Page ${index! + 1}` : 'Add page'} title={pageId ? undefined : 'Add page'}
+    aria-current={pageId && pageId === workspace.activePageId ? 'page' : undefined} disabled={capped}
+    onClick={() => pageId ? select(workspace.id, pageId) : add(workspace.id)}>
+    {pageId ? index! + 1 : <Plus size={12} />}
+  </button>;
+}
+
+export function WorkspacePageSwitcher({ workspace }: { workspace: WorkspaceTab }) {
   const remove = useWorkspaceStore((state) => state.removeWorkspacePage);
   const pages = workspace.pages ?? [];
   const minimized = workspace.minimizedPanes ?? [];
@@ -42,8 +60,8 @@ export function WorkspacePageSwitcher({ workspace }: { workspace: WorkspaceTab }
   const selected = activePage(workspace);
   const removable = pages.length > 1 && !selected?.layoutRoot && !minimized.some((entry) => entry.pageId === selected?.id);
   return <nav className="workspace-page-switcher" aria-label="Workspace pages">
-    {pages.map((page, index) => <button key={page.id} type="button" aria-label={`Page ${index + 1}`} aria-current={page.id === workspace.activePageId ? 'page' : undefined} onClick={() => select(workspace.id, page.id)}>{index + 1}</button>)}
-    <button type="button" aria-label="Add page" title="Add page" disabled={pages.length >= MAX_WORKSPACE_PAGES} onClick={() => add(workspace.id)}><Plus size={12} /></button>
+    {pages.map((page, index) => <PageDropButton key={page.id} workspace={workspace} pageId={page.id} index={index} />)}
+    <PageDropButton workspace={workspace} />
     {pages.length > 1 && <button type="button" aria-label="Remove empty page" title={removable ? 'Remove empty page' : 'Only empty pages can be removed'} disabled={!removable} onClick={() => selected && remove(workspace.id, selected.id)}><X size={12} /></button>}
     {minimized.length > 0 && <details className="minimized-pane-menu" onToggle={(event) => setMenuOpen(event.currentTarget.open)}><summary title="Minimized panes">Minimized · {minimized.length}</summary><ul aria-label="Minimized panes">{minimized.map((entry) => <MinimizedPaneEntry key={entry.paneId} workspace={workspace} entry={entry} />)}</ul></details>}
   </nav>;

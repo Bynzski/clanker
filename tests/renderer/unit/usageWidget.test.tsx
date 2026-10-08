@@ -47,5 +47,11 @@ describe('UsageWidget', () => {
     const chip = screen.getByRole('button', { name: 'Usage' }).querySelector('.usage-chip')!;
     expect(chip.textContent).toBe('83%3h');
     expect(chip.className).toContain('ok');
+    const meter = chip.querySelector('.usage-chip-meter')!;
+    expect(meter.children[0]).toHaveClass('usage-chip-percent');
+    expect(meter.children[0]).toHaveTextContent('83%');
+    expect(meter.children[1]).toHaveClass('usage-chip-bar');
+    expect(chip.querySelector('.harness-logo-icon')).not.toBeNull();
+    expect(chip.querySelector('.usage-chip-time')).toHaveTextContent('3h');
   });
 });

@@ -7,15 +7,18 @@ const EDGES: DockEdge[] = ['left', 'right', 'top', 'bottom'];
 interface DockEdgeTargetsProps {
   activeIntent: PaneDropTarget | null;
   isDragging: boolean;
+  scopeId?: string;
 }
 
-function DockEdgeTargetsImpl({ activeIntent, isDragging }: DockEdgeTargetsProps) {
+function DockEdgeTargetsImpl({ activeIntent, isDragging, scopeId }: DockEdgeTargetsProps) {
   return (
     <div className={`dock-edge-overlay${isDragging ? ' dragging' : ''}`} aria-hidden="true">
       {EDGES.map((edge) => (
         <WorkspaceEdgeTarget
           key={edge}
           edge={edge}
+          scopeId={scopeId}
+          disabled={!isDragging}
           isActive={activeIntent?.kind === 'workspace-edge' && activeIntent.edge === edge}
         />
       ))}
@@ -26,11 +29,12 @@ function DockEdgeTargetsImpl({ activeIntent, isDragging }: DockEdgeTargetsProps)
 export const DockEdgeTargets = memo(DockEdgeTargetsImpl);
 DockEdgeTargets.displayName = 'DockEdgeTargets';
 
-function WorkspaceEdgeTarget({ edge, isActive }: { edge: DockEdge; isActive: boolean }) {
+function WorkspaceEdgeTarget({ edge, isActive, scopeId, disabled }: { edge: DockEdge; isActive: boolean; scopeId?: string; disabled: boolean }) {
   const intent: PaneDropTarget = { kind: 'workspace-edge', edge };
   const droppable = useDroppable({
-    id: `workspace-edge-${edge}`,
+    id: `workspace-edge-${scopeId ? `${scopeId}-` : ''}${edge}`,
     data: { intent },
+    disabled,
   });
 
   return (

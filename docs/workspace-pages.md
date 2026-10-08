@@ -8,6 +8,13 @@ notes and services. A page owns **presentation**, not processes or filesystem au
 - The status-bar `1 2 … +` switcher selects or creates pages (maximum nine).
 - New pages start empty. The `×` removes only an empty page; the last page and minimized-pane
   restore destinations cannot be removed. Pending launches reserve a pane, so their page is not empty.
+- Drag a tiled pane by its existing header onto a numbered page to move it within the same
+  workspace, or onto `+` to create a destination (up to nine). Drop selects that page and reveals
+  the pane; terminal/conversation/checkout identity, Browser tabs, dirty buffers and notes stay intact.
+  Valid targets highlight during dragging. Pending launch/resume placeholders remain reserved, and
+  maximized-source topology edits stay disabled. Existing within-page docking remains unchanged.
+- The selected page uses a theme-accent inset border/background, without changing button/footer size.
+  Usage percentages sit above their bars in the existing 20px widget height; provider icons/status/time remain.
 - Pane headers offer Minimize and Maximize/Restore size. Maximize is temporary, per-page, and
   leaves the split tree, ratios, revision and undo history untouched. Layout edits are disabled
   until size is restored. Switching pages retains each page's maximize state.
@@ -33,7 +40,10 @@ Workspace page controls/commands do not act on a parked workspace while an Assis
 `workspacePageActions.ts` owns the small page action layer. Existing layout writers pass through
 `syncActiveWorkspace`/`patchWorkspaceById`, which synchronize the active-page compatibility fields.
 The existing split/move/dock/resize algorithms are retained; normalization excludes other pages
-and minimized panes, and undo only repairs current page membership.
+and minimized panes, and undo only repairs current page membership. `WorkspacePaneDragProvider`
+shares one drag domain with the footer; layout monitors handle their own workspace/page only.
+Workspace-edge drop ids are scoped and inactive warm surfaces are disabled. Page drop targets
+require a direct pointer hit, so they cannot steal nearest-target fallback from within-page docking.
 
 `lib/terminalRuntimeCache.ts` owns xterm buffers/readiness/disposal independently of UI imports,
 so terminal close, replacement and global output delivery do not depend on a mounted pane.
@@ -79,7 +89,10 @@ Use a temporary workspace/profile; do not alter an existing user's saved state.
 
 1. Launch two local shells/agents. Change a split ratio, create Page 2, launch another agent there.
    Switch via status-bar controls and configured shortcuts with focus in terminal, editor and Browser.
-   Verify original PTY/native conversation ids and output/attention continue unchanged.
+   Verify original PTY/native conversation ids and output/attention continue unchanged. Drag terminal,
+   Browser, editor and notes headers onto empty/populated pages and `+`; verify unique membership,
+   selected destination, dirty text/native Browser state retained, and no new/restarted processes.
+   Confirm `+` cannot create a tenth page; stale/foreign/pending/minimized/maximized sources are refused.
 2. Minimize an agent, switch pages, select its left-hand entry, and verify prior placement. Repeat
    after closing its sibling anchor. Verify all-minimized pages stay empty after Fit/Undo.
 3. Maximize one pane; switch away/back; restore size. Verify exact topology/ratios and independent
@@ -109,5 +122,8 @@ Run `npm run validate`. Real Electron checks (after build):
 The launch-race check uses the full built app and real local shell PTYs in a disposable profile/HOME.
 A test-only gate delays the real main spawn handler's response (not PTY creation); it verifies page
 capture, hidden readiness, detached cached output, zero ready background views and process death after
-workspace closure. The other checks exercise real native Browser visibility/state and xterm geometry.
+workspace closure. It also performs real pointer drags onto an empty page, `+`, and a populated
+page, preserves native Browser form/JS state and notes, and exercises within-page swapping. Active
+page dimensions/accent and representative stacked-usage CSS are checked against unchanged footer
+geometry (this is not live account telemetry). The other checks cover native visibility/state and xterm geometry.
 Live SSH/native-harness acceptance remains separate; no automated remote claim is made here.

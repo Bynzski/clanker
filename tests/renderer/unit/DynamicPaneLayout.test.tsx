@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
       setNodeRef: vi.fn(),
       transform: null as { x: number; y: number; scaleX: number; scaleY: number } | null,
     },
+    droppableCalls: [] as { id: string; disabled?: boolean }[],
     droppableReturn: {
       setNodeRef: vi.fn(),
       isOver: false,
@@ -68,7 +69,7 @@ vi.mock('@dnd-kit/core', () => {
     useSensor: vi.fn(() => ({})),
     useSensors: vi.fn((...args: any[]) => [...args]),
     useDraggable: vi.fn(() => mocks.draggableReturn),
-    useDroppable: vi.fn(() => mocks.droppableReturn),
+    useDroppable: vi.fn((options) => { mocks.droppableCalls.push(options); return mocks.droppableReturn; }),
   };
 });
 /* eslint-enable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
@@ -215,6 +216,41 @@ const resetNoop = (...args: unknown[]): unknown => { void args; return undefined
 // Tests
 // ---------------------------------------------------------------------------
 describe('DynamicPaneLayout', () => {
+  it('namespaces workspace-edge targets and leaves warm background workspaces disabled', () => {
+    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true); installElectronApiMock();
+    const state = useWorkspaceStore.getState();
+    for (const id of ['cold', 'hot']) state.addWorkspace(createWorkspaceFixture({ id,
+      terminals: [{ id: `${id}-t`, pid: 1, workingDir: '/workspace' }], panes: [{ id: `${id}-p`, terminalId: `${id}-t` }] }));
+    const cold = useWorkspaceStore.getState().getWorkspaceById('cold')!;
+    const hot = useWorkspaceStore.getState().getWorkspaceById('hot')!;
+    mocks.droppableCalls.length = 0;
+    render(<><DynamicPaneLayout workspaceId="cold" /><DynamicPaneLayout workspaceId="hot" /></>);
+    act(() => { mocks.dndCallbacks.onDragStart({ active: { id: 'hot-p', data: { current: { paneId: 'hot-p', workspaceId: 'hot', pageId: hot.activePageId } } } }); });
+    const coldId = `workspace-edge-cold:${cold.activePageId}-left`, hotId = `workspace-edge-hot:${hot.activePageId}-left`;
+    expect(mocks.droppableCalls.filter(call => call.id === coldId).slice(-1)[0]?.disabled).toBe(true);
+    expect(mocks.droppableCalls.filter(call => call.id === hotId).slice(-1)[0]?.disabled).toBe(false);
+  });
+  it('routes a footer page drop to membership movement, not within-page docking', () => {
+    useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+    installElectronApiMock();
+    useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({ id: 'drag-w', terminals: [{ id: 't1', pid: 1, workingDir: '/workspace' }],
+      panes: [{ id: 'p1', terminalId: 't1' }] }));
+    const source = useWorkspaceStore.getState().getWorkspaceById('drag-w')!.activePageId!;
+    useWorkspaceStore.getState().addWorkspacePage('drag-w');
+    const target = useWorkspaceStore.getState().getWorkspaceById('drag-w')!.activePageId!;
+    useWorkspaceStore.getState().selectWorkspacePage('drag-w', source);
+    render(<DynamicPaneLayout workspaceId="drag-w" />);
+    const active = { id: 'p1', data: { current: { paneId: 'p1', workspaceId: 'drag-w', pageId: source } } };
+    act(() => { mocks.dndCallbacks.onDragStart({ active }); });
+    act(() => { mocks.dndCallbacks.onDragEnd({ active, over: { id: 'workspace-page-drop-drag-w-target',
+      data: { current: { intent: { kind: 'workspace-page', workspaceId: 'drag-w', pageId: target } } } } }); });
+    const moved = useWorkspaceStore.getState().getWorkspaceById('drag-w')!;
+    expect(moved.activePageId).toBe(target);
+    expect(moved.layoutRoot).toMatchObject({ type: 'leaf', paneId: 'p1' });
+    expect(moved.terminals[0].pid).toBe(1);
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+    expect(window.electronAPI.killTerminal).not.toHaveBeenCalled();
+  });
   it('mounts only pending hidden agents and drops their bootstrap surfaces immediately on readiness', async () => {
     clearTerminalCache();
     useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
@@ -1199,6 +1235,15 @@ describe('DynamicPaneLayout', () => {
       expect(mocks.closestCorners).not.toHaveBeenCalled();
     });
 
+    it('prioritizes direct footer hits and excludes them from pointer-only nearest layout fallback', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1')); render(<DynamicPaneLayout />);
+      mocks.pointerWithin.mockReturnValue([{ id: 'workspace-edge-left' }, { id: 'workspace-page-drop-w-page2' }]);
+      expect((mocks.dndCallbacks.collisionDetection({}) as { id: string }[])[0].id).toBe('workspace-page-drop-w-page2');
+      mocks.pointerWithin.mockReturnValue([]);
+      mocks.dndCallbacks.collisionDetection({ pointerCoordinates: { x: 5, y: 5 },
+        droppableContainers: [{ id: 'workspace-page-drop-w-page2' }, { id: 'workspace-edge-left' }] });
+      expect(mocks.closestCorners).toHaveBeenLastCalledWith(expect.objectContaining({ droppableContainers: [{ id: 'workspace-edge-left' }] }));
+    });
     it('prioritizes workspace-edge collisions over pane zones', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);

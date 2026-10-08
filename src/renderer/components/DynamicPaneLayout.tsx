@@ -13,14 +13,12 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCorners,
-  pointerWithin,
+  useDndMonitor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
-  type CollisionDetection,
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type {
@@ -40,6 +38,8 @@ import { DockEdgeTargets } from './DockEdgeTargets';
 import { collectLeafPaneIds } from '../store/workspaceLayout';
 import { activePage, paneIsPresented } from '../store/workspacePages';
 import { PanePresentationControls } from './WorkspacePageControls';
+import { useSharedPaneDrag } from './WorkspacePaneDragProvider';
+import { currentPaneDrag, pageDropTarget, paneCollisionDetection } from '../lib/workspacePaneDrag';
 import { getTerminalReadinessRevision, subscribeTerminalReadiness, terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
 import './DynamicPaneLayout.css';
 
@@ -51,15 +51,19 @@ function isLeaf(node: LayoutNode): node is LayoutLeaf {
 
 // Wrapper that makes a pane draggable from its explicit header grip.
 function PanelWrapper({ 
-  paneId, 
-  children, 
+  paneId,
+  workspaceId,
+  pageId,
+  children,
   isDragging,
   draggedPaneId,
   dropIntent,
   interactive,
 }: { 
-  paneId: string; 
-  children: React.ReactNode; 
+  paneId: string;
+  workspaceId?: string;
+  pageId?: string;
+  children: React.ReactNode;
   isDragging: boolean;
   draggedPaneId: string | null;
   dropIntent: PaneDropTarget | null;
@@ -67,7 +71,7 @@ function PanelWrapper({
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({
     id: paneId,
-    data: { paneId },
+    data: { paneId, workspaceId, pageId },
     disabled: !interactive,
   });
 
@@ -220,10 +224,13 @@ function LeafView({
   return (
     <PanelWrapper
       paneId={paneId}
+      workspaceId={workspace?.id}
+      pageId={workspace?.activePageId}
       isDragging={isDraggingThis}
       draggedPaneId={draggedPaneId}
       dropIntent={dropIntent}
-      interactive={isInteractive && !(workspace && activePage(workspace)?.maximizedPaneId)}
+      interactive={isInteractive && !(workspace && activePage(workspace)?.maximizedPaneId)
+        && !workspace?.panes.some((pane) => pane.id === paneId && !pane.terminalId)}
     >
       <ErrorBoundary paneId={paneId}>
         {workspace && workspace.browserPane?.id !== paneId && !workspace.panes.some((pane) => pane.id === paneId) && isInteractive && <div className="utility-presentation-controls"><PanePresentationControls workspace={workspace} paneId={paneId} /></div>}
@@ -425,6 +432,7 @@ function parseDockDropId(overId: string): ParsedDockTarget | null {
 
 function getDropIntent(over: DragOverEvent['over'] | DragEndEvent['over']): PaneDropTarget | null {
   if (over == null) return null;
+  if (pageDropTarget(over.data?.current?.intent)) return null;
   const intent = over.data?.current?.intent as PaneDropTarget | undefined;
   if (intent) return intent;
 
@@ -446,20 +454,23 @@ function getDropIntent(over: DragOverEvent['over'] | DragEndEvent['over']): Pane
     : { kind: 'pane-center', targetPaneId: overId };
 }
 
-const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
-  const pointerCollisions = pointerWithin(args);
-  if (pointerCollisions.length > 0) {
-    return [...pointerCollisions].sort((a, b) => {
-      const aIsWorkspaceEdge = String(a.id).startsWith('workspace-edge-');
-      const bIsWorkspaceEdge = String(b.id).startsWith('workspace-edge-');
-      if (aIsWorkspaceEdge === bIsWorkspaceEdge) {
-        return 0;
-      }
-      return aIsWorkspaceEdge ? -1 : 1;
-    });
-  }
-  return closestCorners(args);
-};
+interface PaneDragEvents {
+  onDragStart(event: DragStartEvent): void;
+  onDragOver(event: DragOverEvent): void;
+  onDragEnd(event: DragEndEvent): void;
+  onDragCancel(): void;
+}
+function PaneDragMonitor({ events, children }: { events: PaneDragEvents; children: React.ReactNode }) {
+  useDndMonitor(events);
+  return <>{children}</>;
+}
+function PaneDragScope({ events, children }: { events: PaneDragEvents; children: React.ReactNode }) {
+  const shared = useSharedPaneDrag();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor));
+  // Standalone embeddings/tests retain the original local drag domain; App shares it with the footer.
+  return shared ? <PaneDragMonitor events={events}>{children}</PaneDragMonitor>
+    : <DndContext sensors={sensors} collisionDetection={paneCollisionDetection} {...events}>{children}</DndContext>;
+}
 
 function getPaneLabel(workspace: WorkspaceTab | null, paneId: string): string {
   if (workspace?.browserPane?.id === paneId) return 'Browser';
@@ -490,6 +501,7 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const movePane = useWorkspaceStore((state) => state.movePane);
+  const moveToPage = useWorkspaceStore((state) => state.movePaneToWorkspacePage);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const scopedWorkspaceId = workspace?.id;
@@ -504,15 +516,6 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
   const [dropIntent, setDropIntent] = useState<PaneDropTarget | null>(null);
   const browserOverlayHeldRef = useRef(false);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5, // Require 5px movement before activating drag
-      },
-    }),
-    useSensor(KeyboardSensor),
-  );
-
   const releaseBrowserOverlay = useCallback(() => {
     if (!browserOverlayHeldRef.current || !scopedWorkspaceId) return;
     browserOverlayHeldRef.current = false;
@@ -523,9 +526,7 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
   const dragPageRef = useRef<string | undefined>(undefined);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    if (!isInteractive) {
-      return;
-    }
+    if (!isInteractive || (event.active.data?.current && (!workspace || !currentPaneDrag(event.active.data.current, workspace)))) return;
     dragPageRef.current = pageId;
     setActivePaneId(event.active.id as string);
     setDropIntent(null);
@@ -534,7 +535,7 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
       pushBrowserOverlay(scopedWorkspaceId);
       void window.electronAPI.browserHide(scopedWorkspaceId);
     }
-  }, [hasVisibleBrowser, isInteractive, pushBrowserOverlay, scopedWorkspaceId, pageId]);
+  }, [hasVisibleBrowser, isInteractive, pushBrowserOverlay, scopedWorkspaceId, pageId, workspace]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     if (!isInteractive) {
@@ -551,15 +552,16 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
       return;
     }
     const activeId = event.active.id as string;
+    const destination = pageDropTarget(event.over?.data?.current?.intent);
     const intent = getDropIntent(event.over);
-    if (intent && dragPageRef.current === (scopedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(scopedWorkspaceId)?.activePageId : pageId)) {
-      movePane(activeId, intent, workspaceId);
-    }
-
     setActivePaneId(null);
     setDropIntent(null);
     releaseBrowserOverlay();
-  }, [isInteractive, movePane, releaseBrowserOverlay, workspaceId, scopedWorkspaceId, pageId]);
+    if (dragPageRef.current !== (scopedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(scopedWorkspaceId)?.activePageId : pageId)) return;
+    if (destination && scopedWorkspaceId && destination.workspaceId === scopedWorkspaceId && dragPageRef.current) {
+      moveToPage(scopedWorkspaceId, activeId, destination.pageId, dragPageRef.current);
+    } else if (intent) movePane(activeId, intent, workspaceId);
+  }, [isInteractive, movePane, moveToPage, releaseBrowserOverlay, workspaceId, scopedWorkspaceId, pageId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
@@ -580,21 +582,14 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
   }
 
   return (
-    <DndContext
-      key={pageId}
-      sensors={sensors}
-      collisionDetection={edgeFriendlyCollisionDetection}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
+    <PaneDragScope events={{ onDragStart: handleDragStart, onDragOver: handleDragOver, onDragEnd: handleDragEnd, onDragCancel: handleDragCancel }}>
       <div className="dynamic-pane-layout" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
         {workspace && <BackgroundTerminals workspace={workspace} visibleIds={visibleIds} />}
         <div className="split-root">
           {renderLayout(workspaceId, presentationRoot, activePaneId, dropIntent)}
         </div>
         <DockEdgeTargets
+          scopeId={`${scopedWorkspaceId}:${pageId}`}
           activeIntent={dropIntent}
           isDragging={isInteractive && !maximizedPaneId && activePaneId != null}
         />
@@ -607,6 +602,6 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
           </div>
         ) : null}
       </DragOverlay>
-    </DndContext>
+    </PaneDragScope>
   );
 }

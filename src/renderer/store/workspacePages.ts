@@ -90,6 +90,32 @@ export function retainSelectedPage(previous: WorkspaceTab, updated: WorkspaceTab
   return { ...selectPage(updated, previous.activePageId), fileSurfaceContextId: previous.fileSurfaceContextId };
 }
 
+/** Move one live tiled resource; membership changes, never resource identity or process ownership. */
+export function movePaneToPage(workspace: WorkspaceTab, paneId: string, destinationId: string | undefined, sourcePageId: string): WorkspaceTab {
+  const source = activePage(workspace);
+  if (!source || source.id !== sourcePageId || source.maximizedPaneId || !collectLeafPaneIds(source.layoutRoot).includes(paneId)) return workspace;
+  const pane = workspace.panes.find((entry) => entry.id === paneId);
+  // Pending launch/resume placeholders cannot change their reserved destination mid-handshake.
+  if (pane && !pane.terminalId) return workspace;
+  let pages = workspace.pages!;
+  let destination = pages.find((page) => page.id === destinationId);
+  if (destinationId === undefined) {
+    if (pages.length >= MAX_WORKSPACE_PAGES) return workspace;
+    destination = { id: `${workspace.id}::${crypto.randomUUID()}`, layoutRoot: null, layoutRevision: 0, layoutUndoStack: [], activeTerminalId: null };
+    pages = [...pages, destination];
+  }
+  if (!destination || destination === source) return workspace;
+  const target = selectPage({ ...workspace, pages }, destination.id);
+  const layoutRoot = insertPaneIntoLayout(destination.layoutRoot, paneId, {
+    ...target, explorerPane: target.explorerPane ?? null, notesPane: target.notesPane ?? null, notesVisible: target.notesVisible ?? false,
+  });
+  pages = pages.map((page) => page.id === source.id
+    ? { ...page, layoutRoot: removePaneFromLayout(source.layoutRoot, paneId), layoutRevision: page.layoutRevision + 1 }
+    : page.id === destination.id ? { ...page, layoutRoot, layoutRevision: page.layoutRevision + 1,
+      activeTerminalId: pane?.terminalId ?? page.activeTerminalId, maximizedPaneId: undefined, focusBeforeMaximize: undefined } : page);
+  return selectPage({ ...workspace, pages }, destination.id);
+}
+
 export function minimizePane(workspace: WorkspaceTab, paneId: string): WorkspaceTab {
   if (!workspace.activePageId || !collectLeafPaneIds(workspace.layoutRoot).includes(paneId)) return workspace;
   return { ...workspace, layoutRoot: removePaneFromLayout(workspace.layoutRoot, paneId),

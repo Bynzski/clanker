@@ -77,8 +77,10 @@ export default function UsageWidget() {
           {chips.map(({ id, option, picked }) => (
             <span key={id} className={`usage-chip ${usageTone(picked.ratio)}`}>
               <option.Icon size={11} strokeWidth={2} />
-              <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
-              <span>{picked.percent}%</span>
+              <span className="usage-chip-meter">
+                <span className="usage-chip-percent">{picked.percent}%</span>
+                <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
+              </span>
               {picked.resetsAt !== undefined && <span className="usage-chip-time">{formatResetShort(picked.resetsAt, usage.now)}</span>}
             </span>
           ))}
