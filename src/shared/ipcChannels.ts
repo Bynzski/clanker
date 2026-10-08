@@ -64,6 +64,7 @@ export const RECIPE_COMMAND_WAIT = 'recipe-command:wait';
 export const WRITE_CLIPBOARD = 'write-clipboard';
 
 // Workspace-owned, local checkout-scoped background services.
+export const WORKSPACE_SERVICE_SETTINGS_SAVE = 'workspace-service:settings-save';
 export const WORKSPACE_SERVICE_DISCOVER = 'workspace-service:discover';
 export const WORKSPACE_SERVICE_START = 'workspace-service:start';
 export const WORKSPACE_SERVICE_STOP = 'workspace-service:stop';
@@ -343,6 +344,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  WORKSPACE_SERVICE_SETTINGS_SAVE,
   WORKSPACE_SERVICE_DISCOVER,
   WORKSPACE_SERVICE_START,
   WORKSPACE_SERVICE_STOP,

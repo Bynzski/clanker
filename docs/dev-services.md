@@ -19,6 +19,70 @@ Discovery never executes a script. There is no automatic startup, arbitrary comm
 field, monorepo recursion or fallback to a `start` script. Different checkouts need
 different available ports, or a development server that chooses another port itself.
 
+## Checkout launch settings
+
+The **Configure Dev Server** button beside Run opens settings for that conversation’s
+registered checkout. Stop its server first. Enter non-secret environment variables as
+one `NAME=value` per line, then **Save settings** and choose **Run** separately.
+**Clear variables** followed by Save restores the inherited environment. Cancel saves
+nothing. Values are literal (no quoting, interpolation or dotenv parsing).
+
+Settings are stored by the canonical local checkout directory, not a conversation,
+branch or runtime workspace id. Conversations in the same checkout share them; other
+checkouts do not inherit them. Closing/reopening the workspace or restarting Clanker
+retains settings, but never starts a server. Re-adopting or reusing the same directory
+also retains its configuration; review or clear it when repurposing that directory.
+No tracked files or `.env` files are read or rewritten by this feature. Settings apply
+only to the headless dev command and its children, never agent terminals or dependency
+installation shells. Run/settings tooltips list configured variable names, not values;
+runtime snapshots and failure reports do not include configured values. Settings are
+plain-text local preferences, **not a credential store**. Project output may itself
+print environment values, so never enter secrets.
+
+For a project with a frontend, backend and development proxy, configure a coordinated
+port pair. For example, **if the project implements this environment contract**:
+
+```text
+PORT=8788
+VITE_DEV_PORT=5174
+VITE_BACKEND_PORT=8788
+```
+
+The backend must read `PORT`, the frontend must read `VITE_DEV_PORT`, and the frontend
+proxy must read `VITE_BACKEND_PORT`. These names are illustrative, not special Clanker
+variables: a hard-coded Vite config will not change merely because they are set.
+Clanker does not infer monorepo topology, append arbitrary flags, allocate ports,
+retry on another port or kill an existing listener. Use different pairs for concurrent
+checkouts and preserve strict-port errors to avoid silently routing to the wrong app.
+
+Main validates at most 32 variables, 64-character names, 1,024-character single-line
+values and 8 KiB total UTF-8 content. Reserved system/toolchain and Clanker credential
+variables are refused case-insensitively. Windows overrides inherited project keys
+case-insensitively. Settings updates require authoritative checkout/command identity
+and the last-discovered configuration fingerprint; stale edits or launches fail
+without applying a different configuration. Successful saves publish bounded checkout
+path/fingerprint metadata through the existing revision-ordered service bridge. All
+rows using the canonical root rediscover (including rows in another workspace);
+unrelated configured roots are not invalidated. Clearing settings also invalidates
+the root. Run is disabled until stale discovery refreshes; failed launches are never
+automatically retried.
+
+An already-open settings dialog stays open if another conversation starts the server.
+Its unsaved buffer is preserved, Save is disabled with a Stop-first explanation, and
+Save becomes available again after verified cleanup. Explicit Cancel/Close dismisses
+it; stopping a server never reopens it. Row refreshes do not rebase a dialog's editing
+fingerprint or replace its buffer, so a concurrent save still fails safely. Pending, live or incompletely cleaned-up
+services block edits, including a service from another workspace using the same root.
+Stored configuration is bounded to 512 checkout roots; invalid persistence fails
+closed. SSH configuration is not supported.
+
+**Tracked follow-up: unused settings management.** Deleted worktree directories leave
+configuration records behind, and the current UI cannot clear an unavailable root.
+Add a bounded preferences view to identify missing local directories and explicitly
+remove their settings, without deleting records automatically or discarding settings
+for existing but unregistered checkouts. This is separate from service lifecycle and
+is not implemented here; regular worktree use can eventually reach the 512-root cap.
+
 ## Dependencies and failures
 
 A fresh worktree does not inherit ignored dependencies or `.env` files. If dependencies

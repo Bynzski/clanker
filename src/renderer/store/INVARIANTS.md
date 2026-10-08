@@ -37,6 +37,14 @@ as checkout-labelled rows. Main counts pending/live service processes as checkou
 renderer-only inactive checkout row cannot bypass removal protections. Browser handoff re-probes
 readiness and respects newer destination/service selections.
 
+Successful checkout settings saves include a bounded cumulative root/fingerprint manifest in the
+same ordered snapshots (never values). Rows compare canonical local path keys and rediscover only
+when their root fingerprint changes; clearing a root uses the manifest's empty/default fingerprint.
+This metadata invalidates presentation only, never authorizes launches. Run is disabled until stale
+discovery refreshes; there is no automatic retry. Open settings dialogs pin the explicitly opened
+command/terminal and their original editing fingerprint: refreshes cannot replace dirty text, and a
+service becoming live disables Save without unmounting the dialog or making it reopen on Stop.
+
 ## Workspace Lifecycle Model
 
 ### Lifecycle Vocabulary

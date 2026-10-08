@@ -7,8 +7,9 @@ import type { WorkspaceRegistry, RegisteredWorkspace } from '../workspaceRegistr
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { AgentLocation } from '../../shared/types/agentAttention';
 import type { TerminalUsage } from '../checkoutContextRelease';
-import type { DevServiceTarget, DevServiceStartRequest, DevServiceDiscoveryResult, WorkspaceService, WorkspaceServicesUpdate, WorkspaceServiceResult } from '../../shared/types/workspaceServices';
+import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, DevServiceSettingsSnapshot, DevServiceDiscoveryResult, WorkspaceService, WorkspaceServicesUpdate, WorkspaceServiceResult } from '../../shared/types/workspaceServices';
 import { discoverDevCommand } from './devCommandDiscovery';
+import { applyDevServiceEnvironment, DevServiceSettings } from './devServiceSettings';
 import { resolveHarnessPtySpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import { normalizeWorkspacePath } from '../../shared/workspaceIdentity';
@@ -75,8 +76,11 @@ export class WorkspaceServiceManager {
   private readonly runtimes = new Map<string, Runtime>();
   private revision = 0;
   private closed = false;
+  private readonly settings: DevServiceSettings;
+  private settingsSnapshot?: DevServiceSettingsSnapshot;
   constructor(private readonly deps: {
     registry: WorkspaceRegistry;
+    settings?: DevServiceSettings;
     getTerminal: (id: string) => ServiceTerminal | undefined;
     getLocation: (id: string) => AgentLocation | null;
     isShuttingDown: () => boolean;
@@ -90,7 +94,7 @@ export class WorkspaceServiceManager {
     timing?: { graceMs?: number; killMs?: number; pollMs?: number };
     /** Test seam for synthetic registry roots; production always resolves the physical root. */
     canonicalRoot?: (registeredPath: string) => string;
-  }) {}
+  }) { this.settings = deps.settings ?? new DevServiceSettings(); }
 
   snapshot(): WorkspaceServicesUpdate {
     // Completed diagnostics need not outlive their checkout or originating conversation.
@@ -103,7 +107,8 @@ export class WorkspaceServiceManager {
       }
     }
     if (removed) this.revision++;
-    return { revision: this.revision, services: [...this.runtimes.values()].map(({ service }) => ({ ...service })) };
+    return { revision: this.revision, services: [...this.runtimes.values()].map(({ service }) => ({ ...service })),
+      ...(this.settingsSnapshot ? { settings: { ...this.settingsSnapshot, checkouts: this.settingsSnapshot.checkouts.map((entry) => ({ ...entry })) } } : {}) };
   }
   private publish() { this.revision++; this.deps.changed(this.snapshot()); }
   /** Include both pending launches and live services in checkout release/removal checks. */
@@ -139,8 +144,34 @@ export class WorkspaceServiceManager {
       const target = this.resolve(request);
       const command = await discoverDevCommand(target.workspace.environment, target.context);
       this.recheck(request, target);
-      return { success: true, command: command ? { ...command, cwd: target.canonicalRoot } : undefined };
+      const settings = this.settings.get(target.canonicalRoot);
+      return { success: true, command: command ? { ...command, cwd: target.canonicalRoot, settingsRevision: settings.settingsRevision, environmentKeys: Object.keys(settings.environment) } : undefined, environment: settings.environment };
     } catch (error) { return { success: false, error: message(error) }; }
+  }
+
+  async saveSettings(request: DevServiceSettingsRequest): Promise<DevServiceDiscoveryResult> {
+    try {
+      const target = this.resolve(request);
+      this.confirmSettingsTarget(request, target);
+      const command = await discoverDevCommand(target.workspace.environment, target.context);
+      this.recheck(request, target);
+      if (!command || command.command !== request.command) throw new Error('Dev command changed; discover it again');
+      this.confirmSettingsTarget(request, target);
+      if ([...this.runtimes.values()].some((entry) => !entry.exited && entry.service.cwd === target.canonicalRoot)) {
+        throw new Error('Stop the checkout dev server before changing settings');
+      }
+      // No await between live-service check, compare-and-set and persistence.
+      this.settings.set(target.canonicalRoot, request.settingsRevision, request.environment);
+      const settings = this.settings.get(target.canonicalRoot);
+      // Full, bounded metadata survives missed/reordered pushes and clearing a root; values stay in main.
+      this.settingsSnapshot = this.settings.revisions();
+      this.publish();
+      return { success: true, command: { ...command, cwd: target.canonicalRoot, settingsRevision: settings.settingsRevision, environmentKeys: Object.keys(settings.environment) }, environment: settings.environment };
+    } catch (error) { return { success: false, error: message(error) }; }
+  }
+  private confirmSettingsTarget(request: DevServiceStartRequest, target: Target): void {
+    if (request.checkoutContextId !== target.context.id || request.cwd !== target.canonicalRoot) throw new Error('Terminal checkout changed; discover the dev command again');
+    if (!this.settings.matches(target.canonicalRoot, request.settingsRevision)) throw new Error('Dev server settings changed; discover the dev command again');
   }
 
   async start(request: DevServiceStartRequest): Promise<WorkspaceServiceResult> {
@@ -148,7 +179,7 @@ export class WorkspaceServiceManager {
     try {
       this.snapshot(); // Retire completed orphan records before applying the global bound.
       const target = this.resolve(request);
-      if (request.checkoutContextId !== target.context.id || request.cwd !== target.canonicalRoot) throw new Error('Terminal checkout changed; discover the dev command again');
+      this.confirmSettingsTarget(request, target);
       for (;;) { // Everything up to the reservation below is synchronous, so concurrent Starts cannot both pass it.
         const existing = [...this.runtimes.values()].find((entry) => entry.service.workspaceId === request.workspaceId && entry.service.checkoutContextId === target.context.id);
         if (!existing) break;
@@ -177,9 +208,11 @@ export class WorkspaceServiceManager {
       // Physical-root identity is also checked by recheck: symlink retargeting cannot redirect a launch.
       if (normalizeWorkspacePath(validation.resolvedPath) !== target.context.path) throw new Error('Checkout root changed');
       if (runtime.cancelled || this.closed || this.runtimes.get(id) !== runtime) throw new Error('Dev server start was cancelled');
-      runtime.service = { ...runtime.service, ...command, cwd: target.canonicalRoot };
+      this.confirmSettingsTarget(request, target);
+      const settings = this.settings.get(target.canonicalRoot);
+      runtime.service = { ...runtime.service, ...command, cwd: target.canonicalRoot, settingsRevision: settings.settingsRevision, environmentKeys: Object.keys(settings.environment) };
       const env = withoutAgentBridgeEnvironment(withoutAttentionEnvironment({
-        ...process.env as Record<string, string>, PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
+        ...applyDevServiceEnvironment(process.env, settings.environment), PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'clanker-grid', FORCE_COLOR: '1',
       }));
       const args = command.packageManager === 'yarn' ? ['dev'] : ['run', 'dev'];

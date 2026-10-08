@@ -15,6 +15,37 @@ own `npm run dev` as the fixture: that starts another Electron application.
 4. Collapse the sidebar to the rail: existing agent/branch tooltips remain intact;
    full service controls intentionally live in the expanded sidebar only.
 
+## Checkout settings
+
+Use a fixture whose dev script reads explicit frontend/backend/proxy port variables.
+
+1. Open Configure Dev Server for the main checkout. Save one available port pair.
+   Repeat for the isolated checkout with a different pair. Run both and verify each
+   Browser preview reaches its own backend (not just the matching frontend).
+2. Confirm Save alone starts nothing and changes no repository files. Cancel an edit;
+   reopen and verify it was not saved. Clear variables and Save to reset defaults.
+3. Restart Clanker and reopen/re-adopt the same checkouts. Settings should remain;
+   services must remain stopped until explicitly run.
+4. Try PATH, NODE_OPTIONS and CLANKER_MCP_TOKEN, a duplicate key, a multiline/control
+   value, and too many variables. All should be refused. Do not use real secrets.
+5. Two agents in the same checkout share configuration. Open settings from both;
+   save one, then try saving the other stale dialog. The second save must fail without
+   overwriting the first. Its typed buffer remains visible.
+6. Start the checkout while its settings dialog is open elsewhere. The dialog must
+   stay open with its unsaved buffer intact; Save is disabled with a Stop-first message
+   throughout starting/running/stopping and incomplete cleanup. Stop the service and
+   confirm Save becomes available without changing the text. Explicitly Cancel,
+   start/stop again and verify the dialog does not reappear. A native location change or released context
+   must also invalidate the old settings action. No settings may move to another root.
+7. Save from one agent and verify another agent in the same canonical checkout
+   (also via a second workspace pointing there) refreshes its discovery before Run.
+   During delayed rediscovery, Run is disabled. The next explicit Run confirms the
+   new fingerprint without a stale-settings error. Clearing variables must propagate
+   too. Unrelated checkouts keep their discovery; an already-open sibling dialog keeps
+   its own editing fingerprint and buffer. Never retry a failed launch automatically.
+8. Run a hard-coded strict-port fixture twice: it still fails clearly. Settings are an
+   explicit project contract, not generic automatic port assignment.
+
 ## Independent checkout services
 
 1. Each eligible conversation shows `Dev Server · npm run dev` (or its inferred
