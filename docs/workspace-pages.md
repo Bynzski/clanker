@@ -47,6 +47,8 @@ and minimized panes, and undo only repairs current page membership. `WorkspacePa
 shares one drag domain with the footer; layout monitors handle their own workspace/page only.
 Workspace-edge drop ids are scoped and inactive warm surfaces are disabled. Page drop targets
 require a direct pointer hit, so they cannot steal nearest-target fallback from within-page docking.
+Pointer drops elsewhere in the status bar (including disabled `+` at nine pages) cancel instead of
+falling back to a nearby docking target. Keyboard and within-layout collision behavior is unchanged.
 
 `lib/terminalRuntimeCache.ts` owns xterm buffers/readiness/disposal independently of UI imports,
 so terminal close, replacement and global output delivery do not depend on a mounted pane.
@@ -126,7 +128,9 @@ The launch-race check uses the full built app and real local shell PTYs in a dis
 A test-only gate delays the real main spawn handler's response (not PTY creation); it verifies page
 capture, hidden readiness, detached cached output, zero ready background views and process death after
 workspace closure. It also performs real pointer drags onto an empty page, `+`, and a populated
-page, preserves native Browser form/JS state and notes, and exercises within-page swapping. Active
+page, preserves native Browser form/JS state and notes, and exercises within-page swapping.
+At nine pages, real drops onto disabled `+` and the non-target Ready footer region leave topology,
+page selection and resource identity unchanged. Representative pinned usage CSS also fits an 800px footer. Active
 page dimensions/accent and representative stacked-usage CSS are checked against unchanged footer
 geometry, including a fixed 26px footer and last-resort label truncation under space pressure
 (this is not live account telemetry). The other checks cover native visibility/state and xterm geometry.

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
+import { closestCorners, pointerWithin } from '@dnd-kit/core';
+import { paneCollisionDetection } from '../../../src/renderer/lib/workspacePaneDrag';
 import { WorkspacePageSwitcher } from '../../../src/renderer/components/WorkspacePageControls';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -27,6 +29,10 @@ afterEach(cleanup);
 function actor(workspaceId = 'w', pageId = workspace().activePageId) {
   drag.active = { data: { current: { workspaceId, pageId, paneId: 'p1' } } };
 }
+function collisionArgs(x: number, y: number): Parameters<typeof paneCollisionDetection>[0] {
+  return { active: { id: 'p1', data: { current: {} }, rect: { current: { initial: null, translated: null } } },
+    collisionRect: new DOMRect(0, 0, 100, 100), droppableRects: new Map(), droppableContainers: [], pointerCoordinates: { x, y } };
+}
 describe('footer page drop targets', () => {
   it('highlights only a current same-workspace drag and supplies the exact destination identity', () => {
     const source = workspace().activePageId!;
@@ -49,9 +55,24 @@ describe('footer page drop targets', () => {
     const source = workspace().activePageId!;
     while (workspace().pages!.length < 9) store().addWorkspacePage('w');
     store().selectWorkspacePage('w', source); actor();
-    render(<WorkspacePageSwitcher workspace={workspace()} />);
+    const { container } = render(<footer className="status-bar"><WorkspacePageSwitcher workspace={workspace()} /></footer>);
+    vi.spyOn(container.querySelector('.status-bar')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 1200, 26));
     expect(screen.getByRole('button', { name: 'Add page' })).toBeDisabled();
     expect(drag.targets.get('workspace-page-drop-w-new')?.disabled).toBe(true);
     expect(drag.targets.size).toBe(10);
+    vi.mocked(pointerWithin).mockReturnValue([]);
+    vi.mocked(closestCorners).mockClear().mockReturnValue([{ id: 'workspace-edge-left' }]);
+    const collisions = paneCollisionDetection(collisionArgs(300, 513));
+    expect(collisions).toEqual([]);
+    expect(closestCorners).not.toHaveBeenCalled();
+  });
+  it('rejects layout hits over other footer regions but permits enabled page hits', () => {
+    const { container } = render(<footer className="status-bar"><WorkspacePageSwitcher workspace={workspace()} /></footer>);
+    vi.spyOn(container.querySelector('.status-bar')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 1200, 26));
+    const args = collisionArgs(1100, 513);
+    vi.mocked(pointerWithin).mockReturnValue([{ id: 'workspace-edge-bottom' }]);
+    expect(paneCollisionDetection(args)).toEqual([]);
+    vi.mocked(pointerWithin).mockReturnValue([{ id: 'workspace-page-drop-w-new' }]);
+    expect(paneCollisionDetection(args)).toEqual([{ id: 'workspace-page-drop-w-new' }]);
   });
 });

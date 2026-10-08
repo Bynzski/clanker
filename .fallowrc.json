@@ -24,7 +24,8 @@
       "files": [
         "scripts/app-close-guard-smoke.cjs",
         "scripts/pi-bridge-smoke.cjs",
-        "scripts/ssh-preview-session-smoke.cjs"
+        "scripts/ssh-preview-session-smoke.cjs",
+        "scripts/workspace-pages-smoke.cjs"
       ],
       "rules": { "unresolved-imports": "off" }
     },

@@ -75,8 +75,15 @@ let app;
           && chip.getBoundingClientRect().height === 18 && getComputedStyle(chip).boxShadow !== 'none';
       });
       const afterReady = document.querySelector('.status-right > .status-item').getBoundingClientRect();
+      const originalWidth = footer.style.width; footer.style.width = '800px';
+      const left = document.querySelector('.status-left').getBoundingClientRect();
+      const middle = document.querySelector('.status-center').getBoundingClientRect();
+      const right = document.querySelector('.status-right').getBoundingClientRect();
+      const narrowFits = left.right <= middle.left && middle.right <= right.left
+        && widget.getBoundingClientRect().right <= footer.getBoundingClientRect().right;
+      footer.style.width = originalWidth;
       fixtures.forEach(chip => chip.remove());
-      return valid && box.height === 20 && before.height === 26 && after.height === 26 && before.top === after.top && ready.x === afterReady.x;
+      return valid && narrowFits && box.height === 20 && before.height === 26 && after.height === 26 && before.top === after.top && ready.x === afterReady.x;
     }), 'Grouped usage meters exceed the 26px footer, wrap, or shift Ready');
     assert(await page.evaluate(() => {
       const center = document.querySelector('.status-center'), name = center.querySelector('.status-project-name');
@@ -179,6 +186,26 @@ let app;
     await page.mouse.move(swapTo.x + swapTo.width / 2, swapTo.y + swapTo.height / 2, { steps: 15 }); await page.mouse.up();
     await until(async () => JSON.stringify(await page.locator('.terminal-title').allTextContents()) === JSON.stringify([...beforeSwap].reverse()), 'Existing within-page swap regressed');
     await pause(100);
+    for (let count = 3; count < 9; count++) await page.getByRole('button', { name: 'Add page', exact: true }).click();
+    await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+    const disabledPlus = page.getByRole('button', { name: 'Add page', exact: true });
+    assert(await disabledPlus.isDisabled());
+    const layoutSignature = () => page.evaluate(() => JSON.stringify({
+      titles: [...document.querySelectorAll('.terminal-title')].map(node => node.textContent),
+      groups: [...document.querySelectorAll('.split-root .split-group')].map(node => [node.id, node.className]),
+    }));
+    for (const target of [disabledPlus, page.locator('.status-right > .status-item').first()]) {
+      const unchanged = await layoutSignature();
+      const from = await terminalHandle().boundingBox(), to = await target.boundingBox();
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+      await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2);
+      await until(() => page.locator('.pane-dock-overlay.active').count().then(count => count > 0), 'Invalid-footer drag did not activate');
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 15 }); await page.mouse.up(); await pause(100);
+      await until(() => page.locator('.pane-dock-overlay.active').count().then(count => count === 0), 'Invalid-footer drop did not finish');
+      assert.equal(await layoutSignature(), unchanged, 'Invalid footer drop rearranged tiled panes');
+      assert.equal(await page.getByRole('button', { name: 'Page 3', exact: true }).getAttribute('aria-current'), 'page');
+      assert.equal(await page.getByRole('navigation', { name: 'Workspace pages' }).getByRole('button', { name: /^Page / }).count(), 9);
+    }
     await page.getByRole('button', { name: 'Page 2', exact: true }).click();
     await page.getByRole('button', { name: 'Toggle notes panel', exact: true }).click();
     await page.locator('.notes-editor').fill('note survives a populated-page drop');
@@ -220,7 +247,7 @@ let app;
       readyBackgroundViews: 0, cachedOutput: true, lateSpawnKilled: true,
       browserControlsInHeader: true, browserWithinFooter: true, pagesAfterVersion: true,
       realCrossPageDrag: true, plusDropCreatesPage: true, browserMovePreservesState: true,
-      populatedDestinationNotesPreserved: true, stackedUsageFitsFooter: true, groupedUsageFits26px: true, truncationOnlyWhenConstrained: true, withinPageSwap: true }, null, 2));
+      populatedDestinationNotesPreserved: true, stackedUsageFitsFooter: true, groupedUsageFits26px: true, truncationOnlyWhenConstrained: true, withinPageSwap: true, disabledPlusAndFooterDropsDoNotDock: true, minimumWidthUsageFooter: true }, null, 2));
   } finally {
     if (app) {
       // Only fixture-owned terminals, including a gated one if an assertion failed.
