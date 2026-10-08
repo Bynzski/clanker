@@ -93,6 +93,21 @@ describe('WorkspaceHost', () => {
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(2);
   });
 
+  it('temporarily warms a cold workspace for a newly spawned terminal until readiness completes', async () => {
+    const workspaces = Array.from({ length: 5 }, (_, index) => createWorkspaceFixture({ id: `bootstrap-${index}`, lifecycle: index === 4 ? 'active' : 'parked',
+      terminals: [{ id: `bootstrap-terminal-${index}`, pid: index + 1, workingDir: '/workspace' }],
+      panes: [{ id: `bootstrap-pane-${index}`, terminalId: `bootstrap-terminal-${index}` }],
+      pendingTerminalIds: index === 0 ? ['bootstrap-terminal-0'] : undefined,
+    }));
+    useWorkspaceStore.setState({ workspaces, activeWorkspaceId: 'bootstrap-4' });
+    render(<WorkspaceHost />);
+    await screen.findByTestId('workspace-host');
+    expect(document.querySelector('[data-workspace-id="bootstrap-0"]')).toHaveAttribute('data-workspace-residency', 'warm');
+    act(() => useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((workspace) => ({ ...workspace, pendingTerminalIds: [] })) })));
+    await waitFor(() => expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(MAX_WARM_WORKSPACE_SURFACES));
+    expect(document.querySelector('[data-workspace-id="bootstrap-0"]')).toHaveAttribute('data-workspace-residency', 'cold');
+  });
+
   it('uses the lifecycle-active workspace when activeWorkspaceId is missing', async () => {
     const first = createWorkspaceFixture({ id: 'ws-1', lifecycle: 'parked' });
     const second = createWorkspaceFixture({ id: 'ws-2', lifecycle: 'active' });

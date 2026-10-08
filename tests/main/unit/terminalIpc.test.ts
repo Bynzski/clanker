@@ -15,6 +15,13 @@
  * - SPAWN_TERMINAL validates workspace path and tolerates null main window
  */
 
+// Dormant command-startup coverage; production disables recipe execution.
+const { recipeAvailability } = vi.hoisted(() => ({ recipeAvailability: { enabled: true } }));
+vi.mock('../../../src/shared/recipeAvailability', () => ({
+  get WORKSPACE_RECIPES_ENABLED() { return recipeAvailability.enabled; },
+  RECIPES_DISABLED_MESSAGE: 'Workspace recipes are temporarily unavailable.',
+}));
+
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -587,6 +594,18 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     expect(mockPtySpawn).toHaveBeenCalledTimes(2);
     expect(storeSet.mock.calls.map(([key]) => key)).not.toContain('taskSessions');
+  });
+
+  test('disabled recipe commands and wait calls fail before PTY creation', async () => {
+    recipeAvailability.enabled = false;
+    try {
+      const { opts } = createMockDeps();
+      registerTerminalIpc(opts);
+      const handler = (channel: string) => mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)?.[1];
+      await expect(handler(SPAWN_TERMINAL)(null, process.cwd(), undefined, undefined, 'npm run dev', true)).rejects.toThrow('temporarily unavailable');
+      await expect(handler(RECIPE_COMMAND_WAIT)(null, 'stale')).rejects.toThrow('temporarily unavailable');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    } finally { recipeAvailability.enabled = true; }
   });
 
   test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {

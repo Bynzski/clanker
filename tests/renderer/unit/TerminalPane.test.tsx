@@ -122,7 +122,7 @@ import {
   finishTerminalDisposal,
   markTerminalDisposed,
   writeCachedTerminalData,
-} from '../../../src/renderer/components/TerminalPane';
+} from '../../../src/renderer/lib/terminalRuntimeCache';
 
 // Mock electron API for terminal operations
 const mockKillTerminal = vi.fn().mockResolvedValue({ success: true });
@@ -254,6 +254,52 @@ describe('TerminalPane', () => {
     stopThemeSync();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  describe('hidden-page startup', () => {
+    it('bootstraps a never-ready hidden terminal while rejecting keys and retaining protocol/output delivery', async () => {
+      setupStoreWithTerminal('hidden', 'hidden-pane');
+      render(<TerminalPane paneId="hidden-pane" background />);
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(150); });
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledWith('hidden');
+      expect(mockResizeTerminal).toHaveBeenCalledWith('hidden', 80, 24);
+      expect(attachedKeyHandler?.(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }))).toBe(false);
+      expect(writeCachedTerminalData('hidden', 'background output')).toBe(true);
+      expect(mockTerminalWrite).toHaveBeenCalledWith('background output');
+      attachedDataHandler?.('\x1b[0n'); // native terminal query response, not user input
+      expect(mockWriteTerminal).toHaveBeenCalledWith('hidden', '\x1b[0n');
+      expect(mockFocus).not.toHaveBeenCalled(); expect(mockKillTerminal).not.toHaveBeenCalled();
+    });
+    it('executes canonical page commands from xterm without forwarding them to the PTY', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      useKeybindingStore.setState({ overrides: {}, capturing: false });
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({ id: 'paged', terminals: [createTerminal('t1', 1, '/workspace')], panes: [createPane('p1', 't1', false)] }));
+      const first = useWorkspaceStore.getState().getWorkspaceById('paged')!.activePageId!;
+      useWorkspaceStore.getState().addWorkspacePage('paged');
+      const second = useWorkspaceStore.getState().getWorkspaceById('paged')!.activePageId;
+      useWorkspaceStore.getState().selectWorkspacePage('paged', first);
+      render(<TerminalPane workspaceId="paged" paneId="p1" />);
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(150); });
+      const key = new KeyboardEvent('keydown', { key: '2', code: 'Digit2', ctrlKey: true, altKey: true, cancelable: true });
+      let handled: boolean | undefined;
+      act(() => { handled = attachedKeyHandler?.(key); });
+      expect(handled).toBe(false); expect(key.defaultPrevented).toBe(true);
+      expect(useWorkspaceStore.getState().getWorkspaceById('paged')!.activePageId).toBe(second);
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+    });
+    it('initializes a replacement hidden terminal even when its previous identity was ready', async () => {
+      setupStoreWithTerminal('old-hidden', 'hidden-pane');
+      const view = render(<TerminalPane paneId="hidden-pane" background />);
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(150); });
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledWith('old-hidden');
+      markTerminalDisposed('old-hidden');
+      act(() => useWorkspaceStore.setState({ terminals: [createTerminal('replacement-hidden', 5, '/workspace')], panes: [createPane('hidden-pane', 'replacement-hidden', false)] }));
+      view.rerender(<TerminalPane paneId="hidden-pane" background />);
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(150); });
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledWith('replacement-hidden');
+      expect(terminalConstructionCount).toBe(2);
+      expect(writeCachedTerminalData('replacement-hidden', 'replacement output')).toBe(true);
+    });
   });
 
   describe('terminal themes', () => {
@@ -1049,7 +1095,7 @@ describe('TerminalPane', () => {
   });
 
   describe('workspace interaction gating', () => {
-    it('does not attach terminal input handlers for a parked workspace instance', async () => {
+    it('rejects user keys for a parked workspace while keeping native query responses connected', async () => {
       const parkedWorkspace = createWorkspaceFixture({
         id: 'ws-1',
         lifecycle: 'parked',
@@ -1078,8 +1124,8 @@ describe('TerminalPane', () => {
         await vi.advanceTimersByTimeAsync(100);
       });
 
-      expect(attachedDataHandler).toBeNull();
-      expect(attachedKeyHandler).toBeNull();
+      expect(attachedDataHandler).not.toBeNull();
+      expect(attachedKeyHandler?.(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }))).toBe(false);
       expect(mockFocus).not.toHaveBeenCalled();
       expect(document.querySelector('.terminal-pane')).toHaveAttribute('data-workspace-interactive', 'false');
       expect(screen.getByTitle('Close terminal')).toBeDisabled();
@@ -1090,6 +1136,19 @@ describe('TerminalPane', () => {
   // Cleanup
   // =========================================================================
   describe('cleanup on unmount', () => {
+    it('retains query replies across unmount but disconnects them on explicit disposal', async () => {
+      setupStoreWithTerminal('retained', 'retained-pane');
+      const view = render(<TerminalPane paneId="retained-pane" />);
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(150); });
+      const reply = attachedDataHandler;
+      view.unmount();
+      reply?.('\x1b[0n');
+      expect(mockWriteTerminal).toHaveBeenCalledWith('retained', '\x1b[0n');
+      mockWriteTerminal.mockClear();
+      markTerminalDisposed('retained');
+      reply?.('\x1b[0n');
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+    });
     it('cleans up listeners on unmount', async () => {
       setupStoreWithTerminal('t1', 'p1');
 

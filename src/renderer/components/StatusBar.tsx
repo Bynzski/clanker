@@ -8,6 +8,7 @@ import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAssistantsStore } from '../store/assistantsStore';
 import { NotificationCenter } from './NotificationCenter';
 import UsageWidget from './UsageWidget';
+import { WorkspacePageSwitcher } from './WorkspacePageControls';
 import './StatusBar.css';
 
 export default function StatusBar() {
@@ -39,6 +40,7 @@ export default function StatusBar() {
           <Tag size={12} strokeWidth={2} />
           {appVersion ? `v${appVersion}` : ''}
         </span>
+        {!activeAssistantId && focusedWorkspace && <WorkspacePageSwitcher key={focusedWorkspace.id} workspace={focusedWorkspace} />}
       </div>
       
       <div className="status-center">

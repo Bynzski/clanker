@@ -22,6 +22,7 @@ import { isLiveWorkspaceService } from '../../shared/types/workspaceServices';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
+import { closeWorkspaceTerminal } from '../lib/workspaceTerminalClose';
 import './WorkspaceNavigatorSection.css';
 
 function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
@@ -35,6 +36,8 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const branch = worktree ? worktreeBranchLabel(worktree) : null;
   const removed = Boolean(worktree?.missing);
   const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
+  const pane = workspace.panes.find((item) => item.terminalId === terminal.id);
+  const minimized = workspace.minimizedPanes?.some((item) => item.paneId === pane?.id);
 
   return (
     <li className={`ws-agent-card${isCurrent ? ' current' : ''}`}>
@@ -49,7 +52,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
       >
         <span className="ws-agent-primary">
           <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
-          <span className="ws-agent-name">{name}</span>
+          <span className="ws-agent-name">{name}{minimized && <span className="ws-agent-meta"> · minimized</span>}</span>
           <span className="sr-only">{harness.label}</span>
           {showAttention && <AgentAttentionState attention={attention} name={name} />}
         </span>
@@ -65,6 +68,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
           )}
         </span>}
       </button>
+      {minimized && <IconButton aria-label={`Close ${name}`} title="Close conversation (keep history)" onClick={() => void closeWorkspaceTerminal(workspace.id, terminal.id)}><X size={12} /></IconButton>}
       <DevServerRow workspace={workspace} terminal={terminal} />
     </li>
   );

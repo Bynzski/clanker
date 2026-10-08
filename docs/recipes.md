@@ -1,6 +1,13 @@
 # Workspace Launch Recipes and Native Conversation History
 
-This document describes the architecture for reusable workspace launch recipes (#42) and the native conversation history that backs Chat History.
+**Recipes are temporarily disabled with workspace pages (#89).** Their UI and execution/mutation
+routes are unavailable, while persisted recipes remain unchanged. There is no recipe-to-page
+migration or saved-conversation/session restoration in this pass. Ordinary workspace opening,
+harness launching and native Chat History remain available. A future remembered-workspace design
+will be separate; see [Workspace pages](workspace-pages.md).
+
+The recipe sections below document the retained, dormant architecture for reusable workspace
+launch recipes (#42). The native conversation-history sections still describe active functionality.
 
 Workspace Tasks — the durable per-launch "task record" introduced in #43 — were removed. Clanker no longer persists application-level task records for ordinary harness launches; see [Conversation history](#6-conversation-history) for what remains.
 

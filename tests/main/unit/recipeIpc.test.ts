@@ -31,6 +31,9 @@ class MemoryStore {
   }
 }
 
+// Retain schema/validation coverage for the dormant feature.
+vi.mock('../../../src/shared/recipeAvailability', () => ({ WORKSPACE_RECIPES_ENABLED: true }));
+
 describe('recipeIpc', () => {
   let memoryStore: MemoryStore;
   let handlers: Map<string, (...args: unknown[]) => unknown>;

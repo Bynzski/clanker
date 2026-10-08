@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Gauge } from 'lucide-react';
+import { Clock3, Gauge } from 'lucide-react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
@@ -65,21 +65,25 @@ export default function UsageWidget() {
     const entry = usage.entries[id];
     const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
     const picked = entry && pickWidgetUsage(entry.measurements, option.label);
-    return picked ? [{ id, option, picked }] : [];
+    if (!picked) return [];
+    const description = `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`;
+    return [{ id, option, picked, description }];
   });
-  const summary = chips.map(({ option, picked }) => `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`).join('\n');
+  const summary = chips.map(({ description }) => description).join('\n');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" className={`usage-widget${open ? ' active' : ''}`} aria-label="Usage" title={summary || 'Usage'} disabled={!defaults && !open}>
           <Gauge size={12} strokeWidth={2} aria-hidden="true" />
-          {chips.map(({ id, option, picked }) => (
-            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}`}>
+          {chips.map(({ id, option, picked, description }) => (
+            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}`} role="group" aria-label={description} title={description}>
               <option.Icon size={11} strokeWidth={2} />
-              <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
-              <span>{picked.percent}%</span>
-              {picked.resetsAt !== undefined && <span className="usage-chip-time">{formatResetShort(picked.resetsAt, usage.now)}</span>}
+              <span className="usage-chip-meter">
+                <span className="usage-chip-percent">{picked.percent}%</span>
+                <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
+              </span>
+              {picked.resetsAt !== undefined && <span className="usage-chip-time"><Clock3 size={8} aria-hidden="true" />{formatResetShort(picked.resetsAt, usage.now)}</span>}
             </span>
           ))}
         </button>

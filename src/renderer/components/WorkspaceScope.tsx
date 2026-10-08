@@ -6,6 +6,7 @@ import {
   DEFAULT_RUNTIME_STATE,
   type WorkspaceTab,
 } from '../store/workspaceStore';
+import { useAssistantNavStore } from '../store/assistantNavStore';
 import type { WorkspaceState } from '../store/workspaceStoreTypes';
 
 const WorkspaceScopeContext = createContext<string | null>(null);
@@ -94,11 +95,13 @@ export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
 }
 
 export function useScopedWorkspaceActivity(workspaceId?: string): boolean {
+  const assistantActive = useAssistantNavStore((state) => state.activeAssistantId !== null);
   const resolvedWorkspaceId = useScopedWorkspaceId(workspaceId);
   return useWorkspaceStore((state) => {
     const matchedWorkspace = findWorkspaceById(state.workspaces, resolvedWorkspaceId)
       ?? findWorkspaceById(state.workspaces, state.activeWorkspaceId);
 
+    if (assistantActive) return false;
     if (matchedWorkspace) {
       return matchedWorkspace.id === state.activeWorkspaceId;
     }

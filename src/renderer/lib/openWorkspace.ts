@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { createDefaultEditorState, createDefaultExplorerState, createDefaultNotesState, DEFAULT_RUNTIME_STATE } from '../store/workspaceStoreHelpers';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import { getWorkspaceNameFromPath } from './workspaceLabels';
+import { readWorkspacePages } from './workspacePageStorage';
 import { findGeneratedWorktreeContainerOwner } from './worktreeContainer';
 
 export function workspaceLocation(workspace: WorkspaceTab): WorkspaceLocation {
@@ -50,7 +51,7 @@ export async function prepareWorkspaceShell(location: WorkspaceLocation): Promis
       : await window.electronAPI.sshEnvironmentList().then((environments) => environments.find((environment) => environment.id === location.environmentId)?.label ?? location.environmentId)
         .catch(() => location.environmentId);
     const projectName = getWorkspaceNameFromPath(linked ? mainPath ?? canonicalPath : canonicalPath);
-    return {
+    return readWorkspacePages({
       ...createDefaultExplorerState(), ...createDefaultEditorState(), ...createDefaultNotesState(),
       id, lifecycle: 'parked', environmentId: location.environmentId, environmentLabel,
       name: projectName, projectName, workspacePath: canonicalPath, isLinkedWorktree: !!linked,
@@ -60,7 +61,7 @@ export async function prepareWorkspaceShell(location: WorkspaceLocation): Promis
       browserVisible: false, browserOverlayCount: 0, browserUrl: 'https://github.com', browserPane: null,
       layoutRoot: null, gitCurrentBranch: linked?.branch ?? null, gitIsRepo: false, gitIsDetached: false,
       runtimeState: { ...DEFAULT_RUNTIME_STATE },
-    };
+    });
   } catch (error) {
     if (registered) await window.electronAPI.unregisterOpenWorkspace(id).catch(() => undefined);
     throw error;

@@ -37,7 +37,7 @@ export interface EdgeGap {
   beforePaneId?: string;
 }
 
-interface LayoutVisibilityState {
+interface LayoutVisibilityState extends Pick<WorkspaceTab, 'pages' | 'activePageId' | 'minimizedPanes'> {
   panes: Pane[];
   explorerPane: ExplorerPaneState | null;
   explorerVisible: boolean;
@@ -708,10 +708,23 @@ export function fitLayoutRatios(node: LayoutNode | null): LayoutNode | null {
   return { ...node, first, second, ratio };
 }
 
+/** Ownership filtering wraps normalization; the split/move/resize algorithms stay unchanged. */
+function excludedPagePaneIds(workspace: Pick<WorkspaceTab, 'pages' | 'activePageId' | 'minimizedPanes'>): Set<string> {
+  return new Set([
+    ...(workspace.pages ?? []).filter((page) => page.id !== workspace.activePageId).flatMap((page) => collectLeafPaneIds(page.layoutRoot)),
+    ...(workspace.minimizedPanes ?? []).map((entry) => entry.paneId),
+  ]);
+}
+
 export function normalizeLayoutRoot(
   layoutRoot: LayoutNode | null,
   state: LayoutVisibilityState
 ): LayoutNode | null {
+  const excluded = excludedPagePaneIds(state);
+  state = { ...state, panes: state.panes.filter((pane) => !excluded.has(pane.id)),
+    browserVisible: state.browserVisible && !excluded.has(state.browserPane?.id ?? ''),
+    editorVisible: state.editorVisible && !excluded.has(state.editorPane?.id ?? ''),
+    notesVisible: state.notesVisible && !excluded.has(state.notesPane?.id ?? '') };
   if (layoutRoot == null) {
     const paneIds = state.panes.map((pane) => pane.id);
     if (state.browserVisible && state.browserPane) {
@@ -773,7 +786,7 @@ export function normalizeLayoutRoot(
 }
 
 export function buildWorkspaceLayout(
-  workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'editorVisible' | 'editorPane' | 'layoutRoot'>
+  workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'editorVisible' | 'editorPane' | 'layoutRoot' | 'pages' | 'activePageId' | 'minimizedPanes'>
     & Required<Pick<WorkspaceTab, 'explorerVisible' | 'explorerPane' | 'notesVisible' | 'notesPane'>>
 ): LayoutNode | null {
   const root = normalizeLayoutRoot(workspace.layoutRoot, workspace);
@@ -781,15 +794,5 @@ export function buildWorkspaceLayout(
     return root;
   }
 
-  const paneIds = workspace.panes.map((pane) => pane.id);
-  if (workspace.browserVisible && workspace.browserPane) {
-    paneIds.push(workspace.browserPane.id);
-  }
-  if (workspace.editorVisible && workspace.editorPane) {
-    paneIds.push(workspace.editorPane.id);
-  }
-  if (workspace.notesVisible && workspace.notesPane) {
-    paneIds.push(workspace.notesPane.id);
-  }
-  return buildBalancedLayoutFromPaneIds(paneIds);
+  return null;
 }

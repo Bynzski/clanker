@@ -64,7 +64,8 @@ const flush = async () => { await act(async () => { await new Promise((resolve) 
 
 it('resolves the capability matrix and the single Browser owner per destination', () => {
   const workspace = resolveDestinationCapabilities({ kind: 'workspace', workspaceId: 'ws-a' });
-  expect(Object.values(workspace).every(Boolean)).toBe(true);
+  expect(workspace.recipes).toBe(false);
+  expect(Object.entries(workspace).filter(([key]) => key !== 'recipes').every(([, enabled]) => enabled)).toBe(true);
   const assistant = resolveDestinationCapabilities({ kind: 'assistant', assistantId: FRED });
   expect(assistant).toEqual({
     browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
@@ -78,10 +79,11 @@ it('resolves the capability matrix and the single Browser owner per destination'
 it('Workspace mode keeps the full toolbar', async () => {
   render(<Header />);
   expect(await screen.findByRole('group', { name: 'New terminal' })).toBeInTheDocument();
-  for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history', 'Settings']) {
+  for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Chat history', 'Settings']) {
     expect(screen.getByRole('button', { name })).toBeInTheDocument();
   }
   expect(screen.getByTitle(/Git/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Workspace Launch Recipes' })).not.toBeInTheDocument();
 });
 
 it('Assistant mode keeps only Browser and Settings; no workspace control remains to target the parked workspace', async () => {

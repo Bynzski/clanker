@@ -41,6 +41,7 @@ import {
   BROWSER_KEYBINDING_COMMAND,
 } from '../../shared/ipcChannels';
 import {
+  isWorkspacePageCommand,
   keystrokeFromElectronInput,
   platformFromString,
   resolveCommand,
@@ -49,6 +50,7 @@ import {
 } from '../../shared/keybindings';
 import { BrowserSessionScopes } from '../browserSessionScope';
 import { getBrowserHistoryService } from '../browserHistory';
+import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { probeRecipePreview } from '../recipePreview';
 
 export interface BrowserViewEntry {
@@ -222,6 +224,10 @@ function runBrowserKeybinding(
   }
 
   const win = deps.getMainWindow();
+  if (isWorkspacePageCommand(commandId)) {
+    win?.webContents.send(BROWSER_KEYBINDING_COMMAND, { workspaceId, tabId, command: commandId });
+    return;
+  }
   switch (commandId) {
     case 'browser.refresh':
       view.webContents.reload();
@@ -560,8 +566,10 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     }
   });
 
-  ipcMain.handle(RECIPE_PREVIEW_PROBE, (_, url: string, waitForReady: boolean) =>
-    probeRecipePreview(url, waitForReady === true));
+  ipcMain.handle(RECIPE_PREVIEW_PROBE, (_, url: string, waitForReady: boolean) => {
+    if (!WORKSPACE_RECIPES_ENABLED) throw new Error(RECIPES_DISABLED_MESSAGE);
+    return probeRecipePreview(url, waitForReady === true);
+  });
 
   ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => {
     if (!workspaceId) return false;

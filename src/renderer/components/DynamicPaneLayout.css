@@ -121,8 +121,8 @@
   position: absolute;
   pointer-events: auto;
   opacity: 0.72;
-  background: color-mix(in srgb, var(--surface-app) 84%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-interactive) 28%, transparent);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   transition:
     opacity 120ms ease-out,
@@ -137,12 +137,22 @@
 
 .dock-edge.over {
   opacity: 1;
-  background: var(--surface-preview-active);
-  border-color: var(--border-strong);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent),
-    0 8px 24px color-mix(in srgb, var(--shadow-color) 28%, transparent);
+  background: transparent;
+  border-color: transparent;
 }
+
+.dock-edge::before {
+  content: '';
+  position: absolute;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-interactive) 35%, transparent);
+  pointer-events: none;
+}
+.dock-left::before, .dock-right::before { width: 3px; top: 0; bottom: 0; }
+.dock-top::before, .dock-bottom::before { height: 3px; left: 0; right: 0; }
+.dock-edge.over::before { background: var(--accent-interactive); }
+.dock-edge:not(.over) .dock-edge-label { opacity: 0; }
+.dock-edge.over .dock-edge-label { background: var(--surface-control); color: var(--text-primary); }
 
 .dock-edge-overlay:not(.dragging) .dock-edge {
   display: none;
@@ -221,9 +231,9 @@
   position: absolute;
   pointer-events: none;
   z-index: 8999;
-  border: 2px solid var(--accent-interactive);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--status-info) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-interactive) 65%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-interactive) 7%, transparent);
   opacity: 0;
   transition: opacity 90ms ease-out;
 }
@@ -273,8 +283,8 @@
 }
 
 .pane-dock-zone.over {
-  border-color: color-mix(in srgb, var(--status-info) 72%, transparent);
-  background: color-mix(in srgb, var(--status-info) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent-interactive) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-interactive) 5%, transparent);
 }
 
 .pane-dock-zone.over span { opacity: 1; color: var(--text-primary); }
@@ -307,6 +317,8 @@
 }
 
 .pane-content {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
