@@ -51,6 +51,10 @@ interface Runtime {
   candidates: Set<string>;
   tail: DiagnosticTail;
   portConflict?: PortConflict;
+  /** Diagnosis of an unexpected exit, kept so a later Stop of an unresolved cleanup does not erase why it failed. */
+  failure?: string;
+  /** A signal was refused with EPERM (a member runs as another user): reported, since it cannot be fixed by retrying. */
+  permissionDenied?: boolean;
 }
 const message = (error: unknown) => error instanceof Error ? error.message : 'Dev server operation failed';
 const SIGNAL_NAMES = new Map(Object.entries(os.constants.signals).map(([name, value]) => [value, name]));
@@ -266,7 +270,11 @@ export class WorkspaceServiceManager {
     if (runtime.groupGone) return; // Ownership relinquished: the number may now belong to an unrelated process.
     if (process.platform !== 'win32' && runtime.pgid !== undefined) {
       try { (this.deps.signalGroup ?? ((pid, sig) => process.kill(-pid, sig)))(runtime.pgid, signal); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') runtime.groupGone = true; }
+      catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ESRCH') runtime.groupGone = true; // Nothing left in the group.
+        else if (code === 'EPERM') runtime.permissionDenied = true; // Fail closed: it is not gone, and we say why.
+      }
     }
     if (runtime.process && !runtime.ptyExited) { try { runtime.process.kill(signal); } catch { /* onExit decides liveness */ } }
   }
@@ -305,6 +313,11 @@ export class WorkspaceServiceManager {
     if (this.runtimes.get(live.service.id) === live) this.publish();
     void this.runCleanup(live).then((ok) => this.finishUnexpected(live, ok), () => this.finishUnexpected(live, false));
   }
+  private incompleteNote(runtime: Runtime): string {
+    return runtime.permissionDenied
+      ? 'Some processes started by this dev server could not be signalled (permission denied) and are still running. Stop them outside Clanker, then Stop again.'
+      : 'Some processes started by this dev server could not be confirmed terminated. Stop it again before restarting.';
+  }
   private finishUnexpected(live: Runtime, cleaned: boolean) {
     if (live.cancelled) return; // An explicit stop took over meanwhile.
     const { exitCode, exitSignal } = live.service;
@@ -315,13 +328,13 @@ export class WorkspaceServiceManager {
     live.service.cleanupIncomplete = cleaned ? undefined : true;
     live.service.status = 'failed';
     live.service.portConflict = live.portConflict;
-    live.service.error = [
+    live.failure = [
       live.portConflict && describePortConflict(live.portConflict),
       live.service.preparationHint,
       output || `Command ${how}`,
       exitCode === 0 && !exitSignal ? 'The dev server exited on its own (code 0); it was not stopped from Clanker.' : undefined,
-      cleaned ? undefined : 'Some processes started by this dev server could not be confirmed terminated. Stop it again before restarting.',
     ].filter(Boolean).join('\n');
+    live.service.error = [live.failure, cleaned ? undefined : this.incompleteNote(live)].filter(Boolean).join('\n');
     if (this.runtimes.get(live.service.id) === live) this.publish();
   }
 
@@ -350,15 +363,18 @@ export class WorkspaceServiceManager {
       runtime.stop = undefined;
       runtime.exited = cleaned;
       runtime.cleanupFailed = !cleaned;
+      // A service that had already failed on its own stays failed (with its diagnosis) once its leftovers are gone.
       if (cleaned) {
-        runtime.service.status = 'stopped'; runtime.service.error = undefined; runtime.service.cleanupIncomplete = undefined;
+        runtime.service.status = runtime.failure === undefined ? 'stopped' : 'failed';
+        runtime.service.error = runtime.failure; runtime.service.cleanupIncomplete = undefined;
         this.publish();
         return;
       }
       runtime.service.status = 'failed'; runtime.service.cleanupIncomplete = true;
-      runtime.service.error = 'Dev server did not exit; try Stop again';
+      const reason = runtime.permissionDenied ? this.incompleteNote(runtime) : 'Dev server did not exit; try Stop again';
+      runtime.service.error = [runtime.failure, reason].filter(Boolean).join('\n');
       this.publish();
-      throw new Error(runtime.service.error);
+      throw new Error(reason);
     });
     runtime.stop = stopping;
     return stopping;
@@ -367,12 +383,28 @@ export class WorkspaceServiceManager {
   async closeWorkspace(workspaceId: string): Promise<void> {
     const owned = [...this.runtimes.values()].filter(({ service }) => service.workspaceId === workspaceId);
     const results = await Promise.allSettled(owned.map((runtime) => this.stopRuntime(runtime)));
-    let unresolved = 0;
+    const unresolved: Runtime[] = [];
     for (const [index, runtime] of owned.entries()) {
-      if (results[index].status === 'fulfilled' && runtime.exited) this.runtimes.delete(runtime.service.id); else unresolved++;
+      if (results[index].status === 'fulfilled' && runtime.exited) this.runtimes.delete(runtime.service.id); else unresolved.push(runtime);
     }
     this.publish();
-    if (unresolved) throw new Error(`${unresolved} dev server(s) could not be confirmed stopped`);
+    if (!unresolved.length) return;
+    for (const runtime of unresolved) this.retryAfterClose(runtime);
+    throw new Error(`${unresolved.length} dev server(s) could not be confirmed stopped: ${unresolved.map(({ service }) => `pid ${service.pid ?? '?'} in ${service.cwd}`).join('; ')}`);
+  }
+  /**
+   * A closed workspace's leftovers have no UI to retry from, so the failed cleanup is retried a few times with
+   * growing delays (3 attempts, never a standing poll). Shutdown makes its own final attempt and ends these.
+   */
+  private retryAfterClose(runtime: Runtime, attempt = 1) {
+    if (attempt > 3) return;
+    const timer = setTimeout(() => {
+      if (this.closed || this.runtimes.get(runtime.service.id) !== runtime) return;
+      void this.stopRuntime(runtime).then(() => {
+        if (this.runtimes.get(runtime.service.id) === runtime) { this.runtimes.delete(runtime.service.id); this.publish(); }
+      }, () => this.retryAfterClose(runtime, attempt + 1));
+    }, 10_000 * attempt);
+    timer.unref?.();
   }
   async reset(): Promise<void> {
     const results = await Promise.allSettled([...new Set([...this.runtimes.values()].map(({ service }) => service.workspaceId))].map((id) => this.closeWorkspace(id)));

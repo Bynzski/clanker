@@ -464,4 +464,110 @@ describe('workspace-owned dev services', () => {
       expect(alive.size).toBe(0);
     });
   });
+
+  describe('review hardening', () => {
+    it('tolerates a group that lingers briefly after SIGKILL (a not-yet-reaped zombie) but not beyond the window', async () => {
+      const started = await manager.start(request());
+      signalGroup.mockImplementation((pid, signal) => { if (signal === 'SIGKILL') setTimeout(() => alive.delete(pid), 100); });
+      const stopping = manager.stop('ws', started.service!.id);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await stopping).success).toBe(true); // Reaped 100 ms after the kill, inside the 200 ms verification window.
+      const late = await manager.start(request());
+      signalGroup.mockImplementation((pid, signal) => { if (signal === 'SIGKILL') setTimeout(() => alive.delete(pid), 5000); });
+      const slow = manager.stop('ws', late.service!.id);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await slow).success).toBe(false); // Not confirmed in time: reported, never assumed.
+      expect(manager.usages()).toHaveLength(1);
+    });
+    it('treats ESRCH as the group being gone, and stops signalling afterwards', async () => {
+      const started = await manager.start(request());
+      signalGroup.mockImplementation(() => { throw Object.assign(new Error('no such process'), { code: 'ESRCH' }); });
+      isGroupAlive.mockReturnValue(true);
+      const stopping = manager.stop('ws', started.service!.id);
+      await vi.advanceTimersByTimeAsync(500);
+      expect((await stopping).success).toBe(true);
+      expect(signalGroup).toHaveBeenCalledTimes(1);
+    });
+    it('fails closed with an explanation when a group member cannot be signalled (EPERM)', async () => {
+      const started = await manager.start(request());
+      signalGroup.mockImplementation(() => { throw Object.assign(new Error('not permitted'), { code: 'EPERM' }); });
+      const stopping = manager.stop('ws', started.service!.id);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await stopping).error).toContain('permission denied');
+      expect(manager.snapshot().services[0]).toMatchObject({ status: 'failed', cleanupIncomplete: true, error: expect.stringContaining('permission denied') });
+      expect(manager.usages()).toHaveLength(1);
+    });
+    it('the real probe and signal only ever address this service\'s negative process group, and EPERM is "still alive"', async () => {
+      const kill = vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: string | number) => {
+        if (pid === -1000 && signal === 0) return true;
+        throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+      });
+      try {
+        const plain = new WorkspaceServiceManager({ registry, getTerminal: (id) => terminals.get(id), getLocation: () => null, isShuttingDown: () => false,
+          spawn, probe, changed, canonicalRoot: (path) => path, timing: { graceMs: 100, killMs: 100, pollMs: 10 } });
+        const started = await plain.start(request());
+        const stopping = plain.stop('ws', started.service!.id);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect((await stopping).success).toBe(false);
+        expect(kill.mock.calls.length).toBeGreaterThan(0);
+        expect(kill.mock.calls.every(([pid]) => pid === -1000)).toBe(true);
+        alive.delete(1000); kill.mockImplementation(() => { throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' }); });
+        const retry = plain.stop('ws', started.service!.id);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect((await retry).success).toBe(true); // The probe now reports the group gone.
+      } finally { kill.mockRestore(); }
+    });
+    it('keeps an earlier failure diagnosis when a later Stop finally clears the leftover processes', async () => {
+      const started = await manager.start(request());
+      stubborn = true;
+      children[0].data('Error: cannot find module "vite"\n'); children[0].exitLeader(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(manager.snapshot().services[0]).toMatchObject({ status: 'failed', cleanupIncomplete: true });
+      stubborn = false;
+      const stopping = manager.stop('ws', started.service!.id);
+      await vi.advanceTimersByTimeAsync(500);
+      expect((await stopping).success).toBe(true);
+      const service = manager.snapshot().services[0];
+      expect(service).toMatchObject({ status: 'failed', exitCode: 1 });
+      expect(service.cleanupIncomplete).toBeUndefined();
+      expect(service.error).toContain('cannot find module "vite"');
+      expect(service.error).not.toContain('could not be confirmed');
+      expect(manager.usages()).toEqual([]);
+    });
+    it('retries an unresolved cleanup after workspace close a bounded number of times, then releases the record', async () => {
+      await manager.start(request());
+      stubborn = true;
+      const closing = manager.closeWorkspace('ws').catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await closing).toMatchObject({ message: expect.stringMatching(/pid 1000 in \/repo-worktrees\/a/) });
+      expect(manager.usages()).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(10_500); // First retry still cannot kill it.
+      expect(manager.usages()).toHaveLength(1);
+      stubborn = false;
+      await vi.advanceTimersByTimeAsync(20_500); // Second retry succeeds.
+      expect(manager.usages()).toEqual([]);
+      expect(manager.snapshot().services).toEqual([]);
+      expect(alive.size).toBe(0);
+    });
+    it('stops retrying after three attempts, so nothing polls forever', async () => {
+      await manager.start(request());
+      stubborn = true;
+      const closing = manager.closeWorkspace('ws').catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(1000); await closing;
+      await vi.advanceTimersByTimeAsync(10_000 * 6 + 5000);
+      const calls = signalGroup.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(signalGroup.mock.calls.length).toBe(calls);
+      expect(manager.usages()).toHaveLength(1); // Still reported as owned; shutdown makes the final attempt.
+    });
+    it('does not let a leftover retry timer act after shutdown has begun', async () => {
+      await manager.start(request());
+      stubborn = true;
+      const closing = manager.closeWorkspace('ws').catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(1000); await closing;
+      const shutdown = manager.shutdown().catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await shutdown).toBeInstanceOf(Error); // Reported, not swallowed, and returned within the bounded window.
+    });
+  });
 });
