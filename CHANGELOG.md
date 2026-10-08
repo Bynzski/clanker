@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-08
+
 ### Added
 
 - **Hermes Assistants** — optionally connect to a local `hermes serve` backend and open your named Hermes profiles as persistent Assistant surfaces with their canonical Bot Chat and an independent embedded Browser. Clanker can optionally start the local Hermes service when needed; the ordinary Hermes launcher in the toolbar is unchanged and does not need any of this. The feature is hidden when the Hermes CLI is not installed.
@@ -22,6 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Assistants without a workspace** — enabled named Hermes Assistants are reachable from the normal sidebar or Tabs strip even with no workspaces open. Their terminal and Browser remain independent of workspace tools and directories.
 - **Compact workspace controls** — agent and Assistant rows are quieter, with inline dev-server controls. Open Workspace supports typed local paths, directory suggestions, folder browsing and starting-directory preferences alongside the SSH chooser.
 - **Pane names** — terminals receive randomly selected Grateful Dead-inspired names from a larger pool, unique within each workspace.
+- **Linux-only release artifact** — `0.11.0` ships as a Linux x64 AppImage. No Windows binary is produced for this tag; Windows remains best-effort supported with compatibility tests in Ubuntu CI.
 
 ### Fixed
 
@@ -415,7 +418,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Bynzski/clanker/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Bynzski/clanker/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Bynzski/clanker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Bynzski/clanker/compare/v0.7.0...v0.8.0
