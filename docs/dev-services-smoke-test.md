@@ -78,3 +78,15 @@ processes across restart, or automatically open the Browser.
 Automated coverage includes real npm/PTY fixtures with two concurrent servers,
 validated file reads, TCP readiness and process-group teardown, plus startup races,
 shared-checkout identity, sidebar controls and late Browser/IPC responses.
+
+## Lifecycle hardening checks
+
+1. Fixture script `node server.cjs & sleep 1` (server in the background, npm exits first):
+   the service ends as `failed` ("exited on its own") and the server stops listening.
+2. Occupy the fixture's port with another process, then Run: the failure names the port
+   and says Clanker did not stop the other process, which keeps running.
+3. Fixture that logs `Port N is in use, trying another one...` and listens elsewhere:
+   stays `running` with a preview URL, no failure.
+4. Run, then Stop twice quickly: one termination, no duplicate or stray process (`ps`).
+5. After a failed run, fix the script and Run again without reopening the workspace.
+6. Quit with a server running: nothing listens afterwards (`ss -ltnp`).

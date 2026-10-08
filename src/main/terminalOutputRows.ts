@@ -1,7 +1,10 @@
-/** Bounded complete-row observer, stripping CSI/OSC across PTY chunks. */
-export function createTerminalOutputRows(notify: (row: string) => void): (data: string) => void {
+/**
+ * Bounded complete-row observer, stripping CSI/OSC across PTY chunks. By default a row longer than the bound is
+ * dropped (a cut row could hold half a URL); `truncate` keeps its leading part instead, for diagnostics.
+ */
+export function createTerminalOutputRows(notify: (row: string) => void, options: { truncate?: boolean } = {}): (data: string) => void {
   let row = '', escape: 'plain' | 'esc' | 'csi' | 'osc' | 'osc-esc' = 'plain', overflow = false;
-  const complete = () => { if (!overflow) notify(row); row = ''; overflow = false; };
+  const complete = () => { if (!overflow || options.truncate) notify(row); row = ''; overflow = false; };
   return (data) => {
     for (const char of data) {
       if (escape === 'osc') { if (char === '\x07') escape = 'plain'; else if (char === '\x1b') escape = 'osc-esc'; continue; }
