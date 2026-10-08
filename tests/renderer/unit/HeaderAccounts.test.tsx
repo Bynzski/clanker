@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import UsageWidget from '../../../src/renderer/components/UsageWidget';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -203,7 +204,7 @@ describe('Usage → Settings account handoff', () => {
 
   it('Manage accounts closes Usage, opens Settings and expands that harness without a second auth UI', async () => {
     const user = userEvent.setup();
-    render(<Header />);
+    render(<><Header /><UsageWidget /></>);
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     await user.click(await screen.findByRole('button', { name: 'Manage Codex accounts' }));
     expect(screen.queryByRole('dialog', { name: 'Usage' })).toBeNull();
@@ -215,7 +216,7 @@ describe('Usage → Settings account handoff', () => {
 
   it('Add account hands off straight into the existing inline add state (still no auth started until Sign in)', async () => {
     const user = userEvent.setup();
-    render(<Header />);
+    render(<><Header /><UsageWidget /></>);
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     await user.click(await screen.findByRole('button', { name: 'Add Codex account' }));
     expect(await screen.findByLabelText('Account label')).toBeInTheDocument();
@@ -230,7 +231,7 @@ describe('Usage → Settings account handoff', () => {
       workspaceId, entries: [{ harnessId: 'codex', status: 'ok', measurements: [], checkedAt: 1 }],
     }));
     const user = userEvent.setup();
-    render(<Header />);
+    render(<><Header /><UsageWidget /></>);
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     await screen.findByRole('region', { name: 'Codex' });
     expect(screen.queryByRole('button', { name: /Manage .* accounts|Add .* account/ })).toBeNull();

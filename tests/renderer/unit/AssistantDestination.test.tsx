@@ -78,7 +78,7 @@ it('resolves the capability matrix and the single Browser owner per destination'
 it('Workspace mode keeps the full toolbar', async () => {
   render(<Header />);
   expect(await screen.findByRole('group', { name: 'New terminal' })).toBeInTheDocument();
-  for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history', 'Usage', 'Settings']) {
+  for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history', 'Settings']) {
     expect(screen.getByRole('button', { name })).toBeInTheDocument();
   }
   expect(screen.getByTitle(/Git/)).toBeInTheDocument();
@@ -90,7 +90,7 @@ it('Assistant mode keeps only Browser and Settings; no workspace control remains
   expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
   expect(screen.queryByRole('group', { name: 'New terminal' })).toBeNull();
-  for (const name of ['Toggle notes panel', 'Toggle File Explorer', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history', 'Usage']) {
+  for (const name of ['Toggle notes panel', 'Toggle File Explorer', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history']) {
     expect(screen.queryByRole('button', { name })).toBeNull();
   }
   expect(screen.queryByTitle(/Git/)).toBeNull();

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { openSettings } from '../../../src/renderer/lib/keybindingDispatcher';
+import UsageWidget from '../../../src/renderer/components/UsageWidget';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -11,7 +12,7 @@ vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => nu
 vi.mock('../../../src/renderer/lib/terminalPaneGeometry', async (original) => ({
   ...(await original<object>()), waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }),
 }));
-const renderHeader = () => render(<Header />);
+const renderHeader = () => render(<><Header /><UsageWidget /></>);
 
   describe('Header overlay interactions', () => {
     const count = () => useWorkspaceStore.getState().getWorkspaceById('ws-1')?.browserOverlayCount ?? 0;

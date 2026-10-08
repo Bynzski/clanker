@@ -1,6 +1,5 @@
 import { IconButton } from './ui/IconButton';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
+import { useEffect, useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import { isExplorerShown, toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
@@ -11,9 +10,9 @@ import IsolatedAgentButton from './IsolatedAgentButton';
 import CredentialSettings from './settings/CredentialSettings';
 import KeyboardShortcutsDialog from './settings/KeyboardShortcutsDialog';
 import { registerOpenSettingsHandler } from '../lib/keybindingDispatcher';
+import { registerManageAccountsHandler } from '../lib/settingsHandoff';
 import HeaderRightControls from './HeaderRightControls';
 import { useHeaderSettings } from './useHeaderSettings';
-import { useHarnessUsage } from './useHarnessUsage';
 import { useConversationHistory } from './useConversationHistory';
 import './Header.css';
 import type { WorkspaceRecipe } from '../../shared/types/recipes';
@@ -58,7 +57,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   // Background warm-ups are local-only: they must never trigger unattended SSH probes or scans.
   const warmupEnabled = !focusedWorkspace?.environmentId || focusedWorkspace.environmentId === 'local';
   const history = useConversationHistory(focusedWorkspace?.id ?? null, { warmup: warmupEnabled });
-  const [showUsage, setShowUsage] = useState(false);
   // The focused workspace's own environment scopes account management; local only when there is none.
   const accountEnvironmentId = focusedWorkspace?.environmentId || 'local';
   const [accountIntent, setAccountIntent] = useState<{ harness: string; intent: 'manage' | 'add' } | null>(null);
@@ -67,7 +65,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   if (panelOwner !== focusedWorkspace?.id) {
     setPanelOwner(focusedWorkspace?.id);
     setAccountIntent(null);
-    setShowUsage(false);
     setShowChatHistory(false);
   }
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -88,7 +85,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
     aiCommitModels,
     isLoadingAiCommitModels,
     harnessDefaults,
-    harnessDefaultsStatus,
     visibleHarnessIds,
     expandedHarness,
     setExpandedHarness,
@@ -107,19 +103,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
     loadHarnessModels,
     aiCommitProviderOptions,
   } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
-  // Only harnesses with a usage capability, installed in this workspace's environment, AND with an
-  // enabled "Show in Usage" preference are ever requested. Membership comes from descriptors; order
-  // follows the launcher's presentation order. Fail closed: nothing is probed until the persisted
-  // preferences have loaded successfully.
-  const usageHarnessIds = useMemo(
-    () => harnessDefaultsStatus !== 'ready' ? [] : HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
-      (USAGE_HARNESS_IDS as readonly string[]).includes(id)
-      && availableHarnessIds.includes(id)
-      && harnessDefaults?.[id]?.usageVisible !== false),
-    [availableHarnessIds, harnessDefaults, harnessDefaultsStatus],
-  );
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId, prefetch: warmupEnabled });
-
   const handleAddTerminal = async (harnessId: string) => {
     if (!focusedWorkspace || !workspacePath || destination.kind !== 'workspace') return;
     try {
@@ -166,32 +149,24 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
     history.setOpen(open);
     if (!open) return;
     setShowSettings(false);
-    setShowUsage(false);
   };
   const handleSettingsOpenChange = (open: boolean) => {
     setShowSettings(open);
     if (open) {
-      setShowUsage(false);
       handleChatHistoryOpenChange(false);
     }
   };
   // The app keybinding dispatcher opens Settings through this same state path.
   useEffect(() => registerOpenSettingsHandler(() => handleSettingsOpenChange(true)));
-  /** Usage -> Settings handoff: close Usage, open Settings, expand that harness; its account row does the rest. */
+  /** Usage widget -> Settings handoff: open Settings, expand that harness; its account row does the rest. */
   const handleManageAccounts = (harnessId: string, intent: 'manage' | 'add') => {
-    setShowUsage(false);
     handleChatHistoryOpenChange(false);
     setAccountIntent({ harness: harnessId, intent });
     setExpandedHarness(harnessId);
     void loadHarnessModels(harnessId);
     setShowSettings(true);
   };
-  const handleUsageOpenChange = (open: boolean) => {
-    setShowUsage(open);
-    if (!open) return;
-    setShowSettings(false);
-    handleChatHistoryOpenChange(false);
-  };
+  useEffect(() => registerManageAccountsHandler(handleManageAccounts));
 
   const handleOpenRecipes = async () => {
     if (focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local') {
@@ -348,12 +323,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
         environmentId={accountEnvironmentId}
         accountIntent={accountIntent}
         onAccountIntentConsumed={() => setAccountIntent(null)}
-        onManageAccounts={handleManageAccounts}
         onCloseChatHistory={() => handleChatHistoryOpenChange(false)}
-        showUsage={showUsage}
-        usageReady={harnessDefaultsStatus === 'ready'}
-        onUsageOpenChange={handleUsageOpenChange}
-        usage={usage}
         settingsTriggerRef={settingsTriggerRef}
         onSettingsCloseAutoFocus={(event) => {
           if (credentialHandoff.current || shortcutsHandoff.current) event.preventDefault();

@@ -659,7 +659,8 @@ app.on('before-quit', (event) => {
   if (closeGuard && !closeGuard.beforeQuit(event)) return;
   event.preventDefault();
   if (quitCleanup) return;
-  const servicesStopped = workspaceServiceManager.shutdown();
+  // A service that cannot be verified gone is logged here, and must not cut the rest of the quit cleanup short.
+  const servicesStopped = workspaceServiceManager.shutdown().catch((error: unknown) => console.warn('[clanker-grid] dev service shutdown incomplete:', error));
   const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);

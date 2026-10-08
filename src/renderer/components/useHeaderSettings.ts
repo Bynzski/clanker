@@ -5,6 +5,7 @@ import {
   resolveAvailableHarnessIds,
   resolveVisibleHarnessIds,
 } from '../lib/harnessOptions';
+import { notifyUsagePreferenceSaved } from '../lib/settingsHandoff';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { ModelOption } from '../types/shared';
 
@@ -260,6 +261,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     setHarnessDefaultsState(newDefaults);
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
+      notifyUsagePreferenceSaved();
     } catch (err) {
       console.error('Failed to save usage visibility:', err);
     }

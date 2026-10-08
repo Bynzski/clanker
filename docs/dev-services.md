@@ -28,9 +28,9 @@ that checkout. Cancel executes nothing. Installation may run package scripts; it
 starts the dev server automatically. Retry **Run** yourself afterward.
 
 A failed server has an info button opening a diagnostics dialog with status, command,
-checkout directory and the captured bounded output tail. **Copy for agent** copies a
+checkout directory and the captured bounded output tail (up to 32 KiB of recent output, control sequences stripped, memory only). **Copy for agent** copies a
 Markdown report. This is not a full/live log viewer; output preceding the retained tail
-may be absent. Changing checkout or command while setup is pending invalidates stale
+may be absent (a single over-long row is truncated, never dropped). Changing checkout or command while setup is pending invalidates stale
 confirmation rather than running in another directory.
 
 ## Lifetime and limits
@@ -43,6 +43,77 @@ Closing the owning workspace, renderer loss or app quit stops its services; runn
 state is not restored after restart. **Current limitation:** a dev server alone does
 not trigger the app-close confirmation once other guarded work has ended; see the
 [close guard](app-close-guard.md).
+
+## Process lifecycle guarantees
+
+Main owns every service; the renderer only displays snapshots. A service is the PTY
+child Clanker spawned **and every process still in that child's process group**. On
+POSIX, node-pty starts the child as session and group leader (`pgid === pid`), so the
+group contains `npm`, its shell and the actual server, plus anything they start without
+leaving the group.
+
+**States**
+
+| Status | Meaning |
+| --- | --- |
+| `starting` | Launch reserved; discovery, checkout/command recheck and spawn in progress. No process yet. |
+| `running` | The process was created and has not terminated. This is *not* readiness: `previewUrl` appears only after a loopback URL passes an HTTP probe. |
+| `stopping` | An explicit Stop, or cleanup of descendants after an unexpected exit, is under way. |
+| `stopped` | Only after an intentional Stop (or cancelled launch) whose cleanup was **verified**. |
+| `failed` | Launch failed, the process exited by itself (any code, including `0`), or cleanup could not be verified. |
+
+A `failed` record with `cleanupIncomplete: true` is the unresolved case: some processes
+could not be confirmed terminated. It is still *live* (`isLiveWorkspaceService`): it
+blocks new launches for the checkout, checkout release/removal, and is retried by Stop,
+Start, workspace close and quit. Other failed records are complete: they are replaced by
+the next launch and forgotten when their checkout or conversation goes away.
+
+**How termination is verified (POSIX).** The leader exiting is never treated as the end.
+Clanker sends `SIGTERM` to the group, waits up to 2 s, sends `SIGKILL`, waits up to 2 s,
+and only then reports success when `kill(-pgid, 0)` says the group is empty. The checks
+run only during an operation (no background polling). Once a group is observed empty
+Clanker never signals it again, so a recycled PID cannot be hit; it only signals a group
+it spawned and still believes it owns. Residual window: the kernel does not reuse a pgid
+while the group has members, so the only exposure is a group that empties and whose PID
+is recycled within the few milliseconds between exit and Clanker's own check.
+
+**Unexpected exits.** The exit code and signal are recorded, descendants are terminated
+as above, then the final state is published with the diagnosis and output. Exit `0` on
+its own is `failed` ("exited on its own"), because only a Stop makes `stopped`.
+
+**Start/Stop determinism.** Simultaneous Starts for one checkout yield one service
+(sharing conversations get the same record). A Start while the service is stopping or
+cleaning up fails with a clear error rather than reporting a launch that did not happen.
+A Start after a failure replaces the record once cleanup is verified; after an
+incomplete cleanup it retries the cleanup first and only launches if it succeeds.
+Repeated Stops are single-flight. Discovery, checkout identity and command are
+rechecked before every launch; a saved command is never run against an unverified root.
+
+**Shutdown and close.** Workspace close and quit refuse new launches first, cancel a
+launch still being validated (it cannot spawn afterwards), stop every owned service in
+parallel with a bounded wait each, keep any unverifiable record visible instead of
+forgetting it, and report the failure (`closeWorkspace`, `shutdown` reject; main logs it).
+
+**Port conflicts.** Output rows such as `EADDRINUSE`, `address already in use` or
+`Port 5173 is already in use` are remembered. If the service then fails without ever
+becoming ready, `portConflict` (`port` when known) and a one-line diagnosis are added to
+the error. A warning followed by a successful fallback (`Port 5173 is in use, trying
+another one…`) is not a failure, and a later crash of a server that did become ready is
+not blamed on the port. Clanker never scans for, identifies or kills the process that
+owns the port.
+
+**Platform limits.** Windows has no process-group signaling here: Clanker terminates the
+PTY child (best effort, may log a SIGTERM warning) and treats its exit as completion;
+descendants that detach from the ConsoleHost can survive and are not detected. Windows
+remains best-effort supported without a native CI gate.
+
+**Crash recovery (not implemented).** Service records are memory-only. After a hard
+crash the PTY master closes, so the kernel sends `SIGHUP` to the session; ordinary dev
+servers die with it, but one that ignores `SIGHUP` or leaves the session survives
+unrecorded. A PID alone cannot safely identify it later. Safe recovery would need a
+small ownership record (pid, process start time, boot id, command, cwd) verified against
+the live process on next launch, and an explicit, user-visible adopt/stop action. That is
+a separately scoped follow-up; Clanker does not kill PID-matched processes automatically.
 
 This feature is local-only. For SSH workspaces, start the server manually in an SSH
 terminal and use [remote Browser previews](workspaces.md#ssh-browser-previews). Agent

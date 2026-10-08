@@ -69,14 +69,14 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
   const suggestionPath = path || (relativeToBase && basePath ? `${basePath.replace(/\/$/, '')}/` : '');
   const listDirectories = useCallback((directory: string) => window.electronAPI.sshListDirectories(environmentId, directory)
     .then((listing) => listing.directories), [environmentId]);
-  const { suggestions, selectedIndex, setSelectedIndex, dismiss } = useDirectorySuggestions(
+  const { suggestions, selectedIndex, setSelectedIndex, dismiss, settle, wake, settled } = useDirectorySuggestions(
     suggestionPath.startsWith('/') ? suggestionPath : '', focused, listDirectories);
 
   const choose = (chosenPath: string) => {
     editedRef.current = true;
     manualValueRef.current = chosenPath;
     setAbsoluteInput(false);
-    dismiss();
+    settle();
     onPathChange(withTrailingSlash(chosenPath));
   };
   const waitingForBase = homeLoading && (!path || (relativeToBase && !path.startsWith('/')));
@@ -90,12 +90,14 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
           const value = event.target.value;
           setAbsoluteInput(value.startsWith('/'));
           editedRef.current = true; manualValueRef.current = value;
-          dismiss();
+          wake(); dismiss();
           onPathChange(relativeToBase && basePath && value && !value.startsWith('/') ? joinPaths(basePath, value) : value);
         }}
+        onClick={() => wake()}
         onFocus={() => { dismiss(); setFocused(true); }} onBlur={() => { dismiss(); setFocused(false); }}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && suggestions.length) { event.preventDefault(); dismiss(); inputRef.current?.blur(); }
+          else if (event.key === 'ArrowDown' && settled) { event.preventDefault(); wake(); }
           else if (event.key === 'ArrowDown' && suggestions.length) { event.preventDefault(); setSelectedIndex((index) => (index + 1) % suggestions.length); }
           else if (event.key === 'ArrowUp' && suggestions.length) { event.preventDefault(); setSelectedIndex((index) => index <= 0 ? suggestions.length - 1 : index - 1); }
           else if (event.key === 'Enter') {

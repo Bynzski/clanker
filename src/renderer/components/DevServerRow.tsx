@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, Info, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
+import { Download, ExternalLink, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
 import { isLiveWorkspaceService, type DevServiceCommand, type WorkspaceService } from '../../shared/types/workspaceServices';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
@@ -9,7 +9,6 @@ import { useAgentLocation } from '../lib/useAgentLocation';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
-import { Button } from './ui/Button';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import DevServerDiagnosticsDialog from './DevServerDiagnosticsDialog';
 import { devDependencyInstallCommand, installDevServiceDependencies } from '../lib/devServiceInstall';
@@ -36,13 +35,13 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
   return <div className="ws-service-item">
     <div className={`ws-service-row${failed ? ' failed' : ''}`} title={title}>
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
-        : failed ? <TriangleAlert size={11} aria-hidden="true" /> : live ? <span className="ws-service-light" aria-hidden="true" /> : null}
-      <span className={`ws-service-label${live || failed ? '' : ' sr-only'}`}>Dev Server · {text}</span>
-      {failed && service && <IconButton className="ws-nav-action" aria-label="Show failure details" title="Show failure details" onClick={() => setDiagnosticsOpen(true)}><Info size={12} /></IconButton>}
-      {!live && command?.preparationHint && terminalId && <Button className="ws-service-install" size="xs" variant="ghost" disabled={busy}
-        aria-label="Install dependencies…" title={`Run ${devDependencyInstallCommand(command.packageManager)} in a visible terminal\n${command.cwd}`}
-        onClick={() => setConfirmingInstall({ ...command })}>Install…</Button>}
-      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`Run ${command.command}\n${command.cwd}`} onClick={() => void action(async () => {
+        : failed && service ? <IconButton className="ws-nav-action ws-service-status" aria-label="Show failure details" title={`Dev Server ${text}: show details`} onClick={() => setDiagnosticsOpen(true)}><TriangleAlert size={12} /></IconButton>
+        : live ? <span className="ws-service-light" aria-hidden="true" /> : null}
+      <span className="sr-only">Dev Server · {text}</span>
+      {!live && command?.preparationHint && terminalId && <IconButton className="ws-nav-action" disabled={busy}
+        aria-label="Install dependencies…" title={`Install dependencies (${devDependencyInstallCommand(command.packageManager)})\n${command.cwd}`}
+        onClick={() => setConfirmingInstall({ ...command })}><Download size={12} /></IconButton>}
+      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`${failed ? 'Restart' : 'Run'} ${command.command}\n${command.cwd}`} onClick={() => void action(async () => {
         const result = await window.electronAPI.workspaceServiceStart({ workspaceId: workspace.id, terminalId, checkoutContextId: command.checkoutContextId, cwd: command.cwd, command: command.command });
         onStartFinished?.();
         if (!result.success) throw new Error(result.error || 'Could not start dev server');
