@@ -84,6 +84,12 @@ export function selectPage(workspace: WorkspaceTab, pageId: string): WorkspaceTa
     fileSurfaceContextId: undefined };
 }
 
+/** Keep the selected page/editor focus when a launch or reservation mutates another page. */
+export function retainSelectedPage(previous: WorkspaceTab, updated: WorkspaceTab): WorkspaceTab {
+  if (!previous.activePageId || previous.activePageId === updated.activePageId) return updated;
+  return { ...selectPage(updated, previous.activePageId), fileSurfaceContextId: previous.fileSurfaceContextId };
+}
+
 export function minimizePane(workspace: WorkspaceTab, paneId: string): WorkspaceTab {
   if (!workspace.activePageId || !collectLeafPaneIds(workspace.layoutRoot).includes(paneId)) return workspace;
   return { ...workspace, layoutRoot: removePaneFromLayout(workspace.layoutRoot, paneId),

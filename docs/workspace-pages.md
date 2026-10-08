@@ -17,8 +17,9 @@ notes and services. A page owns **presentation**, not processes or filesystem au
   minimized Browser/editor/notes panes.
 - Restore reuses the original sibling placement hint if its anchor still exists; otherwise it
   inserts safely into the original page. It never rebuilds the whole arrangement.
-- Close terminates the captured terminal and removes its pane/membership/cache only after main
-  confirms cleanup. Native conversation history and checkout/worktree/branch/service ownership
+- Close requests retirement of the captured terminal and removes its pane/membership/cache after
+  main accepts the request. That IPC acknowledgment does not prove process exit; the real-PTY smoke
+  separately verifies eventual process death. Native conversation history and checkout/worktree/branch/service ownership
   are not deleted. A failed Close keeps the entry and reports a notification.
 
 Keyboard commands use the shared registry/override model in app, editor, terminal and native
@@ -39,7 +40,10 @@ so terminal close, replacement and global output delivery do not depend on a mou
 Terminal identity and checkout launch binding do not change on presentation operations. Pending
 launches (including ordinary toolbar shells/agents) share `lib/workspaceTerminalLaunch.ts` to
 capture/reserve their destination, revalidate ownership and confirm registration after spawn; an
-unregistrable returned PTY is explicitly terminated. Measured history resume cancels preparation if its page
+unregistrable returned PTY receives an explicit retirement request. A captured destination page must
+still exist, but need not remain selected during asynchronous worktree creation/adoption; reserving,
+attaching and cleaning its pane preserve the selected page's layout/history and editor focus.
+Measured history resume cancels preparation if its page
 becomes unavailable and respects accepted launches after dispatch. Background terminal surfaces
 are invisible, inert and non-zero-sized: never-ready hidden/replaced terminals complete their
 normal startup handshake without taking focus. Background views exist only until readiness is

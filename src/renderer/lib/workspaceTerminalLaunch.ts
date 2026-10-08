@@ -25,9 +25,9 @@ export async function launchWorkspaceTerminal(
   const before = useWorkspaceStore.getState().getWorkspaceById(workspace.id);
   const pageId = options.pageId ?? before?.activePageId;
   if (!before || (before.environmentId || 'local') !== environmentId
-    || (pageId && before.activePageId !== pageId)
+    || (pageId && !before.pages?.some((page) => page.id === pageId))
     || (!checkoutContext && before.workspacePath !== root)) throw new Error('The launch destination changed before launch');
-  const reservedPaneId = useWorkspaceStore.getState().addPane(null, undefined, workspace.id);
+  const reservedPaneId = useWorkspaceStore.getState().addPane(null, undefined, workspace.id, pageId);
   if (!reservedPaneId) throw new Error('Could not reserve the destination pane');
   const removeReservation = () => {
     const live = useWorkspaceStore.getState().getWorkspaceById(workspace.id);
@@ -45,9 +45,9 @@ export async function launchWorkspaceTerminal(
   const abandon = async (message: string): Promise<never> => {
     try {
       const result = await window.electronAPI.killTerminal(info.id);
-      if (!result.success) throw new Error(result.error || 'Process cleanup failed');
+      if (!result.success) throw new Error(result.error || 'Terminal retirement request failed');
     } catch (error) {
-      // Do not report successful cleanup when main could not confirm it.
+      // The IPC acknowledgment accepts retirement; it does not prove that the process has exited.
       console.error(`Failed to clean up unregistered terminal ${info.id}:`, error);
     }
     removeReservation();

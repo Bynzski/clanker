@@ -30,8 +30,12 @@ Minimize/restore/page switch/maximize do not spawn or terminate resources or cha
 Undo repairs only the current tiled membership; it cannot resurrect closed/minimized panes.
 Maximize never changes the stored tree or ratios and remains per-page until explicitly restored.
 Attention is acknowledged only for the presented, focused terminal in the active app destination.
-A pending launch reserves its original page's pane before awaiting main; close is bound to the
-original workspace/terminal, not whichever workspace is selected when IPC completes.
+Terminal dispatch reserves its original page's pane before awaiting spawn, even if the captured
+page is no longer selected after asynchronous checkout resolution. Reservation/attachment/cleanup
+on that page preserve the selected page's topology, history and editor focus. A removed destination
+is refused, never replaced by the selected page. Close is bound to the original workspace/terminal,
+not whichever workspace is selected when IPC completes; a retirement acknowledgment is not proof
+that the underlying process has exited.
 
 Page preferences are scoped by environment + canonical path and contain no runtime pane/PTY IDs
 or undo/focus/maximize history. Location-only reopening retains pages, not running conversations:

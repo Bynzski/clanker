@@ -1,7 +1,7 @@
 import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
 import { workspacePageActions } from './workspacePageActions';
-import { activePage, paneIsPresented, revealPane, revealTerminal, selectPage, synchronizePages } from './workspacePages';
+import { activePage, paneIsPresented, revealPane, revealTerminal, retainSelectedPage, selectPage, synchronizePages } from './workspacePages';
 import {
   buildWorkspaceLayout,
   fitLayoutRatios,
@@ -485,7 +485,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activeTerminalId: nextActiveTerminalId, layoutRoot: nextLayoutRoot,
         layoutRevision: state.layoutRevision + 1, model: state.model,
       });
-      return workspace.activePageId && workspace.activePageId !== targetPageId ? selectPage(updated, workspace.activePageId) : updated;
+      return retainSelectedPage(workspace, updated);
     };
     if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
     const nextState = {
@@ -1255,12 +1255,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     })),
   })),
 
-  addPane: (terminalId, position, workspaceId) => {
+  addPane: (terminalId, position, workspaceId, pageId) => {
     let paneId: string | null = null;
     set((current) => {
-      const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
-      if (workspaceId && !scopedWorkspace) return current;
-      const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
+      const scopeId = workspaceId ?? (pageId ? current.activeWorkspaceId ?? undefined : undefined);
+      const owner = scopeId ? resolveWorkspaceByScope(current, scopeId) : null;
+      if ((scopeId && !owner) || (pageId && !owner?.pages?.some((page) => page.id === pageId))) return current;
+      const target = owner && pageId ? selectPage(owner, pageId) : owner;
+      const state = target ? { ...current, ...getActiveWorkspaceSnapshot(target) } : current;
       const nextPane = createPane(terminalId, position);
       paneId = nextPane.id;
       const nextPanes = [...state.panes, nextPane];
@@ -1276,11 +1278,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         notesVisible: state.notesVisible,
         activeTerminalId: state.activeTerminalId,
       });
-      const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
-        ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
-        pages: workspace.pages?.map((page) => page.id === workspace.activePageId ? { ...page, maximizedPaneId: undefined } : page),
-      });
-      if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
+      const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
+        const destination = pageId ? selectPage(workspace, pageId) : workspace;
+        const updated = synchronizePages(destination, {
+          ...destination, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
+          pages: destination.pages?.map((page) => page.id === destination.activePageId ? { ...page, maximizedPaneId: undefined } : page),
+        });
+        return retainSelectedPage(workspace, updated);
+      };
+      if (scopeId) return patchWorkspaceById(current, scopeId, updateWorkspace);
       return {
         panes: nextPanes,
         layoutRoot: nextLayoutRoot,
@@ -1292,15 +1298,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   removePane: (paneId, workspaceId) => set((current) => {
-    const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
-    if (workspaceId && !scopedWorkspace) return current;
-    const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
+    const owner = resolveWorkspaceByScope(current, workspaceId);
+    if (workspaceId && !owner) return current;
+    const pageId = owner?.pages?.find((page) => collectLeafPaneIds(page.layoutRoot).includes(paneId))?.id
+      ?? owner?.minimizedPanes?.find((entry) => entry.paneId === paneId)?.pageId;
+    const target = owner && pageId ? selectPage(owner, pageId) : owner;
+    const state = target ? { ...current, ...getActiveWorkspaceSnapshot(target) } : current;
     const nextPanes = state.panes.filter((pane) => pane.id !== paneId);
     const nextLayoutRoot = removePaneFromLayout(state.layoutRoot, paneId);
-    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
-      ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
-    });
-    if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
+    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
+      const destination = pageId ? selectPage(workspace, pageId) : workspace;
+      const updated = synchronizePages(destination, {
+        ...destination, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
+      });
+      return retainSelectedPage(workspace, updated);
+    };
+    if (owner) return patchWorkspaceById(current, owner.id, updateWorkspace);
     return {
       panes: nextPanes,
       layoutRoot: nextLayoutRoot,

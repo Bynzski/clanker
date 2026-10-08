@@ -190,7 +190,7 @@ export interface WorkspaceState {
   setGitBranchInfo: (branch: string | null, isRepo: boolean, isDetached: boolean) => void;
 
   setPanes: (panes: Pane[]) => void;
-  addPane: (terminalId: string | null, position?: PanePosition, workspaceId?: string) => string | null;
+  addPane: (terminalId: string | null, position?: PanePosition, workspaceId?: string, pageId?: string) => string | null;
   removePane: (paneId: string, workspaceId?: string) => void;
   updatePanePosition: (paneId: string, position: PanePosition) => void;
   updateAllPanePositions: (positions: Array<{ id: string; position: PanePosition }>) => void;
