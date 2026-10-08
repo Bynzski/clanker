@@ -25,7 +25,8 @@ import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../../share
 import type { SessionInvokeOptions } from '../../shared/types/session';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
-import { trustedRootSessionId, withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { trustedRootSessionId } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../launchAttachments';
 import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';

@@ -524,7 +524,7 @@ describe('Pi lifecycle', () => {
   const ctx = { sessionManager: { getSessionId: () => 'root' } };
   it('completes on agent_settled only, never on lower-level end events', async () => {
     const handlers = await load();
-    expect(Object.keys(handlers).sort()).toEqual(['agent_settled', 'agent_start', 'session_shutdown', 'session_start']);
+    expect(Object.keys(handlers).sort()).toEqual(['agent_settled', 'agent_start', 'message_end', 'session_compact_failed', 'session_shutdown', 'session_start', 'ui_prompt_end', 'ui_prompt_start']);
     const { feed, state } = rig('pi');
     drain();
     await handlers.agent_start({}, ctx);
@@ -564,6 +564,115 @@ describe('Pi lifecycle', () => {
     drain();
     await handlers.agent_settled({}, ctx);
     expect(drain()).toEqual([]);
+  });
+
+  it.each([
+    ['select', 'input'], ['input', 'input'], ['editor', 'input'], ['confirm', null], ['custom', null],
+  ])('correlates %s prompts without forwarding titles or guessing approval', async (kind, requestKind) => {
+    const handlers = await load();
+    const { feed, broker, state } = rig('pi');
+    drain();
+    await handlers.ui_prompt_start({ kind, title: 'private dialog' }, ctx);
+    expect(drain()).toEqual([]); // Idle dialogs cannot manufacture a foreground turn.
+    await handlers.agent_start({}, ctx);
+    drain().forEach(feed);
+    await handlers.ui_prompt_end({ kind }, ctx);
+    expect(drain()).toEqual([]);
+    await handlers.ui_prompt_start({ kind, title: 'private dialog' }, ctx);
+    const requested = drain();
+    expect(JSON.stringify(requested)).not.toContain('private');
+    requested.forEach(feed);
+    expect(broker.snapshot('term')?.pendingRequest).toMatchObject({ kind: requestKind, evidence: 'structured' });
+    await handlers.ui_prompt_start({ kind }, ctx);
+    await handlers.ui_prompt_end({ kind: 'wrong' }, ctx);
+    expect(drain()).toEqual([]);
+    await handlers.ui_prompt_end({ kind }, ctx);
+    const resolved = drain();
+    expect(resolved[0]).toMatchObject({ event: 'input_resolved', inputId: requested[0].inputId, turnId: '1' });
+    resolved.forEach(feed);
+    expect(broker.snapshot('term')?.pendingRequest).toBeNull();
+    expect(state()).toBe('running');
+    await handlers.ui_prompt_start({ kind }, ctx);
+    const next = drain();
+    expect(next[0].inputId).not.toBe(requested[0].inputId);
+    next.forEach(feed);
+    await handlers.agent_settled({ aborted: true }, ctx);
+    drain().forEach(feed);
+    expect(broker.snapshot('term')).toMatchObject({ pendingRequest: null, lastCompletion: null, lastOutcome: { kind: 'interrupted' } });
+    await handlers.ui_prompt_end({ kind }, ctx);
+    expect(drain()).toEqual([]);
+  });
+
+  it.each([
+    [true, true, 'turn_interrupted', 'interrupted'],
+    [false, true, 'turn_failed', 'failed'],
+    [false, false, 'turn_completed', 'completed'],
+  ])('settles aborted=%s failed=%s only at the final boundary', async (aborted, failed, event, outcome) => {
+    const handlers = await load();
+    const { feed, broker, state } = rig('pi');
+    drain();
+    await handlers.agent_start({}, ctx);
+    drain().forEach(feed);
+    await handlers.message_end({ message: { role: 'assistant', stopReason: failed ? 'error' : 'stop', errorMessage: 'secret error' } }, ctx);
+    expect(drain()).toEqual([]);
+    expect(state()).toBe('running');
+    await handlers.agent_settled({ aborted }, ctx);
+    const wires = drain();
+    expect(wires[0]).toMatchObject({ event, turnId: '1' });
+    expect(JSON.stringify(wires)).not.toContain('secret');
+    wires.forEach(feed);
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe(outcome);
+    if (outcome !== 'completed') expect(broker.snapshot('term')?.lastCompletion).toBeNull();
+    await handlers.agent_start({}, ctx);
+    await handlers.agent_settled({}, ctx);
+    drain().forEach(feed);
+    expect(state()).toBe('ready'); // Failure is reset for the next foreground turn.
+  });
+
+  it('lets successful retries supersede failures and ignores other roles and sessions', async () => {
+    const handlers = await load();
+    const { feed, state } = rig('pi');
+    drain();
+    await handlers.agent_start({}, ctx);
+    await handlers.message_end({ message: { role: 'assistant', stopReason: 'error' } }, ctx);
+    await handlers.message_end({ message: { role: 'assistant', stopReason: 'stop' } }, ctx);
+    await handlers.message_end({ message: { role: 'toolResult', stopReason: 'error' } }, ctx);
+    const other = { sessionManager: { getSessionId: () => 'other' } };
+    await handlers.message_end({ message: { role: 'assistant', stopReason: 'error' } }, other);
+    await handlers.ui_prompt_start({ kind: 'input' }, other);
+    await handlers.agent_settled({ aborted: true }, other);
+    await handlers.agent_settled({}, ctx);
+    const wires = drain();
+    expect(wires.map((wire) => wire.event)).toEqual(['turn_started', 'turn_completed']);
+    wires.forEach(feed);
+    expect(state()).toBe('ready');
+  });
+
+  it.each([true, false])('handles aborted=%s recovery-compaction failure without leaking error text', async (aborted) => {
+    const handlers = await load();
+    drain();
+    await handlers.agent_start({}, ctx);
+    await handlers.session_compact_failed({ aborted, errorMessage: 'private compaction error' }, ctx);
+    await handlers.agent_settled({ aborted: false }, ctx);
+    const wires = drain();
+    expect(wires.map((wire) => wire.event)).toEqual(['turn_started', aborted ? 'turn_interrupted' : 'turn_failed']);
+    expect(JSON.stringify(wires)).not.toContain('private');
+  });
+
+  it('clears prompt and failure bookkeeping at session shutdown', async () => {
+    const handlers = await load();
+    drain();
+    await handlers.agent_start({}, ctx);
+    await handlers.ui_prompt_start({ kind: 'input' }, ctx);
+    await handlers.message_end({ message: { role: 'assistant', stopReason: 'error' } }, ctx);
+    await handlers.session_shutdown({}, ctx);
+    drain();
+    await handlers.ui_prompt_end({ kind: 'input' }, ctx);
+    await handlers.agent_settled({}, ctx);
+    expect(drain()).toEqual([]);
+    await handlers.agent_start({}, ctx);
+    await handlers.agent_settled({}, ctx);
+    expect(drain().map((wire) => wire.event)).toEqual(['turn_started', 'turn_completed']);
   });
 
   // Location: `ctx.cwd` is the session's directory. Commands never move it; replacing the session

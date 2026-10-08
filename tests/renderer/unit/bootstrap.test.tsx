@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup } from '@testing-library/react';
+import ReactDOM, { type Root } from 'react-dom/client';
 import { bootstrap } from '../../../src/renderer/main';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { startTerminalThemeSync } from '../../../src/renderer/theme/themeRuntime';
@@ -36,9 +37,17 @@ vi.mock('../../../src/renderer/lib/harnessDefaultsMigration', () => ({
 
 describe('bootstrap startup handshake', () => {
   let rootContainer: HTMLDivElement;
+  const roots: Root[] = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // bootstrap creates roots outside Testing Library, so cleanup() does not own them.
+    const createRoot = ReactDOM.createRoot;
+    vi.spyOn(ReactDOM, 'createRoot').mockImplementation((...args) => {
+      const root = createRoot(...args);
+      roots.push(root);
+      return root;
+    });
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.colorScheme = '';
 
@@ -52,7 +61,11 @@ describe('bootstrap startup handshake', () => {
     document.body.appendChild(rootContainer);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots.splice(0)) root.unmount();
+    });
+    expect(rootContainer.childElementCount).toBe(0);
     cleanup();
     startTerminalThemeSync()();
     document.body.innerHTML = '';

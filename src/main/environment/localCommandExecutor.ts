@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import { planBoundedSpawn, UnsafeBatchArgumentError, type BoundedSpawnPlan } from './boundedSpawn';
 import { normalizeSessionRequest, openBoundedSession } from './boundedSession';
 import { prependUserCliBinsToPath } from '../platformShell';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from './attentionEnvironment';
 import { toNativePath } from '../../shared/pathNormalize';
 import { HarnessCapabilityError } from '../harnesses/types';
 import {

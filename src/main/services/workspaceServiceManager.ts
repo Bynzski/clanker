@@ -12,7 +12,7 @@ import { resolveHarnessPtySpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import { normalizeWorkspacePath } from '../../shared/workspaceIdentity';
 import { toNativePath } from '../../shared/pathNormalize';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { withoutAgentBridgeEnvironment } from '../agentBridge/service';
 import { createTerminalOutputRows } from '../terminalOutputRows';
 import { findTerminalUrls } from '../../shared/terminalUrls';
