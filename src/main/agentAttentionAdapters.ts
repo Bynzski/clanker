@@ -15,14 +15,6 @@ const OWNER_PID_FILE = '.clanker-pid';
 let files: AttentionAdapterFiles | null = null;
 const providerFiles = new Map<string, AttentionAdapterFiles>();
 
-export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
-  // Windows variable names are case-insensitive: compare upper-cased so no spelling of a reserved name survives.
-  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => {
-    const key = entry[0].toUpperCase();
-    return !key.startsWith('CLANKER_ATTENTION_') && !key.startsWith('CLANKER_REMOTE_ATTENTION_') && typeof entry[1] === 'string';
-  }));
-}
-
 export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   if (files) return files;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), ATTENTION_ROOT_PREFIX));

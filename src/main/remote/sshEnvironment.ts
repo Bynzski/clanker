@@ -21,7 +21,7 @@ import { inspectSshWorktree } from './sshWorktreeInspection';
 import { removeSshWorktree, waitForSshWorktreeOperations } from './sshWorktreeRemoval';
 import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 export { isPathContained } from './remotePaths';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
 import { executeSshHarnessCommand, openSshHarnessSession } from './sshHarnessCommand';

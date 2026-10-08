@@ -13,8 +13,8 @@ import {
   removeAttentionAdapterFiles,
   scavengeStaleAttentionRoots,
   migrateLegacyAgyAttentionPlugin,
-  withoutAttentionEnvironment,
 } from '../../../src/main/agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../../../src/main/environment/attentionEnvironment';
 import { attentionRecorder } from '../../_helpers/attentionChanges';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 

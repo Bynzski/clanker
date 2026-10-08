@@ -102,6 +102,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Fallow dead-code regression check
+        run: npm run fallow:check
+
       - name: Build
         run: npm run build
 

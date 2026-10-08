@@ -39,6 +39,7 @@ import {
   RELEASE_CHECKOUT_CONTEXT,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
+import { resolveTerminalLaunchTarget } from './terminalLaunchTarget';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
 import { isInsideRoot } from '../localPathContainment';
@@ -46,10 +47,8 @@ import { releaseCheckoutContext, type TerminalUsage } from '../checkoutContextRe
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
-import {
-  attentionSourceOptions,
-  withoutAttentionEnvironment,
-} from '../agentAttentionAdapters';
+import { attentionSourceOptions } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 
 interface Terminal {
   id: string;
@@ -147,36 +146,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const store = getStore();
     const registry = deps.getWorkspaceRegistry?.();
 
-    let resolvedWorkspace = workspaceId ? registry?.getWorkspace(workspaceId) : null;
-    if (workspaceId && registry && !resolvedWorkspace) {
-      throw new Error('Workspace is not registered or not accessible');
-    }
-    if (!resolvedWorkspace && workingDir && !environmentId) {
-      resolvedWorkspace = registry?.getWorkspaceByLocation('local', workingDir) ?? null;
-    }
-    if (environmentId && resolvedWorkspace && environmentId !== resolvedWorkspace.location.environmentId) {
-      throw new Error('Workspace environment does not match registered workspace');
-    }
-    if (checkoutContextId !== undefined && !isNonEmptyString(checkoutContextId)) {
-      throw new Error('Invalid checkout context');
-    }
-    // The terminal root is the checkout context's validated root, not the workspace path:
-    // no requested id means the workspace's main checkout, and a context registered under another
-    // workspace never resolves. Launches outside any registered workspace stay unbound (legacy).
-    const checkoutContext = resolvedWorkspace && registry
-      ? registry.resolveCheckoutContext(resolvedWorkspace.workspaceId, checkoutContextId)
-      : null;
-    if ((resolvedWorkspace || checkoutContextId) && !checkoutContext) {
-      throw new Error('Checkout context is not registered for this workspace');
-    }
-    // Launch resolution can await (SSH resolution, attention registration). Whatever was resolved
-    // must still be the exact registered workspace and context when the process is about to exist;
-    // a launch that resolved neither (legacy unbound, path only) has nothing to revalidate.
-    const isResolvedTargetCurrent = (): boolean => {
-      if (!resolvedWorkspace) return true;
-      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace) return false;
-      return !checkoutContext || registry.getCheckoutContext(checkoutContext.id) === checkoutContext;
-    };
+    const { resolvedWorkspace, checkoutContext, isResolvedTargetCurrent } = resolveTerminalLaunchTarget(
+      registry, workingDir, workspaceId, environmentId, checkoutContextId,
+    );
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

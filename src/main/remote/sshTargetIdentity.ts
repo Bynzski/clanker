@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { validateSshTarget } from '../../shared/sshValidation';
 
 /** Resource safeguards share an effective OpenSSH destination across aliases.

@@ -11,7 +11,7 @@ import { createCheckoutLifecycleCapabilities } from '../../../src/main/agentBrid
 import { AgentBridgeService, agentBridgeLaunchStep, AGENT_BRIDGE_TOKEN_ENV, withoutAgentBridgeEnvironment } from '../../../src/main/agentBridge/service';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../../../src/main/launchAttachments';
 import { collectGarbage, weakHandle, type WeakHandle } from '../../_helpers/gc';
-import { withoutAttentionEnvironment } from '../../../src/main/agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../../../src/main/environment/attentionEnvironment';
 import { codexBridgeConflicts, codexDeveloperInstructionsConflict } from '../../../src/main/harnesses/codex/agentBridge';
 import { bridgeInstructions } from '../../../src/main/agentBridge/instructions';
 import type { HarnessAgentBridgeContext } from '../../../src/main/harnesses/types';

@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createConnection, type Socket } from 'node:net';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { validateSshTarget } from '../../shared/sshValidation';
 import { isPreviewPort } from '../../shared/types/remotePreview';
 

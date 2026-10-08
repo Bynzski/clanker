@@ -4,14 +4,31 @@
     "src/renderer/main.tsx",
     "src/renderer/index.html",
     "src/renderer/electron.d.ts",
-    "src/shared/types/credentials.ts"
+    "src/shared/types/credentials.ts",
+    "scripts/app-close-guard-smoke.cjs",
+    "scripts/pi-bridge-smoke.cjs",
+    "scripts/ssh-preview-session-smoke.cjs",
+    "scripts/terminal-geometry-smoke.cjs"
   ],
+  "ignoreDependencies": ["@modelcontextprotocol/sdk", "node:sqlite"],
   "overrides": [
     {
       "files": ["src/renderer/electron.d.ts"],
       "rules": {
         "unresolved-imports": "off"
       }
+    },
+    {
+      "files": [
+        "scripts/app-close-guard-smoke.cjs",
+        "scripts/pi-bridge-smoke.cjs",
+        "scripts/ssh-preview-session-smoke.cjs"
+      ],
+      "rules": { "unresolved-imports": "off" }
+    },
+    {
+      "files": ["src/main/agentBridge/server.ts"],
+      "rules": { "unresolved-imports": "off" }
     }
   ]
 }

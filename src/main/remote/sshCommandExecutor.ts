@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
-import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { validateSshTarget } from '../../shared/sshValidation';
 import { classifySshTransportFailure, type SshFailureKind } from './sshErrorMessages';
 
