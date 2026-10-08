@@ -123,3 +123,19 @@
 .usage-use { cursor: pointer; border: 1px solid var(--border-default); background: transparent; }
 .usage-use:hover { background: var(--surface-control); }
 .usage-account-actions { display: flex; gap: 6px; padding: 0 12px 8px; }
+
+.usage-pin { margin-left: auto; display: inline-flex; padding: 2px; background: none; border: none; border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; }
+.usage-pin:hover { color: var(--text-primary); }
+.usage-pin.active { color: var(--accent-interactive); }
+.usage-pin:focus-visible { outline: 1px solid var(--accent-interactive); }
+
+/* Status-bar widget: the dial, plus one small chip per pinned harness. */
+.usage-widget { display: inline-flex; align-items: center; gap: 8px; padding: 0 4px; height: 20px; background: none; border: none; border-radius: var(--radius-sm); color: var(--text-secondary); font: inherit; cursor: pointer; }
+.usage-widget:hover, .usage-widget.active { background: var(--surface-control); color: var(--text-primary); }
+.usage-widget:focus-visible { outline: 1px solid var(--accent-interactive); }
+.usage-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
+.usage-chip-bar { width: 28px; height: 4px; background: var(--surface-sunken); border-radius: var(--radius-sm); overflow: hidden; }
+.usage-chip-fill { display: block; height: 100%; background: var(--status-success); }
+.usage-chip.warn .usage-chip-fill { background: var(--status-warning); }
+.usage-chip.low .usage-chip-fill { background: var(--status-error); }
+.usage-chip-time { color: var(--text-muted); }

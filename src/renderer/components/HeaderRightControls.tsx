@@ -1,6 +1,5 @@
 import { Select } from './ui/Select';
-import { useRef } from 'react';
-import { ChevronRight, Gauge, Keyboard, KeyRound, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
+import { ChevronRight, Keyboard, KeyRound, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -8,8 +7,6 @@ import { Popover, PopoverTrigger, PopoverContent } from './ui/Popover';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
-import UsageDropdown from './UsageDropdown';
-import type { UseHarnessUsageResult } from './useHarnessUsage';
 import type { DestinationCapabilities } from '../lib/activeDestination';
 import AssistantsSettings from './settings/AssistantsSettings';
 import AppearanceSettings from './settings/AppearanceSettings';
@@ -35,13 +32,7 @@ interface HeaderRightControlsProps {
   environmentId?: string;
   accountIntent?: { harness: string; intent: 'manage' | 'add' } | null;
   onAccountIntentConsumed?: () => void;
-  onManageAccounts?: (harnessId: string, intent: 'manage' | 'add') => void;
   onCloseChatHistory: () => void;
-  showUsage: boolean;
-  /** False until persisted harness preferences have loaded; the control is disabled meanwhile. */
-  usageReady: boolean;
-  onUsageOpenChange: (open: boolean) => void;
-  usage: UseHarnessUsageResult;
   settingsTriggerRef: React.RefObject<HTMLButtonElement | null>;
   onSettingsCloseAutoFocus: (event: Event) => void;
   showSettings: boolean;
@@ -90,12 +81,7 @@ export default function HeaderRightControls({
   environmentId,
   accountIntent,
   onAccountIntentConsumed,
-  onManageAccounts,
   onCloseChatHistory,
-  showUsage,
-  usageReady,
-  onUsageOpenChange,
-  usage,
   settingsTriggerRef,
   onSettingsCloseAutoFocus,
   showSettings,
@@ -126,7 +112,6 @@ export default function HeaderRightControls({
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HeaderRightControlsProps) {
-  const usageHandoff = useRef(false);
   return (
     <div className="header-right">
       {panelToggles && (
@@ -173,7 +158,7 @@ export default function HeaderRightControls({
           <ScrollText size={14} strokeWidth={2} />
         </IconButton>
       )}
-      {(capabilities.sessionHistory || capabilities.usage) && <span className="toolbar-divider" aria-hidden="true" />}
+      {capabilities.sessionHistory && <span className="toolbar-divider" aria-hidden="true" />}
       {capabilities.sessionHistory && (
       <Popover open={showChatHistory} onOpenChange={onChatHistoryOpenChange}>
         <PopoverTrigger asChild>
@@ -195,35 +180,6 @@ export default function HeaderRightControls({
             workspacePath={workspacePath || '/'}
             workspaceId={workspaceId}
             onClose={onCloseChatHistory}
-          />
-        </PopoverContent>
-      </Popover>
-      )}
-      {capabilities.usage && (
-      <Popover open={showUsage} onOpenChange={onUsageOpenChange}>
-        <PopoverTrigger asChild>
-          <IconButton size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage" disabled={!usageReady && !showUsage}>
-            <Gauge size={14} strokeWidth={2} />
-          </IconButton>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}
-          onCloseAutoFocus={(event) => {
-            // On a Usage -> Settings handoff, restoring focus to the Usage trigger would count as an
-            // outside interaction and dismiss the Settings popover that is opening.
-            if (usageHandoff.current) { event.preventDefault(); usageHandoff.current = false; }
-          }}>
-          <UsageDropdown
-            harnessIds={usage.harnessIds}
-            entries={usage.entries}
-            otherAccounts={usage.otherAccounts}
-            onSelectAccount={usage.selectAccount}
-            onManageAccounts={onManageAccounts && ((harnessId, intent) => { usageHandoff.current = true; onManageAccounts(harnessId, intent); })}
-            pending={usage.pending}
-            refreshing={usage.refreshing}
-            now={usage.now}
-            canRefresh={usage.canManualRefresh}
-            nextManualRefreshAt={usage.nextManualRefreshAt}
-            onRefresh={() => usage.refreshAll(true)}
           />
         </PopoverContent>
       </Popover>

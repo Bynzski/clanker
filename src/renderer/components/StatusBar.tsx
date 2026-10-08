@@ -7,6 +7,7 @@ import { useAgentLocation } from '../lib/useAgentLocation';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAssistantsStore } from '../store/assistantsStore';
 import { NotificationCenter } from './NotificationCenter';
+import UsageWidget from './UsageWidget';
 import './StatusBar.css';
 
 export default function StatusBar() {
@@ -69,6 +70,7 @@ export default function StatusBar() {
       </div>
       
       <div className="status-right">
+        <UsageWidget />
         <NotificationCenter />
         <span className="status-item">
           <Circle size={8} fill="var(--status-success)" strokeWidth={0} />

@@ -1,4 +1,4 @@
-import { CircleAlert, Info, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CircleAlert, Info, Pin, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { HarnessUsageEntry, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName } from '../lib/usageFormat';
@@ -12,6 +12,9 @@ interface Props {
   onSelectAccount?: (harnessId: string, accountId: string) => void;
   /** Hands off to the existing Settings account surface; Usage owns no account lifecycle. */
   onManageAccounts?: (harnessId: string, intent: 'manage' | 'add') => void;
+  /** Harnesses currently pinned to the status-bar widget, and the toggle. */
+  widgetIds?: readonly string[];
+  onToggleWidget?: (harnessId: string) => void;
   pending: Record<string, boolean>;
   refreshing: boolean;
   now: number;
@@ -36,7 +39,7 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
   return 'Refresh usage';
 }
 
-export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
+export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, widgetIds, onToggleWidget, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
   // A harness missing from this environment is hidden, as everywhere else, rather than listed as absent.
   const shownIds = harnessIds.filter((id) => entries[id]?.status !== 'not-installed');
@@ -59,7 +62,8 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
         const primary = entries[id];
         return (
           <div key={id}>
-            <HarnessSection label={option.label} Icon={option.Icon} entry={primary} checking={pending[id] === true} now={now} />
+            <HarnessSection label={option.label} Icon={option.Icon} entry={primary} checking={pending[id] === true} now={now}
+              pinned={widgetIds?.includes(id)} onTogglePin={onToggleWidget && (() => onToggleWidget(id))} />
             {(otherAccounts?.[id] ?? []).map((other) => (
               <HarnessSection
                 key={other.account?.id ?? 'other'} label={option.label} Icon={option.Icon} entry={other} checking={false} now={now}
@@ -79,8 +83,9 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
   );
 }
 
-function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
+function HarnessSection({ label, Icon, entry, checking, now, onUse, pinned, onTogglePin }: {
   label: string; Icon: (typeof HARNESS_OPTIONS)[number]['Icon']; entry?: HarnessUsageEntry; checking: boolean; now: number; onUse?: () => void;
+  pinned?: boolean; onTogglePin?: () => void;
 }) {
   const groups = entry ? groupMeasurements(entry.measurements) : [];
   const single = groups.length === 1 ? groups[0] : undefined;
@@ -102,6 +107,8 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
         {problemTitle && <span className={`usage-status-icon usage-status-${tone}`} role="img" tabIndex={0} aria-label={problemTitle} title={problemTitle}>
           <StatusIcon size={12} aria-hidden="true" />{stale && <span className="usage-stale-label">Stale</span>}
         </span>}
+        {onTogglePin && <button type="button" className={`usage-pin${pinned ? ' active' : ''}`} aria-pressed={pinned} aria-label={`Show ${label} in status bar`}
+          title={pinned ? 'Showing in status bar' : 'Show in status bar'} onClick={onTogglePin}><Pin size={11} aria-hidden="true" /></button>}
       </div>
       {!entry && checking && <p className="usage-note" role="status">Checking usage…</p>}
       {entry && entry.status === 'ok' && entry.measurements.length === 0 && <p className="usage-note">No usage limits reported</p>}

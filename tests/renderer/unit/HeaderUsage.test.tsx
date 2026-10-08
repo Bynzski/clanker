@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Header from '../../../src/renderer/components/Header';
+import UsageWidget from '../../../src/renderer/components/UsageWidget';
 import { USAGE_POLL_INTERVAL_MS } from '../../../src/renderer/components/useHarnessUsage';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -42,7 +43,7 @@ afterEach(() => { vi.useRealTimers(); });
 
 /** Persisted preferences load asynchronously; the Usage control is disabled until they have. */
 const renderReady = async () => {
-  const view = render(<Header />);
+  const view = render(<UsageWidget />);
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   return view;
 };
@@ -268,7 +269,11 @@ describe('Usage provider selection (Show in Usage)', () => {
 
   it('toggling Show in Usage in Settings persists through setHarnessDefaults and drops the harness from the next Usage opening', async () => {
     const user = userEvent.setup();
-    await renderReady();
+    let stored = defaults({});
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockImplementation(async () => stored as never);
+    vi.mocked(window.electronAPI.setHarnessDefaults).mockImplementation(async (next) => { stored = next as never; });
+    render(<><Header /><UsageWidget /></>);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(await within(screen.getByRole('dialog', { name: 'Settings' })).findByRole('button', { name: 'Codex' }));
     await user.click(screen.getByRole('checkbox', { name: 'Show Codex in Usage' }));
@@ -285,7 +290,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     const user = userEvent.setup();
     let finish!: (value: never) => void;
     vi.mocked(window.electronAPI.getHarnessDefaults).mockReturnValueOnce(new Promise((resolve) => { finish = resolve as never; }));
-    render(<Header />);
+    render(<UsageWidget />);
     const trigger = screen.getByRole('button', { name: 'Usage' });
     expect(trigger).toBeDisabled(); // neutral: not-yet-known preferences are not "no providers available"
     await user.click(trigger);
@@ -303,7 +308,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     const user = userEvent.setup();
     vi.mocked(window.electronAPI.getHarnessDefaults).mockRejectedValueOnce(new Error('store unavailable'));
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    render(<Header />);
+    render(<UsageWidget />);
     await act(async () => { await Promise.resolve(); });
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();

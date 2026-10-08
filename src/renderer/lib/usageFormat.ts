@@ -126,3 +126,32 @@ export function groupMeasurements(measurements: HarnessUsageMeasurementView[]): 
 }
 
 export const groupMeta = (group: MeasurementGroup): string => [group.planLabel, group.accountLabel].filter(Boolean).join(' · ');
+
+/** Coarse countdown for the status-bar widget: "35m", "3h", "5d". Never finer than the unit shown. */
+export function formatResetShort(resetsAt: number, now: number): string {
+  const delta = resetsAt - now;
+  if (delta <= 0) return 'now';
+  if (delta < HOUR) return `${Math.max(1, Math.ceil(delta / MINUTE))}m`;
+  if (delta < DAY) return `${Math.floor(delta / HOUR)}h`;
+  return `${Math.floor(delta / DAY)}d`;
+}
+
+export interface WidgetUsage {
+  /** Remaining capacity, 0..1. */
+  ratio: number;
+  percent: number;
+  label: string;
+  resetsAt?: number;
+}
+
+/** The five-hour limit when there is one, else the weekly one; undefined if neither reports a ratio. */
+export function pickWidgetUsage(measurements: HarnessUsageMeasurementView[], harnessLabel: string): WidgetUsage | undefined {
+  const described = measurements.map((measurement) => describeMeasurement(measurement, harnessLabel))
+    .filter((view): view is MeasurementDisplay & { ratio: number; percentNow: number } => view.ratio !== undefined && view.percentNow !== undefined);
+  const view = described.find((entry) => /(5|five)[\s-]?h(ou)?r/i.test(entry.label))
+    ?? described.find((entry) => /week/i.test(entry.label));
+  return view && { ratio: view.ratio, percent: view.percentNow, label: view.label, resetsAt: view.resetsAt };
+}
+
+/** Green above half, yellow down to a fifth, red below. */
+export const usageTone = (ratio: number): 'ok' | 'warn' | 'low' => (ratio > 0.5 ? 'ok' : ratio > 0.2 ? 'warn' : 'low');
