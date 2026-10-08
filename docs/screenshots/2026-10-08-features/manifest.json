@@ -1,0 +1,390 @@
+{
+  "sourceCommit": "a067230ee1f545a6eb4f74ef06c18793ad8e7514",
+  "version": "0.11.0",
+  "capturedAt": "2026-10-08T13:57:32.253Z",
+  "dimensions": [
+    1920,
+    1080
+  ],
+  "themes": [
+    "dark",
+    "light",
+    "slate"
+  ],
+  "selection": "all",
+  "complete": true,
+  "privacy": "Isolated profiles; no personal credentials or model prompts. Real harness onboarding, not active AI work. Usage is unauthenticated.",
+  "entries": [
+    {
+      "file": "dark-empty-shell.png",
+      "description": "Empty shell and workspace entry points",
+      "kind": "image"
+    },
+    {
+      "file": "dark-open-workspace.png",
+      "description": "Local workspace chooser; SSH location entry point",
+      "kind": "image"
+    },
+    {
+      "file": "dark-files-and-tests.png",
+      "description": "Explorer source tree and real passing project tests",
+      "kind": "image"
+    },
+    {
+      "file": "dark-typescript-editor.png",
+      "description": "TypeScript editor pinned to the workspace checkout",
+      "kind": "image"
+    },
+    {
+      "file": "dark-markdown-preview.png",
+      "description": "Rendered Markdown guide and task checklist in the editor",
+      "kind": "image"
+    },
+    {
+      "file": "dark-isolated-agent-picker.png",
+      "description": "Harness selection, existing branches and a real linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "dark-isolated-agent-picker-tour.mp4",
+      "description": "Harness selection, existing branches and a real linked worktree",
+      "kind": "video",
+      "seconds": 5.3,
+      "poster": "dark-isolated-agent-picker.png"
+    },
+    {
+      "file": "dark-isolated-checkout-agent.png",
+      "description": "Real created branch, attached checkout and Pi startup; no model task",
+      "kind": "image"
+    },
+    {
+      "file": "dark-isolated-checkout-launch.mp4",
+      "description": "Creating an isolated branch and launching a real Pi pane (unconfigured model)",
+      "kind": "video",
+      "seconds": 6.5,
+      "poster": "dark-isolated-checkout-agent.png"
+    },
+    {
+      "file": "dark-inactive-checkout.png",
+      "description": "Created checkout stays managed after its last agent closes",
+      "kind": "image"
+    },
+    {
+      "file": "dark-git-menu.png",
+      "description": "Git menu with dirty files, branches and linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "dark-git-history.png",
+      "description": "Git commit history and actual working-copy diff",
+      "kind": "image"
+    },
+    {
+      "file": "dark-git-menu-tour.mp4",
+      "description": "Git changes, branches, worktree management and commit history",
+      "kind": "video",
+      "seconds": 7,
+      "poster": "dark-git-menu.png"
+    },
+    {
+      "file": "dark-commit-dialog.png",
+      "description": "Commit dialog with real modified and untracked files; no commit submitted",
+      "kind": "image"
+    },
+    {
+      "file": "dark-usage-status.png",
+      "description": "Usage menu: actual signed-out/unavailable statuses; no fabricated quota",
+      "kind": "image"
+    },
+    {
+      "file": "dark-usage-status-tour.mp4",
+      "description": "Usage menu: actual signed-out/unavailable statuses; no fabricated quota",
+      "kind": "video",
+      "seconds": 5.3,
+      "poster": "dark-usage-status.png"
+    },
+    {
+      "file": "dark-settings.png",
+      "description": "Settings and appearance controls",
+      "kind": "image"
+    },
+    {
+      "file": "dark-settings-tour.mp4",
+      "description": "Settings and appearance controls",
+      "kind": "video",
+      "seconds": 5.3,
+      "poster": "dark-settings.png"
+    },
+    {
+      "file": "dark-workspace-notes.png",
+      "description": "Workspace notes beside the editor and terminal",
+      "kind": "image"
+    },
+    {
+      "file": "dark-multi-project-agents.png",
+      "description": "Three projects with real Codex, Claude and Pi panes; onboarding only",
+      "kind": "image"
+    },
+    {
+      "file": "dark-workspace-switching.mp4",
+      "description": "Switching projects preserves each project’s terminal panes",
+      "kind": "video",
+      "seconds": 7.5,
+      "poster": "dark-multi-project-agents.png"
+    },
+    {
+      "file": "dark-collapsed-rail.png",
+      "description": "Collapsed workspace rail with per-project harness icons",
+      "kind": "image"
+    },
+    {
+      "file": "dark-tabs-navigation.png",
+      "description": "Optional workspace Tabs navigation with multiple agent panes",
+      "kind": "image"
+    },
+    {
+      "file": "dark-dev-server-browser.png",
+      "description": "Live headless dev service with its own Browser preview",
+      "kind": "image"
+    },
+    {
+      "file": "dark-dev-server-preview.mp4",
+      "description": "Explicit Run Dev Server and native embedded Browser preview",
+      "kind": "video",
+      "seconds": 5.8,
+      "poster": "dark-dev-server-browser.png"
+    },
+    {
+      "file": "dark-editor-browser.png",
+      "description": "Editor and native Browser together, with service controls in the sidebar",
+      "kind": "image"
+    },
+    {
+      "file": "dark-browser-tabs.png",
+      "description": "Native Browser tabs for the local dashboard and project guide",
+      "kind": "image"
+    },
+    {
+      "file": "dark-browser-annotation.png",
+      "description": "Selected native Browser element with annotation note and copy/send controls; no handoff performed",
+      "kind": "image"
+    },
+    {
+      "file": "dark-browser-annotation.mp4",
+      "description": "Entering and leaving native Browser annotation mode",
+      "kind": "video",
+      "seconds": 5.5,
+      "poster": "dark-browser-annotation.png"
+    },
+    {
+      "file": "light-empty-shell.png",
+      "description": "Empty shell and workspace entry points",
+      "kind": "image"
+    },
+    {
+      "file": "light-open-workspace.png",
+      "description": "Local workspace chooser; SSH location entry point",
+      "kind": "image"
+    },
+    {
+      "file": "light-files-and-tests.png",
+      "description": "Explorer source tree and real passing project tests",
+      "kind": "image"
+    },
+    {
+      "file": "light-typescript-editor.png",
+      "description": "TypeScript editor pinned to the workspace checkout",
+      "kind": "image"
+    },
+    {
+      "file": "light-markdown-preview.png",
+      "description": "Rendered Markdown guide and task checklist in the editor",
+      "kind": "image"
+    },
+    {
+      "file": "light-isolated-agent-picker.png",
+      "description": "Harness selection, existing branches and a real linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "light-isolated-checkout-agent.png",
+      "description": "Real created branch, attached checkout and Pi startup; no model task",
+      "kind": "image"
+    },
+    {
+      "file": "light-inactive-checkout.png",
+      "description": "Created checkout stays managed after its last agent closes",
+      "kind": "image"
+    },
+    {
+      "file": "light-git-menu.png",
+      "description": "Git menu with dirty files, branches and linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "light-git-history.png",
+      "description": "Git commit history and actual working-copy diff",
+      "kind": "image"
+    },
+    {
+      "file": "light-commit-dialog.png",
+      "description": "Commit dialog with real modified and untracked files; no commit submitted",
+      "kind": "image"
+    },
+    {
+      "file": "light-usage-status.png",
+      "description": "Usage menu: actual signed-out/unavailable statuses; no fabricated quota",
+      "kind": "image"
+    },
+    {
+      "file": "light-settings.png",
+      "description": "Settings and appearance controls",
+      "kind": "image"
+    },
+    {
+      "file": "light-workspace-notes.png",
+      "description": "Workspace notes beside the editor and terminal",
+      "kind": "image"
+    },
+    {
+      "file": "light-multi-project-agents.png",
+      "description": "Three projects with real Codex, Claude and Pi panes; onboarding only",
+      "kind": "image"
+    },
+    {
+      "file": "light-collapsed-rail.png",
+      "description": "Collapsed workspace rail with per-project harness icons",
+      "kind": "image"
+    },
+    {
+      "file": "light-tabs-navigation.png",
+      "description": "Optional workspace Tabs navigation with multiple agent panes",
+      "kind": "image"
+    },
+    {
+      "file": "light-dev-server-browser.png",
+      "description": "Live headless dev service with its own Browser preview",
+      "kind": "image"
+    },
+    {
+      "file": "light-editor-browser.png",
+      "description": "Editor and native Browser together, with service controls in the sidebar",
+      "kind": "image"
+    },
+    {
+      "file": "light-browser-tabs.png",
+      "description": "Native Browser tabs for the local dashboard and project guide",
+      "kind": "image"
+    },
+    {
+      "file": "light-browser-annotation.png",
+      "description": "Selected native Browser element with annotation note and copy/send controls; no handoff performed",
+      "kind": "image"
+    },
+    {
+      "file": "slate-empty-shell.png",
+      "description": "Empty shell and workspace entry points",
+      "kind": "image"
+    },
+    {
+      "file": "slate-open-workspace.png",
+      "description": "Local workspace chooser; SSH location entry point",
+      "kind": "image"
+    },
+    {
+      "file": "slate-files-and-tests.png",
+      "description": "Explorer source tree and real passing project tests",
+      "kind": "image"
+    },
+    {
+      "file": "slate-typescript-editor.png",
+      "description": "TypeScript editor pinned to the workspace checkout",
+      "kind": "image"
+    },
+    {
+      "file": "slate-markdown-preview.png",
+      "description": "Rendered Markdown guide and task checklist in the editor",
+      "kind": "image"
+    },
+    {
+      "file": "slate-isolated-agent-picker.png",
+      "description": "Harness selection, existing branches and a real linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "slate-isolated-checkout-agent.png",
+      "description": "Real created branch, attached checkout and Pi startup; no model task",
+      "kind": "image"
+    },
+    {
+      "file": "slate-inactive-checkout.png",
+      "description": "Created checkout stays managed after its last agent closes",
+      "kind": "image"
+    },
+    {
+      "file": "slate-git-menu.png",
+      "description": "Git menu with dirty files, branches and linked worktree",
+      "kind": "image"
+    },
+    {
+      "file": "slate-git-history.png",
+      "description": "Git commit history and actual working-copy diff",
+      "kind": "image"
+    },
+    {
+      "file": "slate-commit-dialog.png",
+      "description": "Commit dialog with real modified and untracked files; no commit submitted",
+      "kind": "image"
+    },
+    {
+      "file": "slate-usage-status.png",
+      "description": "Usage menu: actual signed-out/unavailable statuses; no fabricated quota",
+      "kind": "image"
+    },
+    {
+      "file": "slate-settings.png",
+      "description": "Settings and appearance controls",
+      "kind": "image"
+    },
+    {
+      "file": "slate-workspace-notes.png",
+      "description": "Workspace notes beside the editor and terminal",
+      "kind": "image"
+    },
+    {
+      "file": "slate-multi-project-agents.png",
+      "description": "Three projects with real Codex, Claude and Pi panes; onboarding only",
+      "kind": "image"
+    },
+    {
+      "file": "slate-collapsed-rail.png",
+      "description": "Collapsed workspace rail with per-project harness icons",
+      "kind": "image"
+    },
+    {
+      "file": "slate-tabs-navigation.png",
+      "description": "Optional workspace Tabs navigation with multiple agent panes",
+      "kind": "image"
+    },
+    {
+      "file": "slate-dev-server-browser.png",
+      "description": "Live headless dev service with its own Browser preview",
+      "kind": "image"
+    },
+    {
+      "file": "slate-editor-browser.png",
+      "description": "Editor and native Browser together, with service controls in the sidebar",
+      "kind": "image"
+    },
+    {
+      "file": "slate-browser-tabs.png",
+      "description": "Native Browser tabs for the local dashboard and project guide",
+      "kind": "image"
+    },
+    {
+      "file": "slate-browser-annotation.png",
+      "description": "Selected native Browser element with annotation note and copy/send controls; no handoff performed",
+      "kind": "image"
+    }
+  ]
+}

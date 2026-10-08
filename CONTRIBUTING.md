@@ -102,6 +102,11 @@ npm run test:coverage # With coverage report
 npm run diagnose:gpu  # Check hardware acceleration and sandboxed WebGL support
 ```
 
+For documentation screenshots and short feature clips, run `npm run capture:features`
+on Linux (clips require `ffmpeg`). The [capture guide](scripts/screenshots/README.md)
+explains the disposable demo repositories, privacy boundaries and offline asset gallery.
+This does not modify or deploy the website.
+
 The GPU diagnostic launches the installed Electron runtime with an isolated temporary profile. Run it on a desktop session when investigating browser rendering; it is intentionally not part of headless CI.
 
 For a live SSH workspace check, use the guarded [remote VPS smoke procedure](docs/remote-vps-smoke-test.md). Create a unique temporary directory for any destructive test and leave the persistent fixture intact.
