@@ -13,7 +13,7 @@ export const useWorkspaceServiceStore = create<WorkspaceServicesUpdate & { apply
   revision: -1, services: [],
   apply: (update) => set((state) => {
     if (update.revision <= state.revision) return state;
-    return { revision: update.revision, services: update.services.filter(hasServiceOwner) };
+    return { revision: update.revision, services: update.services.filter(hasServiceOwner), settings: update.settings };
   }),
 }));
 
