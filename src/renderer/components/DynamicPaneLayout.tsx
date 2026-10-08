@@ -226,7 +226,7 @@ function LeafView({
       interactive={isInteractive && !(workspace && activePage(workspace)?.maximizedPaneId)}
     >
       <ErrorBoundary paneId={paneId}>
-        {workspace && !workspace.panes.some((pane) => pane.id === paneId) && isInteractive && <div className="utility-presentation-controls"><PanePresentationControls workspace={workspace} paneId={paneId} /></div>}
+        {workspace && workspace.browserPane?.id !== paneId && !workspace.panes.some((pane) => pane.id === paneId) && isInteractive && <div className="utility-presentation-controls"><PanePresentationControls workspace={workspace} paneId={paneId} /></div>}
         {content}
       </ErrorBoundary>
     </PanelWrapper>

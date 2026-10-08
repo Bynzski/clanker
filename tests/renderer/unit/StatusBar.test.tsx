@@ -42,6 +42,15 @@ describe('StatusBar', () => {
     expect(document.querySelector('.status-environment')).toBeNull();
   });
 
+  it('places page controls after the version number on the left', () => {
+    const ws = createWorkspaceFixture({ id: 'pages', terminals: [] });
+    useWorkspaceStore.setState({ workspaces: [ws], activeWorkspaceId: ws.id, activeWorkspaceLifecycle: 'active' });
+    render(<StatusBar />);
+    const left = document.querySelector('.status-left')!;
+    expect(left.children[0]).toHaveClass('status-item');
+    expect(left.children[1]).toBe(screen.getByRole('navigation', { name: 'Workspace pages' }));
+  });
+
   it('shows the active SSH environment and removes it when switching to local', () => {
     const local = createWorkspaceFixture({ id: 'local', workspacePath: '/projects/local', environmentId: 'local', environmentLabel: 'Local', terminals: [] });
     const remote = createWorkspaceFixture({ id: 'remote', workspacePath: '/srv/projects/remote', environmentId: 'ssh-opaque-id', environmentLabel: 'devbox', terminals: [], gitCurrentBranch: 'feature', gitIsRepo: true });

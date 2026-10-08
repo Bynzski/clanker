@@ -41,6 +41,29 @@ let app;
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
     await page.getByRole('button', { name: 'Terminal', exact: true }).waitFor();
+    // Browser presentation controls must occupy the existing header, not a row above it.
+    await page.getByRole('button', { name: 'Toggle browser panel', exact: true }).click();
+    const browserHeader = page.locator('.browser-pane-header');
+    await browserHeader.getByRole('button', { name: 'Minimize pane', exact: true }).waitFor();
+    await browserHeader.getByRole('button', { name: 'Maximize pane', exact: true }).waitFor();
+    assert.equal(await page.locator('.utility-presentation-controls').count(), 0);
+    const headerRect = await browserHeader.boundingBox();
+    const controlsRect = await browserHeader.locator('.browser-pane-actions').boundingBox();
+    assert(controlsRect.y >= headerRect.y && controlsRect.y + controlsRect.height <= headerRect.y + headerRect.height + 1);
+    const versionRect = await page.locator('.status-left > .status-item').boundingBox();
+    const pagesRect = await page.getByRole('navigation', { name: 'Workspace pages' }).boundingBox();
+    assert(pagesRect.x >= versionRect.x + versionRect.width, 'Pages precede/overlap the version');
+    const footerRect = await page.locator('.status-bar').boundingBox();
+    await until(async () => {
+      const bounds = await app.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        return window.contentView.children.filter(view => view.webContents && view.webContents !== window.webContents && view.getVisible())
+          .map(view => view.getBounds());
+      });
+      return bounds.length === 1 && bounds[0].height > 0 && bounds[0].y + bounds[0].height <= footerRect.y + 1;
+    }, 'Native Browser extends over the status bar');
+    await page.getByRole('button', { name: 'Toggle browser panel', exact: true }).click();
+    await until(() => page.locator('.browser-panel').count().then(count => count === 0), 'Browser did not hide');
     await app.evaluate(({ ipcMain }, channelsPath) => {
       const { SPAWN_TERMINAL } = process.getBuiltinModule('module').createRequire(channelsPath)(channelsPath);
       // Electron test-only instrumentation; the production registration and handler are unchanged.
@@ -92,7 +115,8 @@ let app;
     await until(() => { try { process.kill(late.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } },
       'Late spawned shell process survived cleanup');
     console.log(JSON.stringify({ passed: true, realPtyPageCapture: true, hiddenStartup: true,
-      readyBackgroundViews: 0, cachedOutput: true, lateSpawnKilled: true }, null, 2));
+      readyBackgroundViews: 0, cachedOutput: true, lateSpawnKilled: true,
+      browserControlsInHeader: true, browserWithinFooter: true, pagesAfterVersion: true }, null, 2));
   } finally {
     if (app) {
       // Only fixture-owned terminals, including a gated one if an assertion failed.

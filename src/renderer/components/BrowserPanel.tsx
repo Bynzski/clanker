@@ -21,6 +21,7 @@ import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
+import { PanePresentationControls } from './WorkspacePageControls';
 import './BrowserPanel.css';
 import RemotePreviewControl from './RemotePreviewControl';
 import BrowserUrlInput from './BrowserUrlInput';
@@ -67,6 +68,8 @@ export interface BrowserPanelModel {
     /** The pane header is a workspace drag handle. */
     paneDrag: boolean;
   };
+  /** Optional owner-provided controls inside the existing pane header (no extra chrome row). */
+  headerControls?: ReactNode;
   /** Workspace-only: SSH remote preview control. */
   renderRemotePreview?: (navigate: (url: string) => Promise<string | null>) => ReactNode;
 }
@@ -499,6 +502,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
         />
         <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={model.features.paneDrag ? dragPointerDown : undefined} />
         <BrowserToastSlot />
+        {model.headerControls && <div className="browser-pane-actions">{model.headerControls}</div>}
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}
@@ -565,6 +569,8 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       createTab: () => createAndActivateBrowserTab(id),
       syncSelectedTab: () => syncSelectedBrowserTab(id),
       features: { annotation: true, paneDrag: true },
+      headerControls: !assistantActive && activeOwner === id && workspace.browserPane && workspaceBrowserPresented(workspace)
+        ? <PanePresentationControls workspace={workspace} paneId={workspace.browserPane.id} /> : undefined,
       renderRemotePreview: remote
         ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && workspaceBrowserPresented(workspace)} onOpen={navigate} />
         : undefined,

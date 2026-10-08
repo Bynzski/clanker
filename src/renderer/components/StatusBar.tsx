@@ -36,11 +36,11 @@ export default function StatusBar() {
   return (
     <footer className="status-bar">
       <div className="status-left">
-        {!activeAssistantId && focusedWorkspace && <WorkspacePageSwitcher key={focusedWorkspace.id} workspace={focusedWorkspace} />}
         <span className="status-item">
           <Tag size={12} strokeWidth={2} />
           {appVersion ? `v${appVersion}` : ''}
         </span>
+        {!activeAssistantId && focusedWorkspace && <WorkspacePageSwitcher key={focusedWorkspace.id} workspace={focusedWorkspace} />}
       </div>
       
       <div className="status-center">
