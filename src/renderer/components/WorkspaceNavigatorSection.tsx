@@ -267,7 +267,7 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                 )}
                 {isExpanded && workspace.environmentId && workspace.environmentId !== 'local' && (
                   <div className="ws-service-row" role="note" title="Dev Server launch is local-only for now. For SSH, start the server in a remote terminal and use the Browser's remote preview discovery.">
-                    <Server size={11} aria-hidden="true" /><span className="ws-service-label">Dev Server · local only</span>
+                    <Server size={11} aria-hidden="true" /><span className="sr-only">Dev Server · local only</span>
                   </div>
                 )}
                 {isExpanded && services.filter((service) => service.workspaceId === workspace.id && isLiveWorkspaceService(service) && !workspace.terminals.some((terminal) => {
@@ -278,8 +278,8 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                     <div className="ws-service-checkout" title={service.cwd}>
                       <GitBranch size={10} aria-hidden="true" />
                       <span>{workspace.checkoutContexts?.find((context) => context.id === service.checkoutContextId)?.branch || 'Main checkout'}</span>
+                      <DevServerControls workspace={workspace} service={service} />
                     </div>
-                    <DevServerControls workspace={workspace} service={service} />
                   </div>
                 ))}
                 <WorkspaceCheckouts workspace={workspace} expanded={isExpanded} label={label} />

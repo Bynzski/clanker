@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import OpenWorkspaceDialog from '../../../src/renderer/components/OpenWorkspaceDialog';
 import { installElectronApiMock } from '../../setup/electron';
@@ -110,4 +110,57 @@ it('suggests matching local folders while typing and continues into the chosen o
   expect(window.electronAPI.readDirectory).toHaveBeenCalledWith('/home/jay/');
   expect(input).toHaveValue('/home/jay/clanker/');
   expect(screen.queryByRole('button', { name: /other/ })).toBeNull();
+});
+
+describe('suggestions settle once a folder is chosen', () => {
+  const entries = [{ name: 'onlyup', isDirectory: true }, { name: 'other', isDirectory: true }];
+  const choose = async (via: 'click' | 'enter') => {
+    vi.mocked(window.electronAPI.readDirectory).mockResolvedValue(entries);
+    render(<OpenWorkspaceDialog isOpen onClose={vi.fn()} onOpen={openWorkspace} />);
+    const input = screen.getByLabelText('Local Directory Path');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '/home/jay/on' } });
+    const option = await screen.findByRole('button', { name: /\/home\/jay\/onlyup/ }, { timeout: 2000 });
+    if (via === 'click') fireEvent.click(option);
+    else { fireEvent.keyDown(input, { key: 'ArrowDown' }); fireEvent.keyDown(input, { key: 'Enter' }); }
+    expect(input).toHaveValue('/home/jay/onlyup/');
+    vi.mocked(window.electronAPI.readDirectory).mockClear();
+    return input;
+  };
+  const settleTime = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)); });
+
+  it.each(['click', 'enter'] as const)('does not list the chosen folder\'s children again after %s', async (via) => {
+    await choose(via);
+    await settleTime();
+    expect(window.electronAPI.readDirectory).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /\/home\/jay\/onlyup\// })).toBeNull();
+  });
+
+  it('a second Enter then opens the workspace in that folder', async () => {
+    const input = await choose('enter');
+    await settleTime();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledWith(expect.any(String), '/home/jay/onlyup', 'local'));
+  });
+
+  it('typing again brings the suggestions back', async () => {
+    const input = await choose('click');
+    await settleTime();
+    fireEvent.change(input, { target: { value: '/home/jay/onlyup/a' } });
+    await waitFor(() => expect(window.electronAPI.readDirectory).toHaveBeenCalledWith('/home/jay/onlyup/'), { timeout: 2000 });
+  });
+
+  it('clicking the field brings the suggestions back', async () => {
+    const input = await choose('click');
+    await settleTime();
+    fireEvent.click(input);
+    await waitFor(() => expect(window.electronAPI.readDirectory).toHaveBeenCalledWith('/home/jay/onlyup/'), { timeout: 2000 });
+  });
+
+  it('ArrowDown on a settled field reopens the list', async () => {
+    const input = await choose('enter');
+    await settleTime();
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await waitFor(() => expect(window.electronAPI.readDirectory).toHaveBeenCalledWith('/home/jay/onlyup/'), { timeout: 2000 });
+  });
 });

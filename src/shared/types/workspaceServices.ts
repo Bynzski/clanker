@@ -25,10 +25,21 @@ export interface WorkspaceService extends DevServiceCommand {
   pid?: number;
   previewUrl?: string;
   exitCode?: number;
+  /** Signal that ended the process, when it was killed rather than exiting (e.g. `SIGKILL`). */
+  exitSignal?: string;
+  /** Output matched a busy-port message and the service never became ready. Another process may own the port. */
+  portConflict?: { port?: number };
+  /**
+   * Some processes started by this service could not be confirmed terminated. The service is still owned
+   * (it blocks launches and checkout removal) and is reported as `failed`; Stop retries the cleanup.
+   */
+  cleanupIncomplete?: boolean;
+  /** Failure output (bounded, control-stripped) preceded by Clanker's own diagnosis; also stop/cleanup errors. */
   error?: string;
 }
+/** Live = owns, or may still own, processes: starting/running/stopping, or a failure whose cleanup is unverified. */
 export function isLiveWorkspaceService(service: WorkspaceService | undefined): boolean {
-  return Boolean(service && ['starting', 'running', 'stopping'].includes(service.status));
+  return Boolean(service && (['starting', 'running', 'stopping'].includes(service.status) || service.cleanupIncomplete));
 }
 export interface WorkspaceServicesUpdate { revision: number; services: WorkspaceService[] }
 export interface DevServiceDiscoveryResult { success: boolean; command?: DevServiceCommand; error?: string }

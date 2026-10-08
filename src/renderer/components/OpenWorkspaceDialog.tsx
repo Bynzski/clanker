@@ -78,7 +78,7 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
     if (environmentId !== 'local' && !path.startsWith('/')) { setError('Remote path must be an absolute POSIX path starting with /.'); return; }
     busyRef.current = true; setBusy(true); setError('');
     try {
-      await onOpen({ environmentId, path: environmentId === 'local' ? path.trim() : withoutTrailingSlash(path.trim()) });
+      await onOpen({ environmentId, path: environmentId === 'local' && !path.trim().startsWith('/') ? path.trim() : withoutTrailingSlash(path.trim()) });
       if (mounted.current) onClose();
     } catch (reason) {
       if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason));
@@ -90,7 +90,7 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
       <p>Where are we working today?</p>
     </div>
     <WorkspaceTargetPicker value={environmentId} environments={environments} disabled={busy}
-      onSelect={(id) => { setEnvironmentId(id); setPath(''); setError(''); setStartSaved(false); editedRef.current = id !== 'local'; }}
+      onSelect={(id) => { local.wake(); setEnvironmentId(id); setPath(''); setError(''); setStartSaved(false); editedRef.current = id !== 'local'; }}
       onAddServer={() => setManager(null)} onSettings={() => setManager(environmentId)} />
     {environmentId === 'local' ? <div className="remote-path-field"><div className="input-wrapper">
       <IconButton type="button" className="cog-button start-button" disabled={busy} aria-label="Set starting directory"
@@ -100,23 +100,25 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
     </IconButton>
       <Input variant="mono" type="text" className="workspace-location-input" aria-label="Local Directory Path" value={path}
         placeholder="Absolute directory" spellCheck={false} autoComplete="off" autoCapitalize="off" disabled={busy}
-        onChange={(event) => { editedRef.current = true; setStartSaved(false); local.dismiss(); setPath(event.target.value); }}
+        onChange={(event) => { editedRef.current = true; setStartSaved(false); local.wake(); local.dismiss(); setPath(event.target.value); }}
+        onClick={() => local.wake()}
         onFocus={() => { local.dismiss(); setLocalFocused(true); }} onBlur={() => { local.dismiss(); setLocalFocused(false); }}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && local.suggestions.length) { event.preventDefault(); local.dismiss(); }
+          else if (event.key === 'ArrowDown' && local.settled) { event.preventDefault(); local.wake(); }
           else if (event.key === 'ArrowDown' && local.suggestions.length) { event.preventDefault(); local.setSelectedIndex((index) => (index + 1) % local.suggestions.length); }
           else if (event.key === 'ArrowUp' && local.suggestions.length) { event.preventDefault(); local.setSelectedIndex((index) => index <= 0 ? local.suggestions.length - 1 : index - 1); }
           else if (event.key === 'Enter') {
             event.preventDefault();
             const picked = local.suggestions[local.selectedIndex];
-            if (picked) { local.dismiss(); setPath(withTrailingSlash(picked.path)); } else void submit();
+            if (picked) { local.settle(); setPath(withTrailingSlash(picked.path)); } else void submit();
           }
         }} />
       <IconButton type="button" className="cog-button" disabled={busy} aria-label="Choose Folder…" title="Choose Folder…" onClick={() => { void selectFolder(); }}>
         <FolderOpen size={18} aria-hidden="true" />
       </IconButton>
     </div>{localFocused && <DirectorySuggestionList suggestions={local.suggestions} selectedIndex={local.selectedIndex} onHover={local.setSelectedIndex}
-      onChoose={(entry) => { local.dismiss(); setPath(withTrailingSlash(entry.path)); }} />}</div> : <fieldset disabled={busy}>
+      onChoose={(entry) => { local.settle(); setPath(withTrailingSlash(entry.path)); }} />}</div> : <fieldset disabled={busy}>
       <RemoteWorkspacePath key={environmentId} environmentId={environmentId} path={path}
         onPathChange={(next) => { setStartSaved(false); setPath(next); }} onSubmit={() => { void submit(); }}
         leadingAction={<IconButton type="button" className="cog-button start-button" disabled={busy} aria-label="Set starting directory"

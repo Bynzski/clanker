@@ -1,13 +1,17 @@
+/* Three tracks: the middle is centered on the bar while both sides fit; a side that needs more room
+   pushes it over, and it truncates (ellipsis) only once there is no room left. */
 .status-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
-  justify-content: space-between;
+  column-gap: var(--space-md);
   padding: 4px var(--space-md);
   background: var(--surface-raised);
   border-top: 1px solid var(--border-default);
   min-height: 26px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .status-left,
@@ -17,8 +21,9 @@
   gap: var(--space-md);
 }
 
+.status-right { justify-content: flex-end; }
+
 .status-center {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;

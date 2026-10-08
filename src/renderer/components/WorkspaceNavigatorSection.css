@@ -194,9 +194,13 @@
 .ws-service-row { display: flex; align-items: center; flex: none; gap: 2px; color: var(--text-muted); font-size: var(--font-size-xs); }
 .ws-service-row > svg { flex-shrink: 0; }
 .ws-service-row .ws-service-install { flex-shrink: 0; min-height: 18px; padding: 0 4px; font-size: var(--font-size-xs); }
-.ws-service-label { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-service-light { flex-shrink: 0; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--status-success); box-shadow: 0 0 5px var(--status-success); }
 .ws-service-row.failed, .ws-service-row.failed .ws-nav-action { color: var(--status-error); }
+/* Section-level notes and orphan services: one quiet line, details in tooltips/modal. */
+.ws-service-row[role='note'] { padding: 2px 8px 2px 26px; }
+.ws-detached-service { padding: 0 4px 0 26px; }
+.ws-service-checkout { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); }
+.ws-service-checkout > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .ws-service-error { color: var(--status-error); flex: 0 0 100%; padding: 2px 8px 4px 28px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
 .ws-service-spin { margin: 0 2px; animation: ws-service-spin 1s linear infinite; }
