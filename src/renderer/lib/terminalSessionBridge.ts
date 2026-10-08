@@ -1,6 +1,8 @@
-import { writeCachedTerminalData, writeCachedTerminalExit } from '../components/TerminalPane';
+import { writeCachedTerminalData, writeCachedTerminalExit } from './terminalRuntimeCache';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { paneIsPresented } from '../store/workspacePages';
+import { useAssistantNavStore } from '../store/assistantNavStore';
 import { applyAgentCheckoutTransition } from './agentCheckoutTransition';
 
 /**
@@ -38,7 +40,9 @@ export function startTerminalSessionBridge(): () => void {
     const isForeground = (terminalId: string): boolean => {
       const state = useWorkspaceStore.getState();
       const workspace = state.workspaces.find((entry) => entry.terminals.some((terminal) => terminal.id === terminalId));
-      return workspace?.id === state.activeWorkspaceId && workspace?.activeTerminalId === terminalId;
+      const pane = workspace?.panes.find((entry) => entry.terminalId === terminalId);
+      return !useAssistantNavStore.getState().activeAssistantId && workspace?.id === state.activeWorkspaceId
+        && workspace?.activeTerminalId === terminalId && Boolean(pane && (!workspace.pages || paneIsPresented(workspace, pane.id)));
     };
     disposers.push(window.electronAPI.onAgentAttentionChanged((change) => {
       useAgentAttentionStore.getState().applyChange(change, isForeground(change.terminalId));
@@ -55,9 +59,13 @@ export function startTerminalSessionBridge(): () => void {
   }
 
   disposers.push(useWorkspaceStore.subscribe((state, previous) => {
-    if (state.activeWorkspaceId !== previous.activeWorkspaceId || state.activeTerminalId !== previous.activeTerminalId) {
-      const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
-      if (active?.activeTerminalId) useAgentAttentionStore.getState().acknowledge(active.activeTerminalId);
+    const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+    const prior = previous.workspaces.find((workspace) => workspace.id === previous.activeWorkspaceId);
+    if (!useAssistantNavStore.getState().activeAssistantId && active?.activeTerminalId) {
+      const pane = active.panes.find((entry) => entry.terminalId === active.activeTerminalId);
+      const wasVisible = prior?.id === active.id && prior.activeTerminalId === active.activeTerminalId
+        && prior.panes.some((entry) => entry.terminalId === active.activeTerminalId && (!prior.pages || paneIsPresented(prior, entry.id)));
+      if (!wasVisible && pane && (!active.pages || paneIsPresented(active, pane.id))) useAgentAttentionStore.getState().acknowledge(active.activeTerminalId);
     }
     const liveIds = new Set(state.workspaces.flatMap((workspace) => workspace.terminals.map((terminal) => terminal.id)));
     for (const workspace of previous.workspaces) {
@@ -65,6 +73,14 @@ export function startTerminalSessionBridge(): () => void {
         if (!liveIds.has(terminal.id)) useAgentAttentionStore.getState().retire(terminal.id);
       }
     }
+  }));
+
+  disposers.push(useAssistantNavStore.subscribe((state, previous) => {
+    if (!previous.activeAssistantId || state.activeAssistantId) return;
+    const workspaceState = useWorkspaceStore.getState();
+    const active = workspaceState.workspaces.find((workspace) => workspace.id === workspaceState.activeWorkspaceId);
+    const pane = active?.panes.find((entry) => entry.terminalId === active.activeTerminalId);
+    if (active?.activeTerminalId && pane && (!active.pages || paneIsPresented(active, pane.id))) useAgentAttentionStore.getState().acknowledge(active.activeTerminalId);
   }));
 
   return () => {

@@ -37,6 +37,11 @@ import {
 import { getWheelZoomAction, getZoomActionForCommand, resolveKeyboardCommand } from '../lib/keyboardShortcuts';
 import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
 import { observeTerminalGeometry } from '../lib/terminalGeometry';
+import { paneIsPresented } from '../store/workspacePages';
+import { PanePresentationControls } from './WorkspacePageControls';
+import { executeWorkspacePageCommand } from '../lib/workspacePageCommands';
+import { cacheTerminalInstance, finishTerminalDisposal, getCachedTerminal, isTerminalDisposed, markTerminalRuntimeReady, terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
+import { closeWorkspaceTerminal } from '../lib/workspaceTerminalClose';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
@@ -45,104 +50,11 @@ interface Props {
   workspaceId?: string;
   paneId: string;
   compact?: boolean;
+  /** Invisible, non-zero-sized bootstrap for a never-ready hidden terminal. */
+  background?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// xterm instance cache — preserves terminal state across workspace/tab switches
-// ---------------------------------------------------------------------------
-// When a TerminalPane unmounts (e.g., user switches workspace tabs), the xterm
-// instance is cached here instead of being disposed. When a new TerminalPane
-// mounts for the same terminalId, the cached instance is reused — preserving
-// scrollback, cursor position, and running PTY session state.
-//
-// Entries are removed when a terminal is intentionally closed. Natural PTY
-// exit keeps the cached xterm around so the finished session remains visible
-// when the workspace is revisited.
-// ---------------------------------------------------------------------------
-
-interface CachedTerminal {
-  xterm: XTermInstance;
-  fitAddon: FitAddonInstance;
-}
-
-const xtermCache = new Map<string, CachedTerminal>();
-const disposedTerminalIds = new Set<string>();
-
-export function cacheTerminalInstance(terminalId: string, xterm: XTermInstance, fitAddon: FitAddonInstance): void {
-  if (disposedTerminalIds.has(terminalId)) {
-    unregisterThemedTerminal(xterm);
-    xterm.dispose();
-    return;
-  }
-
-  const previous = xtermCache.get(terminalId);
-  if (previous && previous.xterm !== xterm) {
-    evictCachedTerminal(terminalId);
-  }
-  registerThemedTerminal(xterm, useThemeStore.getState().theme);
-  xtermCache.set(terminalId, { xterm, fitAddon });
-}
-
-export function writeCachedTerminalData(terminalId: string, data: string): boolean {
-  const cached = xtermCache.get(terminalId);
-  if (!cached) {
-    return false;
-  }
-
-  cached.xterm.write(data);
-  return true;
-}
-
-export function writeCachedTerminalExit(terminalId: string, exitCode: number): boolean {
-  const cached = xtermCache.get(terminalId);
-  if (!cached) {
-    return false;
-  }
-
-  cached.xterm.write(`\r\n\x1b[33mProcess exited with code ${exitCode}\x1b[0m\r\n`);
-  return true;
-}
-
-/**
- * Remove a cached xterm instance.
- * Disposes the xterm and removes it from the cache.
- */
-function evictCachedTerminal(terminalId: string): void {
-  const cached = xtermCache.get(terminalId);
-  if (cached) {
-    unregisterThemedTerminal(cached.xterm);
-    cached.xterm.dispose();
-    xtermCache.delete(terminalId);
-  }
-}
-
-export function markTerminalDisposed(terminalId: string): void {
-  disposedTerminalIds.add(terminalId);
-  evictCachedTerminal(terminalId);
-}
-
-/** Release a disposal guard only after the pane lifecycle has finished. */
-export function finishTerminalDisposal(terminalId: string): void {
-  disposedTerminalIds.delete(terminalId);
-}
-
-function isTerminalDisposed(terminalId: string): boolean {
-  return disposedTerminalIds.has(terminalId);
-}
-
-/**
- * Clear all cached xterm instances. Used in tests to ensure isolation.
- */
-export function clearTerminalCache(): void {
-  for (const [, cached] of xtermCache) {
-    unregisterThemedTerminal(cached.xterm);
-    cached.xterm.dispose();
-  }
-  xtermCache.clear();
-  disposedTerminalIds.clear();
-}
-
-export default function TerminalPane({ workspaceId, paneId, compact = false }: Props) {
+export default function TerminalPane({ workspaceId, paneId, compact = false, background = false }: Props) {
   const paneRootRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
@@ -152,10 +64,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
   const workspace = useScopedWorkspace(workspaceId);
-  const isInteractive = useScopedWorkspaceActivity(workspaceId);
+  const workspaceInteractive = useScopedWorkspaceActivity(workspaceId);
+  const isInteractive = workspaceInteractive && !background && (!workspace?.pages || paneIsPresented(workspace, paneId));
+  const [backgroundReadyId, setBackgroundReadyId] = useState<string | null>(null);
 
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
-  const removeTerminal = useWorkspaceStore((state) => state.removeTerminal);
   const removePane = useWorkspaceStore((state) => state.removePane);
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
@@ -193,10 +106,9 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     setTerminalRuntimeReady(false);
 
     // Check for a cached xterm instance (workspace tab switch restore)
-    const cached = terminalId != null ? xtermCache.get(terminalId) : null;
+    const cached = terminalId != null ? getCachedTerminal(terminalId) : null;
 
     if (cached) {
-      registerThemedTerminal(cached.xterm, useThemeStore.getState().theme);
       // Reuse cached xterm — just reattach to the new DOM container
       if (terminalRef.current && cached.xterm.element) {
         terminalRef.current.appendChild(cached.xterm.element);
@@ -204,7 +116,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       xtermRef.current = cached.xterm;
       fitAddonRef.current = cached.fitAddon;
       if (terminalId != null) {
-        xtermCache.set(terminalId, cached);
+        cacheTerminalInstance(terminalId, cached.xterm, cached.fitAddon);
       }
       terminalCacheHit(terminalId, workspaceId ?? undefined);
       setTerminalRuntimeReady(true);
@@ -283,7 +195,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         if (xterm.element?.parentNode) {
           xterm.element.parentNode.removeChild(xterm.element);
         }
-        xtermCache.set(terminalId, { xterm, fitAddon });
+        cacheTerminalInstance(terminalId, xterm, fitAddon);
         terminalDetach(terminalId, workspaceId ?? undefined);
       } else if (xterm) {
         unregisterThemedTerminal(xterm);
@@ -370,23 +282,13 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // continue receiving terminal data and exit events.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null || !isInteractive) return;
+    if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null || (!isInteractive && !background)) return;
 
     const xterm = xtermRef.current;
-    let inputDisposable: { dispose: () => void } | null = null;
     let disposeResized: (() => void) | null = null;
     let selectionDisposable: { dispose: () => void } | null = null;
 
-    // Handle copy: if Ctrl+C with selection, copy and clear; otherwise pass through to PTY
-    inputDisposable = xterm.onData((data) => {
-      if (data === '\x03' && xterm.hasSelection()) {
-        const selection = xterm.getSelection();
-        window.electronAPI.writeClipboard(selection).catch(console.error);
-        xterm.clearSelection();
-        return; // Don't send ^C to PTY when we have a selection
-      }
-      window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
-    });
+    // onData is runtime-owned: native query replies remain connected when this pane unmounts.
 
     // Phase 1: resize confirmation from main process.
     // If confirmed dimensions differ from xterm's internal dims, re-fit once.
@@ -404,7 +306,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
 
     // Copy selected text to clipboard when selection changes (mouse selection)
     selectionDisposable = xterm.onSelectionChange(() => {
-      if (xterm.hasSelection()) {
+      if (isInteractive && xterm.hasSelection()) {
         const selection = xterm.getSelection();
         window.electronAPI.writeClipboard(selection).catch(console.error);
       }
@@ -426,6 +328,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     // its own wheel processing; returning false stops scrollback/mouse handling.
     // Plain wheel returns true so xterm behaves normally.
     xterm.attachCustomWheelEventHandler((event) => {
+      if (!isInteractive) return false;
       const wheelAction = getWheelZoomAction(event);
       if (wheelAction == null) {
         return true;
@@ -437,6 +340,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     });
 
     xterm.attachCustomKeyEventHandler((event) => {
+      if (!isInteractive) return false;
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         if (xterm.hasSelection()) {
           const selection = xterm.getSelection();
@@ -457,6 +361,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       if (command != null) {
         event.preventDefault();
         event.stopPropagation();
+        if (event.type === 'keydown' && executeWorkspacePageCommand(command)) return false;
         const zoomAction = getZoomActionForCommand(command);
         if (zoomAction != null && event.type === 'keydown') {
           applyTerminalZoom(zoomAction);
@@ -467,23 +372,33 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     });
 
     return () => {
-      inputDisposable?.dispose();
       disposeResized?.();
       selectionDisposable?.dispose();
+      // Cached instances must not retain input handlers from a previously active page.
+      xterm.attachCustomKeyEventHandler(() => false);
+      xterm.attachCustomWheelEventHandler(() => false);
     };
-  }, [isInteractive, terminalId, terminalRuntimeReady]);
+  }, [isInteractive, terminalId, terminalRuntimeReady, background]);
 
   // Attach after input listeners: startup output can contain terminal queries.
   // Readiness is sent only after a visible fit and its PTY resize have completed.
   useEffect(() => {
-    if (!terminalRuntimeReady || !terminalRef.current || !fitAddonRef.current || !isInteractive) return;
+    if (!terminalRuntimeReady || !terminalRef.current || !fitAddonRef.current) return;
+    if (!isInteractive && (!background || !terminalId || !terminalNeedsBootstrap(terminalId) || backgroundReadyId === terminalId)) return;
     const geometry = observeTerminalGeometry({
       container: terminalRef.current,
       fitAddon: fitAddonRef.current,
       isAlive: () => terminalId === null || !isTerminalDisposed(terminalId),
-      onDimensions: (dimensions) => publishTerminalPaneGeometry(paneId, dimensions),
+      onDimensions: (dimensions) => { if (isInteractive) publishTerminalPaneGeometry(paneId, dimensions); },
       resize: (cols, rows) => terminalId === null ? Promise.resolve() : window.electronAPI.resizeTerminal(terminalId, cols, rows),
-      ready: () => terminalId === null ? Promise.resolve() : window.electronAPI.terminalReady(terminalId),
+      ready: async () => {
+        if (terminalId === null) return;
+        await window.electronAPI.terminalReady(terminalId);
+        markTerminalRuntimeReady(terminalId);
+        useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => entry.pendingTerminalIds?.includes(terminalId)
+          ? { ...entry, pendingTerminalIds: entry.pendingTerminalIds.filter((id) => id !== terminalId) } : entry) }));
+        if (background) setBackgroundReadyId(terminalId);
+      },
       onError: console.error,
     });
     geometryRef.current = geometry;
@@ -492,7 +407,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       clearTerminalPaneGeometry(paneId);
       if (geometryRef.current === geometry) geometryRef.current = null;
     };
-  }, [terminalId, terminalRuntimeReady, paneId, isInteractive]);
+  }, [terminalId, terminalRuntimeReady, paneId, isInteractive, background, backgroundReadyId]);
 
   // -------------------------------------------------------------------------
   // Active state — track which terminal is focused
@@ -541,20 +456,8 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       if (pane) closePane();
       return;
     }
-    try {
-      await window.electronAPI.killTerminal(terminal.id);
-      // Guard the React teardown after main confirms the PTY was killed. The
-      // lifecycle cleanup releases this tombstone after it declines to cache
-      // the disposed xterm instance.
-      markTerminalDisposed(terminal.id);
-      removeTerminal(terminal.id);
-      if (paneId != null) {
-        closePane();
-      }
-    } catch (err) {
-      console.error('Failed to kill terminal:', err);
-    }
-  }, [isInteractive, terminal, pane, removeTerminal, removePane, paneId, workspaceId]);
+    if (workspace?.id) await closeWorkspaceTerminal(workspace.id, terminal.id);
+  }, [isInteractive, terminal, pane, removePane, paneId, workspaceId, workspace?.id]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     if (!isInteractive) {
@@ -634,6 +537,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             {showAgentAttention && <AgentAttentionState attention={attention} name={terminal?.displayName ?? 'Agent'} />}
           </div>
           <div className="terminal-header-actions">
+            {workspace && isInteractive && <PanePresentationControls workspace={workspace} paneId={paneId} />}
             <IconButton variant="ghost" aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
               <X size={14} strokeWidth={2} />
             </IconButton>

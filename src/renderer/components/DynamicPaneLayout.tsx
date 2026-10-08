@@ -37,6 +37,9 @@ import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
 import NotesPane from './NotesPane';
 import { DockEdgeTargets } from './DockEdgeTargets';
+import { collectLeafPaneIds } from '../store/workspaceLayout';
+import { activePage, paneIsPresented } from '../store/workspacePages';
+import { PanePresentationControls } from './WorkspacePageControls';
 import './DynamicPaneLayout.css';
 
 const TerminalPane = lazy(() => import('./TerminalPane'));
@@ -191,7 +194,7 @@ function LeafView({
   dropIntent: PaneDropTarget | null;
 }) {
   const workspace = useScopedWorkspace(workspaceId);
-  const isInteractive = useScopedWorkspaceActivity(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId) && (!workspace?.pages || paneIsPresented(workspace, node.paneId));
   const fallbackLayoutRevision = useWorkspaceStore((state) => state.layoutRevision);
   const paneId = node.paneId;
   
@@ -209,7 +212,7 @@ function LeafView({
     <NotesPane workspaceId={workspaceId} />
   ) : (
     <Suspense fallback={<div className="layout-pane-loading">Loading terminal…</div>}>
-      <TerminalPane workspaceId={workspaceId} paneId={paneId} />
+      <TerminalPane workspaceId={workspaceId} paneId={paneId} background={!isInteractive} />
     </Suspense>
   );
 
@@ -219,9 +222,10 @@ function LeafView({
       isDragging={isDraggingThis}
       draggedPaneId={draggedPaneId}
       dropIntent={dropIntent}
-      interactive={isInteractive}
+      interactive={isInteractive && !(workspace && activePage(workspace)?.maximizedPaneId)}
     >
       <ErrorBoundary paneId={paneId}>
+        {workspace && !workspace.panes.some((pane) => pane.id === paneId) && isInteractive && <div className="utility-presentation-controls"><PanePresentationControls workspace={workspace} paneId={paneId} /></div>}
         {content}
       </ErrorBoundary>
     </PanelWrapper>
@@ -239,8 +243,9 @@ function SplitView({
   draggedPaneId: string | null;
   dropIntent: PaneDropTarget | null;
 }) {
-  useScopedWorkspace(workspaceId);
-  const isInteractive = useScopedWorkspaceActivity(workspaceId);
+  const workspace = useScopedWorkspace(workspaceId);
+  const pageId = workspace?.activePageId;
+  const isInteractive = useScopedWorkspaceActivity(workspaceId) && !(workspace && activePage(workspace)?.maximizedPaneId);
   const setSplitRatio = useWorkspaceStore((state) => state.setSplitRatio);
   const groupRef = useRef<GroupImperativeHandle | null>(null);
   const hasReceivedInitialLayoutRef = useRef(false);
@@ -291,6 +296,7 @@ function SplitView({
   }, [firstRatio, panelAId, panelBId, renderedRatio, secondRatio]);
   
   const handleLayoutChange = useCallback((layout: Layout) => {
+    if (!isInteractive || (workspaceId && useWorkspaceStore.getState().getWorkspaceById(workspaceId)?.activePageId !== pageId)) return;
     const first = layout[panelAId];
     const second = layout[panelBId];
     if (first != null && second != null) {
@@ -321,7 +327,7 @@ function SplitView({
         }
       }
     }
-  }, [node.nodeId, panelAId, panelBId, setSplitRatio, workspaceId]);
+  }, [node.nodeId, panelAId, panelBId, setSplitRatio, workspaceId, pageId, isInteractive]);
   
   return (
     <Group
@@ -463,13 +469,32 @@ function getPaneLabel(workspace: WorkspaceTab | null, paneId: string): string {
   return paneIndex >= 0 ? `Terminal ${paneIndex + 1}` : 'Pane';
 }
 
+function BackgroundTerminals({ workspace, visibleIds }: { workspace: WorkspaceTab; visibleIds: Set<string> }) {
+  return <div className="background-terminal-surfaces" aria-hidden="true" inert>
+    {workspace.panes.filter((pane) => pane.terminalId && !visibleIds.has(pane.id)).map((pane) => <div key={pane.id}>
+      <Suspense fallback={null}><TerminalPane workspaceId={workspace.id} paneId={pane.id} background /></Suspense>
+    </div>)}
+  </div>;
+}
+
 export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: string }) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const maximized = workspace ? activePage(workspace)?.maximizedPaneId : undefined;
+  return <WorkspacePageLayout key={`${workspace?.activePageId ?? 'single'}:${maximized ?? ''}`} workspaceId={workspaceId} />;
+}
+
+function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const movePane = useWorkspaceStore((state) => state.movePane);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const scopedWorkspaceId = workspace?.id;
+  const pageId = workspace?.activePageId;
+  const maximizedPaneId = workspace ? activePage(workspace)?.maximizedPaneId : undefined;
+  const presentationRoot: LayoutNode | null = maximizedPaneId
+    ? { type: 'leaf', nodeId: `maximized-${maximizedPaneId}`, paneId: maximizedPaneId } : workspace?.layoutRoot ?? null;
+  const visibleIds = new Set(collectLeafPaneIds(presentationRoot));
   const hasVisibleBrowser = workspace?.browserVisible === true;
 
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
@@ -492,11 +517,13 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
   }, [popBrowserOverlay, scopedWorkspaceId]);
 
   useEffect(() => releaseBrowserOverlay, [releaseBrowserOverlay]);
+  const dragPageRef = useRef<string | undefined>(undefined);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     if (!isInteractive) {
       return;
     }
+    dragPageRef.current = pageId;
     setActivePaneId(event.active.id as string);
     setDropIntent(null);
     if (hasVisibleBrowser && scopedWorkspaceId && !browserOverlayHeldRef.current) {
@@ -504,7 +531,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       pushBrowserOverlay(scopedWorkspaceId);
       void window.electronAPI.browserHide(scopedWorkspaceId);
     }
-  }, [hasVisibleBrowser, isInteractive, pushBrowserOverlay, scopedWorkspaceId]);
+  }, [hasVisibleBrowser, isInteractive, pushBrowserOverlay, scopedWorkspaceId, pageId]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     if (!isInteractive) {
@@ -522,14 +549,14 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
     }
     const activeId = event.active.id as string;
     const intent = getDropIntent(event.over);
-    if (intent) {
+    if (intent && dragPageRef.current === (scopedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(scopedWorkspaceId)?.activePageId : pageId)) {
       movePane(activeId, intent, workspaceId);
     }
 
     setActivePaneId(null);
     setDropIntent(null);
     releaseBrowserOverlay();
-  }, [isInteractive, movePane, releaseBrowserOverlay, workspaceId]);
+  }, [isInteractive, movePane, releaseBrowserOverlay, workspaceId, scopedWorkspaceId, pageId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
@@ -540,8 +567,9 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
   if (workspace?.layoutRoot == null) {
     return (
       <div className="dynamic-pane-layout empty">
+        {workspace && <BackgroundTerminals workspace={workspace} visibleIds={visibleIds} />}
         <div className="empty-state">
-          <span>No terminals open</span>
+          <span>{workspace?.pages && (workspace.pages.length > 1 || workspace.panes.length > 0) ? 'No panes on this page' : 'No terminals open'}</span>
           <span className="hint">Choose a terminal type in the header</span>
         </div>
       </div>
@@ -550,6 +578,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
 
   return (
     <DndContext
+      key={pageId}
       sensors={sensors}
       collisionDetection={edgeFriendlyCollisionDetection}
       onDragStart={handleDragStart}
@@ -558,12 +587,13 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       onDragCancel={handleDragCancel}
     >
       <div className="dynamic-pane-layout" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
+        {workspace && <BackgroundTerminals workspace={workspace} visibleIds={visibleIds} />}
         <div className="split-root">
-          {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, dropIntent)}
+          {renderLayout(workspaceId, presentationRoot, activePaneId, dropIntent)}
         </div>
         <DockEdgeTargets
           activeIntent={dropIntent}
-          isDragging={isInteractive && activePaneId != null}
+          isDragging={isInteractive && !maximizedPaneId && activePaneId != null}
         />
       </div>
       <DragOverlay dropAnimation={null}>

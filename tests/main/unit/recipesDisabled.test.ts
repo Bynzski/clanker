@@ -1,0 +1,20 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import type Store from 'electron-store';
+import type { StoreSchema } from '../../../src/shared/types/store';
+import { RECIPE_DELETE, RECIPE_GET_ALL, RECIPE_SAVE } from '../../../src/shared/ipcChannels';
+import { RECIPES_DISABLED_MESSAGE } from '../../../src/shared/recipeAvailability';
+const { handlers } = vi.hoisted(() => ({ handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>() }));
+vi.mock('electron', () => ({ ipcMain: { handle: (id: string, handler: (...args: unknown[]) => Promise<unknown>) => handlers.set(id, handler) } }));
+import { registerRecipeIpc } from '../../../src/main/ipc/recipeIpc';
+beforeEach(() => handlers.clear());
+it('preserves existing persisted recipes unchanged while rejecting save/delete through stale IPC calls', async () => {
+  const existing = [{ id: 'saved', name: 'Saved', workspacePath: '/repo', launches: [], createdAt: 1, updatedAt: 1, version: 1 }];
+  const before = JSON.stringify(existing);
+  const set = vi.fn();
+  const persistence = { get: (key: string) => key === 'workspaceRecipes' ? existing : undefined, set } as unknown as Store<StoreSchema>;
+  registerRecipeIpc({ getStore: () => persistence });
+  expect(await handlers.get(RECIPE_GET_ALL)!(null)).toEqual([{ ...existing[0], environmentId: 'local' }]);
+  await expect(handlers.get(RECIPE_SAVE)!(null, existing[0])).rejects.toThrow(RECIPES_DISABLED_MESSAGE);
+  await expect(handlers.get(RECIPE_DELETE)!(null, 'saved')).rejects.toThrow(RECIPES_DISABLED_MESSAGE);
+  expect(set).not.toHaveBeenCalled(); expect(JSON.stringify(existing)).toBe(before);
+});

@@ -32,14 +32,14 @@ import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
  * @invariant workspaces.length > 0 -> workspaces.filter(w => w.lifecycle === 'active').length === 1
  *   Exactly one workspace must be marked active in lifecycle state.
  *
- * @invariant activeTerminalId === null - terminals.length === 0
- *   When no terminals exist, no terminal can be active.
+ * @invariant activeTerminalId === null when no terminal is presented on the active page
+ *   Other pages and minimized panes may still own running terminals.
  *
  * @invariant activeTerminalId !== null -> terminals.some(t => t.id === activeTerminalId)
  *   The active terminal ID always references an existing terminal.
  *
- * @invariant layoutRoot === null - panes.length === 0 && !browserVisible && !editorVisible
- *   The layout tree only exists when there are visible panes.
+ * @invariant layoutRoot is the active page projection; null is valid on an empty page
+ *   Workspace-owned panes may be tiled on another page or minimized.
  *
  * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
  *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
@@ -61,11 +61,11 @@ export interface WorkspaceState {
   browserVisible: boolean;
   browserOverlayCount: number;
   browserUrl: string;
-  /** @invariant null - terminals.length === 0 */
+  /** Null is valid when all workspace terminals are on other pages or minimized. */
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
   explorerPane: ExplorerPaneState | null;
-  /** @invariant null - panes.length === 0 && !browserVisible && !editorVisible && !notesVisible */
+  /** Active-page topology projection, not the workspace's running resource inventory. */
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;
@@ -95,6 +95,13 @@ export interface WorkspaceState {
   editorTabs: EditorTab[];
   /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
+
+  addWorkspacePage: (workspaceId: string) => void;
+  selectWorkspacePage: (workspaceId: string, pageId: string) => void;
+  removeWorkspacePage: (workspaceId: string, pageId: string) => void;
+  minimizeWorkspacePane: (workspaceId: string, paneId: string) => void;
+  restoreWorkspacePane: (workspaceId: string, paneId: string) => void;
+  toggleMaximizedPane: (workspaceId: string, paneId: string) => void;
 
   hydrateWorkspaceShells: (workspaces: WorkspaceTab[], activeWorkspaceId: string | null) => void;
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'> & { id?: string }) => void;
@@ -131,7 +138,7 @@ export interface WorkspaceState {
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
   setModel: (model: string) => void;
-  addTerminal: (terminal: Terminal, workspaceId?: string, reservedPaneId?: string) => void;
+  addTerminal: (terminal: Terminal, workspaceId?: string, reservedPaneId?: string, pageId?: string) => void;
   removeTerminal: (id: string) => void;
   /**
    * Main moved a conversation to another checkout and started a replacement process: the pane that

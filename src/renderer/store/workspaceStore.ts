@@ -1,5 +1,7 @@
 import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
+import { workspacePageActions } from './workspacePageActions';
+import { activePage, paneIsPresented, revealPane, revealTerminal, selectPage, synchronizePages } from './workspacePages';
 import {
   buildWorkspaceLayout,
   fitLayoutRatios,
@@ -103,14 +105,14 @@ export * from './workspaceStoreHelpers';
  * @invariant workspaces.length > 0 -> workspaces.filter(w => w.lifecycle === 'active').length === 1
  *   Exactly one workspace must be marked active in lifecycle state.
  *
- * @invariant activeTerminalId === null - terminals.length === 0
- *   When no terminals exist, no terminal can be active.
+ * @invariant activeTerminalId is null when the active page presents no terminal.
+ *   Minimized and other-page terminals remain workspace-owned.
  *
  * @invariant activeTerminalId !== null -> terminals.some(t => t.id === activeTerminalId)
  *   The active terminal ID always references an existing terminal.
  *
- * @invariant layoutRoot === null - panes.length === 0 && !explorerVisible && !browserVisible && !editorVisible && !notesVisible
- *   The layout tree only exists when there are visible panes.
+ * @invariant layoutRoot mirrors the active page; an empty page has a null tree.
+ *   Other pages and minimized panes do not contribute leaves.
  *
  * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
  *   panes[].id ∪ {explorerPane?.id} ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
@@ -156,7 +158,7 @@ function patchWorkspaceLayout(
   nextLayoutRoot: LayoutNode | null,
   recordUndo = true,
 ): Partial<WorkspaceState> | WorkspaceState {
-  if (nextLayoutRoot === workspace.layoutRoot) {
+  if (activePage(workspace)?.maximizedPaneId || nextLayoutRoot === workspace.layoutRoot) {
     return state;
   }
 
@@ -175,6 +177,7 @@ function patchWorkspaceLayout(
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...defaultWorkspaceState,
+  ...workspacePageActions(set),
   workspaces: [],
   activeWorkspaceId: null,
   activeWorkspaceLifecycle: null,
@@ -202,7 +205,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       workspaces: nextWorkspaces,
       activeWorkspaceId: id,
       activeWorkspaceLifecycle: 'active' as const,
-      layoutRevision: state.layoutRevision,
     };
     if (import.meta.env.DEV) {
       const warnings = validateWorkspaceConsistency(nextState);
@@ -260,7 +262,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       lifecycle: 'active',
     });
     const selected = terminalId && next.terminals.some((terminal) => terminal.id === terminalId)
-      ? { ...next, activeTerminalId: terminalId, fileSurfaceContextId: undefined }
+      ? synchronizePages(next, revealTerminal(next, terminalId))
       : next;
     const nextWorkspaces = assignWorkspaceLifecycles(
       state.workspaces.map((entry) => entry.id === id ? selected : entry),
@@ -270,7 +272,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...getActiveWorkspaceSnapshot(selected),
       workspaces: nextWorkspaces,
       gridViewport: state.gridViewport,
-      layoutRevision: state.layoutRevision,
       activeWorkspaceId: id,
       activeWorkspaceLifecycle: 'active' as const,
     };
@@ -424,8 +425,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
   }),
 
-  addTerminal: (unnamedTerminal, workspaceId, reservedPaneId) => set((current) => {
-    const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
+  addTerminal: (unnamedTerminal, workspaceId, reservedPaneId, pageId) => set((current) => {
+    const owner = resolveWorkspaceByScope(current, workspaceId);
+    const targetPageId = pageId ?? (reservedPaneId ? owner?.pages?.find((page) => collectLeafPaneIds(page.layoutRoot).includes(reservedPaneId))?.id : owner?.activePageId);
+    if (pageId && !owner?.pages?.some((page) => page.id === pageId)) throw new Error('The destination page was removed');
+    const scopedWorkspace = owner && targetPageId ? selectPage(owner, targetPageId) : workspaceId ? owner : null;
     if (workspaceId && !scopedWorkspace) return current;
     const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
     const owningWorkspaceId = scopedWorkspace?.id ?? current.activeWorkspaceId;
@@ -444,6 +448,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextLayoutRoot = paneExists
       ? normalizeLayoutRoot(state.layoutRoot, {
+          pages: scopedWorkspace?.pages ?? findWorkspaceById(current.workspaces, current.activeWorkspaceId)?.pages,
+          activePageId: scopedWorkspace?.activePageId ?? findWorkspaceById(current.workspaces, current.activeWorkspaceId)?.activePageId,
+          minimizedPanes: scopedWorkspace?.minimizedPanes ?? findWorkspaceById(current.workspaces, current.activeWorkspaceId)?.minimizedPanes,
           panes: nextPanes,
           explorerPane: state.explorerPane,
           explorerVisible: state.explorerVisible,
@@ -469,15 +476,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextActiveTerminalId = terminal.id;
 
-    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
-      ...workspace,
-      terminals: nextTerminals,
-      panes: nextPanes,
-      activeTerminalId: nextActiveTerminalId,
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      model: state.model,
-    });
+    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
+      const target = targetPageId ? selectPage(workspace, targetPageId) : workspace;
+      const updated = synchronizePages(target, {
+        ...target, terminals: nextTerminals, panes: nextPanes,
+        pendingTerminalIds: [...(target.pendingTerminalIds ?? []), terminal.id],
+        pages: target.pages?.map((page) => page.id === target.activePageId ? { ...page, maximizedPaneId: undefined } : page),
+        activeTerminalId: nextActiveTerminalId, layoutRoot: nextLayoutRoot,
+        layoutRevision: state.layoutRevision + 1, model: state.model,
+      });
+      return workspace.activePageId && workspace.activePageId !== targetPageId ? selectPage(updated, workspace.activePageId) : updated;
+    };
     if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
     const nextState = {
       terminals: nextTerminals,
@@ -497,7 +506,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-  removeTerminal: (id) => set((state) => {
+  removeTerminal: (id) => set((current) => {
+    const owner = current.workspaces.find((workspace) => workspace.terminals.some((terminal) => terminal.id === id));
+    if (!owner) return current;
+    const state = { ...current, ...getActiveWorkspaceSnapshot(owner), activeWorkspaceId: owner.id };
     const nextTerminals = state.terminals.filter((terminal) => terminal.id !== id);
     const paneToRemove = state.panes.find((pane) => pane.terminalId === id);
     const nextPanes = state.panes.filter((pane) => pane.terminalId !== id);
@@ -530,7 +542,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
 
-    return nextState;
+    return owner.id === current.activeWorkspaceId ? nextState : { workspaces: nextState.workspaces };
   }),
 
   replaceTerminal: (workspaceId, previousTerminalId, replacement) => {
@@ -548,8 +560,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({
       ...entry,
       terminals: entry.terminals.map((terminal) => (terminal.id === previousTerminalId ? adopted : terminal)),
+      pendingTerminalIds: replacement.id === previousTerminalId ? entry.pendingTerminalIds : [...(entry.pendingTerminalIds ?? []).filter((id) => id !== previousTerminalId), replacement.id],
       panes: entry.panes.map((candidate) => (candidate.id === pane.id ? { ...candidate, terminalId: adopted.id } : candidate)),
       activeTerminalId: entry.activeTerminalId === previousTerminalId ? adopted.id : entry.activeTerminalId,
+      pages: entry.pages?.map((page) => ({ ...page, activeTerminalId: page.activeTerminalId === previousTerminalId ? adopted.id : page.activeTerminalId })),
     })));
     return true;
   },
@@ -557,11 +571,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setActiveTerminal: (id) => set((state) => {
     const nextState = {
       activeTerminalId: id,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        activeTerminalId: id,
-        fileSurfaceContextId: undefined,
-      })),
+      ...syncActiveWorkspace(state, (workspace) => revealTerminal(workspace, id)),
     };
 
     if (import.meta.env.DEV) {
@@ -580,6 +590,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    if (visible && workspace.browserVisible && workspace.browserPane && workspace.pages) {
+      return patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.browserPane!.id));
+    }
     const browserLeafPresent = workspace.browserPane != null
       && collectLeafPaneIds(workspace.layoutRoot ?? null).includes(workspace.browserPane.id);
     if (visible === workspace.browserVisible && visible === browserLeafPresent) {
@@ -626,10 +639,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (workspace == null) {
       return;
     }
-    get().setBrowserVisible(!workspace.browserVisible, workspace.id);
+    get().setBrowserVisible(!workspace.browserVisible || Boolean(workspace.pages && workspace.browserPane && !paneIsPresented(workspace, workspace.browserPane.id)), workspace.id);
   },
 
   toggleNotesPane: () => set((state) => {
+    const workspace = resolveWorkspaceByScope(state);
+    if (workspace?.pages && workspace.notesVisible && workspace.notesPane && !paneIsPresented(workspace, workspace.notesPane.id)) {
+      return patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.notesPane!.id));
+    }
     const nextNotesVisible = !state.notesVisible;
     const nextNotesPane = nextNotesVisible
       ? state.notesPane ?? { id: generateId('notes') }
@@ -1207,6 +1224,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setPanes: (panes) => set((state) => ({
     panes,
     layoutRoot: buildWorkspaceLayout({
+      ...(resolveWorkspaceByScope(state) ?? {}),
       panes,
       explorerVisible: state.explorerVisible,
       explorerPane: state.explorerPane,
@@ -1222,6 +1240,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...workspace,
       panes,
       layoutRoot: buildWorkspaceLayout({
+        ...workspace,
         panes,
         explorerVisible: state.explorerVisible,
         explorerPane: state.explorerPane,
@@ -1259,6 +1278,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       });
       const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
         ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
+        pages: workspace.pages?.map((page) => page.id === workspace.activePageId ? { ...page, maximizedPaneId: undefined } : page),
       });
       if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
       return {
@@ -1389,6 +1409,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   movePane: (paneId, target, workspaceId) => set((state) => {
     const workspace = resolveWorkspaceByScope(state, workspaceId);
     if (workspace == null) return state;
+    if (activePage(workspace)?.maximizedPaneId || !collectLeafPaneIds(workspace.layoutRoot).includes(paneId)
+      || (target.kind !== 'workspace-edge' && !collectLeafPaneIds(workspace.layoutRoot).includes(target.targetPaneId))) return state;
     return patchWorkspaceLayout(
       state,
       workspace,
@@ -1398,7 +1420,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   undoLayout: (workspaceId) => set((state) => {
     const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (workspace == null) return state;
+    if (workspace == null || activePage(workspace)?.maximizedPaneId) return state;
     const undoStack = workspace.layoutUndoStack ?? [];
     const previousLayout = undoStack[undoStack.length - 1];
     if (previousLayout == null) return state;
@@ -1420,10 +1442,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   swapPanes: (a, b, workspaceId) => set((state) => {
     if (a === b) return state;
     const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (workspace == null) {
-      return state;
-    }
-
+    if (workspace == null) return state;
+    const ids = collectLeafPaneIds(workspace.layoutRoot);
+    if (!ids.includes(a) || !ids.includes(b)) return state;
     return patchWorkspaceLayout(state, workspace, swapPaneIdsInLayout(workspace.layoutRoot, a, b));
   }),
 
@@ -1433,6 +1454,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    if (!collectLeafPaneIds(workspace.layoutRoot).includes(paneId)) return state;
     return patchWorkspaceLayout(state, workspace, dockPaneToEdgeInLayout(workspace.layoutRoot, paneId, edge));
   }),
 
@@ -1442,6 +1464,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    if (!collectLeafPaneIds(workspace.layoutRoot).includes(paneId)) return state;
     return patchWorkspaceLayout(
       state,
       workspace,
@@ -1455,6 +1478,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    const ids = collectLeafPaneIds(workspace.layoutRoot);
+    if (!ids.includes(paneId) || !ids.includes(targetPaneId)) return state;
     return patchWorkspaceLayout(
       state,
       workspace,
@@ -1468,6 +1493,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    if (activePage(workspace)?.maximizedPaneId || !Number.isFinite(ratio)) return state;
     return patchWorkspaceLayout(
       state,
       workspace,
@@ -1519,7 +1545,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (existingTab) {
       useWorkspaceStore.setState((currentState) => ({
         ...patchWorkspaceById(currentState, scopedWorkspaceId, (workspace) => ({
-          ...workspace,
+          ...(workspace.editorVisible && workspace.editorPane ? revealPane(workspace, workspace.editorPane.id) : workspace),
           activeEditorTabId: existingTab.id,
         })),
       }));
@@ -1558,17 +1584,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       };
 
       useWorkspaceStore.setState((currentState) => {
-        const latestWorkspace = resolveWorkspaceByScope(currentState, scopedWorkspaceId);
-        if (latestWorkspace == null) {
-          return {};
-        }
+        const resolved = resolveWorkspaceByScope(currentState, scopedWorkspaceId);
+        if (resolved == null) return {};
+        const latestWorkspace = resolved.editorVisible && resolved.editorPane ? revealPane(resolved, resolved.editorPane.id) : resolved;
 
         if (fileCheckout.checkoutContextId && !latestWorkspace.checkoutContexts?.some((context) => context.id === fileCheckout.checkoutContextId && context.path === fileCheckout.workspacePath && !context.missing)) return {};
         const latestExistingTab = latestWorkspace.editorTabs.find((tab) => tab.filePath === filePath && tab.checkoutContextId === fileCheckout.checkoutContextId);
         if (latestExistingTab) {
           return {
-            ...patchWorkspaceById(currentState, scopedWorkspaceId, (workspace) => ({
-              ...workspace,
+            ...patchWorkspaceById(currentState, scopedWorkspaceId, () => ({
+              ...latestWorkspace,
               activeEditorTabId: latestExistingTab.id,
             })),
           };
@@ -1601,8 +1626,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
         return {
           layoutRevision: nextLayoutRevision,
-          ...patchWorkspaceById(currentState, scopedWorkspaceId, (workspace) => ({
-            ...workspace,
+          ...patchWorkspaceById(currentState, scopedWorkspaceId, () => ({
+            ...latestWorkspace,
             editorPane: nextEditorPane,
             editorVisible: true,
             editorTabs: nextEditorTabs,
@@ -1791,6 +1816,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   toggleEditorPane: () => set((state) => {
+    const workspace = resolveWorkspaceByScope(state);
+    if (workspace?.pages && workspace.editorVisible && workspace.editorPane && !paneIsPresented(workspace, workspace.editorPane.id)) {
+      return patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.editorPane!.id));
+    }
     const nextEditorVisible = !state.editorVisible;
     let nextEditorPane = state.editorPane;
 

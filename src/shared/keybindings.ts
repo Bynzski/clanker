@@ -32,6 +32,17 @@ export interface Keystroke {
 }
 
 export const KEYBINDING_COMMAND_IDS = [
+  'workspace.pageNext',
+  'workspace.pagePrevious',
+  'workspace.page1',
+  'workspace.page2',
+  'workspace.page3',
+  'workspace.page4',
+  'workspace.page5',
+  'workspace.page6',
+  'workspace.page7',
+  'workspace.page8',
+  'workspace.page9',
   'app.openSettings',
   'layout.fitAll',
   'view.toggleExplorer',
@@ -48,6 +59,10 @@ export const KEYBINDING_COMMAND_IDS = [
 ] as const;
 
 export type KeybindingCommandId = (typeof KEYBINDING_COMMAND_IDS)[number];
+export type WorkspacePageCommandId = Extract<KeybindingCommandId, `workspace.page${string}`>;
+export function isWorkspacePageCommand(command: KeybindingCommandId): command is WorkspacePageCommandId {
+  return command.startsWith('workspace.page');
+}
 
 export interface KeybindingCommand {
   id: KeybindingCommandId;
@@ -74,6 +89,10 @@ const key = (code: string, mods: Partial<Omit<Keystroke, 'code'>> = {}): Keystro
 const ALL_CONTEXTS: readonly KeybindingContext[] = ['app', 'editor', 'terminal', 'browser'];
 
 export const KEYBINDING_COMMANDS: readonly KeybindingCommand[] = [
+  { id: 'workspace.pageNext', label: 'Next Workspace Page', category: 'Layout', contexts: ALL_CONTEXTS, defaultBinding: key('PageDown', { primary: true, alt: true }) },
+  { id: 'workspace.pagePrevious', label: 'Previous Workspace Page', category: 'Layout', contexts: ALL_CONTEXTS, defaultBinding: key('PageUp', { primary: true, alt: true }) },
+  ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((slot): KeybindingCommand => ({ id: `workspace.page${slot}`, label: `Workspace Page ${slot}`, category: 'Layout', contexts: ALL_CONTEXTS, defaultBinding: key(`Digit${slot}`, { primary: true, alt: true }) })),
+
   { id: 'app.openSettings', label: 'Open Settings', category: 'Application', contexts: ['app', 'editor'],
     defaultBinding: key('Comma', { primary: true }) },
   { id: 'layout.fitAll', label: 'Fit All Panes', category: 'Layout', contexts: ['app', 'editor', 'browser'],
@@ -399,5 +418,5 @@ export type BrowserKeybindingCommandId =
 export interface BrowserKeybindingCommandPayload {
   workspaceId: string;
   tabId: string;
-  command: BrowserKeybindingCommandId;
+  command: BrowserKeybindingCommandId | WorkspacePageCommandId;
 }

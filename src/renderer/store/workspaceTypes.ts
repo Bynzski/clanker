@@ -132,7 +132,29 @@ export interface LayoutSplit {
   second: LayoutNode;
 }
 
+export interface WorkspacePage {
+  id: string;
+  layoutRoot: LayoutNode | null;
+  layoutRevision: number;
+  layoutUndoStack: LayoutNode[];
+  activeTerminalId: string | null;
+  maximizedPaneId?: string;
+  focusBeforeMaximize?: string | null;
+}
+
+export interface MinimizedPane {
+  paneId: string;
+  pageId: string;
+  placement: PanePlacementRestoreHint | null;
+}
+
 export interface WorkspaceTab {
+  /** Optional on legacy inputs; sanitized workspaces always have a page. */
+  pages?: WorkspacePage[];
+  activePageId?: string;
+  minimizedPanes?: MinimizedPane[];
+  /** Newly spawned/replaced terminals keep their surface warm until the startup handshake. */
+  pendingTerminalIds?: string[];
   id: string;
   lifecycle: WorkspaceLifecycleState;
   name: string;
@@ -165,8 +187,9 @@ export interface WorkspaceTab {
   notesVisible?: boolean;
   editorTabs: EditorTab[];
   activeEditorTabId: string | null;
+  /** Compatibility projection of the active page, synchronized by workspacePages.ts. */
   layoutRoot: LayoutNode | null;
-  /** Monotonic revision scoped to this workspace's layout. */
+  /** Monotonic revision scoped to the active page's layout. */
   layoutRevision?: number;
   /** In-memory layout history; intentionally not persisted across launches. */
   layoutUndoStack?: LayoutNode[];

@@ -40,6 +40,7 @@ import {
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { resolveTerminalLaunchTarget } from './terminalLaunchTarget';
+import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
 import { isInsideRoot } from '../localPathContainment';
@@ -141,6 +142,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     environmentId?: string,
     checkoutContextId?: string
   ) => {
+    if (recipeCommand === true && !WORKSPACE_RECIPES_ENABLED) throw new Error(RECIPES_DISABLED_MESSAGE);
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
@@ -419,6 +421,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   });
 
   ipcMain.handle(RECIPE_COMMAND_WAIT, async (_, id: string) => {
+    if (!WORKSPACE_RECIPES_ENABLED) throw new Error(RECIPES_DISABLED_MESSAGE);
     const terminal = getTerminals().get(id);
     if (!terminal?.recipeCommandStartup) {
       return { status: 'failed', error: 'Recipe command terminal is no longer available' };

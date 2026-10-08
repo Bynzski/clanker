@@ -1,5 +1,5 @@
 import type { WorkspaceTab } from '../store/workspaceStore';
-import { markTerminalDisposed } from '../components/TerminalPane';
+import { markTerminalDisposed } from './terminalRuntimeCache';
 
 export async function terminateWorkspaceTerminals(workspace: WorkspaceTab): Promise<void> {
   for (const terminal of workspace.terminals) {

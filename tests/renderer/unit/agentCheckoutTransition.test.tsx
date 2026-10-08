@@ -9,7 +9,7 @@ import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtu
 import { installElectronApiMock } from '../../setup/electron';
 
 const { markTerminalDisposed } = vi.hoisted(() => ({ markTerminalDisposed: vi.fn() }));
-vi.mock('../../../src/renderer/components/TerminalPane', () => ({
+vi.mock('../../../src/renderer/lib/terminalRuntimeCache', () => ({
   markTerminalDisposed,
   writeCachedTerminalData: vi.fn(),
   writeCachedTerminalExit: vi.fn(),

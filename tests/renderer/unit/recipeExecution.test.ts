@@ -6,6 +6,9 @@ import { WorkspacePersistenceService } from '../../../src/main/workspacePersiste
 import type Store from 'electron-store';
 import type { StoreSchema } from '../../../src/shared/types/store';
 
+// Retain coverage of the dormant executor without enabling it in the app.
+vi.mock('../../../src/shared/recipeAvailability', () => ({ WORKSPACE_RECIPES_ENABLED: true }));
+
 describe('executeWorkspaceRecipe', () => {
   const previewRecipe: WorkspaceRecipe = {
     id: 'preview', name: 'Preview', workspacePath: '/projects/repo',

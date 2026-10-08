@@ -9,6 +9,9 @@ import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { WorkspaceRecipe } from '../../../src/shared/types/recipes';
 
+// Historical recipe round trips remain tested, but the app no longer exposes recipes.
+vi.mock('../../../src/shared/recipeAvailability', () => ({ WORKSPACE_RECIPES_ENABLED: true }));
+
 vi.mock('../../../src/renderer/lib/terminalPaneGeometry', async (original) => ({
   ...(await original<object>()), waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }),
 }));

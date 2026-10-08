@@ -1,3 +1,5 @@
+import { workspaceBrowserPresented } from '../store/workspacePages';
+import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 /** Create a browser tab in renderer and main state, activate it, and optionally navigate it. */
@@ -36,7 +38,7 @@ export async function syncSelectedBrowserTab(workspaceId: string, expectedTabId?
   const state = useWorkspaceStore.getState();
   const workspace = state.getWorkspaceById(workspaceId);
   const tabId = workspace?.browserPane?.activeTabId;
-  if (state.activeWorkspaceId !== workspaceId || !workspace?.browserVisible || !tabId
+  if (useAssistantNavStore.getState().activeAssistantId || state.activeWorkspaceId !== workspaceId || !workspace || !workspaceBrowserPresented(workspace) || workspace.browserOverlayCount || !tabId
     || (expectedTabId && tabId !== expectedTabId)) return;
   await window.electronAPI.browserSwitchTab(workspaceId, tabId);
 }
@@ -48,9 +50,9 @@ export async function openUrlInWorkspaceBrowser(
 ): Promise<string | null> {
   const store = useWorkspaceStore.getState();
   const workspace = store.getWorkspaceById(workspaceId);
-  if (!workspace || workspace.id !== store.activeWorkspaceId) return null;
+  if (!workspace || workspace.id !== store.activeWorkspaceId || useAssistantNavStore.getState().activeAssistantId) return null;
 
-  if (!workspace.browserVisible) {
+  if (!workspaceBrowserPresented(workspace)) {
     store.setBrowserVisible(true, workspaceId);
   }
 

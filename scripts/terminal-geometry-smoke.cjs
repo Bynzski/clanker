@@ -71,7 +71,36 @@ async function run() {
     assert(terminal.buffer.active.length >= scrollback, 'cached reattachment lost scrollback');
     assert(readiness.length === 2, 'reattachment never became ready');
     sizing.dispose();
-    return { passed: true, measurements, resizeCalls: calls.length, readiness };
+    // Page-minimized startup is invisible but deliberately non-zero-sized, unlike display:none.
+    const hiddenHost = document.createElement('div');
+    hiddenHost.style.cssText = 'position:absolute;left:0;top:0;width:600px;height:400px;visibility:hidden';
+    hiddenHost.inert = true;
+    hiddenHost.innerHTML = '<div class="terminal-pane"><div class="terminal-header">Hidden startup</div><div class="terminal-content"></div></div>';
+    document.body.append(hiddenHost);
+    const hiddenContainer = hiddenHost.querySelector('.terminal-content');
+    const hiddenTerminal = new Terminal({ fontSize: 13, scrollback: 1000 });
+    const hiddenFit = new FitAddon.FitAddon();
+    hiddenTerminal.loadAddon(hiddenFit); hiddenTerminal.open(hiddenContainer);
+    const hiddenCalls = [], hiddenReadiness = [];
+    const attachHidden = () => exports.observeTerminalGeometry({ container: hiddenContainer, fitAddon: hiddenFit,
+      resize: async (cols, rows) => { hiddenCalls.push({ cols, rows }); },
+      ready: async () => { hiddenReadiness.push(hiddenCalls.length); }, onError: error => { throw error; } });
+    let hiddenSizing = attachHidden();
+    await wait(250);
+    assert(hiddenReadiness.length === 1 && hiddenCalls[0].cols > 2, 'invisible non-zero startup never became ready');
+    assert(!hiddenHost.contains(document.activeElement), 'hidden startup took focus');
+    await new Promise(resolve => hiddenTerminal.write(Array.from({length: 200}, (_, i) => 'hidden ' + i + '\\r\\n').join(''), resolve));
+    const hiddenScrollback = hiddenTerminal.buffer.active.length;
+    hiddenSizing.dispose();
+    const hiddenCount = hiddenCalls.length;
+    hiddenHost.style.width = '300px'; await wait(100);
+    assert(hiddenCalls.length === hiddenCount, 'already-ready hidden terminal changed PTY geometry');
+    hiddenHost.style.visibility = ''; hiddenHost.inert = false;
+    hiddenSizing = attachHidden(); await wait(250);
+    assert(hiddenReadiness.length === 2, 'restored hidden terminal did not fit and become ready');
+    assert(hiddenTerminal.buffer.active.length >= hiddenScrollback, 'restored hidden terminal lost output');
+    hiddenSizing.dispose(); hiddenTerminal.dispose(); hiddenHost.remove();
+    return { passed: true, measurements, resizeCalls: calls.length, readiness, hiddenStartup: { passed: true, hiddenReadiness } };
   })()`);
   if (process.argv[2]) fs.writeFileSync(process.argv[2], (await window.webContents.capturePage()).toPNG());
   console.log(JSON.stringify(result, null, 2));

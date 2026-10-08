@@ -5,7 +5,7 @@ import {
   markTerminalDisposed,
   writeCachedTerminalData,
   writeCachedTerminalExit,
-} from '../../../src/renderer/components/TerminalPane';
+} from '../../../src/renderer/lib/terminalRuntimeCache';
 import { startTerminalSessionBridge } from '../../../src/renderer/lib/terminalSessionBridge';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';

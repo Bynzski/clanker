@@ -10,6 +10,7 @@ import { useAssistantsStore } from '../store/assistantsStore';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 import { assistantBrowserOwnerId } from '../../shared/browserOwner';
 import AssistantSurface from './assistants/AssistantSurface';
+import { terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
 import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
 import {
@@ -160,7 +161,11 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
     ),
     [resolvedActiveWorkspaceId, workspaceIds],
   );
-  const warmWorkspaceIdSet = useMemo(() => new Set(warmWorkspaceIds), [warmWorkspaceIds]);
+  // A never-ready terminal must mount even if its launch finishes after its workspace became cold.
+  const warmWorkspaceIdSet = useMemo(() => new Set([
+    ...warmWorkspaceIds,
+    ...workspaces.filter((workspace) => workspace.pendingTerminalIds?.some(terminalNeedsBootstrap)).map((workspace) => workspace.id),
+  ]), [warmWorkspaceIds, workspaces]);
 
   useEffect(() => {
     recentWorkspaceIdsRef.current = recordWorkspaceActivation(

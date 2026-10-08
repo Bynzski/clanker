@@ -3,6 +3,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import { isSameWorkspaceIdentity, workspaceIdentityKey } from '../../shared/workspaceIdentity';
 import { findOpenWorkspace, prepareWorkspaceShell, unregisterWorkspaceShell, workspaceLocation } from './openWorkspace';
+import { persistWorkspacePages, serializeWorkspacePages } from './workspacePageStorage';
 import { persistOpenWorkspaces, readOpenWorkspaceState } from './openWorkspaceStorage';
 
 /** One mount owns startup registrations. Persistence is barred until the atomic commit. */
@@ -16,10 +17,11 @@ export function startWorkspaceRestoration(): { dispose: () => void; done: Promis
   let lastNavigation = '';
   const persist = () => {
     const state = useWorkspaceStore.getState();
-    const navigation = JSON.stringify([state.workspaces.map(workspaceLocation), state.activeWorkspaceId]);
+    const navigation = JSON.stringify([state.workspaces.map(workspaceLocation), state.activeWorkspaceId, state.workspaces.map(serializeWorkspacePages)]);
     if (navigation === lastNavigation) return;
     lastNavigation = navigation;
     persistOpenWorkspaces(state.workspaces, state.activeWorkspaceId);
+    for (const workspace of state.workspaces) persistWorkspacePages(workspace);
   };
   const closed = new Set<string>();
   const unsubscribe = useWorkspaceStore.subscribe((state, previous) => {

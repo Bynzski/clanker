@@ -16,6 +16,7 @@ import { useHeaderSettings } from './useHeaderSettings';
 import { useConversationHistory } from './useConversationHistory';
 import './Header.css';
 import type { WorkspaceRecipe } from '../../shared/types/recipes';
+import { paneIsPresented, workspaceBrowserPresented } from '../store/workspacePages';
 import { captureTerminalLaunches } from '../lib/recipeCapture';
 import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
@@ -46,8 +47,8 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const assistantBrowserVisible = useAssistantSurfaceStore((state) => (activeAssistantId ? state.byId[activeAssistantId]?.browserVisible ?? false : false));
   const toggleAssistantBrowser = useAssistantSurfaceStore((state) => state.toggleBrowser);
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
-  const browserVisible = activeAssistantId ? assistantBrowserVisible : focusedWorkspace?.browserVisible ?? false;
-  const notesVisible = focusedWorkspace?.notesVisible ?? false;
+  const browserVisible = activeAssistantId ? assistantBrowserVisible : focusedWorkspace ? workspaceBrowserPresented(focusedWorkspace) : false;
+  const notesVisible = Boolean(focusedWorkspace?.notesVisible && (!focusedWorkspace.pages || (focusedWorkspace.notesPane && paneIsPresented(focusedWorkspace, focusedWorkspace.notesPane.id))));
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   const explorerShown = useWorkspaceNavigationStore((state) => isExplorerShown(explorerVisible, state.mode, state.sidebarWidth));

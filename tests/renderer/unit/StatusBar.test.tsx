@@ -113,6 +113,7 @@ describe('StatusBar', () => {
         id: 'ws', workspacePath: ROOT, gitCurrentBranch: 'main', gitIsRepo: true, gitIsDetached: false,
         checkoutContexts: [main, A, B],
         terminals: [agent('t-main', main.id), agent('t-a', A.id), agent('t-b', B.id)],
+        panes: ['t-main', 't-a', 't-b'].map((id) => ({ id: `pane-${id}`, terminalId: id })),
         activeTerminalId,
         ...overrides,
       });

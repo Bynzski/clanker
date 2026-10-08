@@ -10,6 +10,8 @@ import type {
   Ref,
 } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
+import { executeWorkspacePageCommand } from '../lib/workspacePageCommands';
+import { workspaceBrowserPresented } from '../store/workspacePages';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import type { BrowserTab } from '../store/workspaceTypes';
@@ -438,7 +440,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
   // arrive here as one typed signal; this runs them through the panel's own actions.
   const runKeybindingCommand = useRef<(payload: BrowserKeybindingCommandPayload) => void>(() => undefined);
   runKeybindingCommand.current = (payload) => {
-    if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId) return;
+    if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId || !isActiveOwner) return;
+    if (executeWorkspacePageCommand(payload.command, ownerId)) return;
     switch (payload.command) {
       case 'browser.focusAddress':
         urlInputRef.current?.focus();
@@ -546,9 +549,9 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     const remote = workspace.environmentId && workspace.environmentId !== 'local';
     return {
       ownerId: id,
-      visible: workspace.browserVisible,
+      visible: workspaceBrowserPresented(workspace),
       // A workspace owns the native view only while it is the single active Browser owner.
-      isActiveOwner: !assistantActive && activeOwner === id,
+      isActiveOwner: !assistantActive && activeOwner === id && workspaceBrowserPresented(workspace),
       tabs: workspace.browserPane?.tabs ?? [],
       activeTabId: workspace.browserPane?.activeTabId ?? null,
       browserUrl: workspace.browserUrl ?? '',
@@ -563,7 +566,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       syncSelectedTab: () => syncSelectedBrowserTab(id),
       features: { annotation: true, paneDrag: true },
       renderRemotePreview: remote
-        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && Boolean(workspace.browserVisible)} onOpen={navigate} />
+        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && workspaceBrowserPresented(workspace)} onOpen={navigate} />
         : undefined,
     };
   }, [workspace, id, activeOwner, assistantActive, updateBrowserTab, removeBrowserTab, setActiveBrowserTab, moveBrowserTab, pushBrowserOverlay, popBrowserOverlay]);

@@ -63,7 +63,7 @@ describe('geometry-first history resume', () => {
   });
 
   it('does not dispatch after a workspace switch during preparation and cleans only the original reservation', async () => {
-    const pending = start(); const rejected = expect(pending).rejects.toThrow('no longer available');
+    const pending = start(); const rejected = expect(pending).rejects.toThrow('cancelled');
     const paneId = reserved();
     useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, createWorkspaceFixture({ id: 'other', lifecycle: 'parked' })] }));
     useWorkspaceStore.getState().selectWorkspace('other');

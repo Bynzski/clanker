@@ -18,9 +18,9 @@ export function nextAttentionTarget(
   const ordered = workspaces.flatMap((workspace) => {
     const paneById = new Map(workspace.panes.map((pane) => [pane.id, pane]));
     const terminalIds = new Set(workspace.terminals.map((terminal) => terminal.id));
-    const paneIds = workspace.layoutRoot
-      ? collectLeafPaneIds(workspace.layoutRoot)
-      : workspace.panes.map((pane) => pane.id);
+    const paneIds = workspace.pages
+      ? [...workspace.pages.flatMap((page) => collectLeafPaneIds(page.layoutRoot)), ...(workspace.minimizedPanes ?? []).map((entry) => entry.paneId)]
+      : workspace.layoutRoot ? collectLeafPaneIds(workspace.layoutRoot) : workspace.panes.map((pane) => pane.id);
     return paneIds.flatMap((paneId) => {
       const terminalId = paneById.get(paneId)?.terminalId;
       return terminalId && terminalIds.has(terminalId)
