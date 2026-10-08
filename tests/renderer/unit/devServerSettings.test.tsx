@@ -5,7 +5,7 @@ import DevServerSettingsDialog from '../../../src/renderer/components/DevServerS
 import { DevServerControls } from '../../../src/renderer/components/DevServerRow';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
-import type { DevServiceCommand } from '../../../src/shared/types/workspaceServices';
+import type { DevServiceCommand, WorkspaceService } from '../../../src/shared/types/workspaceServices';
 const command: DevServiceCommand = { workspaceId: 'ws', checkoutContextId: 'ctx', cwd: '/repo-worktrees/feature', checkoutRoot: '/repo-worktrees/feature', command: 'npm run dev', packageManager: 'npm', settingsRevision: 'a'.repeat(64) };
 afterEach(cleanup);
 function setup() {
@@ -58,6 +58,43 @@ describe('checkout dev server settings UI', () => {
     render(<DevServerSettingsDialog command={command} terminalId="agent" onSaved={vi.fn()} onClose={vi.fn()} />);
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('checkout or command changed'));
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true);
+  });
+  it('preserves the open dialog and dirty buffer through another agent starting, running and stopping the service', async () => {
+    const api = installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command, environment: { PORT: '8788' } }) });
+    const workspace = createWorkspaceFixture({ id: 'ws' });
+    const { rerender } = render(<DevServerControls workspace={workspace} command={command} terminalId="agent" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Dev Server' }));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveProperty('value', 'PORT=8788'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'PORT=8790\nVITE_DEV_PORT=5176' } });
+    for (const status of ['starting', 'running', 'stopping', 'failed'] as const) {
+      const service: WorkspaceService = { ...command, id: 'service', sourceTerminalId: 'another-agent', status, ...(status === 'failed' ? { cleanupIncomplete: true } : {}) };
+      rerender(<DevServerControls workspace={workspace} command={{ ...command, settingsRevision: 'b'.repeat(64) }} terminalId="agent" service={service} />);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByRole('textbox')).toHaveProperty('value', 'PORT=8790\nVITE_DEV_PORT=5176');
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true);
+      expect(screen.getByRole('status')).toHaveTextContent('unsaved changes are preserved');
+    }
+    rerender(<DevServerControls workspace={workspace} command={command} terminalId="agent" service={{ ...command, id: 'service', sourceTerminalId: 'another-agent', status: 'stopped' }} />);
+    expect(screen.getByRole('textbox')).toHaveProperty('value', 'PORT=8790\nVITE_DEV_PORT=5176');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(api.workspaceServiceDiscover).toHaveBeenCalledTimes(1);
+    expect(api.workspaceServiceSaveSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    rerender(<DevServerControls workspace={workspace} command={command} terminalId="agent" service={{ ...command, id: 'service', sourceTerminalId: 'another-agent', status: 'running' }} />);
+    rerender(<DevServerControls workspace={workspace} command={command} terminalId="agent" />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('does not rebase an open dialog after another agent refreshes the row configuration', async () => {
+    const api = installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command, environment: { PORT: '8788' } }) });
+    const workspace = createWorkspaceFixture({ id: 'ws' });
+    const { rerender } = render(<DevServerControls workspace={workspace} command={command} terminalId="agent" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Dev Server' }));
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveProperty('value', 'PORT=8788'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'PORT=8790' } });
+    rerender(<DevServerControls workspace={workspace} command={{ ...command, settingsRevision: 'b'.repeat(64) }} terminalId="agent" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(api.workspaceServiceSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ settingsRevision: command.settingsRevision, environment: { PORT: '8790' } })));
   });
   it('disables configuration for a live service and confirms the discovered revision on Run', async () => {
     const api = installElectronApiMock();

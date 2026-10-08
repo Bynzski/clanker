@@ -31,10 +31,19 @@ Use a fixture whose dev script reads explicit frontend/backend/proxy port variab
 5. Two agents in the same checkout share configuration. Open settings from both;
    save one, then try saving the other stale dialog. The second save must fail without
    overwriting the first. Its typed buffer remains visible.
-6. Start the checkout while its settings dialog is open elsewhere. Saving must fail
-   while the service is pending/live. A native location change or released context
+6. Start the checkout while its settings dialog is open elsewhere. The dialog must
+   stay open with its unsaved buffer intact; Save is disabled with a Stop-first message
+   throughout starting/running/stopping and incomplete cleanup. Stop the service and
+   confirm Save becomes available without changing the text. Explicitly Cancel,
+   start/stop again and verify the dialog does not reappear. A native location change or released context
    must also invalidate the old settings action. No settings may move to another root.
-7. Run a hard-coded strict-port fixture twice: it still fails clearly. Settings are an
+7. Save from one agent and verify another agent in the same canonical checkout
+   (also via a second workspace pointing there) refreshes its discovery before Run.
+   During delayed rediscovery, Run is disabled. The next explicit Run confirms the
+   new fingerprint without a stale-settings error. Clearing variables must propagate
+   too. Unrelated checkouts keep their discovery; an already-open sibling dialog keeps
+   its own editing fingerprint and buffer. Never retry a failed launch automatically.
+8. Run a hard-coded strict-port fixture twice: it still fails clearly. Settings are an
    explicit project contract, not generic automatic port assignment.
 
 ## Independent checkout services

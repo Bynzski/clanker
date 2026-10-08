@@ -60,10 +60,28 @@ values and 8 KiB total UTF-8 content. Reserved system/toolchain and Clanker cred
 variables are refused case-insensitively. Windows overrides inherited project keys
 case-insensitively. Settings updates require authoritative checkout/command identity
 and the last-discovered configuration fingerprint; stale edits or launches fail
-without applying a different configuration. Pending, live or incompletely cleaned-up
+without applying a different configuration. Successful saves publish bounded checkout
+path/fingerprint metadata through the existing revision-ordered service bridge. All
+rows using the canonical root rediscover (including rows in another workspace);
+unrelated configured roots are not invalidated. Clearing settings also invalidates
+the root. Run is disabled until stale discovery refreshes; failed launches are never
+automatically retried.
+
+An already-open settings dialog stays open if another conversation starts the server.
+Its unsaved buffer is preserved, Save is disabled with a Stop-first explanation, and
+Save becomes available again after verified cleanup. Explicit Cancel/Close dismisses
+it; stopping a server never reopens it. Row refreshes do not rebase a dialog's editing
+fingerprint or replace its buffer, so a concurrent save still fails safely. Pending, live or incompletely cleaned-up
 services block edits, including a service from another workspace using the same root.
 Stored configuration is bounded to 512 checkout roots; invalid persistence fails
 closed. SSH configuration is not supported.
+
+**Tracked follow-up: unused settings management.** Deleted worktree directories leave
+configuration records behind, and the current UI cannot clear an unavailable root.
+Add a bounded preferences view to identify missing local directories and explicitly
+remove their settings, without deleting records automatically or discarding settings
+for existing but unregistered checkouts. This is separate from service lifecycle and
+is not implemented here; regular worktree use can eventually reach the 512-root cap.
 
 ## Dependencies and failures
 

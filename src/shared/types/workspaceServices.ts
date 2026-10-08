@@ -50,6 +50,11 @@ export interface WorkspaceService extends DevServiceCommand {
 export function isLiveWorkspaceService(service: WorkspaceService | undefined): boolean {
   return Boolean(service && (['starting', 'running', 'stopping'].includes(service.status) || service.cleanupIncomplete));
 }
-export interface WorkspaceServicesUpdate { revision: number; services: WorkspaceService[] }
+/** Bounded, cumulative invalidation metadata only; never environment values or launch authority. */
+export interface DevServiceSettingsSnapshot {
+  defaultRevision: string;
+  checkouts: Array<{ cwd: string; settingsRevision: string }>;
+}
+export interface WorkspaceServicesUpdate { revision: number; services: WorkspaceService[]; settings?: DevServiceSettingsSnapshot }
 export interface DevServiceDiscoveryResult { success: boolean; command?: DevServiceCommand; environment?: Record<string, string>; error?: string }
 export interface WorkspaceServiceResult { success: boolean; service?: WorkspaceService; error?: string }

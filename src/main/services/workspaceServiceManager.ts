@@ -7,7 +7,7 @@ import type { WorkspaceRegistry, RegisteredWorkspace } from '../workspaceRegistr
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { AgentLocation } from '../../shared/types/agentAttention';
 import type { TerminalUsage } from '../checkoutContextRelease';
-import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, DevServiceDiscoveryResult, WorkspaceService, WorkspaceServicesUpdate, WorkspaceServiceResult } from '../../shared/types/workspaceServices';
+import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, DevServiceSettingsSnapshot, DevServiceDiscoveryResult, WorkspaceService, WorkspaceServicesUpdate, WorkspaceServiceResult } from '../../shared/types/workspaceServices';
 import { discoverDevCommand } from './devCommandDiscovery';
 import { applyDevServiceEnvironment, DevServiceSettings } from './devServiceSettings';
 import { resolveHarnessPtySpawn } from '../harnessLaunch';
@@ -77,6 +77,7 @@ export class WorkspaceServiceManager {
   private revision = 0;
   private closed = false;
   private readonly settings: DevServiceSettings;
+  private settingsSnapshot?: DevServiceSettingsSnapshot;
   constructor(private readonly deps: {
     registry: WorkspaceRegistry;
     settings?: DevServiceSettings;
@@ -106,7 +107,8 @@ export class WorkspaceServiceManager {
       }
     }
     if (removed) this.revision++;
-    return { revision: this.revision, services: [...this.runtimes.values()].map(({ service }) => ({ ...service })) };
+    return { revision: this.revision, services: [...this.runtimes.values()].map(({ service }) => ({ ...service })),
+      ...(this.settingsSnapshot ? { settings: { ...this.settingsSnapshot, checkouts: this.settingsSnapshot.checkouts.map((entry) => ({ ...entry })) } } : {}) };
   }
   private publish() { this.revision++; this.deps.changed(this.snapshot()); }
   /** Include both pending launches and live services in checkout release/removal checks. */
@@ -161,6 +163,9 @@ export class WorkspaceServiceManager {
       // No await between live-service check, compare-and-set and persistence.
       this.settings.set(target.canonicalRoot, request.settingsRevision, request.environment);
       const settings = this.settings.get(target.canonicalRoot);
+      // Full, bounded metadata survives missed/reordered pushes and clearing a root; values stay in main.
+      this.settingsSnapshot = this.settings.revisions();
+      this.publish();
       return { success: true, command: { ...command, cwd: target.canonicalRoot, settingsRevision: settings.settingsRevision, environmentKeys: Object.keys(settings.environment) }, environment: settings.environment };
     } catch (error) { return { success: false, error: message(error) }; }
   }

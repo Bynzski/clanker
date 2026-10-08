@@ -7,8 +7,8 @@ import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import './DevServerSettingsDialog.css';
 
-export default function DevServerSettingsDialog({ command, terminalId, onClose, onSaved }: {
-  command: DevServiceCommand; terminalId: string; onClose: () => void; onSaved: () => void;
+export default function DevServerSettingsDialog({ command, terminalId, serviceActive = false, onClose, onSaved }: {
+  command: DevServiceCommand; terminalId: string; serviceActive?: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const [text, setText] = useState('');
   const [expected, setExpected] = useState<DevServiceCommand>();
@@ -26,7 +26,7 @@ export default function DevServerSettingsDialog({ command, terminalId, onClose, 
     return () => { disposed = true; };
   }, [command.workspaceId, command.checkoutContextId, command.cwd, command.command, terminalId]);
   const save = async () => {
-    if (!expected) return;
+    if (!expected || serviceActive) return;
     setBusy(true); setError(undefined);
     try {
       const environment = parseDevServiceEnvironment(text);
@@ -49,12 +49,13 @@ export default function DevServerSettingsDialog({ command, terminalId, onClose, 
         <label htmlFor="dev-server-environment">Environment (NAME=value, one per line)</label>
         <textarea id="dev-server-environment" value={text} onChange={(event) => setText(event.target.value)} disabled={!expected || busy} maxLength={12288} spellCheck={false} placeholder={'PORT=8788\nVITE_DEV_PORT=5174'} />
         <p>Values are literal: no quotes, expansion or shell execution. Your project must read these variables and connect its frontend proxy to the matching backend. Clanker does not assign ports automatically. Toolchain overrides are blocked. Do not store tokens or passwords here.</p>
+        {serviceActive && <div role="status">Stop the checkout dev server before saving settings. Your unsaved changes are preserved.</div>}
         {error && <div role="alert">{error}</div>}
       </div>
       <div className="clanker-dialog-footer">
         <Button variant="secondary" size="sm" disabled={!expected || busy} onClick={() => setText('')}>Clear variables</Button>
         <DialogClose asChild><Button variant="secondary" size="sm" disabled={busy}>Cancel</Button></DialogClose>
-        <Button size="sm" disabled={!expected || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save settings'}</Button>
+        <Button size="sm" disabled={!expected || busy || serviceActive} onClick={() => void save()}>{busy ? 'Saving…' : 'Save settings'}</Button>
       </div>
     </DialogContent>
   </Dialog>;

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { validateDevServiceEnvironment } from '../../shared/devServiceEnvironment';
+import { pathKey } from '../../shared/pathKey';
+import type { DevServiceSettingsSnapshot } from '../../shared/types/workspaceServices';
 
 /** Windows treats environment keys case-insensitively; avoid node-pty inheriting the wrong duplicate. */
 export function applyDevServiceEnvironment(base: NodeJS.ProcessEnv, configured: Record<string, string>, platform = process.platform): Record<string, string> {
@@ -26,7 +28,10 @@ export class DevServiceSettings {
       return { root, environment: validateDevServiceEnvironment(environment) };
     });
   }
-  private key(root: string): string { return process.platform === 'win32' ? root.toLowerCase() : root; }
+  private key(root: string): string { return pathKey(root, process.platform === 'win32'); }
+  revisions(): DevServiceSettingsSnapshot {
+    return { defaultRevision: this.revision({}), checkouts: this.records().map(({ root, environment }) => ({ cwd: root, settingsRevision: this.revision(environment) })) };
+  }
   get(root: string): { environment: Record<string, string>; settingsRevision: string } {
     const environment = this.records().find((entry) => entry.root === this.key(root))?.environment ?? {};
     return { environment, settingsRevision: this.revision(environment) };

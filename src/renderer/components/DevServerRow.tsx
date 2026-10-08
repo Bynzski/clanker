@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
+import { pathKey } from '../../shared/pathKey';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
@@ -14,13 +15,16 @@ import DevServerDiagnosticsDialog from './DevServerDiagnosticsDialog';
 import DevServerSettingsDialog from './DevServerSettingsDialog';
 import { devDependencyInstallCommand, installDevServiceDependencies } from '../lib/devServiceInstall';
 
-export function DevServerControls({ workspace, command, service, terminalId, onStartFinished }: {
-  workspace: WorkspaceTab; command?: DevServiceCommand; service?: WorkspaceService; terminalId?: string; onStartFinished?: () => void;
+export function DevServerControls({ workspace, command, service, terminalId, discoveryPending = false, onStartFinished }: {
+  workspace: WorkspaceTab; command?: DevServiceCommand; service?: WorkspaceService; terminalId?: string; discoveryPending?: boolean; onStartFinished?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Pin the dialog to the explicitly opened target, not refreshing row discovery or service status.
+  const [settingsTarget, setSettingsTarget] = useState<{ command: DevServiceCommand; terminalId: string } | null>(null);
+  const settingsServiceActive = useWorkspaceServiceStore((state) => Boolean(settingsTarget && state.services.some((entry) =>
+    pathKey(entry.cwd) === pathKey(settingsTarget.command.cwd) && isLiveWorkspaceService(entry))));
   const [confirmingInstall, setConfirmingInstall] = useState<DevServiceCommand | null>(null);
   const live = service && isLiveWorkspaceService(service);
   const stopping = service?.status === 'stopping';
@@ -45,12 +49,12 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
       {!live && command?.preparationHint && terminalId && <IconButton className="ws-nav-action" disabled={busy}
         aria-label="Install dependencies…" title={`Install dependencies (${devDependencyInstallCommand(command.packageManager)})\n${command.cwd}`}
         onClick={() => setConfirmingInstall({ ...command })}><Download size={12} /></IconButton>}
-      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy} aria-label={`Run Dev Server · ${command.command}`} title={`${failed ? 'Restart' : 'Run'} ${command.command}\n${command.cwd}${environmentHint}`} onClick={() => void action(async () => {
+      {!live && command && terminalId && <IconButton className="ws-nav-action" disabled={busy || discoveryPending} aria-label={`Run Dev Server · ${command.command}`} title={`${failed ? 'Restart' : 'Run'} ${command.command}\n${command.cwd}${environmentHint}`} onClick={() => void action(async () => {
         const result = await window.electronAPI.workspaceServiceStart({ workspaceId: workspace.id, terminalId, checkoutContextId: command.checkoutContextId, cwd: command.cwd, command: command.command, ...(command.settingsRevision ? { settingsRevision: command.settingsRevision } : {}) });
         onStartFinished?.();
         if (!result.success) throw new Error(result.error || 'Could not start dev server');
       })}><Play size={12} /></IconButton>}
-      {command && terminalId && <IconButton className="ws-nav-action" disabled={busy || Boolean(live)} aria-label="Configure Dev Server" title={live ? 'Stop the dev server before changing settings' : `Checkout dev server settings\n${command.cwd}${environmentHint}`} onClick={() => setSettingsOpen(true)}><Settings2 size={12} /></IconButton>}
+      {command && terminalId && <IconButton className="ws-nav-action" disabled={busy || Boolean(live)} aria-label="Configure Dev Server" title={live ? 'Stop the dev server before changing settings' : `Checkout dev server settings\n${command.cwd}${environmentHint}`} onClick={() => setSettingsTarget({ command: { ...command }, terminalId })}><Settings2 size={12} /></IconButton>}
       {live && service && <IconButton className="ws-nav-action" disabled={busy || (stopping && !service.error)} aria-label="Stop Dev Server" title="Stop Dev Server" onClick={() => void action(async () => {
         const result = await window.electronAPI.workspaceServiceStop({ workspaceId: workspace.id, serviceId: service.id });
         if (!result.success) throw new Error(result.error || 'Could not stop dev server');
@@ -70,7 +74,9 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
     {!live && !failed && command?.preparationHint && <div className="ws-service-hint sr-only" title={command.preparationHint}>Dependencies may need installation</div>}
     {failed && service && <DevServerDiagnosticsDialog service={service} open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />}
     {(error || (stopping && service?.error)) && <div className="ws-service-error" role="alert">{error || service?.error}</div>}
-    {settingsOpen && !live && command && terminalId && <DevServerSettingsDialog key={`${terminalId}:${command.checkoutContextId}:${command.cwd}`} command={command} terminalId={terminalId} onClose={() => setSettingsOpen(false)} onSaved={() => onStartFinished?.()} />}
+    {settingsTarget && <DevServerSettingsDialog command={settingsTarget.command} terminalId={settingsTarget.terminalId}
+      serviceActive={settingsServiceActive || Boolean(service && isLiveWorkspaceService(service) && pathKey(service.cwd) === pathKey(settingsTarget.command.cwd))}
+      onClose={() => setSettingsTarget(null)} onSaved={() => onStartFinished?.()} />}
     <ConfirmCloseDialog
       isOpen={confirmingInstall !== null}
       title="Install dependencies in this checkout?"
@@ -93,6 +99,10 @@ export default function DevServerRow({ workspace, terminal }: { workspace: Works
   const key = `${workspace.id}:${terminal.id}:${contextId}:${context?.path}:${context?.missing}:${location?.path}`;
   const [attempt, setAttempt] = useState(0);
   const [discovery, setDiscovery] = useState<{ key: string; command?: DevServiceCommand; error?: string }>();
+  const current = discovery?.key === key ? discovery : undefined;
+  const canonicalRoot = current?.command?.cwd;
+  const settingsRevision = useWorkspaceServiceStore((state) => canonicalRoot && state.settings
+    ? state.settings.checkouts.find((entry) => entry.cwd === pathKey(canonicalRoot))?.settingsRevision ?? state.settings.defaultRevision : undefined);
   const services = useWorkspaceServiceStore((state) => state.services);
   const service = services.find((entry) => entry.workspaceId === workspace.id && entry.checkoutContextId === contextId);
   const canDiscover = Boolean(context && !context.missing && (!workspace.environmentId || workspace.environmentId === 'local'));
@@ -103,12 +113,11 @@ export default function DevServerRow({ workspace, terminal }: { workspace: Works
       if (!disposed) setDiscovery({ key, command: result.command, error: result.success ? undefined : result.error });
     }).catch(() => { if (!disposed) setDiscovery({ key, error: 'Could not inspect dev command' }); });
     return () => { disposed = true; };
-  }, [workspace.id, terminal.id, canDiscover, key, attempt]);
-  const current = discovery?.key === key ? discovery : undefined;
+  }, [workspace.id, terminal.id, canDiscover, key, attempt, settingsRevision]);
   if (!service && !current?.command && !current?.error) return null;
   if (current?.error && !service) return <div className="ws-service-item"><div className="ws-service-row failed" title={current.error}>
     <span className="sr-only">Dev Server unavailable</span>
     <IconButton className="ws-nav-action" aria-label="Retry dev command discovery" title={current.error} onClick={() => setAttempt((value) => value + 1)}><TriangleAlert size={12} /></IconButton>
   </div></div>;
-  return <DevServerControls workspace={workspace} terminalId={terminal.id} command={current?.command} service={service} onStartFinished={() => setAttempt((value) => value + 1)} />;
+  return <DevServerControls workspace={workspace} terminalId={terminal.id} command={current?.command} service={service} discoveryPending={settingsRevision !== undefined && current?.command?.settingsRevision !== settingsRevision} onStartFinished={() => setAttempt((value) => value + 1)} />;
 }

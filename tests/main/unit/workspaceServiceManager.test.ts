@@ -115,6 +115,31 @@ describe('workspace-owned dev services', () => {
     expect(spawn.mock.calls[1][2].env?.VITE_DEV_PORT).toBe(process.env.VITE_DEV_PORT);
     expect(manager.snapshot().services[0]).not.toHaveProperty('environment');
   });
+  it('publishes cumulative settings metadata only after successful saves, including clearing and sibling roots', async () => {
+    const edit = async (terminalId: string, environment: Record<string, string>) => {
+      const discovered = await manager.discover({ workspaceId: 'ws', terminalId });
+      return manager.saveSettings({ ...request(terminalId), settingsRevision: discovered.command!.settingsRevision, environment });
+    };
+    await edit('a', { PORT: '8788' });
+    const first = changed.mock.calls[changed.mock.calls.length - 1][0];
+    expect(first.settings?.checkouts).toEqual([{ cwd: a.path, settingsRevision: expect.any(String) }]);
+    expect(JSON.stringify(first)).not.toContain('8788');
+    await edit('b', { PORT: '8789' });
+    const second = changed.mock.calls[changed.mock.calls.length - 1][0];
+    expect(second.revision).toBeGreaterThan(first.revision);
+    expect(second.settings?.checkouts).toHaveLength(2);
+    expect(second.settings?.checkouts).toContainEqual(first.settings!.checkouts[0]);
+    await edit('a', {});
+    const cleared = changed.mock.calls[changed.mock.calls.length - 1][0];
+    expect(cleared.settings?.checkouts).toEqual([{ cwd: b.path, settingsRevision: expect.any(String) }]);
+    expect(cleared.settings?.defaultRevision).toBe((await manager.discover({ workspaceId: 'ws', terminalId: 'a' })).command!.settingsRevision);
+    const beforeFailure = changed.mock.calls.length;
+    expect((await edit('a', { NODE_OPTIONS: 'evil' })).success).toBe(false);
+    expect(changed).toHaveBeenCalledTimes(beforeFailure);
+    // Old snapshot consumers cannot mutate the main-owned cumulative metadata.
+    first.settings!.checkouts[0].settingsRevision = 'tampered';
+    expect(manager.snapshot().settings).toEqual(cleared.settings);
+  });
   it('refuses settings edits during pending/live services, including another workspace for the same physical root', async () => {
     const discovery = await manager.discover({ workspaceId: 'ws', terminalId: 'a' });
     const edit = { ...request(), settingsRevision: discovery.command!.settingsRevision, environment: { PORT: '8788' } };
