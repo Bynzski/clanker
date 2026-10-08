@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-08
+
+### Added
+
+- **Status-bar Usage widget** — optionally pin harness quota chips showing remaining capacity and a coarse reset countdown. The widget prefers the five-hour window when available, otherwise the weekly window.
+
+### Changed
+
+- **Quieter sidebar and Usage controls** — dev-server rows use compact status icons and actions, with details in tooltips and the failure dialog. Usage now opens from the bottom-right status bar instead of the toolbar.
+- **Linux-only release artifact** — `0.12.0` ships as a Linux x64 AppImage. No Windows binary is produced for this tag; Windows remains best-effort supported with compatibility tests in Ubuntu CI.
+
+### Fixed
+
+- **AI-assisted commit messages** — generation covers the final working tree, including bounded untracked-file content, respects the selected managed account and model, and uses completed native responses rather than reasoning traces or partial output. Concurrent requests, closed workspaces and shutdown are handled safely; commit-message bodies are preserved.
+- **Dev-server lifecycle and cleanup** — stopping, closing a workspace and quitting verify process-group termination even when npm exits before its children. Incomplete cleanup remains owned and blocks checkout removal or replacement launches. Unexpected exits retain diagnostics, busy-port failures identify the conflict without stopping unrelated processes, and server readiness is separate from process startup.
+- **Directory suggestions** — choosing a local or SSH folder keeps suggestions closed until further interaction, so another Enter opens the chosen folder instead of selecting a child.
+
 ## [0.11.0] - 2026-10-08
 
 ### Added
@@ -418,7 +435,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Bynzski/clanker/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Bynzski/clanker/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Bynzski/clanker/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Bynzski/clanker/compare/v0.8.0...v0.9.0
