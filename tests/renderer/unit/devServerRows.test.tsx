@@ -73,7 +73,17 @@ describe('checkout-aware sidebar service controls', () => {
     expect(window.electronAPI.workspaceServiceStart).not.toHaveBeenCalled();
     act(() => useWorkspaceServiceStore.setState({ services: [{ ...service, status: 'failed', error: 'sh: next: command not found', previewUrl: undefined }] }));
     rerender(<WorkspaceNavigatorSection />);
-    expect(screen.getByText('Why it failed').closest('details')?.textContent).toContain('sh: next: command not found');
+    expect(screen.queryByText('sh: next: command not found')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show failure details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Dev server failed' });
+    expect(dialog.textContent).toContain('sh: next: command not found');
+    expect(dialog.textContent).toContain(service.command);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    fireEvent.click(screen.getByRole('button', { name: /Copy for agent/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain('sh: next: command not found');
+    expect(writeText.mock.calls[0][0]).toContain(service.cwd);
   });
   it('requires confirmation before opening an install terminal and Cancel executes nothing', async () => {
     installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command: { ...command, preparationHint: 'Dependencies may need installation.' } }) });

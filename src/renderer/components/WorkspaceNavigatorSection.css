@@ -197,11 +197,8 @@
 .ws-service-label { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-service-light { flex-shrink: 0; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--status-success); box-shadow: 0 0 5px var(--status-success); }
 .ws-service-row.failed, .ws-service-row.failed .ws-nav-action { color: var(--status-error); }
-.ws-service-error, .ws-service-diagnostics { flex: 0 0 100%; padding: 2px 8px 4px 28px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
-.ws-service-error { color: var(--status-error); }
-.ws-service-diagnostics { color: var(--text-muted); }
-.ws-service-diagnostics summary { cursor: pointer; }
-.ws-service-diagnostics pre { max-height: 120px; overflow: auto; white-space: pre-wrap; font: inherit; font-family: var(--font-mono); margin: 4px 0; user-select: text; }
+
+.ws-service-error { color: var(--status-error); flex: 0 0 100%; padding: 2px 8px 4px 28px; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
 .ws-service-spin { margin: 0 2px; animation: ws-service-spin 1s linear infinite; }
 @keyframes ws-service-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ws-service-spin { animation: none; } }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
+import { ExternalLink, Info, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
 import { isLiveWorkspaceService, type DevServiceCommand, type WorkspaceService } from '../../shared/types/workspaceServices';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
@@ -11,6 +11,7 @@ import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
 import { Button } from './ui/Button';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
+import DevServerDiagnosticsDialog from './DevServerDiagnosticsDialog';
 import { devDependencyInstallCommand, installDevServiceDependencies } from '../lib/devServiceInstall';
 
 export function DevServerControls({ workspace, command, service, terminalId, onStartFinished }: {
@@ -18,6 +19,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [confirmingInstall, setConfirmingInstall] = useState<DevServiceCommand | null>(null);
   const live = service && isLiveWorkspaceService(service);
   const stopping = service?.status === 'stopping';
@@ -36,6 +38,7 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
         : failed ? <TriangleAlert size={11} aria-hidden="true" /> : live ? <span className="ws-service-light" aria-hidden="true" /> : null}
       <span className={`ws-service-label${live || failed ? '' : ' sr-only'}`}>Dev Server · {text}</span>
+      {failed && service && <IconButton className="ws-nav-action" aria-label="Show failure details" title="Show failure details" onClick={() => setDiagnosticsOpen(true)}><Info size={12} /></IconButton>}
       {!live && command?.preparationHint && terminalId && <Button className="ws-service-install" size="xs" variant="ghost" disabled={busy}
         aria-label="Install dependencies…" title={`Run ${devDependencyInstallCommand(command.packageManager)} in a visible terminal\n${command.cwd}`}
         onClick={() => setConfirmingInstall({ ...command })}>Install…</Button>}
@@ -60,10 +63,8 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
         if (!await openUrlInWorkspaceBrowser(workspace.id, url)) throw new Error('Could not open dev server preview');
       })}><ExternalLink size={12} /></IconButton>}
     </div>
-    {!live && !failed && command?.preparationHint && <div className="ws-service-hint" title={command.preparationHint}>Dependencies may need installation</div>}
-    {failed && service?.error && <details className="ws-service-diagnostics">
-      <summary>Why it failed</summary><pre>{service.error}</pre>
-    </details>}
+    {!live && !failed && command?.preparationHint && <div className="ws-service-hint sr-only" title={command.preparationHint}>Dependencies may need installation</div>}
+    {failed && service && <DevServerDiagnosticsDialog service={service} open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />}
     {(error || (stopping && service?.error)) && <div className="ws-service-error" role="alert">{error || service?.error}</div>}
     <ConfirmCloseDialog
       isOpen={confirmingInstall !== null}

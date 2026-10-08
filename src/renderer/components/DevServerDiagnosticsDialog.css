@@ -1,0 +1,13 @@
+.dev-diagnostics-dialog { width: min(560px, calc(100vw - 32px)); }
+.dev-diagnostics-body { display: flex; flex-direction: column; gap: 8px; }
+.dev-diagnostics-facts { display: grid; gap: 4px; margin: 0; }
+.dev-diagnostics-facts > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; }
+.dev-diagnostics-facts dt { color: var(--text-muted); font-size: var(--font-size-sm); }
+.dev-diagnostics-facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--font-size-sm); }
+.dev-diagnostics-label { color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.dev-diagnostics-output {
+  max-height: min(320px, 40vh); margin: 0; padding: 8px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--surface-app); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--font-size-sm); user-select: text;
+}
+.dev-diagnostics-copied { margin-right: auto; color: var(--text-muted); font-size: var(--font-size-sm); }
