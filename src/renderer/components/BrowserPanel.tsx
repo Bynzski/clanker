@@ -22,6 +22,7 @@ import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
 import RemotePreviewControl from './RemotePreviewControl';
 import BrowserUrlInput from './BrowserUrlInput';
+import { BrowserToastSlot } from './NotificationCenter';
 import BrowserTabStrip from './BrowserTabStrip';
 import AnnotationHandoffDialog from './AnnotationHandoffDialog';
 import { useBrowserUrlAutocomplete } from './useBrowserUrlAutocomplete';
@@ -494,6 +495,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
           onMoveTab={(tabId, targetTabId) => void handleMoveTab(tabId, targetTabId)}
         />
         <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={model.features.paneDrag ? dragPointerDown : undefined} />
+        <BrowserToastSlot />
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}

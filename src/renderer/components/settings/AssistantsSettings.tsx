@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
-import { Button } from '../ui/Button';
+import { AssistantNotice } from '../assistants/AssistantsRoster';
 import { IconButton } from '../ui/IconButton';
 import '../assistants/AssistantsRoster.css';
 
@@ -48,14 +48,9 @@ export default function AssistantsSettings() {
           onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })} />
         <span>Start Hermes service when needed</span>
       </label>
-      {transition && <p className="assistants-roster-status" role="status">{transition}</p>}
-      {problem && (
-        <div className="assistants-settings-row">
-          <span className="assistants-roster-error" role="alert">{problem}</span>
-          <Button size="xs" disabled={busy} onClick={() => void refresh()}>Retry</Button>
-        </div>
-      )}
-      {!settings.enabled && error && <p className="assistants-roster-error" role="alert">{error}</p>}
+      {transition && <AssistantNotice tone="info" message={transition} />}
+      {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
+      {!settings.enabled && error && <AssistantNotice tone="error" message={error} />}
     </div>
   );
 }

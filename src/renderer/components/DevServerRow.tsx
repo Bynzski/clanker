@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Circle, ExternalLink, LoaderCircle, Play, RefreshCw, Square, TriangleAlert } from 'lucide-react';
+import { ExternalLink, LoaderCircle, Play, Square, TriangleAlert } from 'lucide-react';
 import { isLiveWorkspaceService, type DevServiceCommand, type WorkspaceService } from '../../shared/types/workspaceServices';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
@@ -34,8 +34,8 @@ export function DevServerControls({ workspace, command, service, terminalId, onS
   return <div className="ws-service-item">
     <div className={`ws-service-row${failed ? ' failed' : ''}`} title={title}>
       {starting || stopping ? <LoaderCircle size={11} className="ws-service-spin" aria-hidden="true" />
-        : failed ? <TriangleAlert size={11} aria-hidden="true" /> : <Circle size={8} fill={live ? 'currentColor' : 'none'} aria-hidden="true" />}
-      <span className="ws-service-label">Dev Server · {text}</span>
+        : failed ? <TriangleAlert size={11} aria-hidden="true" /> : live ? <span className="ws-service-light" aria-hidden="true" /> : null}
+      <span className={`ws-service-label${live || failed ? '' : ' sr-only'}`}>Dev Server · {text}</span>
       {!live && command?.preparationHint && terminalId && <Button className="ws-service-install" size="xs" variant="ghost" disabled={busy}
         aria-label="Install dependencies…" title={`Run ${devDependencyInstallCommand(command.packageManager)} in a visible terminal\n${command.cwd}`}
         onClick={() => setConfirmingInstall({ ...command })}>Install…</Button>}
@@ -100,9 +100,9 @@ export default function DevServerRow({ workspace, terminal }: { workspace: Works
   }, [workspace.id, terminal.id, canDiscover, key, attempt]);
   const current = discovery?.key === key ? discovery : undefined;
   if (!service && !current?.command && !current?.error) return null;
-  if (current?.error && !service) return <div className="ws-service-row" title={current.error}>
-    <TriangleAlert size={11} aria-hidden="true" /><span className="ws-service-label">Dev Server unavailable</span>
-    <IconButton className="ws-nav-action" aria-label="Retry dev command discovery" title={current.error} onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={12} /></IconButton>
-  </div>;
+  if (current?.error && !service) return <div className="ws-service-item"><div className="ws-service-row failed" title={current.error}>
+    <span className="sr-only">Dev Server unavailable</span>
+    <IconButton className="ws-nav-action" aria-label="Retry dev command discovery" title={current.error} onClick={() => setAttempt((value) => value + 1)}><TriangleAlert size={12} /></IconButton>
+  </div></div>;
   return <DevServerControls workspace={workspace} terminalId={terminal.id} command={current?.command} service={service} onStartFinished={() => setAttempt((value) => value + 1)} />;
 }

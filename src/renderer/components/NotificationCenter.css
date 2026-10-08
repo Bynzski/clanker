@@ -58,3 +58,19 @@
 .app-launcher .workspace-gate { flex: 1; min-height: 0; height: auto; }
 @keyframes notification-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .notification-card { animation: none; } }
+
+/* Browser header slot: fits the free space beside the tabs, above the native view. */
+.browser-toast-slot { position: relative; flex: 0 1 260px; min-width: 0; }
+.browser-toast-chip {
+  display: flex; align-items: center; gap: var(--space-xs); width: 100%; min-width: 0;
+  padding: 2px var(--space-sm); border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: var(--surface-elevated); color: var(--text-primary); font-size: var(--font-size-sm); cursor: pointer;
+}
+.browser-toast-slot--stacked .browser-toast-chip { box-shadow: 0 3px 0 -1px var(--surface-elevated), 0 3px 0 0 var(--border-default); }
+.browser-toast-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.browser-toast-count { flex-shrink: 0; color: var(--text-secondary); }
+.browser-toast-panel {
+  position: absolute; top: -2px; right: 0; z-index: 10; width: min(360px, 60vw);
+  max-height: 64px; overflow: auto;
+}
+.browser-toast-collapse { align-self: flex-end; }

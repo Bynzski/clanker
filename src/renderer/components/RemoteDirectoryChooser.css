@@ -314,3 +314,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The suggestion list floats over the dialog instead of growing it, so fuzzy results never resize the form. */
+.remote-path-field { position: relative; }
+.remote-path-field .remote-suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin: 2px 0 0; max-height: 180px; }

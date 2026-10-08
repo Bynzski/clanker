@@ -3,7 +3,8 @@ import { getHarnessOption } from '../../lib/harnessOptions';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { useAssistantNavStore } from '../../store/assistantNavStore';
 import type { HermesAssistantServiceState, HermesAssistant } from '../../../shared/types/assistants';
-import { Button } from '../ui/Button';
+import { Info, RefreshCw, TriangleAlert } from 'lucide-react';
+import { IconButton } from '../ui/IconButton';
 import './AssistantsRoster.css';
 
 /** Assistants to list: the live roster plus any opened Assistant the service no longer reports (kept, shown offline). */
@@ -33,6 +34,18 @@ export function useAssistantsEnabled(): boolean {
   return useAssistantsStore((state) => state.snapshot?.available === true && state.snapshot.settings.enabled === true);
 }
 
+/** Compact service notice shared by the sidebar and Settings: tone icon, message, optional retry icon. */
+export function AssistantNotice({ tone, message, onRetry, busy = false }: { tone: 'info' | 'error'; message: string; onRetry?: () => void; busy?: boolean }) {
+  const Icon = tone === 'error' ? TriangleAlert : Info;
+  return (
+    <div className={`assistants-roster-notice${tone === 'error' ? ' error' : ''}`}>
+      <Icon size={13} aria-hidden="true" />
+      <p role={tone === 'error' ? 'alert' : 'status'}>{message}</p>
+      {onRetry && <IconButton variant="ghost" size="xs" disabled={busy} aria-label="Retry" title="Retry" onClick={onRetry}><RefreshCw size={12} aria-hidden="true" /></IconButton>}
+    </div>
+  );
+}
+
 export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon'; disabled?: boolean }) {
   const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
   const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
@@ -44,13 +57,22 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
       type="button"
       className={`assistant-${variant}${active ? ' active' : ''}${live ? '' : ' offline'}`}
       aria-current={active ? 'true' : undefined}
-      aria-label={variant === 'icon' ? label : undefined}
+      aria-label={variant === 'icon' ? label : assistant.displayName}
       title={title}
       disabled={disabled}
       onClick={() => openAssistantSurface(assistant.id)}
     >
-      <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />
-      {variant === 'row' && <><span className="assistant-name">{assistant.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
+      {variant === 'row'
+        ? <>
+          <span className="assistant-avatar" aria-hidden="true"><HermesIcon size={14} strokeWidth={2} /></span>
+          <span className="assistant-text">
+            <span className="assistant-name">{assistant.displayName}</span>
+            <span className="assistant-sub">{assistant.description || 'Hermes Assistant'}</span>
+          </span>
+          {/* Listed means available, so only the exception is shown. */}
+          {!live && <span className="assistant-offline">offline</span>}
+        </>
+        : <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />}
     </button>
   );
 }
@@ -74,10 +96,10 @@ export default function AssistantsRoster({ variant = 'sidebar', disabled = false
       <div className="assistants-roster-list">
         {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant="row" disabled={disabled} />)}
       </div>
-      {snapshot.service.error && state !== 'connected'
-        ? <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>
-        : status && <p className="assistants-roster-status" role="status">{status}</p>}
-      {retry && <Button size="xs" disabled={busy} onClick={() => void refresh()}>Retry</Button>}
+      {(snapshot.service.error && state !== 'connected') || status
+        ? <AssistantNotice tone={snapshot.service.error && state !== 'connected' ? 'error' : 'info'} message={(state !== 'connected' && snapshot.service.error) || status!}
+          onRetry={retry ? () => void refresh() : undefined} busy={busy} />
+        : null}
     </section>
   );
 }
