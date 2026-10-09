@@ -77,10 +77,40 @@ describe('GitHub production provider', () => {
     ]) : githubRepoResponse(url));
     expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
   });
-  it('keeps requested reviewers or teams pending despite existing approvals', async () => {
+  it.each([
+    { requested_reviewers: [{ login: 'b' }], requested_teams: [] },
+    { requested_reviewers: [], requested_teams: [{ slug: 'team' }] },
+  ])('keeps actual outstanding requests pending despite approvals: %j', async (requests) => {
     installFetch((url) => url.pathname.endsWith('/reviews') ? json([{ id: 1, user: { login: 'a' }, state: 'APPROVED' }])
-      : /\/pulls\/7$/.test(url.pathname) ? json({ requested_reviewers: [{ login: 'b' }], requested_teams: [] }) : json(githubRepo));
+      : /\/pulls\/7$/.test(url.pathname) ? json(requests) : json(githubRepo));
     expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'pending' });
+  });
+  it.each([
+    ['APPROVED', 'COMMENTED', 'approved'],
+    ['APPROVED', 'PENDING', 'approved'],
+    ['COMMENTED', 'COMMENTED', 'none'],
+    ['COMMENTED', 'PENDING', 'none'],
+  ])('does not manufacture a request from %s plus an unrelated %s review', async (first, second, expected) => {
+    installFetch((url) => url.pathname.endsWith('/reviews') ? json([
+      { id: 1, user: { login: 'alice' }, state: first },
+      { id: 2, user: { login: 'bob' }, state: second },
+    ]) : githubRepoResponse(url));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: expected });
+  });
+  it('lets submitted decisions supersede comments/drafts without either creating a requirement', async () => {
+    const reviews = [{ id: 1, user: { login: 'alice' }, state: 'COMMENTED' }, { id: 2, user: { login: 'bob' }, state: 'PENDING' }];
+    installFetch((url) => url.pathname.endsWith('/reviews') ? json(reviews) : githubRepoResponse(url));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'none' });
+    reviews.push({ id: 3, user: { login: 'alice' }, state: 'APPROVED' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
+    reviews.push({ id: 4, user: { login: 'bob' }, state: 'CHANGES_REQUESTED' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'changes_requested' });
+    reviews.push({ id: 5, user: { login: 'bob' }, state: 'COMMENTED' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'changes_requested' });
+    reviews.push({ id: 6, user: { login: 'bob' }, state: 'APPROVED' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
+    reviews.push({ id: 7, user: { login: 'bob' }, state: 'DISMISSED' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
   });
   it('paginates reviews and lets the later reviewer decision win', async () => {
     installFetch((url) => url.pathname.endsWith('/reviews') ? url.searchParams.has('page')

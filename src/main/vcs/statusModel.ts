@@ -37,9 +37,10 @@ export function aggregateReviews(reviews: EffectiveReview[]): ReviewSummary {
   for (const review of [...reviews].sort((a, b) => a.id - b.id)) {
     if (review.state === 'DISMISSED') effective.delete(review.reviewer);
     else if (['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) effective.set(review.reviewer, review.state);
-    else if (!effective.has(review.reviewer)) effective.set(review.reviewer, 'PENDING');
+    // COMMENTED and draft PENDING records establish no review requirement.
+    // Outstanding requests are checked separately against native PR metadata.
   }
   const states = [...effective.values()];
   return { state: states.includes('CHANGES_REQUESTED') ? 'changes_requested'
-    : states.includes('PENDING') ? 'pending' : states.includes('APPROVED') ? 'approved' : 'none' };
+    : states.includes('APPROVED') ? 'approved' : 'none' };
 }

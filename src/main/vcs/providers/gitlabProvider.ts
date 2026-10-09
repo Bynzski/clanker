@@ -1,11 +1,12 @@
 import { BaseProvider } from './baseProvider';
-import type { CiSummary, ProviderContext, PullRequestContext, ReviewSummary } from '../types';
+import type { CiSummary, ProviderContext, PullRequestContext, ReviewSummary, VcsProblem } from '../types';
 import { aggregateChecks, providerDefaultBranch, problem, unavailablePr, type CheckState } from '../statusModel';
 import { canonicalGitLabOrigin, isApprovedGitLabOrigin } from '../instancePolicy';
 
 interface Project { id: number; default_branch: string | null; forked_from_project?: { id: number; path_with_namespace: string } | null }
 interface Mr { iid: number; id: number; title: string; state: string; sha: string; source_branch: string; source_project_id: number; target_project_id: number; author: { username: string } }
-interface Pipeline { id: number; sha: string; status: string; ref: string }
+interface Pipeline { id: number; sha: string; status: string; ref: string; project_id?: number }
+interface MrPipelineIdentity extends Mr { diff_refs?: { head_sha: string }; head_pipeline?: Pipeline | null }
 const validNamespace = (value: unknown): value is string => typeof value === 'string' && value.length <= 1024 && /^[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)+$/i.test(value)
   && value.split('/').every((segment) => segment !== '.' && segment !== '..');
 const validSha = (sha: unknown): sha is string => typeof sha === 'string' && /^[a-f0-9]{40,64}$/i.test(sha);
@@ -55,6 +56,33 @@ export class GitLabProvider extends BaseProvider {
       state: mr.state === 'merged' ? 'merged' : mr.state === 'opened' ? 'open' : 'closed', author: mr.author.username,
       repositoryPath: target.path, url: `${this.origin}/${target.path}/-/merge_requests/${mr.iid}` };
   }
+  /** A synthetic merge SHA alone cannot prove which source HEAD its pipeline tested. */
+  private async verifyMergedPipeline(context: ProviderContext, branch: string, sha: string, candidate: Pipeline,
+    token?: string): Promise<{ pipeline?: Pipeline; problem?: VcsProblem }> {
+    const project = await this.fetchJson<Project>(this.path(context), token);
+    if (!project.success) return { problem: project.problem };
+    const target = this.target(project.data, context);
+    const namespace = context.pullRequestRepositoryPath ?? `${context.owner}/${context.repo}`;
+    if (!target || target.path !== namespace) return { problem: problem('stale') };
+    const mr = await this.fetchJson<MrPipelineIdentity>(`/projects/${encodeURIComponent(namespace)}/merge_requests/${context.pullRequestNumber}`, token);
+    if (!mr.success) return { problem: mr.problem };
+    const value = mr.data;
+    if (!value || value.iid !== context.pullRequestNumber || value.source_project_id !== project.data.id
+      || value.target_project_id !== target.id || value.source_branch !== branch || value.sha !== sha
+      || value.diff_refs?.head_sha !== sha || value.head_pipeline?.id !== candidate.id
+      || value.head_pipeline.sha !== candidate.sha || candidate.project_id !== value.head_pipeline.project_id
+      || (candidate.project_id !== project.data.id && candidate.project_id !== target.id)) return { problem: problem('stale') };
+    if (typeof value.head_pipeline.status !== 'string') return { problem: problem('malformed-response') };
+    const commit = await this.fetchJson<{ id: string; parent_ids: string[] }>(`/projects/${encodeURIComponent(namespace)}/repository/commits/${candidate.sha}`, token);
+    if (!commit.success) return { problem: commit.problem };
+    if (!commit.data || commit.data.id !== candidate.sha || !Array.isArray(commit.data.parent_ids)
+      || commit.data.parent_ids.length !== 2 || commit.data.parent_ids.some((parent) => !validSha(parent)))
+      return { problem: problem('malformed-response') };
+    // GitLab merges source into target: target is first parent, source is second.
+    // Mere membership is unsafe when today's source HEAD was an old target HEAD.
+    if (commit.data.parent_ids[1] !== sha) return { problem: problem('stale') };
+    return { pipeline: value.head_pipeline };
+  }
   async getChecksSummary(context: ProviderContext, branch: string, token?: string): Promise<CiSummary> {
     if (!this.valid(context)) return { state: 'unknown', problem: problem('unsupported') };
     let sha = context.headSha;
@@ -74,8 +102,16 @@ export class GitLabProvider extends BaseProvider {
     for (const response of [result, mrPipelines]) if (response.data) {
       if (response.data.some((pipeline) => !pipeline || !Number.isSafeInteger(pipeline.id) || !validSha(pipeline.sha) || typeof pipeline.status !== 'string')) { error = problem('malformed-response'); continue; }
       if (response === result && response.data.some((pipeline) => pipeline.sha !== sha)) { error = problem('stale'); continue; }
-      const pipeline = response.data.filter((entry) => entry.sha === sha).sort((a, b) => b.id - a.id)[0];
-      if (pipeline) latest.push(pipeline);
+      const pipeline = [...response.data].sort((a, b) => b.id - a.id)[0];
+      if (!pipeline) continue;
+      if (pipeline.sha === sha) latest.push(pipeline);
+      else {
+        // The newest MR pipeline can test a temporary merge commit, not source HEAD.
+        // Do not fall back to an older green source pipeline or infer absence.
+        const verified = await this.verifyMergedPipeline(context, branch, sha, pipeline, token);
+        if (verified.pipeline) latest.push(verified.pipeline);
+        else error = verified.problem ?? problem('unknown');
+      }
     }
     const states: Record<string, CheckState> = { success: 'success', failed: 'failure', canceled: 'failure', pending: 'pending', running: 'pending', created: 'pending', preparing: 'pending', waiting_for_resource: 'pending', scheduled: 'pending', manual: 'pending', skipped: 'neutral' };
     return aggregateChecks(latest.map((pipeline) => states[pipeline.status] ?? 'unknown'), sha, error);

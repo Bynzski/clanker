@@ -30,7 +30,7 @@ describe('GitLab production provider', () => {
     installFetch(() => json([])); expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'none' });
   });
   it('includes relevant MR pipelines, not another commit or just a green branch pipeline', async () => {
-    installFetch((url) => url.pathname.includes('/merge_requests/') ? json([{ id: 30, sha: OTHER_SHA, status: 'failed' }, { id: 20, sha: SHA, status: 'running' }]) : json([{ id: 10, sha: SHA, status: 'success' }]));
+    installFetch((url) => url.pathname.includes('/merge_requests/') ? json([{ id: 15, sha: OTHER_SHA, status: 'failed' }, { id: 20, sha: SHA, status: 'running' }]) : json([{ id: 10, sha: SHA, status: 'success' }]));
     expect(await provider.getChecksSummary({ ...ctx, pullRequestNumber: 7 }, branch)).toMatchObject({ state: 'pending' });
     installFetch((url) => url.pathname.includes('/merge_requests/') ? json({}, 403) : json([{ id: 10, sha: SHA, status: 'success' }]));
     expect(await provider.getChecksSummary({ ...ctx, pullRequestNumber: 7 }, branch)).toMatchObject({ state: 'unknown', problem: { code: 'forbidden' } });
