@@ -481,6 +481,17 @@ describe('deletePat', () => {
     assert.strictEqual(env.store.get('encryptedPats.github'), undefined);
     assert.strictEqual(env.store.get('encryptedPats.gitlab'), 'gitlab-token');
   });
+
+  test('returns sanitized failure message if store throws', () => {
+    vi.spyOn(env.store, 'delete').mockImplementation(() => {
+      throw new Error('/path/to/secret-store failure');
+    });
+
+    const result = deletePat('github');
+
+    assert.equal(result.success, false);
+    assert.equal(result.error, 'Failed to delete PAT');
+  });
 });
 
 // ============================================================================

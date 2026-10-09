@@ -317,9 +317,8 @@ export function deletePat(provider: VcsProvider): CredentialSaveResult {
     storeDelete(`encryptedPats.${provider}`);
     storeDelete(`patMetadata.${provider}`);
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to delete PAT';
-    return { success: false, error: message };
+  } catch {
+    return { success: false, error: 'Failed to delete PAT' };
   }
 }
 

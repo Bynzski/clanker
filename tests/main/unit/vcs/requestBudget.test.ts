@@ -29,7 +29,8 @@ function delayedFetch(delay: number) {
 
 beforeEach(() => { vi.useFakeTimers(); vi.spyOn(Math, 'random').mockReturnValue(0); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-const context = (options = {}) => getProviderContext('origin', 'https://github.com/owner/repo.git', 'feature', 'main', options);
+const context = (options = {}, defaultBranch?: string) =>
+  getProviderContext('origin', 'https://github.com/owner/repo.git', 'feature', defaultBranch, options);
 
 describe('VCS request deadlines and cancellation', () => {
   it('caps the entire sequential context at ten seconds and retains only safe static links on failure', async () => {
@@ -37,7 +38,10 @@ describe('VCS request deadlines and cancellation', () => {
     vi.stubGlobal('fetch', fetch);
     const result = context();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(await result).toMatchObject({ success: false, deepLinks: expect.any(Array) });
+    const outcome = await result;
+    expect(outcome).toMatchObject({ success: false, deepLinks: expect.any(Array) });
+    expect(outcome.provider?.defaultBranch).toBe('');
+    expect(outcome.deepLinks?.find((l) => l.type === 'create-pr')?.url).toBe('https://github.com/owner/repo/compare/feature');
     expect(fetch).toHaveBeenCalledTimes(4);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(fetch).toHaveBeenCalledTimes(4);
@@ -170,6 +174,81 @@ describe('VCS request deadlines and cancellation', () => {
     const result = withVcsBudget(() => new InspectableProvider().request());
     await vi.advanceTimersByTimeAsync(1000);
     expect(await result).toEqual({ success: false, error: 'Provider request failed' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels and returns a sanitized failure for oversized known-size response body', async () => {
+    class InspectableProvider extends GitHubProvider {
+      request() { return this.fetchWithAuth('/user', 'secret-token'); }
+    }
+    let cancelCalled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"large":true}'));
+      },
+      cancel() {
+        cancelCalled = true;
+      },
+    });
+    const fetch = vi.fn().mockResolvedValue(new Response(body, {
+      headers: { 'content-length': String(10 * 1024 * 1024) },
+    }));
+    vi.stubGlobal('fetch', fetch);
+    const result = withVcsBudget(() => new InspectableProvider().request());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await result).toEqual({ success: false, error: 'Provider request failed' });
+    expect(fetch).toHaveBeenCalledTimes(1); // Must not retry
+    expect(cancelCalled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels and returns a sanitized failure while reading oversized streaming response body', async () => {
+    class InspectableProvider extends GitHubProvider {
+      request() { return this.fetchWithAuth('/user', 'secret-token'); }
+    }
+    let cancelCalled = false;
+    const chunkSize = 256 * 1024;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(chunkSize));
+      },
+      cancel() {
+        cancelCalled = true;
+      },
+    });
+    const fetch = vi.fn().mockResolvedValue(new Response(body));
+    vi.stubGlobal('fetch', fetch);
+    const result = withVcsBudget(() => new InspectableProvider().request());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await result).toEqual({ success: false, error: 'Provider request failed' });
+    expect(fetch).toHaveBeenCalledTimes(1); // Must not retry
+    expect(cancelCalled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('generates failure-path navigation without an assumed target branch when context lookup times out', async () => {
+    const fetch = delayedFetch(5000);
+    vi.stubGlobal('fetch', fetch);
+    const result = context();
+    await vi.advanceTimersByTimeAsync(4000);
+    const outcome = await result;
+    expect(outcome.success).toBe(false);
+    expect(outcome.provider?.defaultBranch).toBe('');
+    expect(outcome.deepLinks?.find((l) => l.type === 'create-pr')?.url).toBe('https://github.com/owner/repo/compare/feature');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('generates failure-path GitLab navigation without an assumed target branch when context lookup times out', async () => {
+    const fetch = delayedFetch(5000);
+    vi.stubGlobal('fetch', fetch);
+    const result = getProviderContext('origin', 'https://gitlab.com/owner/repo.git', 'feature');
+    await vi.advanceTimersByTimeAsync(4000);
+    const outcome = await result;
+    expect(outcome.success).toBe(false);
+    expect(outcome.provider?.defaultBranch).toBe('');
+    expect(outcome.deepLinks?.find((l) => l.type === 'create-pr')?.url).toBe(
+      'https://gitlab.com/owner/repo/-/merge_requests/new?merge_request[source_branch]=feature'
+    );
     expect(vi.getTimerCount()).toBe(0);
   });
 });

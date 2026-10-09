@@ -36,7 +36,7 @@ export async function getProviderContext(
   remoteName: string,
   remoteUrl: string,
   branch: string,
-  defaultBranch: string = 'main',
+  defaultBranch?: string,
   options: VcsRequestOptions = {}
 ): Promise<ProviderContextResult> {
   return withVcsBudget(async () => {
@@ -44,7 +44,8 @@ export async function getProviderContext(
       return await fetchProviderContext(remoteName, remoteUrl, branch, defaultBranch);
     } catch {
       // Do not leak provider/network error messages, URLs or token details.
-      const provider = buildProviderContext(remoteName, remoteUrl, defaultBranch);
+      // Generate failure-path navigation without an assumed target branch.
+      const provider = buildProviderContext(remoteName, remoteUrl, '');
       return {
         success: false, error: 'Provider context cancelled, timed out, or unavailable.',
         ...(provider ? { provider, deepLinks: getProviderInstance(provider.provider)?.getDeepLinks(provider, branch) ?? [] } : {}),
@@ -54,11 +55,11 @@ export async function getProviderContext(
 }
 
 async function fetchProviderContext(
-  remoteName: string, remoteUrl: string, branch: string, defaultBranch: string
+  remoteName: string, remoteUrl: string, branch: string, defaultBranch?: string
 ): Promise<ProviderContextResult> {
   assertVcsBudget();
   // Build basic context from remote URL
-  let providerContext = buildProviderContext(remoteName, remoteUrl, defaultBranch);
+  let providerContext = buildProviderContext(remoteName, remoteUrl, defaultBranch ?? '');
   if (!providerContext) {
     return {
       success: false,

@@ -26,7 +26,7 @@ export function getApiBaseUrl(provider: VcsProvider, remoteUrl?: string): string
 }
 
 export function buildProviderContext(
-  _remoteName: string, remoteUrl: string, defaultBranch: string = 'main'
+  _remoteName: string, remoteUrl: string, defaultBranch: string = ''
 ): ProviderContext | null {
   const parsed = parseTrustedRemote(remoteUrl);
   return parsed ? { ...parsed, defaultBranch } : null;

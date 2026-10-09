@@ -65,6 +65,15 @@ export interface IVcsProvider {
   ): DeepLink[];
 }
 
+export const MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export class ProviderPayloadTooLargeError extends Error {
+  constructor(message = 'Provider response exceeded maximum allowed size') {
+    super(message);
+    this.name = 'ProviderPayloadTooLargeError';
+  }
+}
+
 /**
  * Abstract base class with common functionality.
  */
@@ -72,6 +81,7 @@ export abstract class BaseProvider implements IVcsProvider {
   abstract readonly type: VcsProvider;
   abstract readonly apiBaseUrl: string;
 
+  public static readonly MAX_RESPONSE_BYTES = MAX_PROVIDER_RESPONSE_BYTES;
   private static readonly DEFAULT_TIMEOUT_MS = 4_000;
   private static readonly DEFAULT_MAX_RETRIES = 2;
   private static readonly DEFAULT_BACKOFF_BASE_MS = 250;
@@ -80,7 +90,8 @@ export abstract class BaseProvider implements IVcsProvider {
   private async fetchWithTimeout(
     url: string,
     init: RequestInit,
-    timeoutMs: number
+    timeoutMs: number,
+    maxResponseBytes: number = BaseProvider.MAX_RESPONSE_BYTES
   ): Promise<Response> {
     assertVcsBudget();
     const budget = currentVcsBudget()!;
@@ -100,11 +111,70 @@ export abstract class BaseProvider implements IVcsProvider {
         await response.body?.cancel();
         return new Response(null, { status: response.status, headers: response.headers });
       }
-      const body = await response.arrayBuffer();
+
+      if ([204, 205, 304].includes(response.status)) {
+        await response.body?.cancel();
+        return new Response(null, { status: response.status, headers: response.headers });
+      }
+
+      const contentLengthHeader = response.headers.get('content-length');
+      if (contentLengthHeader) {
+        const contentLength = Number.parseInt(contentLengthHeader, 10);
+        if (Number.isFinite(contentLength) && contentLength > maxResponseBytes) {
+          await response.body?.cancel();
+          throw new ProviderPayloadTooLargeError();
+        }
+      }
+
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        const arrayBuf = await response.arrayBuffer();
+        if (arrayBuf.byteLength > maxResponseBytes) {
+          throw new ProviderPayloadTooLargeError();
+        }
+        if (controller.signal.aborted) throw new DOMException('Request timed out', 'AbortError');
+        assertVcsBudget();
+        return new Response(arrayBuf, {
+          status: response.status,
+          headers: response.headers,
+        });
+      }
+
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            totalBytes += value.byteLength;
+            if (totalBytes > maxResponseBytes) {
+              throw new ProviderPayloadTooLargeError();
+            }
+            chunks.push(value);
+          }
+        }
+      } catch (err) {
+        try { await reader.cancel(); } catch { /* best effort cancellation */ }
+        throw err;
+      } finally {
+        reader.releaseLock();
+      }
+
       if (controller.signal.aborted) throw new DOMException('Request timed out', 'AbortError');
       assertVcsBudget();
-      return new Response([204, 205, 304].includes(response.status) ? null : body, {
-        status: response.status, headers: response.headers,
+
+      const body = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        body.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+
+      return new Response(body, {
+        status: response.status,
+        headers: response.headers,
       });
     } finally {
       clearTimeout(timeoutId);
@@ -115,7 +185,7 @@ export abstract class BaseProvider implements IVcsProvider {
   protected async fetchWithRetry(
     url: string,
     init: RequestInit,
-    options?: { timeoutMs?: number; maxRetries?: number }
+    options?: { timeoutMs?: number; maxRetries?: number; maxResponseBytes?: number }
   ): Promise<Response> {
     if (!currentVcsBudget()) {
       return withVcsBudget(() => this.fetchWithRetry(url, init, options));
@@ -128,17 +198,19 @@ export abstract class BaseProvider implements IVcsProvider {
     }
     const timeoutMs = options?.timeoutMs ?? BaseProvider.DEFAULT_TIMEOUT_MS;
     const maxRetries = options?.maxRetries ?? BaseProvider.DEFAULT_MAX_RETRIES;
+    const maxResponseBytes = options?.maxResponseBytes ?? BaseProvider.MAX_RESPONSE_BYTES;
 
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       assertVcsBudget();
       try {
-        return await this.fetchWithTimeout(url, init, timeoutMs);
+        return await this.fetchWithTimeout(url, init, timeoutMs, maxResponseBytes);
       } catch (error: unknown) {
         lastError = error;
         if (error instanceof Error && error.name === 'AbortError') currentVcsBudget()!.cancel();
         assertVcsBudget();
-        const shouldRetry = attempt < maxRetries && !(error instanceof Error && error.name === 'AbortError');
+        const shouldRetry = attempt < maxRetries &&
+          !(error instanceof Error && (error.name === 'AbortError' || error.name === 'ProviderPayloadTooLargeError'));
         if (!shouldRetry) {
           throw error;
         }

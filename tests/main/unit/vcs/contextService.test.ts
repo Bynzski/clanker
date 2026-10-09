@@ -440,6 +440,32 @@ describe('contextService - Real Behavior Tests', () => {
       const [, , token] = prSpy.mock.calls[0];
       expect(token).toBeUndefined();
     });
+
+    it('generates failure-path navigation without an assumed target branch when default branch is unknown', async () => {
+      const realProvider = getProviderInstance('github')!;
+      vi.spyOn(realProvider, 'getDefaultBranch').mockRejectedValue(new Error('Network error'));
+
+      const result = await getProviderContext('origin', TEST_REMOTES.github.ssh, 'feature');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Provider context cancelled, timed out, or unavailable.');
+      expect(result.provider?.defaultBranch).toBe('');
+      const createPrLink = result.deepLinks?.find((l) => l.type === 'create-pr');
+      expect(createPrLink?.url).toBe('https://github.com/owner/repo/compare/feature');
+    });
+
+    it('generates failure-path GitLab navigation without an assumed target branch when default branch is unknown', async () => {
+      const realProvider = getProviderInstance('gitlab')!;
+      vi.spyOn(realProvider, 'getDefaultBranch').mockRejectedValue(new Error('Network error'));
+
+      const result = await getProviderContext('origin', TEST_REMOTES.gitlab.ssh, 'feature');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Provider context cancelled, timed out, or unavailable.');
+      expect(result.provider?.defaultBranch).toBe('');
+      const createPrLink = result.deepLinks?.find((l) => l.type === 'create-pr');
+      expect(createPrLink?.url).toBe('https://gitlab.com/owner/repo/-/merge_requests/new?merge_request[source_branch]=feature');
+    });
   });
 
   // --------------------------------------------------------------------------
