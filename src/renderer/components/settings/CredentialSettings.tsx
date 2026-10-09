@@ -52,7 +52,7 @@ const PROVIDERS: Array<{ id: VcsProvider; name: string; docsUrl: string }> = [
   {
     id: 'bitbucket',
     name: 'Bitbucket',
-    docsUrl: 'https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/',
+    docsUrl: 'https://support.atlassian.com/bitbucket-cloud/docs/using-repository-access-tokens/',
   },
 ];
 

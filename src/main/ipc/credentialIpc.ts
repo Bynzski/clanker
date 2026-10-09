@@ -10,6 +10,7 @@ import {
   readPublicKey,
   deleteSshKeyPair,
   savePat,
+  restoreApprovedGitLabInstances,
   deletePat,
   getCredentialStatus,
   getGlobalCredentialStatus,
@@ -32,6 +33,7 @@ import {
 } from '../../shared/ipcChannels';
 
 export function registerCredentialIpc(): void {
+  restoreApprovedGitLabInstances();
   ipcMain.handle(CREDENTIAL_GENERATE_SSH_KEY, async () => {
     return generateSshKey();
   });

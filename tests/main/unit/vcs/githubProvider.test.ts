@@ -1,561 +1,91 @@
-/**
- * GitHub Provider Tests
- * Tests for GitHub REST API client functionality.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitHubProvider } from '../../../../src/main/vcs/providers/githubProvider';
-import { responseFromFixture } from './responseFixture';
-import type { ProviderContext } from '../../../../src/main/vcs/types';
-
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
-
-describe('GitHubProvider', () => {
-  let provider: GitHubProvider;
-  let context: ProviderContext;
-
-  beforeEach(() => {
-    provider = new GitHubProvider();
-    context = {
-      provider: 'github',
-      baseUrl: 'https://github.com',
-      owner: 'owner',
-      repo: 'repo',
-      defaultBranch: 'main',
-    };
-    mockFetch.mockReset();
+import { context, SHA, OTHER_SHA, branch, installFetch, json, githubRepo, githubPr, githubRepoResponse } from './providerFixtures';
+const provider = new GitHubProvider();
+const ctx = context('github');
+afterEach(() => vi.unstubAllGlobals());
+describe('GitHub production provider', () => {
+  it('matches repo, branch and actual HEAD, preferring a deterministic open PR', async () => {
+    const fetch = installFetch((url) => url.pathname.endsWith('/pulls') ? json([githubPr(9, 'closed'), githubPr(2), githubPr(50, 'open', OTHER_SHA)]) : json(githubRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ exists: true, outcome: 'found', number: 2, headSha: SHA });
+    expect(new URL(fetch.mock.calls[1][0]).searchParams.get('head')).toBe(`owner:${branch}`);
   });
-
-  describe('type', () => {
-    it('should have correct type', () => {
-      expect(provider.type).toBe('github');
-    });
+  it.each([401, 403, 404, 500])('does not manufacture absence on HTTP %s', async (status) => {
+    installFetch(() => json({ message: 'secret' }, status));
+    const pr = await provider.getPullRequestForBranch(ctx, branch);
+    expect(pr.exists).toBeUndefined(); expect(pr.problem).toBeDefined(); expect(JSON.stringify(pr)).not.toContain('secret');
   });
-
-  describe('apiBaseUrl', () => {
-    it('should have correct API base URL', () => {
-      expect(provider.apiBaseUrl).toBe('https://api.github.com');
-    });
+  it('distinguishes confirmed absence, detached HEAD, stale and malformed discovery', async () => {
+    installFetch((url) => url.pathname.endsWith('/pulls') ? json([]) : json(githubRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ exists: false, outcome: 'none' });
+    expect(await provider.getPullRequestForBranch(ctx, '')).toMatchObject({ outcome: 'unsupported' });
+    installFetch((url) => url.pathname.endsWith('/pulls') ? json([githubPr(7, 'open', OTHER_SHA)]) : json(githubRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ outcome: 'stale' });
+    installFetch((url) => url.pathname.endsWith('/pulls') ? json([null]) : json(githubRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ problem: { code: 'malformed-response' } });
   });
-
-  describe('getPullRequestForBranch', () => {
-    it('should return PR context when PR exists', async () => {
-      const mockPr = {
-        number: 42,
-        title: 'Add new feature',
-        state: 'open',
-        html_url: 'https://github.com/owner/repo/pull/42',
-        user: { login: 'developer' },
-        merged_at: null,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [mockPr],
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'feature-branch');
-
-      expect(result.exists).toBe(true);
-      expect(result.number).toBe(42);
-      expect(result.title).toBe('Add new feature');
-      expect(result.state).toBe('open');
-      expect(result.url).toBe('https://github.com/owner/repo/pull/42');
-      expect(result.author).toBe('developer');
-    });
-
-    it('should return exists:false when no PR exists', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [],
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'nonexistent-branch');
-
-      expect(result.exists).toBe(false);
-    });
-
-    it('should handle merged PRs', async () => {
-      const mockPr = {
-        number: 42,
-        title: 'Merged PR',
-        state: 'closed',
-        html_url: 'https://github.com/owner/repo/pull/42',
-        user: { login: 'developer' },
-        merged_at: '2024-01-01T00:00:00Z',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [mockPr],
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'merged-branch');
-
-      expect(result.exists).toBe(true);
-      expect(result.state).toBe('merged');
-    });
-
-    it('should handle closed PRs', async () => {
-      const mockPr = {
-        number: 42,
-        title: 'Closed PR',
-        state: 'closed',
-        html_url: 'https://github.com/owner/repo/pull/42',
-        user: { login: 'developer' },
-        merged_at: null,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [mockPr],
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'closed-branch');
-
-      expect(result.exists).toBe(true);
-      expect(result.state).toBe('closed');
-    });
-
-    it('should return empty context on API error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'feature-branch');
-
-      expect(result.exists).toBe(false);
-    });
-
-    it('should use owner:branch format for head filter', async () => {
-      const mockPr = {
-        number: 123,
-        title: 'Test PR',
-        state: 'open',
-        html_url: 'https://github.com/owner/repo/pull/123',
-        user: { login: 'developer' },
-        merged_at: null,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [mockPr],
-      });
-
-      await provider.getPullRequestForBranch(context, 'my-feature-branch');
-
-      // Verify the endpoint uses owner:branch format (URL encoded)
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/owner/repo/pulls?head=owner%3Amy-feature-branch&state=all',
-        expect.objectContaining({})
-      );
-    });
+  it('looks up fork PRs and reviews on the authoritative parent repository', async () => {
+    const pr = { ...githubPr(), base: { repo: { full_name: 'parent/repo' } }, html_url: 'https://github.com/parent/repo/pull/7' };
+    const fetch = installFetch((url) => url.pathname.endsWith('/reviews') ? json([])
+      : url.pathname.endsWith('/pulls') ? json([pr]) : githubRepoResponse(url, { ...githubRepo, fork: true, parent: { full_name: 'parent/repo' } }));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ number: 7 });
+    expect(await provider.getReviewSummary(ctx, 7)).toEqual({ state: 'none' });
+    expect(fetch.mock.calls.map(([url]) => url)).toContain('https://api.github.com/repos/parent/repo/pulls/7/reviews?per_page=100');
   });
-
-  describe('getChecksStatus', () => {
-    it('should return success for successful checks', async () => {
-      // First call: get ref (commit SHA)
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ object: { sha: 'abc123def456' } }),
-      });
-      // Second call: get status
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ state: 'success', statuses: [] }),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('success');
-    });
-
-    it('should return failure for failed checks', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ object: { sha: 'abc123def456' } }),
-      });
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ state: 'failure', statuses: [] }),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('failure');
-    });
-
-    it('should return pending for pending checks', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ object: { sha: 'abc123def456' } }),
-      });
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ state: 'pending', statuses: [] }),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('pending');
-    });
-
-    it('should return error when ref lookup fails', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const result = await provider.getChecksStatus(context, 'nonexistent-branch');
-
-      expect(result).toBe('error');
-    });
-
-    it('should return error when status lookup fails', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ object: { sha: 'abc123def456' } }),
-      });
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('error');
-    });
-
-    it('should use Authorization header when token provided', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ object: { sha: 'abc123def456' } }),
-      });
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ state: 'success', statuses: [] }),
-      });
-
-      await provider.getChecksStatus(context, 'feature-branch', 'ghp_test_token');
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/owner/repo/git/refs/heads/feature-branch',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer ghp_test_token',
-          }),
-        })
-      );
-    });
+  it.each([
+    ['success', 'success'], ['failure', 'failure'], ['cancelled', 'failure'], ['timed_out', 'failure'],
+    ['action_required', 'failure'], ['neutral', 'unknown'], ['skipped', 'unknown'], [null, 'unknown'],
+  ])('classifies completed checks %s as %s, not a guessed success', async (conclusion, expected) => {
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [{ id: 1, status: 'completed', conclusion }] }) : json([]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: expected, sha: SHA });
   });
-
-  describe('getReviewState', () => {
-    it('should return approved when PR is approved', async () => {
-      const mockReviews = [
-        {
-          state: 'APPROVED',
-          user: { login: 'reviewer1' },
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockReviews,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('approved');
-    });
-
-    it('should return changes_requested when changes requested', async () => {
-      const mockReviews = [
-        {
-          state: 'CHANGES_REQUESTED',
-          user: { login: 'reviewer1' },
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockReviews,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('changes_requested');
-    });
-
-    it('should return commented when commented only', async () => {
-      const mockReviews = [
-        {
-          state: 'COMMENTED',
-          user: { login: 'reviewer1' },
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockReviews,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('commented');
-    });
-
-    it('should return pending when no reviews', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [],
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('pending');
-    });
-
-    it('should ignore dismissed reviews', async () => {
-      const mockReviews = [
-        {
-          state: 'DISMISSED',
-          user: { login: 'reviewer1' },
-        },
-        {
-          state: 'CHANGES_REQUESTED',
-          user: { login: 'reviewer1' },
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockReviews,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('changes_requested');
-    });
-
-    it('should use first review per user when multiple reviews exist', async () => {
-      // The implementation keeps the first review for each user
-      const mockReviews = [
-        {
-          state: 'COMMENTED',
-          user: { login: 'reviewer1' },
-        },
-        {
-          state: 'APPROVED',
-          user: { login: 'reviewer1' },
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockReviews,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('commented');
-    });
-
-    it('should return undefined on API error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBeUndefined();
-    });
+  it('includes fork target PR checks at the same HEAD instead of declaring no CI', async () => {
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [{ id: 1, status: url.pathname.includes('/parent/') ? 'in_progress' : 'completed', conclusion: 'success' }] }) : json([]));
+    expect(await provider.getChecksSummary({ ...ctx, pullRequestRepositoryPath: 'parent/repo' }, branch)).toMatchObject({ state: 'pending', sha: SHA });
   });
-
-  describe('validateToken', () => {
-    it('should return true for valid token', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ login: 'testuser', scope: 'repo' }),
-      });
-
-      const result = await provider.validateToken('valid-token');
-
-      expect(result).toBe(true);
-    });
-
-    it('should return false for invalid token', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-      });
-
-      const result = await provider.validateToken('invalid-token');
-
-      expect(result).toBe(false);
-    });
-
-    it('should return false on network error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-      });
-
-      const result = await provider.validateToken('token');
-
-      expect(result).toBe(false);
-    });
+  it('combines modern checks and latest effective legacy contexts', async () => {
+    const fetch = installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [{ id: 1, status: 'queued' }] })
+      : json([{ id: 1, context: 'build', state: 'failure' }, { id: 2, context: 'build', state: 'success' }, { id: 3, context: 'lint', state: 'error' }]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'failure' });
+    expect(fetch.mock.calls.every(([url]) => url.includes(`/commits/${SHA}/`))).toBe(true);
   });
-
-  describe('getDefaultBranch', () => {
-    it('should return repository default branch when available', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ default_branch: 'develop' }),
-      });
-
-      const result = await provider.getDefaultBranch(context);
-
-      expect(result).toBe('develop');
-    });
-
-    it('should fall back to context defaultBranch on error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const result = await provider.getDefaultBranch(context);
-
-      expect(result).toBe('main');
-    });
-
-    it('should fall back to main when context has no defaultBranch', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const contextWithoutDefault = { ...context, defaultBranch: '' };
-      const result = await provider.getDefaultBranch(contextWithoutDefault);
-
-      expect(result).toBe('main');
-    });
-
-    it('should use token for authenticated requests', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ default_branch: 'main' }),
-      });
-
-      await provider.getDefaultBranch(context, 'ghp_test_token');
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/owner/repo',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer ghp_test_token',
-          }),
-        })
-      );
-    });
+  it('separates empty CI from unavailable sources and retains a known failure', async () => {
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [] }) : json([]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'none' });
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [{ id: 1, status: 'completed', conclusion: 'failure' }] }) : json({}, 403));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'failure', problem: { code: 'forbidden' } });
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [{ id: 1, status: 'completed', conclusion: 'success' }] }) : json({}, 403));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'unknown' });
   });
-
-  describe('getDeepLinks', () => {
-    it('should return deep links for GitHub', () => {
-      const links = provider.getDeepLinks(context);
-
-      expect(links.length).toBeGreaterThan(0);
-      expect(links.map((l) => l.type)).toContain('repo');
-      expect(links.map((l) => l.type)).toContain('branches');
-      expect(links.map((l) => l.type)).toContain('issues');
-      expect(links.map((l) => l.type)).toContain('releases');
-      expect(links.map((l) => l.type)).toContain('actions');
-    });
-
-    it('should include PR link when prNumber provided', () => {
-      const links = provider.getDeepLinks(context, 'feature-branch', 42);
-
-      const prLink = links.find((l) => l.type === 'pr');
-      expect(prLink).toBeDefined();
-      expect(prLink?.url).toContain('/pull/42');
-      expect(prLink?.label).toBe('PR #42');
-    });
-
-    it('should include create PR link when branch provided', () => {
-      const links = provider.getDeepLinks(context, 'feature-branch');
-
-      const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink).toBeDefined();
-      expect(createLink?.url).toContain('feature-branch');
-    });
-
-    it('should use resolved default branch for create PR', () => {
-      const customContext = { ...context, defaultBranch: 'develop' };
-      const links = provider.getDeepLinks(customContext, 'feature-branch');
-
-      const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toContain('develop...');
-    });
-
-    it('lets GitHub select its native default when the target is unknown', () => {
-      const contextWithoutDefault = { ...context, defaultBranch: '' };
-      const links = provider.getDeepLinks(contextWithoutDefault, 'feature-branch');
-
-      const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toBe('https://github.com/owner/repo/compare/feature-branch');
-    });
-
-    it('should have repo link first when no PR', () => {
-      const links = provider.getDeepLinks(context);
-
-      expect(links[0].type).toBe('repo');
-    });
-
-    it('should have PR link first when PR exists', () => {
-      const links = provider.getDeepLinks(context, 'feature-branch', 42);
-
-      expect(links[0].type).toBe('pr');
-    });
-
-    it('should use correct GitHub URLs', () => {
-      const links = provider.getDeepLinks(context);
-      const repoLink = links.find((l) => l.type === 'repo');
-
-      expect(repoLink?.url).toBe('https://github.com/owner/repo');
-    });
-
-    it('should URL-encode branch names', () => {
-      const links = provider.getDeepLinks(context, 'feature/branch-with-dashes');
-
-      const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toContain('feature/branch-with-dashes');
-    });
+  it('aggregates latest submitted decisions; comments/drafts cannot erase a request', async () => {
+    installFetch((url) => url.pathname.endsWith('/reviews') ? json([
+      { id: 1, user: { login: 'a' }, state: 'APPROVED' }, { id: 2, user: { login: 'b' }, state: 'CHANGES_REQUESTED' },
+      { id: 3, user: { login: 'b' }, state: 'COMMENTED' }, { id: 4, user: { login: 'b' }, state: 'PENDING' },
+    ]) : githubRepoResponse(url));
+    expect(await provider.getReviewSummary(ctx, 7)).toEqual({ state: 'changes_requested' });
+  });
+  it('allows approval supersession and handles dismissed decisions without reassurance', async () => {
+    for (const [state, expected] of [['APPROVED', 'approved'], ['DISMISSED', 'none']] as const) {
+      installFetch((url) => url.pathname.endsWith('/reviews') ? json([{ id: 1, user: { login: 'a' }, state: 'CHANGES_REQUESTED' }, { id: 2, user: { login: 'a' }, state }]) : githubRepoResponse(url));
+      expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: expected });
+    }
+  });
+  it('uses immutable reviewer IDs across login changes', async () => {
+    installFetch((url) => url.pathname.endsWith('/reviews') ? json([
+      { id: 1, user: { id: 100, login: 'old-name' }, state: 'CHANGES_REQUESTED' },
+      { id: 2, user: { id: 100, login: 'new-name' }, state: 'APPROVED' },
+    ]) : githubRepoResponse(url));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
+  });
+  it('keeps requested reviewers or teams pending despite existing approvals', async () => {
+    installFetch((url) => url.pathname.endsWith('/reviews') ? json([{ id: 1, user: { login: 'a' }, state: 'APPROVED' }])
+      : /\/pulls\/7$/.test(url.pathname) ? json({ requested_reviewers: [{ login: 'b' }], requested_teams: [] }) : json(githubRepo));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'pending' });
+  });
+  it('paginates reviews and lets the later reviewer decision win', async () => {
+    installFetch((url) => url.pathname.endsWith('/reviews') ? url.searchParams.has('page')
+      ? json([{ id: 2, user: { login: 'a' }, state: 'CHANGES_REQUESTED' }])
+      : json([{ id: 1, user: { login: 'a' }, state: 'APPROVED' }], 200, { link: '<https://api.github.com/repos/owner/repo/pulls/7/reviews?per_page=100&page=2>; rel="next"' }) : githubRepoResponse(url));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'changes_requested' });
   });
 });

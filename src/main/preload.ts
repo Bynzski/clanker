@@ -7,7 +7,7 @@ import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '..
 import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../shared/keybindings';
-import type { VcsProvider } from '../shared/types/vcs';
+import type { VcsProvider, VcsRequestOptions } from '../shared/types/vcs';
 import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/git';
 import type { HarnessSession, SessionInvokeOptions } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
@@ -542,11 +542,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke(CREDENTIAL_CONFIGURE_SSH_HOST, hostname),
 
   // VCS Provider Context
-  vcsGetContext: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_CONTEXT, workspacePath, workspaceId),
-  vcsGetPrInfo: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_PR_INFO, workspacePath, workspaceId),
-  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber, workspaceId),
-  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type, workspaceId),
-  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type, workspaceId),
+  vcsGetContext: (workspacePath: string, workspaceId?: string, options?: VcsRequestOptions) => ipcRenderer.invoke(VCS_GET_CONTEXT, workspacePath, workspaceId, options),
+  vcsGetPrInfo: (workspacePath: string, workspaceId?: string, options?: VcsRequestOptions) => ipcRenderer.invoke(VCS_GET_PR_INFO, workspacePath, workspaceId, options),
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string, options?: VcsRequestOptions) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber, workspaceId, options),
+  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string, options?: VcsRequestOptions) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type, workspaceId, options),
+  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string, options?: VcsRequestOptions) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type, workspaceId, options),
 
   // Editor
   editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),

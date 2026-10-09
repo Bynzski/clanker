@@ -2,7 +2,10 @@ import { Button } from './ui/Button';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useVcsStore } from '../store/vcsStore';
 import { sameWorkspacePath } from '../lib/pathUtils';
+import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
+import { useAgentLocation } from '../lib/useAgentLocation';
 import CommitDialog from './CommitDialog';
 import { GitDeleteBranchDialog } from './git/GitDeleteBranchDialog';
 import { GitInitMenu } from './git/GitInitMenu';
@@ -80,6 +83,22 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
   const { activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
+  const focusedWorkspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === workspaceId));
+  const agentLocation = useAgentLocation(focusedWorkspace?.activeTerminalId);
+  const checkoutContextId = focusedWorkspace ? selectedVcsCheckoutId(focusedWorkspace, agentLocation) : undefined;
+  const vcsGeneration = useRef(0);
+  const invalidateVcsRequest = useCallback(() => { vcsGeneration.current++; }, []);
+  useEffect(() => {
+    invalidateVcsRequest();
+    useVcsStore.getState().setContextSnapshot(null);
+    setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+    setVcsContextError(null); setIsLoadingVcsContext(false);
+    return () => {
+      invalidateVcsRequest();
+      if (useVcsStore.getState().contextSnapshot?.identity?.workspaceId === workspaceId)
+        useVcsStore.getState().setContextSnapshot(null);
+    };
+  }, [workspacePath, workspaceId, checkoutContextId, activeWorkspaceId, invalidateVcsRequest]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -119,8 +138,11 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     [upstream, ahead, behind]
   );
 
-  const loadVcsContext = useCallback(async () => {
-    if (!workspacePath || provider === 'unknown') {
+  const loadVcsContext = useCallback(async (refresh = false) => {
+    const generation = ++vcsGeneration.current;
+    const fresh = () => generation === vcsGeneration.current && (!workspaceId
+      || (useWorkspaceStore.getState().activeWorkspaceId === workspaceId && currentVcsCheckoutId(workspaceId) === checkoutContextId));
+    if (!workspacePath || checkoutContextId === null) {
       setVcsProviderContext(null);
       setPullRequest(null);
       setDeepLinks([]);
@@ -131,9 +153,13 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     setVcsContextError(null);
 
     try {
-      const result = await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
-
-      if (result.success && result.provider) {
+      const options = checkoutContextId || refresh ? { checkoutContextId: checkoutContextId ?? undefined, refresh } : undefined;
+      const result = options ? await window.electronAPI.vcsGetContext(workspacePath, workspaceId, options)
+        : await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
+      if (!fresh()) return;
+      useVcsStore.getState().setContextSnapshot(result);
+      setVcsContextError(result.error ?? null);
+      if (result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
         setPullRequest(result.pullRequest as PullRequestContext | null);
         setDeepLinks(result.deepLinks ?? []);
@@ -142,12 +168,12 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
         setPullRequest(null);
         setDeepLinks([]);
       }
-    } catch (error: unknown) {
-      setVcsContextError(error instanceof Error ? error.message : 'Failed to load provider context');
+    } catch {
+      if (fresh()) setVcsContextError('Failed to load provider context');
     } finally {
-      setIsLoadingVcsContext(false);
+      if (fresh()) setIsLoadingVcsContext(false);
     }
-  }, [workspacePath, provider, workspaceId]);
+  }, [workspacePath, workspaceId, checkoutContextId]);
 
   const loadRemotes = useCallback(async () => {
     if (!workspacePath) {
@@ -711,7 +737,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             onPull={() => void handlePull()}
             onPush={() => void handlePush()}
             onRefresh={() => void refreshMenuData()}
-            onRefreshContext={() => void loadVcsContext()}
+            onRefreshContext={() => void loadVcsContext(true)}
             onRemotesChanged={() => void loadRemotes()}
             onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
             onSelectWorkingDiff={(mode) => void handleSelectWorkingDiff(mode)}

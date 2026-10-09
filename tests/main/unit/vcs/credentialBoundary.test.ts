@@ -22,16 +22,16 @@ describe('provider credential boundary', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const provider = new GitLabProvider();
-    expect(await provider.getDefaultBranch({ ...context, baseUrl }, 'secret')).toBe('main');
+    expect(await provider.getDefaultBranch({ ...context, baseUrl }, 'secret')).toBe('');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
-    [new GitHubProvider(), 'https://api.github.com/user', 'Authorization', 'Bearer secret'],
-    [new GitLabProvider(), 'https://gitlab.com/api/v4/user', 'PRIVATE-TOKEN', 'secret'],
-    [new BitbucketProvider(), 'https://api.bitbucket.org/2.0/user', 'Authorization', 'Bearer secret'],
-  ] as const)('uses bounded, redirect-denying transport for %s', async (provider, url, header, value) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 }));
+    [new GitHubProvider(), 'https://api.github.com/user', 'Authorization', 'Bearer secret', { id: 1, login: 'person' }],
+    [new GitLabProvider(), 'https://gitlab.com/api/v4/user', 'PRIVATE-TOKEN', 'secret', { id: 1, username: 'person' }],
+    [new BitbucketProvider(), 'https://api.bitbucket.org/2.0/user', 'Authorization', 'Bearer secret', { uuid: '{1234}' }],
+  ] as const)('uses bounded, redirect-denying transport for %s', async (provider, url, header, value, identity) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(identity), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     expect(await provider.validateToken('secret')).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(url, expect.objectContaining({

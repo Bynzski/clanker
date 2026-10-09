@@ -55,7 +55,10 @@ The final slash-encoding correction started at `58bb073`. Read-only verification
 
 No live provider-token or SSH browser smoke was performed: dedicated current public/private/fine-grained/Bitbucket token fixtures were not supplied. Authenticated browser navigation (especially Bitbucket's manual branch selection and Unicode/slash branches), real OS credential-store locking, and real SSH-host provider context remain manual checks before release.
 
-## Remaining #145 acceptance criteria
+## Remaining criteria at the historical phase-one checkpoint
+
+The list below records PR #146's scope, not the current backend state. The follow-up backend on `fix/145-vcs-backend-completion` addresses typed availability, actual HEAD CI/reviews, pagination/body bounds, checkout/upstream identity, stale results, request deduplication/cache, explicit main-only instance approval and host-bound credentials, and the credential-entry-point findings. See [VCS providers](vcs-providers.md) for the current contract and remaining live smoke/presentation limitations. This follow-up opens no PR and makes no issue-status change.
+
 
 - Explicit self-managed instance approval and host-bound credentials.
 - Truthful typed API outcomes and visible permission/rate-limit/unavailable states. Existing provider methods can still conflate HTTP/network failures with no PR; this pass distinguishes context cancellation/deadline failure, not all API outcomes.

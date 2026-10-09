@@ -145,7 +145,7 @@ Clanker Grid integrates with remote VCS providers to surface context about your 
 - **GitLab** — Merge requests, pipelines, approvals
 - **Bitbucket** — Pull requests, pipeline status, participants
 
-Provider detection is automatic based on your git remote URL.
+Provider detection uses exact hosted origins or explicitly main-approved self-managed GitLab origins, not hostname substrings. Provider context selects the actual registered focused checkout, HEAD and upstream remote; it is not always the first remote or workspace's main checkout. Git operations retain their existing local/SSH execution and credentials.
 
 ### Provider Context
 
@@ -153,6 +153,8 @@ When connected to a VCS provider, the Git menu displays:
 - **PR/MR Badge** — Shows current PR number, title, and state
 - **Status Indicators** — CI/CD status (pending, success, failure)
 - **Review State** — Approval status when available
+
+The backend distinguishes confirmed no PR, empty checks/reviews and unavailable/auth/permission/rate-limit/stale results. Unknown discovery must not become Create PR, and unavailable or incomplete status must not become green/approved. Rich presentation of the new outcomes remains deferred; no new provider UI is added. Observed checks and reviews are not merge-eligibility guarantees. See [VCS providers](vcs-providers.md) for API contracts, bounded transport/cache, checkout races and manual smoke checks.
 
 ### Quick Navigation
 

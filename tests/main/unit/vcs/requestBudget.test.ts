@@ -1,175 +1,99 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getProviderContext, getProviderPrLink } from '../../../../src/main/vcs/contextService';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitHubProvider } from '../../../../src/main/vcs/providers/githubProvider';
 import { withVcsBudget } from '../../../../src/main/vcs/requestBudget';
-
-vi.mock('../../../../src/main/credential/credentialService', () => ({ getPat: () => ({ success: false }) }));
-
-function delayedFetch(delay: number) {
-  return vi.fn((url: string, init: RequestInit) => new Promise<Response>((resolve, reject) => {
-    const signal = init.signal!;
-    const abort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', abort);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', abort);
-      const data = url.includes('/pulls?')
-        ? [{ number: 1, title: 'PR', state: 'open', html_url: 'https://github.com/owner/repo/pull/1', user: { login: 'user' }, merged_at: null }]
-        : url.includes('/git/refs/') ? { object: { sha: 'abc' } }
-          : url.endsWith('/status') ? { state: 'success' }
-            : url.endsWith('/reviews') ? [] : { default_branch: 'main' };
-      resolve(new Response(JSON.stringify(data)));
-    }, delay);
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
-  }));
+import { context, branch, SHA, installFetch, json } from './providerFixtures';
+class InspectableProvider extends GitHubProvider {
+  send() { return this.fetchJson('/user', 'secret-token'); }
+  sendPage(page: number) { return this.fetchJson(`/user?page=${page}`, 'secret-token'); }
+  list() { return this.pages(`/repos/owner/repo/commits/${SHA}/statuses?per_page=100`, 'secret-token'); }
 }
-
-beforeEach(() => { vi.useFakeTimers(); vi.spyOn(Math, 'random').mockReturnValue(0); });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-const context = (options = {}) => getProviderContext('origin', 'https://github.com/owner/repo.git', 'feature', 'main', options);
-
-describe('VCS request deadlines and cancellation', () => {
-  it('caps the entire sequential context at ten seconds and retains only safe static links on failure', async () => {
-    const fetch = delayedFetch(3000);
-    vi.stubGlobal('fetch', fetch);
-    const result = context();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(await result).toMatchObject({ success: false, deepLinks: expect.any(Array) });
-    expect(fetch).toHaveBeenCalledTimes(4);
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(fetch).toHaveBeenCalledTimes(4);
-    expect(vi.getTimerCount()).toBe(0);
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+describe('production bounded transport', () => {
+  it.each([[401, 'auth-required'], [403, 'forbidden'], [404, 'not-found'], [500, 'unknown']])('classifies %s without retry or raw error', async (status, code) => {
+    const fetch = installFetch(() => json({ message: 'secret-token from remote' }, status));
+    const result = await new InspectableProvider().send();
+    expect(result).toMatchObject({ success: false, problem: { code } });
+    expect(JSON.stringify(result)).not.toContain('secret-token'); expect(fetch).toHaveBeenCalledTimes(1);
   });
-
-  it('individual four-second timeout cancels context rather than retrying or fetching later endpoints', async () => {
-    const fetch = delayedFetch(5000);
-    vi.stubGlobal('fetch', fetch);
-    const result = context();
-    await vi.advanceTimersByTimeAsync(4000);
-    expect((await result).success).toBe(false);
+  it('bounds rate-limit backoff instead of retrying beyond the total budget', async () => {
+    const fetch = installFetch(() => json({}, 429, { 'retry-after': '3600' }));
+    expect(await new InspectableProvider().send()).toMatchObject({ problem: { code: 'rate-limited' } });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
   });
-
-  it('honors caller cancellation during a fetch', async () => {
-    const fetch = delayedFetch(3000);
+  it('retries transient network errors at most twice', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn().mockRejectedValue(new Error('secret-token private hostname'));
     vi.stubGlobal('fetch', fetch);
-    const controller = new AbortController();
-    const result = context({ signal: controller.signal });
-    await vi.advanceTimersByTimeAsync(20);
-    controller.abort();
-    expect((await result).success).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
+    const promise = new InspectableProvider().send();
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(await promise).toMatchObject({ problem: { code: 'network-error' } }); expect(fetch).toHaveBeenCalledTimes(3);
   });
-
-  it('does not dispatch for an already cancelled request', async () => {
-    const fetch = delayedFetch(10);
-    vi.stubGlobal('fetch', fetch);
-    const controller = new AbortController(); controller.abort();
-    expect((await context({ signal: controller.signal })).success).toBe(false);
-    expect(fetch).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
+  it('distinguishes caller cancellation from deadline expiration', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    })));
+    const cancelled = new AbortController();
+    const first = withVcsBudget(() => new InspectableProvider().send(), { signal: cancelled.signal, timeoutMs: 200 });
+    cancelled.abort(); await vi.advanceTimersByTimeAsync(1);
+    expect(await first).toMatchObject({ problem: { code: 'cancelled' } });
+    const second = withVcsBudget(() => new InspectableProvider().send(), { timeoutMs: 200 });
+    await vi.advanceTimersByTimeAsync(201);
+    expect(await second).toMatchObject({ problem: { code: 'timeout' } });
   });
-
-  it('cancels retry backoff without another request', async () => {
-    const fetch = vi.fn().mockRejectedValue(new TypeError('network error with secret'));
-    vi.stubGlobal('fetch', fetch);
-    const controller = new AbortController();
-    const result = context({ signal: controller.signal });
-    await vi.advanceTimersByTimeAsync(50);
-    controller.abort();
-    expect((await result).success).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
+  it('bounds body streaming even when headers arrived promptly', async () => {
+    vi.useFakeTimers(); let cancelled = false;
+    installFetch(() => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{')); }, cancel() { cancelled = true; } })));
+    const result = withVcsBudget(() => new InspectableProvider().send(), { timeoutMs: 100 });
+    await vi.advanceTimersByTimeAsync(101);
+    expect(await result).toMatchObject({ problem: { code: 'timeout' } }); expect(cancelled).toBe(true);
   });
-
-  it('allows bounded network retries within the same budget', async () => {
-    const fetch = vi.fn().mockRejectedValueOnce(new TypeError('offline'))
-      .mockRejectedValueOnce(new TypeError('offline'))
-      .mockResolvedValueOnce(new Response('{"login":"user"}'));
-    vi.stubGlobal('fetch', fetch);
-    const result = new GitHubProvider().validateToken('secret');
-    await vi.advanceTimersByTimeAsync(750);
-    expect(await result).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(vi.getTimerCount()).toBe(0);
+  it.each([true, false])('caps response size before JSON parsing (Content-Length present: %s)', async (advertised) => {
+    let cancelled = false;
+    installFetch(() => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(2 * 1024 * 1024 + 1)); }, cancel() { cancelled = true; } }), { headers: advertised ? { 'content-length': String(2 * 1024 * 1024 + 1) } : undefined }));
+    expect(await new InspectableProvider().send()).toMatchObject({ problem: { code: 'response-too-large' } }); expect(cancelled).toBe(true);
   });
-
-  it('does not spend the remaining budget on an impossible retry', async () => {
-    const fetch = vi.fn().mockRejectedValue(new TypeError('offline'));
-    vi.stubGlobal('fetch', fetch);
-    const result = context({ timeoutMs: 200 });
-    await vi.advanceTimersByTimeAsync(200);
-    expect((await result).success).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it.each([401, 403, 429])('does not retry HTTP %s', async (status) => {
-    const fetch = vi.fn().mockResolvedValue(new Response(null, { status }));
-    vi.stubGlobal('fetch', fetch);
-    expect(await new GitHubProvider().validateToken('secret')).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('bounds a stalled response body, not just response headers', async () => {
-    const fetch = vi.fn((_url: string, init: RequestInit) => {
-      const body = new ReadableStream<Uint8Array>({
-        start(controller) {
-          init.signal!.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
-          controller.enqueue(new TextEncoder().encode('{'));
-        },
-      });
-      return Promise.resolve(new Response(body));
+  it('caps total streamed bytes across otherwise valid pages in one scope', async () => {
+    installFetch(() => json({ padding: 'x'.repeat(1900 * 1024) }));
+    const provider = new InspectableProvider();
+    const results = await withVcsBudget(async () => {
+      const pages = [];
+      for (let i = 0; i < 5; i++) pages.push(await provider.sendPage(i));
+      return pages;
     });
-    vi.stubGlobal('fetch', fetch);
-    const result = context();
-    await vi.advanceTimersByTimeAsync(4000);
-    expect((await result).success).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(results.slice(0, 4).every((result) => result.success)).toBe(true);
+    expect(results[4]).toMatchObject({ success: false, problem: { code: 'response-too-large' } });
   });
-
-  it('isolates concurrent context budgets on singleton providers', async () => {
-    const fetch = delayedFetch(100);
-    vi.stubGlobal('fetch', fetch);
-    const controller = new AbortController();
-    const cancelled = context({ signal: controller.signal });
-    const successful = context();
-    controller.abort();
-    await vi.advanceTimersByTimeAsync(600);
-    expect((await cancelled).success).toBe(false);
-    expect((await successful).success).toBe(true);
-    expect(vi.getTimerCount()).toBe(0);
+  it('rejects malformed JSON', async () => {
+    installFetch(() => new Response('not-json'));
+    expect(await new InspectableProvider().send()).toMatchObject({ problem: { code: 'malformed-response' } });
   });
-
-  it('PR navigation fetches only identity and builds a trusted link, not API-supplied URLs', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([
-      { number: 42, title: 'PR', state: 'open', html_url: 'https://attacker.example', user: { login: 'user' }, merged_at: null },
-    ])));
-    vi.stubGlobal('fetch', fetch);
-    expect(await getProviderPrLink('https://github.com/owner/repo.git', 'feature')).toBe('https://github.com/owner/repo/pull/42');
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch.mock.calls[0][0]).toContain('/pulls?');
-    expect(await getProviderPrLink('https://gitlab-attacker.example/owner/repo.git', 'feature')).toBeNull();
-    expect(await getProviderPrLink('https://github.com/owner/repo.git')).toBeNull();
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it.each(['https://attacker.test/steal?page=2', `https://api.github.com/repos/owner/repo/commits/${SHA}/statuses?per_page=100&evil=1&page=2`])('does not follow hostile pagination %s', async (next) => {
+    const fetch = installFetch(() => json([], 200, { link: `<${next}>; rel="next"` }));
+    expect(await new InspectableProvider().list()).toMatchObject({ problem: { code: 'malformed-response' } }); expect(fetch).toHaveBeenCalledTimes(1);
   });
-
-  it('sanitizes transport errors that may contain credentials', async () => {
-    class InspectableProvider extends GitHubProvider {
-      request() { return this.fetchWithAuth('/user', 'secret-token'); }
-    }
-    const fetch = vi.fn().mockRejectedValue(new Error('Bearer secret-token'));
-    vi.stubGlobal('fetch', fetch);
-    const result = withVcsBudget(() => new InspectableProvider().request());
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(await result).toEqual({ success: false, error: 'Provider request failed' });
-    expect(vi.getTimerCount()).toBe(0);
+  it('fails incompletely at the page ceiling, rather than accepting truncated success', async () => {
+    const fetch = installFetch((url) => {
+      url.searchParams.set('page', String(Number(url.searchParams.get('page') ?? 1) + 1));
+      return json([], 200, { link: `<${url}>; rel="next"` });
+    });
+    expect(await new InspectableProvider().list()).toMatchObject({ problem: { code: 'incomplete' } }); expect(fetch).toHaveBeenCalledTimes(8);
+  });
+  it('deduplicates metadata reads only within a request budget', async () => {
+    const fetch = installFetch(() => json({ default_branch: 'trunk' }));
+    const provider = new GitHubProvider();
+    await withVcsBudget(() => Promise.all([provider.getDefaultBranch(context('github')), provider.getDefaultBranch(context('github'))]));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await provider.getDefaultBranch(context('github')); expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('isolates cancellation of parallel context budgets', async () => {
+    const controller = new AbortController(); controller.abort();
+    installFetch((url) => url.pathname.endsWith('/check-runs') ? json({ check_runs: [] }) : json([]));
+    const provider = new GitHubProvider();
+    const [cancelled, live] = await Promise.all([
+      withVcsBudget(() => provider.getChecksSummary(context('github'), branch), { signal: controller.signal }),
+      withVcsBudget(() => provider.getChecksSummary(context('github'), branch)),
+    ]);
+    expect(cancelled).toMatchObject({ state: 'unknown', problem: { code: 'cancelled' } }); expect(live.state).toBe('none');
   });
 });

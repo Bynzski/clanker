@@ -1,312 +1,63 @@
-/**
- * GitLab Provider Tests
- * Tests for GitLab API client functionality.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitLabProvider } from '../../../../src/main/vcs/providers/gitlabProvider';
-import { responseFromFixture } from './responseFixture';
-import type { ProviderContext } from '../../../../src/main/vcs/types';
-
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
-
-describe('GitLabProvider', () => {
-  let provider: GitLabProvider;
-  let context: ProviderContext;
-
-  beforeEach(() => {
-    provider = new GitLabProvider();
-    context = {
-      provider: 'gitlab',
-      baseUrl: 'https://gitlab.com',
-      owner: 'owner',
-      repo: 'repo',
-      defaultBranch: 'main',
-    };
-    mockFetch.mockReset();
+import { context, SHA, OTHER_SHA, branch, installFetch, json, gitlabRepo, gitlabMr } from './providerFixtures';
+const provider = new GitLabProvider(); const ctx = context('gitlab');
+afterEach(() => vi.unstubAllGlobals());
+describe('GitLab production provider', () => {
+  it('matches source/target project, branch and HEAD instead of the first MR', async () => {
+    installFetch((url) => url.pathname.endsWith('/merge_requests') ? json([gitlabMr(1, 'closed'), gitlabMr(7), { ...gitlabMr(99), source_project_id: 2 }]) : json(gitlabRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ exists: true, number: 7, outcome: 'found' });
   });
-
-  describe('type', () => {
-    it('should have correct type', () => {
-      expect(provider.type).toBe('gitlab');
-    });
+  it('distinguishes no MR, stale MR, detached HEAD and permission denial', async () => {
+    installFetch((url) => url.pathname.endsWith('/merge_requests') ? json([]) : json(gitlabRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ exists: false, outcome: 'none' });
+    expect(await provider.getPullRequestForBranch(ctx, '')).toMatchObject({ outcome: 'unsupported' });
+    installFetch((url) => url.pathname.endsWith('/merge_requests') ? json([gitlabMr(1, 'opened', OTHER_SHA)]) : json(gitlabRepo));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ outcome: 'stale' });
+    installFetch(() => json({}, 403));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ outcome: 'forbidden', problem: { code: 'forbidden' } });
   });
-
-  describe('apiBaseUrl', () => {
-    it('should have correct API base URL', () => {
-      expect(provider.apiBaseUrl).toBe('https://gitlab.com/api/v4');
-    });
+  it.each([['success', 'success'], ['failed', 'failure'], ['canceled', 'failure'], ['running', 'pending'], ['manual', 'pending'], ['skipped', 'unknown'], ['not-real', 'unknown']])('classifies pipeline %s as %s', async (status, expected) => {
+    const fetch = installFetch(() => json([{ id: 1, sha: SHA, status }]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: expected, sha: SHA });
+    const url = new URL(fetch.mock.calls[0][0]); expect(url.searchParams.get('sha')).toBe(SHA); expect(url.searchParams.get('ref')).toBe(branch);
   });
-
-  describe('getPullRequestForBranch', () => {
-    it('should return PR context when MR exists', async () => {
-      const mockMr = {
-        id: 1,
-        iid: 42,
-        title: 'Add new feature',
-        state: 'opened',
-        merged_at: null,
-        web_url: 'https://gitlab.com/owner/repo/-/merge_requests/42',
-        author: { username: 'developer' },
-        source_branch: 'feature-branch',
-        target_branch: 'main',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([mockMr]),
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'feature-branch');
-
-      expect(result.exists).toBe(true);
-      expect(result.number).toBe(42);
-      expect(result.title).toBe('Add new feature');
-      expect(result.state).toBe('open');
-      expect(result.url).toBe('https://gitlab.com/owner/repo/-/merge_requests/42');
-      expect(result.author).toBe('developer');
-    });
-
-    it('should return exists:false when no MR exists', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([]),
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'nonexistent-branch');
-
-      expect(result.exists).toBe(false);
-    });
-
-    it('should handle merged MRs', async () => {
-      const mockMr = {
-        id: 1,
-        iid: 42,
-        title: 'Merged MR',
-        state: 'merged',
-        merged_at: '2024-01-01T00:00:00Z',
-        web_url: 'https://gitlab.com/owner/repo/-/merge_requests/42',
-        author: { username: 'developer' },
-        source_branch: 'merged-branch',
-        target_branch: 'main',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([]),
-      }).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([mockMr]),
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'merged-branch');
-
-      expect(result.exists).toBe(true);
-      expect(result.state).toBe('merged');
-    });
-
-    it('should return empty context on API error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      const result = await provider.getPullRequestForBranch(context, 'feature-branch');
-
-      expect(result.exists).toBe(false);
-    });
+  it('uses latest pipeline, validates HEAD, and distinguishes no pipeline', async () => {
+    installFetch(() => json([{ id: 1, sha: SHA, status: 'failed' }, { id: 2, sha: SHA, status: 'success' }]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'success' });
+    installFetch(() => json([{ id: 3, sha: OTHER_SHA, status: 'success' }]));
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'unknown', problem: { code: 'stale' } });
+    installFetch(() => json([])); expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'none' });
   });
-
-  describe('getChecksStatus', () => {
-    it('should return success for successful pipeline', async () => {
-      const mockPipeline = {
-        id: 1,
-        status: 'success',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([mockPipeline]),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('success');
-    });
-
-    it('should return failure for failed pipeline', async () => {
-      const mockPipeline = {
-        id: 1,
-        status: 'failed',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([mockPipeline]),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('failure');
-    });
-
-    it('should return pending for running pipeline', async () => {
-      const mockPipeline = {
-        id: 1,
-        status: 'running',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([mockPipeline]),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('pending');
-    });
-
-    it('should return error when no pipelines exist', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([]),
-      });
-
-      const result = await provider.getChecksStatus(context, 'feature-branch');
-
-      expect(result).toBe('error');
-    });
+  it('includes relevant MR pipelines, not another commit or just a green branch pipeline', async () => {
+    installFetch((url) => url.pathname.includes('/merge_requests/') ? json([{ id: 30, sha: OTHER_SHA, status: 'failed' }, { id: 20, sha: SHA, status: 'running' }]) : json([{ id: 10, sha: SHA, status: 'success' }]));
+    expect(await provider.getChecksSummary({ ...ctx, pullRequestNumber: 7 }, branch)).toMatchObject({ state: 'pending' });
+    installFetch((url) => url.pathname.includes('/merge_requests/') ? json({}, 403) : json([{ id: 10, sha: SHA, status: 'success' }]));
+    expect(await provider.getChecksSummary({ ...ctx, pullRequestNumber: 7 }, branch)).toMatchObject({ state: 'unknown', problem: { code: 'forbidden' } });
   });
-
-  describe('getReviewState', () => {
-    it('should return approved when approved', async () => {
-      const mockApproval = {
-        approved: true,
-        approvals_required: 1,
-        approvals_left: 0,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(mockApproval),
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('approved');
-    });
-
-    it('should return pending when approvals required but not given', async () => {
-      const mockApproval = {
-        approved: false,
-        approvals_required: 2,
-        approvals_left: 2,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(mockApproval),
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBe('pending');
-    });
-
-    it('should return undefined on API error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const result = await provider.getReviewState(context, 42);
-
-      expect(result).toBeUndefined();
-    });
+  it.each([[true, 'approved'], [false, 'pending']])('uses required approval rules (%s)', async (approved, state) => {
+    installFetch((url) => url.pathname.endsWith('/approval_state') ? json({ rules: [{ approvals_required: 1, approved }] }) : json(gitlabRepo));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state });
   });
-
-  describe('validateToken', () => {
-    it('should return true for valid token', async () => {
-      const mockUser = {
-        id: 1,
-        username: 'testuser',
-        state: 'active',
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(mockUser),
-      });
-
-      const result = await provider.validateToken('valid-token');
-
-      expect(result).toBe(true);
-    });
-
-    it('should return false for invalid token', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-      });
-
-      const result = await provider.validateToken('invalid-token');
-
-      expect(result).toBe(false);
-    });
+  it('separates no approvals configured from unavailable approvals', async () => {
+    installFetch((url) => !url.pathname.includes('/merge_requests/') ? json(gitlabRepo) : url.pathname.endsWith('/approval_state') ? json({ rules: [] }) : json({ approvals_required: 0, approvals_left: 0, approved_by: [] }));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'none' });
+    installFetch(() => json({}, 404));
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'unknown', problem: { code: 'not-found' } });
   });
-
-  describe('getDeepLinks', () => {
-    it('should return deep links for GitLab', () => {
-      const links = provider.getDeepLinks(context);
-
-      expect(links.length).toBeGreaterThan(0);
-      expect(links.map((l) => l.type)).toContain('repo');
-      expect(links.map((l) => l.type)).toContain('branches');
-      expect(links.map((l) => l.type)).toContain('issues');
-    });
-
-    it('should include MR link when prNumber provided', () => {
-      const links = provider.getDeepLinks(context, 'feature-branch', 42);
-
-      const mrLink = links.find((l) => l.type === 'pr');
-      expect(mrLink).toBeDefined();
-      expect(mrLink?.url).toContain('/merge_requests/42');
-    });
-
-    it('should include create MR link when branch provided', () => {
-      const links = provider.getDeepLinks(context, 'feature-branch');
-
-      const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink).toBeDefined();
-      expect(createLink?.url).toContain('feature-branch');
-    });
+  it('routes fork MR discovery, approval rules and MR pipelines to the verified parent', async () => {
+    const fork = { ...gitlabRepo, forked_from_project: { id: 2, path_with_namespace: 'parent/nested/repo' } };
+    const fetch = installFetch((url) => url.pathname.endsWith('/merge_requests') ? json([{ ...gitlabMr(), target_project_id: 2 }])
+      : url.pathname.endsWith('/approval_state') ? json({ rules: [{ approvals_required: 1, approved: true }] })
+      : url.pathname.endsWith('/pipelines') ? json([{ id: 1, sha: SHA, status: 'success' }]) : json(fork));
+    const pr = await provider.getPullRequestForBranch(ctx, branch);
+    expect(pr).toMatchObject({ number: 7, repositoryPath: 'parent/nested/repo', url: 'https://gitlab.com/parent/nested/repo/-/merge_requests/7' });
+    expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state: 'approved' });
+    await provider.getChecksSummary({ ...ctx, pullRequestNumber: 7, pullRequestRepositoryPath: pr.repositoryPath }, branch);
+    expect(fetch.mock.calls.map(([url]) => url)).toContain('https://gitlab.com/api/v4/projects/parent%2Fnested%2Frepo/merge_requests/7/pipelines?per_page=100');
   });
-
-  describe('custom baseUrl', () => {
-    it('omits links for unapproved self-hosted GitLab', () => {
-      const customContext: ProviderContext = {
-        provider: 'gitlab',
-        baseUrl: 'https://gitlab.internal.company.com',
-        owner: 'owner',
-        repo: 'repo',
-        defaultBranch: 'main',
-      };
-
-      const links = provider.getDeepLinks(customContext);
-      expect(links).toEqual([]);
-    });
+  it('paginates native x-next-page MR listings', async () => {
+    installFetch((url) => !url.pathname.endsWith('/merge_requests') ? json(gitlabRepo) : url.searchParams.has('page') ? json([gitlabMr()]) : json([], 200, { 'x-next-page': '2' }));
+    expect(await provider.getPullRequestForBranch(ctx, branch)).toMatchObject({ number: 7 });
   });
 });

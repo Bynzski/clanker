@@ -1,373 +1,93 @@
-/**
- * Bitbucket Provider
- * Bitbucket REST API client for VCS context.
- * Bitbucket uses a different API structure with workspace/repository mapping.
- */
-
 import { BaseProvider } from './baseProvider';
-import { providerLinks } from '../providerLinks';
-import type {
-  ProviderContext,
-  PullRequestContext,
-  DeepLink,
-} from '../types';
+import type { CiSummary, ProviderContext, PullRequestContext, ReviewSummary } from '../types';
+import { aggregateChecks, providerDefaultBranch, problem, unavailablePr, type CheckState } from '../statusModel';
 
-/**
- * Bitbucket pull request response type.
- */
-interface BitbucketPullRequest {
-  id: number;
-  title: string;
-  state: 'OPEN' | 'MERGED' | 'DECLINED' | 'SUPERSEDED';
-  source: {
-    branch: {
-      name: string;
-    };
-  };
-  destination: {
-    branch: {
-      name: string;
-    };
-  };
-  author: {
-    account_id: string;
-    nickname: string;
-    display_name: string;
-  };
-  links: {
-    html: {
-      href: string;
-    };
-  };
+interface Repo { mainbranch?: { name: string }; parent?: { full_name: string } }
+interface Pr {
+  id: number; title: string; state: string; author: { nickname?: string; display_name?: string };
+  source: { branch: { name: string }; commit: { hash: string }; repository: { full_name: string } };
+  destination: { repository: { full_name: string } };
 }
+interface Build { key: string; state: string; updated_on?: string }
+interface Participant { user: { uuid: string }; role: string; approved: boolean; state?: string }
+const shaValid = (sha: unknown): sha is string => typeof sha === 'string' && /^[a-f0-9]{40,64}$/i.test(sha);
+const repoValid = (repo: unknown): repo is string => typeof repo === 'string' && repo.length <= 512 && /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repo) && repo.split('/').every((segment) => segment !== '.' && segment !== '..');
 
-
-
-/**
- * Bitbucket user response type.
- */
-interface BitbucketUser {
-  account_id: string;
-  nickname: string;
-  display_name: string;
-  type: 'user';
-}
-
-interface BitbucketRepository {
-  mainbranch?: {
-    name: string;
-  };
-}
-
-/**
- * Bitbucket API provider implementation.
- */
 export class BitbucketProvider extends BaseProvider {
   readonly type = 'bitbucket' as const;
   readonly apiBaseUrl = 'https://api.bitbucket.org/2.0';
-
-  /**
-   * Get the workspace from the context.
-   * Bitbucket uses workspace (slug) instead of owner.
-   */
-  private getWorkspace(context: ProviderContext): string {
-    return context.owner;
-  }
-
-  /**
-   * Get the repo slug from context.
-   */
-  private getRepoSlug(context: ProviderContext): string {
-    return context.repo;
-  }
-
-  /**
-   * Make an authenticated API request to Bitbucket.
-   */
-  protected async fetchWithAuth<T>(
-    endpoint: string,
-    token: string
-  ): Promise<{ success: true; data: T } | { success: false; error: string }> {
-    try {
-      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          return { success: false, error: 'Authentication failed. Check your token.' };
-        }
-        if (response.status === 404) {
-          return { success: false, error: 'Resource not found.' };
-        }
-        return { success: false, error: `Bitbucket API error: ${response.status}` };
-      }
-
-      const data = await response.json() as T;
-      return { success: true, data };
-    } catch {
-      return { success: false, error: 'Provider request failed or cancelled' };
-    }
-  }
-
-  /**
-   * Make an unauthenticated API request (for public repos).
-   */
-  protected async fetchPublic<T>(
-    endpoint: string
-  ): Promise<{ success: true; data: T } | { success: false; error: string }> {
-    try {
-      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
-        headers: {
-          Accept: 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        return { success: false, error: `Bitbucket API error: ${response.status}` };
-      }
-
-      const data = await response.json() as T;
-      return { success: true, data };
-    } catch {
-      return { success: false, error: 'Provider request failed or cancelled' };
-    }
-  }
-
-  /**
-   * Get PR (Pull Request) information for a branch.
-   * Bitbucket uses different endpoint structure.
-   */
-  async getPullRequestForBranch(
-    context: ProviderContext,
-    branch: string,
-    token?: string
-  ): Promise<PullRequestContext> {
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-
-    // Bitbucket API: GET /repositories/{workspace}/{repo_slug}/pullrequests
-    // Filter by source branch
-    const endpoint = `/repositories/${workspace}/${repoSlug}/pullrequests?state=OPEN&source.branch.name=${encodeURIComponent(branch)}`;
-
-    let result;
-    if (token) {
-      result = await this.fetchWithAuth<{ values: BitbucketPullRequest[] }>(endpoint, token);
-    } else {
-      result = await this.fetchPublic<{ values: BitbucketPullRequest[] }>(endpoint);
-    }
-
-    if (!result.success) {
-      return { exists: false };
-    }
-
-    const prs = result.data.values;
-    if (!prs || prs.length === 0) {
-      // Also check closed/merged PRs
-      return this.getClosedOrMergedPr(context, branch, token);
-    }
-
-    const pr = prs[0];
-
-    return {
-      exists: true,
-      number: pr.id,
-      title: pr.title,
-      state: this.mapPrState(pr.state),
-      url: pr.links.html.href,
-      author: pr.author.nickname || pr.author.display_name,
-    };
-  }
-
-  /**
-   * Check for closed or merged PRs.
-   */
-  private async getClosedOrMergedPr(
-    context: ProviderContext,
-    branch: string,
-    token?: string
-  ): Promise<PullRequestContext> {
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-
-    const endpoint = `/repositories/${workspace}/${repoSlug}/pullrequests?state=MERGED&source.branch.name=${encodeURIComponent(branch)}`;
-
-    let result;
-    if (token) {
-      result = await this.fetchWithAuth<{ values: BitbucketPullRequest[] }>(endpoint, token);
-    } else {
-      result = await this.fetchPublic<{ values: BitbucketPullRequest[] }>(endpoint);
-    }
-
-    if (!result.success || !result.data.values || result.data.values.length === 0) {
-      return { exists: false };
-    }
-
-    const pr = result.data.values[0];
-
-    return {
-      exists: true,
-      number: pr.id,
-      title: pr.title,
-      state: 'merged',
-      url: pr.links.html.href,
-      author: pr.author.nickname || pr.author.display_name,
-    };
-  }
-
-  /**
-   * Map Bitbucket state to our normalized state.
-   */
-  private mapPrState(state: BitbucketPullRequest['state']): 'open' | 'closed' | 'merged' {
-    switch (state) {
-      case 'OPEN':
-        return 'open';
-      case 'MERGED':
-        return 'merged';
-      case 'DECLINED':
-      case 'SUPERSEDED':
-        return 'closed';
-      default:
-        return 'closed';
-    }
-  }
-
-  /**
-   * Get build status for the latest commit on a branch.
-   * Bitbucket has a different approach to CI status.
-   */
-  async getChecksStatus(
-    context: ProviderContext,
-    branch: string,
-    token?: string
-  ): Promise<'pending' | 'success' | 'failure' | 'error'> {
-    // Bitbucket's commit status API requires knowing the specific commit SHA,
-    // which requires additional API calls to resolve branch head.
-    // We need to:
-    // 1. Get the latest PR for this branch
-    // 2. From the PR, we can determine the source branch
-    // For now, we do a simplified check that verifies the PR exists.
-    // A full implementation would get the commit SHA and query /commit/{sha}/statuses
-
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-
-    // Get the latest PR to verify the branch has a PR
-    const prEndpoint = `/repositories/${workspace}/${repoSlug}/pullrequests?state=OPEN&source.branch.name=${encodeURIComponent(branch)}`;
-
-    let prResult;
-    if (token) {
-      prResult = await this.fetchWithAuth<{ values: BitbucketPullRequest[] }>(prEndpoint, token);
-    } else {
-      prResult = await this.fetchPublic<{ values: BitbucketPullRequest[] }>(prEndpoint);
-    }
-
-    if (!prResult.success || !prResult.data.values || prResult.data.values.length === 0) {
-      return 'error';
-    }
-
-    // PR exists, but we can't easily determine CI status without commit SHA
-    // Return pending as a reasonable default
-    return 'pending';
-  }
-
-  /**
-   * Get review state for a PR.
-   * Bitbucket's review model is different from GitHub/GitLab.
-   */
-  async getReviewState(
-    context: ProviderContext,
-    prId: number,
-    token?: string
-  ): Promise<'approved' | 'changes_requested' | 'commented' | 'pending' | undefined> {
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-
-    // Get participants in the PR
-    const endpoint = `/repositories/${workspace}/${repoSlug}/pullrequests/${prId}/participants`;
-
-    type Participant = {
-      user: BitbucketUser;
-      role: 'REVIEWER' | 'PARTICIPANT' | 'AUTHOR';
-      approved: boolean;
-      state: 'approved' | 'changes_requested' | 'pending' | 'COMMENTED' | 'unhaassigned';
-    };
-
-    let result;
-    if (token) {
-      result = await this.fetchWithAuth<{ values: Participant[] }>(endpoint, token);
-    } else {
-      result = await this.fetchPublic<{ values: Participant[] }>(endpoint);
-    }
-
-    if (!result.success) {
-      return undefined;
-    }
-
-    const participants = result.data.values;
-    if (!participants || participants.length === 0) {
-      return 'pending';
-    }
-
-    // Look for reviewers (not the author)
-    const reviewers = participants.filter((p: Participant) => p.role !== 'AUTHOR');
-
-    if (reviewers.length === 0) {
-      return 'pending';
-    }
-
-    // Check for approvals
-    const approvedReviewers = reviewers.filter((r: Participant) => r.approved);
-    const changesRequestedReviewers = reviewers.filter((r: Participant) => r.state === 'changes_requested');
-
-    if (approvedReviewers.length > 0 && changesRequestedReviewers.length === 0) {
-      return 'approved';
-    }
-
-    if (changesRequestedReviewers.length > 0) {
-      return 'changes_requested';
-    }
-
-    return 'pending';
-  }
-
+  private path(context: ProviderContext): string { return `/repositories/${context.owner}/${context.repo}`; }
   async getDefaultBranch(context: ProviderContext, token?: string): Promise<string> {
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-    const endpoint = `/repositories/${workspace}/${repoSlug}`;
-    let result;
-    if (token) {
-      result = await this.fetchWithAuth<BitbucketRepository>(endpoint, token);
-    } else {
-      result = await this.fetchPublic<BitbucketRepository>(endpoint);
-    }
-
-    if (!result.success || !result.data) {
-      return context.defaultBranch || 'main';
-    }
-
-    return result.data.mainbranch?.name || context.defaultBranch || 'main';
+    const result = await this.fetchJson<Repo>(this.path(context), token);
+    return result.success ? providerDefaultBranch(result.data?.mainbranch?.name) : '';
   }
-
-  /**
-   * Validate a Bitbucket token has required scopes.
-   */
-  async validateToken(token: string): Promise<boolean> {
-    const result = await this.fetchWithAuth<BitbucketUser>('/user', token);
-    return result.success;
+  private async base(context: ProviderContext, token?: string) {
+    const repo = await this.fetchJson<Repo>(this.path(context), token);
+    if (!repo.success) return repo;
+    if (!repo.data || typeof repo.data !== 'object') return { success: false as const, problem: problem('malformed-response') };
+    const name = repo.data.parent?.full_name ?? `${context.owner}/${context.repo}`;
+    return repoValid(name) ? { success: true as const, name } : { success: false as const, problem: problem('malformed-response') };
   }
-
-  /**
-   * Get available deep links for Bitbucket.
-   */
-  getDeepLinks(
-    context: ProviderContext,
-    branch?: string,
-    prNumber?: number
-  ): DeepLink[] {
-    return providerLinks(context, branch, prNumber);
+  async getPullRequestForBranch(context: ProviderContext, branch: string, token?: string): Promise<PullRequestContext> {
+    if (!branch) return unavailablePr(problem('unsupported'));
+    const base = await this.base(context, token);
+    if (!base.success) return unavailablePr(base.problem);
+    const source = `${context.owner}/${context.repo}`;
+    const query = `source.branch.name = ${JSON.stringify(branch)} AND source.repository.full_name = ${JSON.stringify(source)}`;
+    const result = await this.pages<Pr>(`/repositories/${base.name}/pullrequests?state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED&q=${encodeURIComponent(query)}&pagelen=100`, token, 'bitbucket');
+    if (!result.success) return unavailablePr(result.problem);
+    if (result.data.some((pr) => !pr || !Number.isSafeInteger(pr.id) || pr.id <= 0 || typeof pr.title !== 'string' || pr.title.length > 512
+      || !['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'].includes(pr.state) || !shaValid(pr.source?.commit?.hash)
+      || typeof pr.source?.branch?.name !== 'string' || !repoValid(pr.source?.repository?.full_name)
+      || !repoValid(pr.destination?.repository?.full_name)
+      || (pr.author?.nickname !== undefined && (typeof pr.author.nickname !== 'string' || pr.author.nickname.length > 256))
+      || (pr.author?.display_name !== undefined && (typeof pr.author.display_name !== 'string' || pr.author.display_name.length > 256)))) return unavailablePr(problem('malformed-response'));
+    const candidates = result.data.filter((pr) => pr.source.branch.name === branch && pr.source.repository.full_name.toLowerCase() === source.toLowerCase()
+      && pr.destination.repository.full_name.toLowerCase() === base.name.toLowerCase());
+    if (!candidates.length) return { exists: false, outcome: 'none' };
+    const matching = context.headSha ? candidates.filter((pr) => pr.source.commit.hash === context.headSha) : candidates;
+    if (!matching.length) return unavailablePr(problem('stale'));
+    matching.sort((a, b) => Number(b.state === 'OPEN') - Number(a.state === 'OPEN') || b.id - a.id);
+    const pr = matching[0];
+    return { exists: true, outcome: 'found', number: pr.id, title: pr.title, headSha: pr.source.commit.hash,
+      state: pr.state === 'MERGED' ? 'merged' : pr.state === 'OPEN' ? 'open' : 'closed', author: pr.author?.nickname ?? pr.author?.display_name,
+      repositoryPath: base.name, url: `https://bitbucket.org/${base.name}/pull-requests/${pr.id}` };
+  }
+  async getChecksSummary(context: ProviderContext, branch: string, token?: string): Promise<CiSummary> {
+    let sha = context.headSha;
+    if (!sha && branch) {
+      const ref = await this.fetchJson<{ target: { hash: string } }>(`${this.path(context)}/refs/branches/${encodeURIComponent(branch)}`, token);
+      if (!ref.success) return { state: 'unknown', problem: ref.problem };
+      sha = ref.data?.target?.hash;
+    }
+    if (!shaValid(sha)) return { state: 'unknown', problem: problem('malformed-response') };
+    const result = await this.pages<Build>(`${this.path(context)}/commit/${sha}/statuses?pagelen=100`, token, 'bitbucket');
+    if (!result.data) return { state: 'unknown', sha, problem: result.success ? problem('unknown') : result.problem };
+    const latest = new Map<string, Build>();
+    for (const build of result.data) {
+      if (!build || typeof build.key !== 'string' || !['SUCCESSFUL', 'FAILED', 'INPROGRESS', 'STOPPED'].includes(build.state)
+        || (build.updated_on !== undefined && !Number.isFinite(Date.parse(build.updated_on)))) return { state: 'unknown', sha, problem: problem('malformed-response') };
+      const previous = latest.get(build.key);
+      if (previous && previous.state !== build.state && (!previous.updated_on || !build.updated_on || previous.updated_on === build.updated_on))
+        return { state: 'unknown', sha, problem: problem('malformed-response') };
+      if (!previous || Date.parse(build.updated_on ?? '') > Date.parse(previous.updated_on ?? '')) latest.set(build.key, build);
+    }
+    const states: Record<string, CheckState> = { SUCCESSFUL: 'success', FAILED: 'failure', INPROGRESS: 'pending', STOPPED: 'failure' };
+    return aggregateChecks([...latest.values()].map((build) => states[build.state]), sha, result.success ? undefined : result.problem);
+  }
+  async getReviewSummary(context: ProviderContext, number: number, token?: string): Promise<ReviewSummary> {
+    const base = await this.base(context, token);
+    if (!base.success) return { state: 'unknown', problem: base.problem };
+    // Participants are embedded in the PR self resource; there is no /participants API.
+    const result = await this.fetchJson<{ participants: Participant[]; reviewers: Array<{ uuid: string }> }>(`/repositories/${base.name}/pullrequests/${number}`, token);
+    if (!result.success) return { state: 'unknown', problem: result.problem };
+    const value = result.data;
+    if (!value || !Array.isArray(value.participants) || !Array.isArray(value.reviewers)
+      || value.participants.some((p) => !p || typeof p.user?.uuid !== 'string' || typeof p.approved !== 'boolean' || typeof p.role !== 'string')
+      || value.reviewers.some((r) => !r || typeof r.uuid !== 'string')) return { state: 'unknown', problem: problem('malformed-response') };
+    if (value.participants.some((p) => p.role !== 'AUTHOR' && p.state === 'changes_requested')) return { state: 'changes_requested' };
+    const approved = new Set(value.participants.filter((p) => p.role !== 'AUTHOR' && p.approved).map((p) => p.user.uuid));
+    if (value.reviewers.some((r) => !approved.has(r.uuid))) return { state: 'pending' };
+    return { state: approved.size > 0 ? 'approved' : 'none' };
   }
 }

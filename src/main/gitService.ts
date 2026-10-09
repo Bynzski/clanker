@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
+import { detectProvider as detectTrustedProvider } from './vcs/providerDetector';
 import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult, GitWorktreeRemovalOptions } from '../shared/types/git';
 import { utf8ByteLength } from '../shared/utf8';
 import { canRemoveWorktree, inspectWorktreeChanges } from './worktreeChanges';
@@ -120,12 +121,14 @@ export type GitCommandExecutor = (
   timeoutMs?: number,
   workspaceId?: string,
   environmentId?: string,
+  checkoutContextId?: string,
 ) => Promise<{ stdout: string; stderr: string }>;
 
 export interface GitWorkspaceIdentity {
   workspacePath: string;
   workspaceId: string;
   environmentId: string;
+  checkoutContextId?: string;
   readFile?: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string; errorCode?: string }>;
 }
 
@@ -182,7 +185,8 @@ export class GitService {
       return this.gitExecutor(
         workspacePath, args, timeoutMs,
         scoped?.workspacePath === workspacePath ? scoped.workspaceId : workspaceId,
-        scoped?.workspacePath === workspacePath ? scoped.environmentId : undefined
+        scoped?.workspacePath === workspacePath ? scoped.environmentId : undefined,
+        scoped?.workspacePath === workspacePath ? scoped.checkoutContextId : undefined
       );
     }
     if (scoped && scoped.environmentId !== 'local') {
@@ -715,6 +719,33 @@ export class GitService {
     }
 
     return changes;
+  }
+
+  /** VCS reads use the same scoped local/SSH executor as every existing Git operation. */
+  async getVcsSnapshot(workspacePath: string, timeoutMs = 4000): Promise<{
+    sha: string; branch: string | null; remoteName: string | null; remoteUrl: string | null;
+  } | null> {
+    try {
+      const deadline = Date.now() + Math.min(4000, Math.max(0, timeoutMs));
+      const remaining = () => { const ms = deadline - Date.now(); if (ms <= 0) throw new Error('Metadata deadline exhausted'); return ms; };
+      const { stdout } = await this.execGit(workspacePath, ['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '--untracked-files=no'], remaining());
+      const sha = stdout.match(/^# branch\.oid ([a-f0-9]{40,64})$/m)?.[1];
+      const head = stdout.match(/^# branch\.head (.+)$/m)?.[1];
+      if (!sha || !head || head.length > 1024) return null;
+      const branch = head === '(detached)' ? null : head;
+      let upstreamRemote = '';
+      if (branch) {
+        const tracking = await this.execGit(workspacePath, ['for-each-ref', '--format=%(upstream:remotename)', `refs/heads/${branch}`], remaining());
+        upstreamRemote = tracking.stdout.trim();
+      }
+      const remotes = await this.getRemotes(workspacePath, remaining());
+      if (!remotes.success) return null;
+      const authoritative = upstreamRemote && upstreamRemote !== '.';
+      const remote = authoritative ? remotes.remotes.find((entry) => entry.name === upstreamRemote)
+        : remotes.remotes.find((entry) => entry.name === 'origin') ?? (remotes.remotes.length === 1 ? remotes.remotes[0] : undefined);
+      if (remote && remote.name.length > 256) return null;
+      return { sha, branch, remoteName: remote?.name ?? null, remoteUrl: remote?.fetchUrl ?? null };
+    } catch { return null; }
   }
 
   async getCurrentBranch(workspacePath: string): Promise<string | null> {
@@ -1757,32 +1788,12 @@ export class GitService {
 
   // Exposed for unit testing
   detectProvider(remoteUrl: string): VcsProvider {
-    try {
-      // Handle SSH URLs: git@github.com:owner/repo.git
-      const sshMatch = remoteUrl.match(/^git@([^:]+):/);
-      if (sshMatch) {
-        const host = sshMatch[1];
-        if (host === 'github.com') return 'github';
-        if (host === 'bitbucket.org') return 'bitbucket';
-        if (host === 'gitlab.com') return 'gitlab';
-        return 'unknown';
-      }
-
-      // Handle HTTPS/HTTP URLs: https://github.com/owner/repo.git
-      const url = new URL(remoteUrl);
-      const host = url.hostname;
-      if (host === 'github.com') return 'github';
-      if (host === 'bitbucket.org') return 'bitbucket';
-      if (host === 'gitlab.com') return 'gitlab';
-      return 'unknown';
-    } catch {
-      return 'unknown';
-    }
+    return detectTrustedProvider(remoteUrl);
   }
 
-  async getRemotes(workspacePath: string): Promise<GitRemotesResult> {
+  async getRemotes(workspacePath: string, timeoutMs = 15000): Promise<GitRemotesResult> {
     try {
-      const { stdout } = await this.execGit(workspacePath, ['remote', '-v']);
+      const { stdout } = await this.execGit(workspacePath, ['remote', '-v'], timeoutMs);
       const lines = stdout.trim().split('\n').filter(Boolean);
       const remoteMap = new Map<string, { fetchUrl: string; pushUrl: string }>();
 

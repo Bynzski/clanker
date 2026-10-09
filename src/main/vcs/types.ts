@@ -1,5 +1,10 @@
 export type {
   VcsProvider,
+  CiSummary,
+  ReviewSummary,
+  VcsProblem,
+  VcsProblemCode,
+  VcsRequestIdentity,
   ProviderContext,
   PullRequestContext,
   DeepLink,
