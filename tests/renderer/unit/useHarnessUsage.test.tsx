@@ -5,15 +5,15 @@ import { WARMUP_DELAY_MS } from '../../../src/renderer/lib/idleWarmup';
 import { installElectronApiMock } from '../../setup/electron';
 import type { HarnessUsageEntry, HarnessUsageRequest, HarnessUsageResponse } from '../../../src/shared/types/harnessUsage';
 
-type Pending = { harnessId: string; force: boolean; workspaceId: string; resolve: (r: HarnessUsageResponse) => void };
+type Pending = { harnessId: string; force: boolean; workspaceId: string | null; resolve: (r: HarnessUsageResponse) => void };
 let pending: Pending[];
 const entry = (harnessId: string): HarnessUsageEntry => ({ harnessId, status: 'ok', measurements: [{ kind: 'rate-limit', unit: 'percent', used: 1 }], checkedAt: 1 });
-const resolve = (p: Pending) => act(async () => p.resolve({ workspaceId: p.workspaceId, entries: [entry(p.harnessId)] }));
+const resolve = (p: Pending) => act(async () => p.resolve({ workspaceId: p.workspaceId ?? undefined, entries: [entry(p.harnessId)] }));
 
 beforeEach(() => {
   installElectronApiMock();
   pending = [];
-  vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation((workspaceId: string, request?: HarnessUsageRequest) =>
+  vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation((workspaceId: string | null, request?: HarnessUsageRequest) =>
     new Promise<HarnessUsageResponse>((res) => { pending.push({ harnessId: request?.harnessIds?.[0] ?? '', force: request?.force === true, workspaceId, resolve: res }); }));
 });
 const requested = () => vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.map(([, request]) => request?.harnessIds?.[0]);
@@ -104,5 +104,41 @@ describe('useHarnessUsage background warm-up', () => {
       act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS); });
       expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.map(([workspaceId]) => workspaceId)).toEqual(['b']);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('useHarnessUsage shared readings and environment isolation', () => {
+  it('local workspace A → local workspace B retains populated entries immediately without blank reset', async () => {
+    const { result, rerender } = renderHook((props: { ws: string }) =>
+      useHarnessUsage({ workspaceId: props.ws, open: true, harnessIds: ['claude'] }), { initialProps: { ws: 'ws-a' } });
+    await resolve(pending[0]);
+    expect(result.current.entries.claude).toMatchObject({ harnessId: 'claude', status: 'ok' });
+
+    // Switching to workspace B preserves the populated entry immediately
+    rerender({ ws: 'ws-b' });
+    expect(result.current.entries.claude).toMatchObject({ harnessId: 'claude', status: 'ok' });
+  });
+
+  it('local workspace → Assistant (workspaceId: null) shares the same local readings', async () => {
+    const { result, rerender } = renderHook((props: { ws: string | null }) =>
+      useHarnessUsage({ workspaceId: props.ws, open: true, harnessIds: ['claude'], environmentId: 'local' }), { initialProps: { ws: 'ws-local' as string | null } });
+    await resolve(pending[0]);
+    expect(result.current.entries.claude).toMatchObject({ harnessId: 'claude', status: 'ok' });
+
+    // Switch to Assistant destination (workspaceId: null)
+    rerender({ ws: null });
+    expect(result.current.entries.claude).toMatchObject({ harnessId: 'claude', status: 'ok' });
+  });
+
+  it('SSH workspace usage is isolated and never leaks into local or Assistant scope', async () => {
+    const { result, rerender } = renderHook((props: { ws: string | null; env: string }) =>
+      useHarnessUsage({ workspaceId: props.ws, open: true, harnessIds: ['claude'], environmentId: props.env }), { initialProps: { ws: 'ws-ssh' as string | null, env: 'ssh-1' } });
+    await resolve(pending[0]);
+    expect(result.current.entries.claude).toMatchObject({ harnessId: 'claude', status: 'ok' });
+
+    // Switch to Assistant (local environment, workspaceId: null)
+    rerender({ ws: null, env: 'local' });
+    // Local scope does NOT have the SSH reading
+    expect(result.current.entries.claude).toBeUndefined();
   });
 });

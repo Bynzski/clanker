@@ -79,7 +79,6 @@ import { registerAccountIpc } from './ipc/accountIpc';
 import { HarnessAccountService } from './accounts/harnessAccountService';
 import { AccountHomeStore } from './accounts/accountHomes';
 import { createElectronAccountStorage } from './accounts/electronAccountStorage';
-import { LocalEnvironment } from './environment/localEnvironment';
 import { clearSessionCache } from './sessionHistory';
 import { HARNESS_ACCOUNTS_AUTH_STATE } from '../shared/ipcChannels';
 import * as nodeOs from 'node:os';
@@ -242,7 +241,7 @@ const cleanupWindowState = () => {
 };
 
 const environmentManager = new EnvironmentManager(() => store);
-const accountLocalEnvironment = new LocalEnvironment();
+const accountLocalEnvironment = environmentManager.getLocalEnvironment();
 const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   (id) => environmentManager.getEnvironment(id),
   { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
@@ -284,7 +283,11 @@ const workspaceServiceManager = new WorkspaceServiceManager({
 const checkoutUsages = () => [...terminals.values(), ...workspaceServiceManager.usages()];
 const releaseCheckoutWithUsages = (workspaceId: string, checkoutContextId: string) =>
   releaseCheckoutContext({ registry: workspaceRegistry, terminals: checkoutUsages(), workspaceId, checkoutContextId });
-const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
+const harnessUsageService = new HarnessUsageService(workspaceRegistry, {
+  clientVersion: () => app.getVersion(),
+  accounts: harnessAccountService,
+  localEnvironment: () => environmentManager.getLocalEnvironment(),
+});
 let stopAiCommitGeneration: (() => Promise<void>) | undefined;
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {

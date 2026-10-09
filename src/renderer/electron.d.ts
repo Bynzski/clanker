@@ -343,7 +343,7 @@ export interface ElectronAPI {
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
   discoverSessionHistory: (workspaceId: string, forceRefresh?: boolean) => Promise<SessionDiscoveryResult>;
-  getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
+  getHarnessUsage: (workspaceId: string | null, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
   listHarnessAccounts: (environmentId: string, harness: string) => Promise<HarnessAccountList>;
   selectHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
   startHarnessAccountAdd: (environmentId: string, harness: string, label?: string) => Promise<HarnessAccountAuthStart>;

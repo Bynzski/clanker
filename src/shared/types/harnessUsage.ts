@@ -53,6 +53,6 @@ export interface HarnessUsageRequest {
 }
 
 export interface HarnessUsageResponse {
-  workspaceId: string;
+  workspaceId?: string;
   entries: HarnessUsageEntry[];
 }

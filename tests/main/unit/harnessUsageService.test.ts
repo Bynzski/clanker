@@ -107,6 +107,46 @@ describe('HarnessUsageService delegation', () => {
     const service = new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get: async () => snapshot() })] });
     expect((await service.get('ws')).entries[0].status).toBe('unavailable');
   });
+
+  it('getLocal queries local environment directly without requiring a registered workspace', async () => {
+    const env = fakeEnv('local');
+    const get = vi.fn(async () => snapshot());
+    const service = new HarnessUsageService({ getWorkspace: () => null }, {
+      localEnvironment: env,
+      providers: () => [withUsage('codex', { get })],
+    });
+    const response = await service.getLocal({ harnessIds: ['codex'] });
+    expect(response.workspaceId).toBeUndefined();
+    expect(response.entries).toHaveLength(1);
+    expect(response.entries[0]).toMatchObject({ harnessId: 'codex', status: 'ok' });
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('local workspace and getLocal share the same cached readings and availability', async () => {
+    const env = fakeEnv('local');
+    const { registry, register } = registryFor(env, 'ws-local');
+    await register();
+    const get = vi.fn(async () => snapshot());
+    let now = 10_000;
+    const service = new HarnessUsageService(registry, {
+      localEnvironment: env,
+      now: () => now,
+      providers: () => [withUsage('codex', { get })],
+    });
+    const fromWorkspace = await service.get('ws-local', { harnessIds: ['codex'] });
+    expect(fromWorkspace.entries[0].status).toBe('ok');
+    expect(get).toHaveBeenCalledTimes(1);
+
+    now += 1_000;
+    const fromLocal = await service.getLocal({ harnessIds: ['codex'] });
+    expect(fromLocal.entries[0]).toEqual(fromWorkspace.entries[0]);
+    expect(get).toHaveBeenCalledTimes(1);
+
+    const snapshots = service.getCachedSnapshots();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].harnessId).toBe('codex');
+    expect(service.getCachedSnapshots('local')).toEqual(snapshots);
+  });
 });
 
 describe('shared availability flight across per-harness requests', () => {
@@ -516,12 +556,19 @@ describe('IPC and preload contract', () => {
     const handle = ipcMain.handle as unknown as ReturnType<typeof vi.fn>;
     handle.mockClear();
     const get = vi.fn().mockResolvedValue({ workspaceId: 'ws', entries: [] });
-    registerUsageIpc({ getUsageService: () => ({ get }) as unknown as HarnessUsageService });
+    const getLocal = vi.fn().mockResolvedValue({ entries: [] });
+    registerUsageIpc({ getUsageService: () => ({ get, getLocal }) as unknown as HarnessUsageService });
     expect(ALL_IPC_CHANNELS).toContain(HARNESS_USAGE_GET);
     const [channel, handler] = handle.mock.calls[0];
     expect(channel).toBe(HARNESS_USAGE_GET);
     await handler({}, 'ws', { harnessIds: ['codex'], force: true, target: 'evil@host', env: { A: '1' }, path: '/etc' });
     expect(get).toHaveBeenCalledWith('ws', { harnessIds: ['codex'], force: true });
+    await handler({}, null, { harnessIds: ['claude'] });
+    expect(getLocal).toHaveBeenCalledWith({ harnessIds: ['claude'], force: false });
+    await handler({}, undefined, { harnessIds: ['omp'] });
+    expect(getLocal).toHaveBeenCalledWith({ harnessIds: ['omp'], force: false });
+    await handler({}, 'local', { harnessIds: ['agy'] });
+    expect(getLocal).toHaveBeenCalledWith({ harnessIds: ['agy'], force: false });
     await expect(handler({}, 42)).rejects.toThrow();
     await expect(handler({}, 'ws', { harnessIds: [1] })).rejects.toThrow('Invalid usage request');
     await expect(handler({}, 'ws', 'x')).rejects.toThrow('Invalid usage request');
@@ -530,7 +577,7 @@ describe('IPC and preload contract', () => {
   it('preload exposes only workspaceId and request options', () => {
     const source = readFileSync(resolve(__dirname, '../../../src/main/preload.ts'), 'utf8');
     const match = /getHarnessUsage:[^\n]*\n[^\n]*\n/.exec(source)?.[0] ?? '';
-    expect(match).toContain('workspaceId: string, request?: HarnessUsageRequest');
+    expect(match).toContain('workspaceId: string | null, request?: HarnessUsageRequest');
     expect(match).toContain('ipcRenderer.invoke(HARNESS_USAGE_GET, workspaceId, request)');
     expect(match).not.toMatch(/target|token|credential|env|path/i);
   });

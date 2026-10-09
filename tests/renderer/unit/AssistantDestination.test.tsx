@@ -69,7 +69,7 @@ it('resolves the capability matrix and the single Browser owner per destination'
   const assistant = resolveDestinationCapabilities({ kind: 'assistant', assistantId: FRED });
   expect(assistant).toEqual({
     browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
-    git: false, layout: false, sessionHistory: false, usage: false,
+    git: false, layout: false, sessionHistory: false, usage: true,
   });
   expect(resolveActiveBrowserOwner({ kind: 'assistant', assistantId: FRED })).toBe(FRED_OWNER);
   expect(resolveActiveBrowserOwner({ kind: 'workspace', workspaceId: 'ws-a' })).toBe('ws-a');

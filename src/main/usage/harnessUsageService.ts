@@ -1,5 +1,6 @@
 import { getHarnessProviders } from '../harnesses/registry';
 import { HarnessCapabilityError, classifyHarnessFailure, type HarnessProvider, type HarnessUsageSnapshot } from '../harnesses/types';
+import { LocalEnvironment } from '../environment/localEnvironment';
 import type { WorkspaceEnvironment } from '../environment/workspaceEnvironment';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type {
@@ -56,6 +57,8 @@ export interface HarnessUsageServiceOptions {
   providers?: () => readonly HarnessProvider[];
   /** Desktop application version, supplied by main (providers never touch Electron). */
   clientVersion?: () => string;
+  /** Optional local environment; if omitted, falls back to new LocalEnvironment(). */
+  localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
 }
 
 /**
@@ -136,12 +139,15 @@ export class HarnessUsageService {
   private readonly listProviders: () => readonly HarnessProvider[];
   private readonly clientVersion: () => string;
   private readonly accounts?: UsageAccountSource;
+  private readonly localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
+  private defaultLocalEnvironment?: WorkspaceEnvironment;
 
   constructor(private readonly registry: UsageWorkspaceLookup, options: HarnessUsageServiceOptions = {}) {
     this.now = options.now ?? Date.now;
     this.listProviders = options.providers ?? getHarnessProviders;
     this.clientVersion = options.clientVersion ?? (() => 'unknown');
     this.accounts = options.accounts;
+    this.localEnvironment = options.localEnvironment;
     // A removed account's cached readings and backoff must not outlive it.
     this.accounts?.onAccountsChanged?.((change) => this.forgetAccount(change.accountId));
   }
@@ -152,11 +158,13 @@ export class HarnessUsageService {
     }
   }
 
-  public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
-    const workspace = typeof workspaceId === 'string' ? this.registry.getWorkspace(workspaceId) : null;
-    if (!workspace) throw new Error('Workspace is not registered');
-    const { environment } = workspace;
+  private resolveLocalEnvironment(): WorkspaceEnvironment {
+    if (typeof this.localEnvironment === 'function') return this.localEnvironment();
+    if (this.localEnvironment) return this.localEnvironment;
+    return (this.defaultLocalEnvironment ??= new LocalEnvironment());
+  }
 
+  private async resolveEntries(environment: WorkspaceEnvironment, request: HarnessUsageRequest): Promise<HarnessUsageEntry[]> {
     let providers = this.listProviders();
     if (request.harnessIds) {
       const wanted = new Set(request.harnessIds.slice(0, MAX_HARNESS_IDS));
@@ -166,7 +174,15 @@ export class HarnessUsageService {
     // One availability check per request, shared by every provider that needs it.
     let availability: Promise<ReadonlySet<string> | undefined> | undefined;
     const installed = () => availability ??= this.installedHarnesses(environment, force);
-    const entries = (await Promise.all(providers.map((provider) => this.resolveAccounts(environment, provider, force, installed)))).flat();
+    return (await Promise.all(providers.map((provider) => this.resolveAccounts(environment, provider, force, installed)))).flat();
+  }
+
+  public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
+    const workspace = typeof workspaceId === 'string' ? this.registry.getWorkspace(workspaceId) : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    const { environment } = workspace;
+
+    const entries = await this.resolveEntries(environment, request);
 
     // The workspace may have closed (or been replaced under the same ID)
     // while probes ran. Never hand its result to whatever workspace is there now.
@@ -174,11 +190,19 @@ export class HarnessUsageService {
     return { workspaceId, entries };
   }
 
+  public async getLocal(request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
+    const environment = this.resolveLocalEnvironment();
+    const entries = await this.resolveEntries(environment, request);
+    return { entries };
+  }
+
   /** Main-process access to the retained snapshots (including opaque account IDs). */
-  public getCachedSnapshots(workspaceId: string): CachedUsageSnapshot[] {
-    const workspace = this.registry.getWorkspace(workspaceId);
-    if (!workspace) throw new Error('Workspace is not registered');
-    return [...(this.cache.get(workspace.environment)?.values() ?? [])].flatMap((record) =>
+  public getCachedSnapshots(workspaceId?: string | null): CachedUsageSnapshot[] {
+    const isLocal = !workspaceId || workspaceId === 'local';
+    const environment = isLocal ? this.resolveLocalEnvironment() : this.registry.getWorkspace(workspaceId)?.environment;
+    if (!isLocal && !environment) throw new Error('Workspace is not registered');
+    if (!environment) return [];
+    return [...(this.cache.get(environment)?.values() ?? [])].flatMap((record) =>
       record.snapshot ? [{ harnessId: record.harnessId, status: record.status, snapshot: record.snapshot, stale: record.stale === true }] : []);
   }
 

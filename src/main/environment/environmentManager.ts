@@ -21,6 +21,10 @@ export class EnvironmentManager {
     this.sshExecutor = sshExecutor ?? new SshCommandExecutor();
   }
 
+  public getLocalEnvironment(): LocalEnvironment {
+    return this.localEnvironment;
+  }
+
   public async getEnvironment(id: WorkspaceEnvironmentId): Promise<WorkspaceEnvironment | null> {
     if (!id || id === LOCAL_ENVIRONMENT_ID) {
       return this.localEnvironment;

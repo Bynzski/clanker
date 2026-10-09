@@ -5,13 +5,14 @@ import Header from '../../../src/renderer/components/Header';
 import UsageWidget from '../../../src/renderer/components/UsageWidget';
 import { USAGE_POLL_INTERVAL_MS } from '../../../src/renderer/components/useHarnessUsage';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { HarnessUsageEntry, HarnessUsageRequest, HarnessUsageResponse } from '../../../src/shared/types/harnessUsage';
 
 vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => null }));
 
-type Deferred = { resolve: (response: HarnessUsageResponse) => void; reject: (error: unknown) => void; harnessId: string; force: boolean; workspaceId: string };
+type Deferred = { resolve: (response: HarnessUsageResponse) => void; reject: (error: unknown) => void; harnessId: string; force: boolean; workspaceId: string | null };
 /** Usage-capable harnesses in launcher order, as the panel requests and renders them. */
 const PANEL_IDS = ['codex', 'claude', 'omp', 'hermes', 'agy'];
 const pct = (label: string, used: number) => ({ kind: 'rate-limit' as const, unit: 'percent', used, remaining: 100 - used, limit: 100, label });
@@ -19,8 +20,8 @@ const okEntry = (harnessId: string, label: string, used: number, extra: Partial<
   ({ harnessId, status: 'ok', measurements: [pct(label, used)], checkedAt: Date.now(), ...extra });
 
 let pending: Deferred[];
-const calls = () => vi.mocked(window.electronAPI.getHarnessUsage).mock.calls as unknown as Array<[string, HarnessUsageRequest | undefined]>;
-const respond = (d: Deferred, entry: HarnessUsageEntry) => act(async () => d.resolve({ workspaceId: d.workspaceId, entries: [entry] }));
+const calls = () => vi.mocked(window.electronAPI.getHarnessUsage).mock.calls as unknown as Array<[string | null, HarnessUsageRequest | undefined]>;
+const respond = (d: Deferred, entry: HarnessUsageEntry) => act(async () => d.resolve({ workspaceId: d.workspaceId ?? undefined, entries: [entry] }));
 
 /** Every request stays pending until the test resolves it, so progressive rendering is observable. */
 /** Every usage-capable harness is installed locally unless a test says otherwise. */
@@ -34,7 +35,8 @@ beforeEach(() => {
     activeWorkspaceId: 'ws-1', browserOverlayCount: 0,
     workspaces: [createWorkspaceFixture({ id: 'ws-1', workspacePath: '/workspace', terminals: [], panes: [] })],
   });
-  vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation((workspaceId: string, request?: HarnessUsageRequest) =>
+  useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
+  vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation((workspaceId: string | null, request?: HarnessUsageRequest) =>
     new Promise<HarnessUsageResponse>((resolve, reject) => {
       pending.push({ resolve, reject, harnessId: request?.harnessIds?.[0] ?? '', force: request?.force === true, workspaceId });
     }));
@@ -322,5 +324,32 @@ describe('Usage provider selection (Show in Usage)', () => {
     expect(trigger).toHaveAttribute('title', 'Usage');
     expect(trigger.textContent?.trim()).toBe('');
     expect(within(panel()).getByText('Usage')).toBeInTheDocument();
+  });
+});
+
+describe('Usage in Assistant destinations', () => {
+  it('renders UsageWidget in Assistant view without workspaces and queries with null workspaceId', async () => {
+    useWorkspaceStore.setState({ activeWorkspaceId: null, workspaces: [] });
+    useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred' });
+    await openUsage();
+    expect(calls().length).toBe(5);
+    expect(calls().every(([wsId]) => wsId === null)).toBe(true);
+    await respond(pending.find((d) => d.harnessId === 'claude')!, okEntry('claude', 'Claude · 5 hour', 40));
+    expect(within(within(panel()).getByRole('region', { name: 'Claude' })).getByText('60% remaining')).toBeInTheDocument();
+  });
+
+  it('retains local readings across workspace and Assistant navigation', async () => {
+    // 1. In local workspace ws-1, open Usage and populate Claude
+    await openUsage();
+    await respond(pending.find((d) => d.harnessId === 'claude')!, okEntry('claude', 'Claude · 5 hour', 30));
+    expect(within(within(panel()).getByRole('region', { name: 'Claude' })).getByText('70% remaining')).toBeInTheDocument();
+
+    // 2. Switch to Assistant: popover closes on destination switch
+    act(() => useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred' }));
+    expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
+
+    // 3. Open Usage in Assistant: Claude reading is immediately visible without blanking
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
+    expect(within(within(panel()).getByRole('region', { name: 'Claude' })).getByText('70% remaining')).toBeInTheDocument();
   });
 });

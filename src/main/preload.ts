@@ -592,7 +592,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork, options),
 
   // Harness usage (workspaceId is the only reference; main resolves the environment)
-  getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) =>
+  getHarnessUsage: (workspaceId: string | null, request?: HarnessUsageRequest) =>
     ipcRenderer.invoke(HARNESS_USAGE_GET, workspaceId, request),
 
   // Harness accounts. Plain strings only: main resolves identity, paths and environments itself.

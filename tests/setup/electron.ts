@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { FileListDirectoryResult } from '../../src/shared/types/fileExplorer';
+import { useUsageStore } from '../../src/renderer/store/usageStore';
 
 export type ElectronApiMock = {
   [K in keyof Window['electronAPI']]: ReturnType<typeof vi.fn>;
@@ -252,6 +253,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
 }
 
 export function installElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
+  useUsageStore.getState().reset();
   const electronApi = createElectronApiMock(overrides);
 
   if (typeof window !== 'undefined') {
