@@ -118,10 +118,8 @@ describe('contextService - Real Behavior Tests', () => {
       expect(context?.provider).toBe('bitbucket');
     });
 
-    it('should detect self-hosted GitLab using real parsing', () => {
-      const context = buildProviderContext('origin', TEST_REMOTES.selfHosted.ssh, 'main');
-      expect(context).not.toBeNull();
-      expect(context?.provider).toBe('gitlab');
+    it('rejects self-hosted GitLab without host-bound credentials', () => {
+      expect(buildProviderContext('origin', TEST_REMOTES.selfHosted.ssh, 'main')).toBeNull();
     });
 
     it('should return null for unrecognized providers using real parsing', () => {
@@ -524,8 +522,8 @@ describe('contextService - Real Behavior Tests', () => {
     it('should handle URLs with extra path segments (edge case)', () => {
       // Real-world: sometimes users add extra paths
       const context = buildProviderContext('origin', 'https://github.com/owner/repo/tree/main', 'main');
-      // The URL parser only takes first two path segments
-      expect(context?.owner).toBe('owner');
+      // A web-page URL is not an unambiguous repository remote.
+      expect(context).toBeNull();
     });
   });
 });

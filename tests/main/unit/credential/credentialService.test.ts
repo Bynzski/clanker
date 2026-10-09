@@ -1272,9 +1272,35 @@ describe('safeStorage unavailable', () => {
     assert.strictEqual(env.store.get('patMetadata.github'), undefined);
   });
 
-  test('getPat still works when encryption was available on save but unavailable on retrieve', () => {
-    // Tokens are stored as base64 when encryption was available (test safeStorage returns true)
-    // So getPat must always decode base64 regardless of current encryption availability
+  test('rejects Linux basic_text storage even if Electron reports encryption available', async () => {
+    _setTestSafeStorage({
+      isEncryptionAvailable: () => true,
+      getSelectedStorageBackend: () => 'basic_text',
+      encryptString: () => { throw new Error('must not encrypt'); },
+      decryptString: () => { throw new Error('must not decrypt'); },
+    });
+    env.store.set('encryptedPats.github', 'ciphertext');
+    assert.equal((await savePat({ provider: 'github', token: 'secret' })).success, false);
+    assert.equal(getPat('github').success, false);
+    assert.equal(getPat('github').token, undefined);
+    assert.equal(env.store.get('encryptedPats.github'), 'ciphertext');
+  });
+
+  test('decryption failure returns no token or sensitive error details', () => {
+    _setTestSafeStorage({
+      isEncryptionAvailable: () => true,
+      encryptString: (token) => Buffer.from(token),
+      decryptString: () => { throw new Error('sensitive-ciphertext'); },
+    });
+    env.store.set('encryptedPats.github', 'ciphertext');
+    const result = getPat('github');
+    assert.equal(result.success, false);
+    assert.equal(result.token, undefined);
+    assert.match(result.error!, /Failed to decrypt/);
+    assert.ok(!result.error!.includes('sensitive-ciphertext'));
+  });
+
+  test('getPat fails closed when secure storage becomes unavailable', () => {
     _setTestSafeStorage({
       isEncryptionAvailable: () => false,
       encryptString: (token: string) => Buffer.from(token),
@@ -1286,11 +1312,12 @@ describe('safeStorage unavailable', () => {
     const encoded = Buffer.from(token).toString('base64');
     env.store.set('encryptedPats.github', encoded);
 
-    // Retrieve should decode correctly (getPat always uses base64 fallback when encryption unavailable)
     const result = getPat('github');
 
-    assert.equal(result.success, true);
-    assert.equal(result.token, token);
+    assert.equal(result.success, false);
+    assert.equal(result.token, undefined);
+    assert.match(result.error!, /Secure token storage is unavailable/);
+    assert.equal(env.store.get('encryptedPats.github'), encoded);
   });
 
   test('savePat succeeds when encryption is available', async () => {

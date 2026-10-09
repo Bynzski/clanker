@@ -384,7 +384,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                   Clanker Grid generates ED25519 keys which are modern and recommended.
                 </p>
                 <ul>
-                  <li>Private key is stored encrypted in your home directory</li>
+                  <li>Private key is stored in your home directory with filesystem access protections</li>
                   <li>Add the public key to your Git provider to enable push/pull</li>
                   <li>The key is specific to Clanker Grid and won't affect other git configurations</li>
                 </ul>
@@ -485,7 +485,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
               <div className="credential-help-section">
                 <h4>About Access Tokens</h4>
                 <p>
-                  Personal Access Tokens (PATs) provide HTTPS authentication for Git operations.
+                  Access tokens authenticate provider API context only. Git operations use Git's own SSH keys or credential helper.
                   They're useful when SSH is not available or for specific API access.
                 </p>
                 <ul>

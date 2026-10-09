@@ -98,6 +98,7 @@ export function _isUsingTestStore(): boolean {
  */
 interface ITestableSafeStorage {
   isEncryptionAvailable: () => boolean;
+  getSelectedStorageBackend?: () => string;
   encryptString: (token: string) => Buffer;
   decryptString: (buffer: Buffer) => string;
 }
@@ -239,6 +240,13 @@ async function detectCredentialHelper(remoteUrl?: string): Promise<string | null
   }
 }
 
+/** Electron's Linux basic_text backend is not OS-backed secret storage. */
+function secureStorageAvailable(): boolean {
+  const storage = _testSafeStorage ?? safeStorage;
+  return storage.isEncryptionAvailable()
+    && storage.getSelectedStorageBackend?.() !== 'basic_text';
+}
+
 /**
  * Save a Personal Access Token for a provider.
  */
@@ -250,12 +258,7 @@ export async function savePat(request: SavePatRequest): Promise<CredentialSaveRe
   }
 
   try {
-    // Check if safeStorage is available (use test implementation if set)
-    const encryptionAvailable = _testSafeStorage 
-      ? _testSafeStorage.isEncryptionAvailable() 
-      : safeStorage.isEncryptionAvailable();
-    
-    if (!encryptionAvailable) {
+    if (!secureStorageAvailable()) {
       return {
         success: false,
         error: 'Secure storage is not available on this system. Credential storage requires OS-level encryption support.',
@@ -290,25 +293,20 @@ export function getPat(provider: VcsProvider): { success: boolean; token?: strin
       return { success: false, error: 'No token stored for this provider' };
     }
 
-    const encryptionAvailable = _testSafeStorage 
-      ? _testSafeStorage.isEncryptionAvailable() 
-      : safeStorage.isEncryptionAvailable();
-
     let token: string;
-    if (encryptionAvailable) {
+    if (secureStorageAvailable()) {
       const buffer = Buffer.from(encrypted, 'base64');
       token = _testSafeStorage 
         ? _testSafeStorage.decryptString(buffer) 
         : safeStorage.decryptString(buffer);
     } else {
-      // Fallback decoding
-      token = Buffer.from(encrypted, 'base64').toString('utf-8');
+      return { success: false, error: 'Secure token storage is unavailable. Unlock your OS credential store and try again.' };
     }
 
     return { success: true, token };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to retrieve PAT';
-    return { success: false, error: message };
+  } catch {
+    // Decryption errors may contain sensitive implementation details.
+    return { success: false, error: 'Failed to decrypt stored token. Unlock your OS credential store or save the token again.' };
   }
 }
 

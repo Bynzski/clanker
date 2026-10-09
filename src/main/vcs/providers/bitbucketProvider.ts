@@ -88,7 +88,7 @@ export class BitbucketProvider extends BaseProvider {
     token: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -120,7 +120,7 @@ export class BitbucketProvider extends BaseProvider {
     endpoint: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Accept: 'application/json',
         },

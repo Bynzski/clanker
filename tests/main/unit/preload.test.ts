@@ -766,7 +766,6 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
     test('has PAT methods', () => {
       const patMethods = [
         'credentialSavePat',
-        'credentialGetPat',
         'credentialDeletePat',
       ];
 

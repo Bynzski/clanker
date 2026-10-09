@@ -84,17 +84,24 @@ export abstract class BaseProvider implements IVcsProvider {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      // Never follow provider redirects: PRIVATE-TOKEN is not stripped like
+      // Authorization by every fetch implementation on cross-origin redirects.
+      return await fetch(url, { ...init, redirect: 'error', signal: controller.signal });
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  private async fetchWithRetry(
+  protected async fetchWithRetry(
     url: string,
     init: RequestInit,
     options?: { timeoutMs?: number; maxRetries?: number }
   ): Promise<Response> {
+    const target = new URL(url);
+    const trustedOrigin = new URL(this.apiBaseUrl).origin;
+    if (target.protocol !== 'https:' || target.origin !== trustedOrigin || target.username || target.password) {
+      throw new Error('Unapproved provider API origin');
+    }
     const timeoutMs = options?.timeoutMs ?? BaseProvider.DEFAULT_TIMEOUT_MS;
     const maxRetries = options?.maxRetries ?? BaseProvider.DEFAULT_MAX_RETRIES;
 

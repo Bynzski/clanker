@@ -88,7 +88,7 @@ export class GitLabProvider extends BaseProvider {
     const baseUrl = context ? this.getApiBaseUrl(context) : this.apiBaseUrl;
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${baseUrl}${endpoint}`, {
         headers: {
           'PRIVATE-TOKEN': token,
           Accept: 'application/json',
@@ -129,7 +129,7 @@ export class GitLabProvider extends BaseProvider {
     const baseUrl = context ? this.getApiBaseUrl(context) : this.apiBaseUrl;
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${baseUrl}${endpoint}`, {
         headers: {
           Accept: 'application/json',
         },

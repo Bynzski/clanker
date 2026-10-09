@@ -174,7 +174,6 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     credentialDeleteSshKey: createAsyncMock({ success: true }),
     credentialCheckExists: createAsyncMock({ exists: false }),
     credentialSavePat: createAsyncMock({ success: true }),
-    credentialGetPat: createAsyncMock({ success: false, error: 'No token stored' }),
     credentialDeletePat: createAsyncMock({ success: true }),
     credentialGetStatus: createAsyncMock({ remoteName: 'origin', provider: 'github', hasSshKey: false, hasPat: false, credentialHelper: null }),
     credentialGetGlobalStatus: createAsyncMock({ defaultSshKeyPath: '', hasDefaultSshKey: false, storedPats: [], credentialHelpers: {} }),

@@ -36,9 +36,26 @@ describe('detectProvider', () => {
     expect(detectProvider('https://gitlab.com/gitlab-org/gitlab')).toBe('gitlab');
   });
 
-  it('should detect self-hosted GitLab', () => {
-    expect(detectProvider('git@gitlab.example.com:owner/repo.git')).toBe('gitlab');
-    expect(detectProvider('https://gitlab.example.com/owner/repo.git')).toBe('gitlab');
+  it.each([
+    'git@gitlab.example.com:owner/repo.git',
+    'https://gitlab-attacker.example/owner/repo.git',
+    'https://gitlab.com.attacker.example/owner/repo.git',
+    'https://gitlab.com@attacker.example/owner/repo.git',
+    'http://gitlab.com/owner/repo.git',
+    'https://gitlab.com:8443/owner/repo.git',
+    'https://user@gitlab.com/owner/repo.git',
+    'https://gitlab.com/owner/repo.git?redirect=evil',
+    'https://gitlab.com/owner%2Frepo/name.git',
+  ])('rejects unapproved or ambiguous remote %s', (remote) => {
+    expect(detectProvider(remote)).toBe('unknown');
+    expect(buildProviderContext('origin', remote)).toBeNull();
+    expect(getProviderDeepLinks(remote)).toEqual([]);
+    expect(getApiBaseUrl('gitlab', remote)).toBe('');
+  });
+
+  it('supports nested GitLab namespaces and explicit SSH URLs', () => {
+    expect(parseRemoteUrl('ssh://git@gitlab.com/group/subgroup/repo.git')).toEqual({ owner: 'group/subgroup', repo: 'repo' });
+    expect(getDeepLinkUrl('git@gitlab.com:group/subgroup/repo.git', 'repo')).toBe('https://gitlab.com/group/subgroup/repo');
   });
 
   it('should detect Bitbucket from SSH URL', () => {
@@ -105,7 +122,7 @@ describe('getApiBaseUrl', () => {
 
   it('should return correct API URL for GitLab', () => {
     expect(getApiBaseUrl('gitlab')).toBe('https://gitlab.com/api/v4');
-    expect(getApiBaseUrl('gitlab', 'https://gitlab.example.com/owner/repo.git')).toContain('gitlab.example.com/api/v4');
+    expect(getApiBaseUrl('gitlab', 'https://gitlab.example.com/owner/repo.git')).toBe('');
   });
 
   it('should return correct API URL for Bitbucket', () => {
@@ -124,7 +141,7 @@ describe('getWebBaseUrl', () => {
 
   it('should return correct web URL for GitLab', () => {
     expect(getWebBaseUrl('gitlab')).toBe('https://gitlab.com');
-    expect(getWebBaseUrl('gitlab', 'https://gitlab.example.com/owner/repo.git')).toContain('gitlab.example.com');
+    expect(getWebBaseUrl('gitlab', 'https://gitlab.example.com/owner/repo.git')).toBe('');
   });
 
   it('should return correct web URL for Bitbucket', () => {
