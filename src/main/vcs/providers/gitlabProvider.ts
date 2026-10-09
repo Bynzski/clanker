@@ -70,8 +70,9 @@ export class GitLabProvider extends BaseProvider {
     if (!value || value.iid !== context.pullRequestNumber || value.source_project_id !== project.data.id
       || value.target_project_id !== target.id || value.source_branch !== branch || value.sha !== sha
       || value.diff_refs?.head_sha !== sha || value.head_pipeline?.id !== candidate.id
-      || value.head_pipeline.sha !== candidate.sha || candidate.project_id !== value.head_pipeline.project_id
-      || (candidate.project_id !== project.data.id && candidate.project_id !== target.id)) return { problem: problem('stale') };
+      || value.head_pipeline.sha !== candidate.sha
+      || (value.head_pipeline.project_id !== project.data.id && value.head_pipeline.project_id !== target.id)
+      || (candidate.project_id !== undefined && candidate.project_id !== value.head_pipeline.project_id)) return { problem: problem('stale') };
     if (typeof value.head_pipeline.status !== 'string') return { problem: problem('malformed-response') };
     const commit = await this.fetchJson<{ id: string; parent_ids: string[] }>(`/projects/${encodeURIComponent(namespace)}/repository/commits/${candidate.sha}`, token);
     if (!commit.success) return { problem: commit.problem };

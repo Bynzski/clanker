@@ -12,7 +12,8 @@ function mrDetail(head = merged) {
   return { ...gitlabMr(), diff_refs: { head_sha: SHA, base_sha: targetSha, start_sha: targetSha }, head_pipeline: head };
 }
 function responses(options: {
-  branchPipelines?: ReturnType<typeof pipeline>[]; mrPipelines?: ReturnType<typeof pipeline>[];
+  branchPipelines?: ReturnType<typeof pipeline>[];
+  mrPipelines?: Array<Omit<ReturnType<typeof pipeline>, 'project_id'> & { project_id?: number }>;
   detail?: unknown; detailStatus?: number; commit?: unknown; commitStatus?: number; project?: unknown;
 } = {}) {
   return installFetch((url) => {
@@ -31,6 +32,24 @@ describe('GitLab current-MR merged-results pipeline attribution', () => {
     const fetch = responses({ mrPipelines: [head], detail: mrDetail(head) });
     expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state, sha: SHA });
     expect(fetch.mock.calls.map(([url]) => url)).toContain(`https://gitlab.com/api/v4/projects/owner%2Frepo/repository/commits/${OTHER_SHA}`);
+  });
+  it.each([
+    [undefined, 'pending'], [1, 'pending'], [2, 'unknown'],
+  ] as const)('accepts an optional listing project ID only when consistent: %s', async (projectId, state) => {
+    const listed = { id: merged.id, sha: merged.sha, ref: merged.ref, status: merged.status,
+      ...(projectId === undefined ? {} : { project_id: projectId }) };
+    const fetch = responses({ mrPipelines: [listed] });
+    const result = await provider.getChecksSummary(ctx, branch);
+    expect(result).toMatchObject({ state, sha: SHA });
+    if (state === 'unknown') {
+      expect(result.problem?.code).toBe('stale');
+      expect(fetch.mock.calls.some(([url]) => url.includes('/repository/commits/'))).toBe(false);
+    } else expect(fetch.mock.calls.map(([url]) => url)).toContain(`https://gitlab.com/api/v4/projects/owner%2Frepo/repository/commits/${OTHER_SHA}`);
+  });
+  it.each([undefined, 99])('still requires an authoritative head-pipeline project when the listing omits it: %s', async (projectId) => {
+    responses({ mrPipelines: [{ id: merged.id, sha: merged.sha, ref: merged.ref, status: merged.status }],
+      detail: { ...mrDetail(), head_pipeline: { ...merged, project_id: projectId } } });
+    expect(await provider.getChecksSummary(ctx, branch)).toMatchObject({ state: 'unknown', problem: { code: 'stale' } });
   });
   it('prefers the newest verified merged pipeline over an older green source-HEAD MR pipeline', async () => {
     const head = pipeline(30, OTHER_SHA, 'failed');
