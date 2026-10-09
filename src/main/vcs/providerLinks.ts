@@ -1,6 +1,11 @@
 import type { DeepLink, ProviderContext } from './types';
 import { parseTrustedRemote } from './trustedRemote';
 
+/** GitHub compare routing treats ref slashes as path separators, not encoded bytes. */
+function encodeRefPath(ref: string): string {
+  return ref.split('/').map(encodeURIComponent).join('/');
+}
+
 /** The single static, hosted-provider navigation contract. No API calls. */
 export function providerLinks(context: ProviderContext, branch?: string, number?: number): DeepLink[] {
   const trusted = parseTrustedRemote(`${context.baseUrl}/${context.owner}/${context.repo}`);
@@ -24,7 +29,11 @@ export function providerLinks(context: ProviderContext, branch?: string, number?
       add('issues', '/issues', 'Issues');
       add('releases', '/releases', 'Releases');
       add('actions', '/actions', 'Actions');
-      if (source) add('create-pr', `/compare/${target ? `${target}...` : ''}${source}`, 'Create Pull Request');
+      if (branch) {
+        const head = encodeRefPath(branch);
+        const base = context.defaultBranch ? `${encodeRefPath(context.defaultBranch)}...` : '';
+        add('create-pr', `/compare/${base}${head}`, 'Create Pull Request');
+      }
       break;
     case 'gitlab':
       if (validNumber) add('pr', `/-/merge_requests/${number}`, `MR !${number}`);

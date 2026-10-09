@@ -555,7 +555,7 @@ describe('GitHubProvider', () => {
       const links = provider.getDeepLinks(context, 'feature/branch-with-dashes');
 
       const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toContain('feature%2Fbranch-with-dashes');
+      expect(createLink?.url).toContain('feature/branch-with-dashes');
     });
   });
 });

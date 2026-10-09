@@ -27,7 +27,7 @@ Paths below are relative to the validated repository URL (`/<full namespace>/<re
 | Releases | `/releases` | `/-/releases` | omitted (Downloads are not releases) |
 | CI navigation | `/actions` | `/-/pipelines` | `/pipelines` |
 
-Branch values are URI-encoded, including slashes, Unicode and query delimiters. Nested GitLab namespace separators remain intact. Request links require a positive safe integer. No request or creation identity is invented when it is absent.
+GitHub compare refs are encoded one path segment at a time, preserving `/` separators in both source and target refs while encoding Unicode, percent signs and query delimiters. GitLab branch values remain fully URI-encoded query parameters (including `%2F` for slashes). Nested GitLab namespace separators remain intact. Request links require a positive safe integer. No request or creation identity is invented when it is absent.
 
 Static navigation IPC requests no longer fetch complete provider context. When the target branch is unknown, GitHub's single-ref compare URL and GitLab's source-only form let the provider choose its native default; they do not guess `main` or call an API. Bitbucket opens its native form for manual branch selection rather than guessing undocumented prefill parameters. Only a single-request PR-link lookup discovers necessary PR identity, with the same bounded request scope; it never fetches checks, reviews or the default branch, and constructs a trusted URL instead of opening an API-supplied URL. Detached navigation does not invent a branch.
 
@@ -51,6 +51,8 @@ Corrective work started at `175c8c52146a96e11a6db20cca8764e4230dc1c0`. Current m
 
 Focused tests cover every supported provider link type through all entry points, omitted destinations, unknown targets, nested namespaces, malicious remotes and directly constructed contexts; static IPC navigation without context refetch; PR-only discovery; delayed network calls, retries, exhausted budgets, caller cancellation, body stalls, concurrent request isolation, HTTP authentication failures, secret-bearing errors, insecure/unavailable storage, and renderer token denial. Relevant provider contract, credential, preload and IPC-registration tests are included in the focused run. Run `npm run validate` for the complete required pipeline.
 
+The final slash-encoding correction started at `58bb073`. Read-only verification against the already pushed `fix/145-vcs-credential-safety` branch confirmed that both `https://github.com/Bynzski/clanker/compare/main...fix/145-vcs-credential-safety` and the single-ref `/compare/fix/145-vcs-credential-safety` return HTTP 200 with GitHub's `Comparing main...fix/145-vcs-credential-safety` page title and the expected selected head ref. GitHub's compare API also resolves the branch and returns the slash-preserving `html_url`. This verifies the live HTML routes, not an interactive/authenticated browser workflow. Regression tests cover both slash-containing refs, absent target refs, Unicode/query delimiters, and literal `%2F` text that must remain encoded as `%252F`.
+
 No live provider-token or SSH browser smoke was performed: dedicated current public/private/fine-grained/Bitbucket token fixtures were not supplied. Authenticated browser navigation (especially Bitbucket's manual branch selection and Unicode/slash branches), real OS credential-store locking, and real SSH-host provider context remain manual checks before release.
 
 ## Remaining #145 acceptance criteria
@@ -61,7 +63,9 @@ No live provider-token or SSH browser smoke was performed: dedicated current pub
 - Actual Bitbucket branch-head build status and verified current token/retired-app-password guidance.
 - GitLab HEAD/pipeline association and approval accuracy.
 - Checkout/upstream/remote identity, detached HEAD for full context, stale-result rejection and request deduplication/cache. Navigation is static or PR-only now, but the existing first-remote/full-context attribution is unchanged.
-- Rate-limit-aware bounded retry policy and typed transport errors.
+- Rate-limit-aware bounded retry policy and typed transport errors; response bodies currently have time limits but no byte cap. Enforce a byte cap while streaming (not merely via Content-Length) in a subsequent focused transport pass.
+- Full-context failure navigation still inherits the default `main` assumption when the repository's target branch is unknown. Static navigation avoids this assumption; the failure path remains a separately identified correction.
+- Pre-existing credential-entry-point follow-ups: reject SSH-config hostname/directive injection before constructing configuration text, and sanitize raw `deletePat()` storage exceptions. These were identified in review and are not changed by the latest GitHub-link-only pass.
 - Full provider contract and live local/SSH/checkout-change smoke coverage.
 
 No PR is opened or authorized by this checkpoint.

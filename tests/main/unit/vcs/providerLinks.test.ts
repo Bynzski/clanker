@@ -9,7 +9,7 @@ const source = 'feature/é+%#&=;';
 const target = 'release/v1+stable';
 const providers = [
   { provider: new GitHubProvider(), remote: 'git@github.com:owner/repo.git', baseUrl: 'https://github.com', owner: 'owner', paths: {
-    repo: '', pr: '/pull/42', 'create-pr': `/compare/${encodeURIComponent(target)}...${encodeURIComponent(source)}`,
+    repo: '', pr: '/pull/42', 'create-pr': '/compare/release/v1%2Bstable...feature/%C3%A9%2B%25%23%26%3D%3B',
     branches: '/branches', issues: '/issues', releases: '/releases', actions: '/actions',
   } },
   { provider: new GitLabProvider(), remote: 'ssh://git@gitlab.com/group/subgroup/repo.git', baseUrl: 'https://gitlab.com', owner: 'group/subgroup', paths: {
@@ -56,11 +56,21 @@ describe('static provider navigation contract', () => {
     expect(getDeepLinkUrl(remote, 'releases')).toBeNull();
   });
   it('uses native default targets without API discovery or fabricated main branches', () => {
-    expect(getDeepLinkUrl('https://github.com/owner/repo.git', 'create-pr', source)).toBe(`https://github.com/owner/repo/compare/${encodeURIComponent(source)}`);
+    expect(getDeepLinkUrl('https://github.com/owner/repo.git', 'create-pr', source)).toBe('https://github.com/owner/repo/compare/feature/%C3%A9%2B%25%23%26%3D%3B');
     const gl = new URL(getDeepLinkUrl('https://gitlab.com/group/subgroup/repo.git', 'create-pr', source)!);
     expect(gl.searchParams.get('merge_request[source_branch]')).toBe(source);
     expect(gl.searchParams.has('merge_request[target_branch]')).toBe(false);
   });
+  it.each([
+    ['fix/145-vcs-credential-safety', 'main', '/compare/main...fix/145-vcs-credential-safety'],
+    ['fix/145-vcs-credential-safety', undefined, '/compare/fix/145-vcs-credential-safety'],
+    ['feature/nested/é+%#&=;', 'release/v1+stable', '/compare/release/v1%2Bstable...feature/nested/%C3%A9%2B%25%23%26%3D%3B'],
+    ['literal%2Fref/topic', 'base%2Fref/stable', '/compare/base%252Fref/stable...literal%252Fref/topic'],
+  ])('preserves GitHub ref separators for source %s and target %s', (branch, base, path) => {
+    expect(getDeepLinkUrl('https://github.com/Bynzski/clanker.git', 'create-pr', branch, undefined, base))
+      .toBe(`https://github.com/Bynzski/clanker${path}`);
+  });
+
   it('preserves exact source and target branch values in GitLab query parameters', () => {
     const url = new URL(getDeepLinkUrl('https://gitlab.com/group/subgroup/repo.git', 'create-pr', source, undefined, target)!);
     expect(url.searchParams.get('merge_request[source_branch]')).toBe(source);
