@@ -1197,6 +1197,13 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     expect(a.view.webContents.loadURL).toHaveBeenLastCalledWith('https://example.com/');
     expect(b.view.setVisible).toHaveBeenLastCalledWith(true);
     expect(await activate(null, 'ws-1', 'tab-a', { paneId: 'pane-b', epoch: 3 })).toBe(false);
+    expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-a')).toBe(false);
+    expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-b')).toBe(false);
+    expect(await findHandler('browser-get-tabs')(null, 'ws-1', 'pane-b')).toEqual([{ tabId: 'tab-b', url: 'https://github.com', title: '' }]);
+    expect(await findHandler('browser-get-tabs')(null, 'ws-1')).toEqual([]);
+    expect(await navigate(null, 'ws-1', 'unknown', 'https://example.com')).toBe(false);
+    expect(mockBrowserViews.get('ws-1').has('unknown')).toBe(false);
+    await create(null, 'ws-1', 'tab-a2', 'pane-a');
     expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-a')).toBe(true);
     expect(await navigate(null, 'ws-1', 'tab-a', 'https://example.com')).toBe(false);
     expect(await activate(null, 'ws-1', 'tab-a', { paneId: 'pane-a', epoch: 4 })).toBe(false);

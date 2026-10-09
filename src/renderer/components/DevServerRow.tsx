@@ -8,6 +8,7 @@ import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { pathKey } from '../../shared/pathKey';
+import { terminalPageId } from '../lib/browserPreviewTarget';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
@@ -62,13 +63,22 @@ export function DevServerControls({ workspace, command, service, terminalId, dis
       {live && service?.previewUrl && <IconButton className="ws-nav-action" disabled={busy || stopping} aria-label="Open Dev Server in Browser" title={`Open ${service.previewUrl}`} onClick={() => void action(async () => {
         useAssistantNavStore.getState().clearActive();
         useWorkspaceStore.getState().selectWorkspace(workspace.id);
+        const initiating = useWorkspaceStore.getState().getWorkspaceById(workspace.id);
+        if (!initiating) return;
+        const targetPageId = terminalPageId(initiating, terminalId);
+        if (initiating.pages && !targetPageId) return;
+        if (targetPageId) useWorkspaceStore.getState().selectWorkspacePage(workspace.id, targetPageId);
+        const originalBrowserId = initiating.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id;
         const url = service.previewUrl!;
         const probe = await window.electronAPI.probeRecipePreview(url, true);
         if (probe.status !== 'ready') throw new Error('Dev server preview is not reachable yet');
         const state = useWorkspaceStore.getState();
         const current = useWorkspaceServiceStore.getState().services.find((entry) => entry.id === service.id);
-        if (state.activeWorkspaceId !== workspace.id || useAssistantNavStore.getState().activeAssistantId || current?.previewUrl !== url || !['starting', 'running'].includes(current.status)) return;
-        if (!await openUrlInWorkspaceBrowser(workspace.id, url)) throw new Error('Could not open dev server preview');
+        const live = state.getWorkspaceById(workspace.id);
+        if (state.activeWorkspaceId !== workspace.id || useAssistantNavStore.getState().activeAssistantId || current?.previewUrl !== url || !['starting', 'running'].includes(current.status)
+          || !live || live.activePageId !== targetPageId || terminalPageId(live, terminalId) !== targetPageId
+          || live.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id !== originalBrowserId) return;
+        if (!await openUrlInWorkspaceBrowser(workspace.id, url, targetPageId)) throw new Error('Could not open dev server preview');
       })}><ExternalLink size={12} /></IconButton>}
     </div>
     {!live && !failed && command?.preparationHint && <div className="ws-service-hint sr-only" title={command.preparationHint}>Dependencies may need installation</div>}

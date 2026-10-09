@@ -2,7 +2,7 @@ import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
 } from './workspaceLayout';
-import { projectPageBrowser, synchronizePages, updateBrowserOwner } from './workspacePages';
+import { projectPageBrowser, retainSelectedPage, selectPage, synchronizePages, updateBrowserOwner } from './workspacePages';
 import type { GitStatus } from '../components/git/types';
 import { backfillCheckoutContexts, bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
@@ -519,6 +519,16 @@ export function patchBrowserTabById(state: WorkspaceState, workspaceId: string, 
   return patchWorkspaceById(state, workspaceId, (workspace) => {
     const target = tabId ?? workspace.browserPane?.activeTabId;
     return target ? updateBrowserOwner(workspace, target, updater) : tabId == null ? updater(workspace) : workspace;
+  });
+}
+
+export function patchWorkspacePageById(state: WorkspaceState, workspaceId: string, pageId: string | undefined,
+  updater: (workspace: WorkspaceTab) => WorkspaceTab): Partial<WorkspaceState> {
+  return patchWorkspaceById(state, workspaceId, (workspace) => {
+    if (!pageId || pageId === workspace.activePageId) return updater(workspace);
+    if (!workspace.pages?.some((page) => page.id === pageId)) return workspace;
+    const target = selectPage(workspace, pageId);
+    return retainSelectedPage(workspace, synchronizePages(target, updater(target)));
   });
 }
 

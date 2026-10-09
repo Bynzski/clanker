@@ -23,11 +23,15 @@ function PageDropButton({ workspace, pageId, index }: { workspace: WorkspaceTab;
   const { active } = useDndContext();
   const shared = useSharedPaneDrag();
   const capped = pageId === undefined && (workspace.pages?.length ?? 0) >= MAX_WORKSPACE_PAGES;
-  const available = shared && !capped && Boolean(currentPaneDrag(active?.data.current, workspace));
+  const drag = currentPaneDrag(active?.data.current, workspace);
+  const destination = workspace.pages?.find((page) => page.id === pageId);
+  const occupied = Boolean(drag && workspace.browserPane?.id === drag.paneId && destination?.browser?.pane);
+  const available = shared && !capped && !occupied && Boolean(drag);
   const { setNodeRef, isOver } = useDroppable({ id: `workspace-page-drop-${workspace.id}-${pageId ?? 'new'}`,
     data: { intent: { kind: 'workspace-page', workspaceId: workspace.id, pageId } }, disabled: !available });
-  return <button ref={setNodeRef} type="button" className={`${available ? 'page-drop-valid' : ''}${available && isOver ? ' page-drop-over' : ''}`}
-    aria-label={pageId ? `Page ${index! + 1}` : 'Add page'} title={pageId ? undefined : 'Add page'}
+  return <button ref={setNodeRef} type="button" className={`${occupied ? 'page-drop-invalid' : available ? 'page-drop-valid' : ''}${available && isOver ? ' page-drop-over' : ''}`}
+    aria-label={pageId ? `Page ${index! + 1}` : 'Add page'} title={occupied ? 'This page already owns a Browser' : pageId ? undefined : 'Add page'}
+    data-drop-invalid={occupied || undefined}
     aria-current={pageId && pageId === workspace.activePageId ? 'page' : undefined} disabled={capped}
     onClick={() => pageId ? select(workspace.id, pageId) : add(workspace.id)}>
     {pageId ? index! + 1 : <Plus size={12} />}

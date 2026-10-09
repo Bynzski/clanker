@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { currentBrowserPresentation } from '../../lib/browserPresentation';
 import { BrowserPanelCore, type BrowserPanelModel } from '../BrowserPanel';
 import { useAssistantSurfaceStore } from '../../store/assistantSurfaceStore';
 import { useAssistantNavStore } from '../../store/assistantNavStore';
@@ -9,13 +10,16 @@ async function syncSelectedAssistantTab(assistantId: string, expectedTabId?: str
   const tabId = ui?.activeTabId;
   if (useAssistantNavStore.getState().activeAssistantId !== assistantId || !ui?.browserVisible || !tabId
     || (expectedTabId && tabId !== expectedTabId)) return;
-  await window.electronAPI.browserSwitchTab(assistantBrowserOwnerId(assistantId), tabId);
+  const owner = assistantBrowserOwnerId(assistantId);
+  const presentation = currentBrowserPresentation(owner, owner, tabId);
+  if (presentation?.ready) await window.electronAPI.browserSwitchTab(owner, tabId, presentation.lease);
 }
 
 async function createAssistantTab(assistantId: string): Promise<string | null> {
   const tabId = useAssistantSurfaceStore.getState().addTab(assistantId);
   if (!tabId) return null;
-  await window.electronAPI.browserCreateTab(assistantBrowserOwnerId(assistantId), tabId);
+  const owner = assistantBrowserOwnerId(assistantId);
+  await window.electronAPI.browserCreateTab(owner, tabId, owner);
   if (!useAssistantSurfaceStore.getState().byId[assistantId]?.tabs.some((tab) => tab.id === tabId)) return null;
   await syncSelectedAssistantTab(assistantId, tabId);
   return tabId;
@@ -32,6 +36,7 @@ export default function AssistantBrowserPanel({ assistantId, isActive, layoutVer
   const ownerId = assistantBrowserOwnerId(assistantId);
   const model = useMemo<BrowserPanelModel>(() => ({
     ownerId,
+    paneId: ownerId,
     visible: ui?.browserVisible ?? false,
     isActiveOwner: isActive,
     tabs: ui?.tabs ?? [],

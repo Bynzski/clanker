@@ -385,8 +385,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(BROWSER_ACTIVATE, workspaceId, tabId, presentation),
   browserMoveTab: (workspaceId: string, tabId: string, targetTabId: string, activeTabId: string, presentation?: BrowserPresentation) =>
     ipcRenderer.invoke(BROWSER_MOVE_TAB, workspaceId, tabId, targetTabId, activeTabId, presentation),
-  browserGetTabs: (workspaceId: string) =>
-    ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId),
+  browserGetTabs: (workspaceId: string, paneId?: string) =>
+    ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId, paneId),
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) =>
     ipcRenderer.invoke(BROWSER_TAB_NAVIGATE, workspaceId, tabId, url),
   browserHistoryGet: (prefix?: string) => ipcRenderer.invoke(BROWSER_HISTORY_GET, prefix),

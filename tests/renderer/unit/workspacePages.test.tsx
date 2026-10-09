@@ -232,7 +232,7 @@ describe('page-aware Browser and asynchronous resource ownership', () => {
     const { rerender } = render(<BrowserLifecycleCoordinator activeOwnerId="w" />);
     expect(workspaceBrowserPresented(workspace())).toBe(true);
     act(() => store().addWorkspacePage('w')); rerender(<BrowserLifecycleCoordinator activeOwnerId="w" />);
-    expect(window.electronAPI.browserHide).toHaveBeenCalledWith('w');
+    expect(window.electronAPI.browserHide).toHaveBeenCalledWith('w', expect.objectContaining({ paneId: browser.id, epoch: expect.any(Number) }));
     expect(workspace().browserPane).toBeNull();
     expect(firstPage().browser?.pane).toBe(browser);
     act(() => store().selectWorkspacePage('w', firstPage().id));

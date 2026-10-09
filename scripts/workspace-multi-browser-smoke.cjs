@@ -124,6 +124,8 @@ async function run() {
   assert.equal((await c.view.webContents.session.cookies.get({ name: 'private-fixture' }))[0].value, 'ssh-one');
   assert.equal((await e.view.webContents.session.cookies.get({ name: 'private-fixture' })).length, 0);
   assert.equal((await a.view.webContents.session.cookies.get({ name: 'private-fixture' })).length, 0);
+  assert.equal(await invoke(channels.BROWSER_CLOSE_TAB, 'ssh-one', 'tab-c'), false);
+  await create('ssh-one', 'pane-c', 'tab-c2', 'A');
   assert(await invoke(channels.BROWSER_CLOSE_TAB, 'ssh-one', 'tab-c'));
   assert.equal((await privateSession.cookies.get({ name: 'private-fixture' })).length, 1);
   controller.disposeWorkspace('ssh-one');

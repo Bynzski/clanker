@@ -164,8 +164,8 @@ xterm buffers, and native browser sessions remain warm across both states.
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `browserPane.tabs` | `browserPane !== null` → `browserPane.tabs.length >= 1` | Once a browser pane exists, it always has at least one tab. The last tab cannot be closed. |
-| `browserPane.tabs[].id` | unique within a workspace | Tab IDs identify a `WebContentsView` in main; duplicates would alias native views. |
+| `pages[].browser.pane.tabs` (selected-page `browserPane` projection) | `browserPane !== null` → `browserPane.tabs.length >= 1` | Once a browser pane exists, it always has at least one tab. The last tab cannot be closed. |
+| `pages[].browser.pane.tabs[].id` | unique across all panes within a workspace | Tab IDs identify a `WebContentsView` in main; duplicates would alias native views. |
 | `browserPane.activeTabId` | non-null when `browserPane` exists | An open browser pane always has an active tab. |
 | `browserPane.activeTabId` | `activeTabId !== null` → `tabs.some(tab => tab.id === activeTabId)` | The active tab id always references an existing tab. |
 | `browserUrl` | mirrors active tab's `url` for the active workspace | `browserUrl` is a compatibility mirror of the active tab url. Updating an inactive tab must NOT mutate `browserUrl`. |
@@ -174,6 +174,11 @@ xterm buffers, and native browser sessions remain warm across both states.
 **Why:**
 - The "at least one tab" rule guarantees that the browser pane always has a renderable target view; UI never has to handle a tabless pane.
 - Tab IDs are renderer-generated and must be passed unchanged to main, so duplicates would corrupt the workspace → tab → `WebContentsView` map.
+- Pages canonically own Browser pane/tab/visibility/URL state. Workspace-level Browser fields
+  are synchronized selected-page projections, not independently mutable state. Native resources
+  and sessions remain workspace-owned. One coordinator issues monotonic presentation leases across
+  Workspace and Assistant owners; geometry and cleanup cannot claim authority. Native enumeration
+  and last-tab checks are pane-scoped. Unknown/retired tab events cannot resurrect resources.
 - `browserUrl` predates the tab model; existing consumers (URL input, external links) read it directly. Treating it as the active-tab mirror keeps these consumers correct without forcing all of them to learn about tabs.
 - Inactive tab updates (e.g., a background load completing) must not redraw the URL bar or visible browser surface.
 - Browser activation explicitly synchronizes the renderer-selected tab with main. Only that workspace may show native views; remembered bounds and background tab actions cannot claim visibility. Bounds updates never replace an established tab selection.

@@ -1,4 +1,5 @@
 import { Button } from './ui/Button';
+import { useBrowserPresentation } from '../lib/browserPresentation';
 import { IconButton } from './ui/IconButton';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type {
@@ -46,6 +47,7 @@ interface BrowserPanelProps {
  * adapters build this from their own state; the core knows nothing about either.
  */
 export interface BrowserPanelModel {
+  paneId?: string;
   ownerId: string;
   visible: boolean;
   /** This owner is the single active Browser owner (the only one allowed to show a native view). */
@@ -197,6 +199,8 @@ function BrowserToolbar({
 
 export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanelModel; layoutVersion: number }) {
   const { ownerId, tabs: browserTabs, activeTabId, isActiveOwner } = model;
+  const presentation = useBrowserPresentation(ownerId, model.paneId, activeTabId ?? undefined);
+  const lease = presentation?.lease;
   const activeTab = browserTabs.find((tab) => tab.id === activeTabId) ?? null;
   const displayedUrl = activeTab?.url ?? model.browserUrl;
   const annotationEnabled = model.features.annotation;
@@ -234,6 +238,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     layoutVersion,
     containerRef,
     contentRef,
+    paneId: model.paneId,
   });
 
   useEffect(() => {
@@ -321,8 +326,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     const updateState = async () => {
       try {
         const [back, forward] = await Promise.all([
-          window.electronAPI.canGoBack(ownerId),
-          window.electronAPI.canGoForward(ownerId),
+          window.electronAPI.canGoBack(ownerId, lease),
+          window.electronAPI.canGoForward(ownerId, lease),
         ]);
         if (!cancelled) {
           setCanGoBack(back);
@@ -342,7 +347,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
       cancelled = true;
       clearInterval(interval);
     };
-  }, [activeTabId, isActiveOwner, ownerId]);
+  }, [activeTabId, isActiveOwner, ownerId, lease]);
 
   useEffect(() => {
     if (!annotationEnabled || !isActiveOwner) {
@@ -437,6 +442,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     createTab: () => modelRef.current.createTab(),
     syncSelectedTab: () => modelRef.current.syncSelectedTab(),
     scheduleBoundsUpdate,
+    presentation: lease,
+    scoped: Boolean(model.paneId),
   });
 
   // Browser-context keybindings are matched in main (the native view owns focus) and
@@ -475,11 +482,12 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
 
   const handleMoveTab = useCallback(async (tabId: string, targetTabId: string) => {
     if (!activeTabId) return;
-    const moved = await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId);
+    const moved = lease ? await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId, lease)
+      : await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId);
     if (!moved) return;
     modelRef.current.moveTab(tabId, targetTabId);
     scheduleBoundsUpdate(true);
-  }, [activeTabId, ownerId, scheduleBoundsUpdate]);
+  }, [activeTabId, ownerId, scheduleBoundsUpdate, lease]);
 
   return (
     <div className="browser-panel" ref={containerRef}>
@@ -553,6 +561,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     const remote = workspace.environmentId && workspace.environmentId !== 'local';
     return {
       ownerId: id,
+      paneId: workspace.pages ? workspace.browserPane?.id : undefined,
       visible: workspaceBrowserPresented(workspace),
       // A workspace owns the native view only while it is the single active Browser owner.
       isActiveOwner: !assistantActive && activeOwner === id && workspaceBrowserPresented(workspace),

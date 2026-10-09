@@ -198,6 +198,7 @@ export interface ElectronAPI {
   ) => Promise<boolean>;
   browserGetTabs: (
     workspaceId: string,
+    paneId?: string,
   ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) => Promise<boolean>;
   browserHistoryGet: (prefix?: string) => Promise<BrowserHistoryEntry[]>;

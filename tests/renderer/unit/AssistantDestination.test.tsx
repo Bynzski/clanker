@@ -145,7 +145,7 @@ it('Browser ownership never crosses destinations: state is preserved and only th
   render(<><Header /><WorkspaceHost /></>);
   await selectFred();
   fireEvent.click(screen.getByRole('button', { name: 'Toggle browser panel' }));
-  await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, expect.any(String)));
+  await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, expect.any(String), expect.objectContaining({ paneId: FRED_OWNER, epoch: expect.any(Number) })));
   // The workspace's visible Browser is hidden while Fred owns the window.
   await waitFor(() => expect(window.electronAPI.browserHide).toHaveBeenCalledWith('ws-a'));
   const tabId = useAssistantSurfaceStore.getState().byId[FRED]!.activeTabId!;
@@ -155,14 +155,14 @@ it('Browser ownership never crosses destinations: state is preserved and only th
   // Back to the workspace: Fred's native view is hidden, Fred's state and the workspace's are intact.
   vi.mocked(window.electronAPI.browserHide).mockClear();
   act(() => useWorkspaceStore.getState().selectWorkspace('ws-a'));
-  await waitFor(() => expect(window.electronAPI.browserHide).toHaveBeenCalledWith(FRED_OWNER));
+  await waitFor(() => expect(window.electronAPI.browserHide).toHaveBeenCalledWith(FRED_OWNER, expect.objectContaining({ paneId: FRED_OWNER, epoch: expect.any(Number) })));
   expect(browserState()).toEqual(workspaceBefore);
   expect(useAssistantSurfaceStore.getState().byId[FRED]?.tabs[0].url).toBe('https://fred.example/page');
   expect(surfaceOf(FRED)).toHaveClass('parked');
   // Back to Fred: the same URL/state, and Fred's view is reactivated.
   vi.mocked(window.electronAPI.browserActivate).mockClear();
   fireEvent.click(screen.getByRole('button', { name: 'Fred' }));
-  await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, tabId));
+  await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, tabId, expect.objectContaining({ paneId: FRED_OWNER, epoch: expect.any(Number) })));
   expect(useAssistantSurfaceStore.getState().byId[FRED]?.tabs[0].url).toBe('https://fred.example/page');
   expect(xterms).toHaveLength(1);
 });

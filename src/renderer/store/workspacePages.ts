@@ -85,9 +85,9 @@ export function synchronizePages(previous: WorkspaceTab | undefined, next: Works
   // Legacy writers update the selected-page projection. Commit that write at
   // this one boundary; explicit page mutations/page switches are already canonical.
   if (!switched) {
-    const projectionChanged = !previous || next.browserPane !== previous.browserPane
-      || next.browserVisible !== previous.browserVisible || next.browserUrl !== previous.browserUrl
-      || next.browserPlacementHint !== previous.browserPlacementHint;
+    const projectionChanged = Boolean(previous) && (next.browserPane !== previous!.browserPane
+      || next.browserVisible !== previous!.browserVisible || next.browserUrl !== previous!.browserUrl
+      || next.browserPlacementHint !== previous!.browserPlacementHint);
     if (projectionChanged) pages = pages.map((page) => page.id === activePageId
       ? { ...page, browser: { pane: next.browserPane, visible: next.browserVisible,
         url: next.browserUrl, placementHint: next.browserPlacementHint } } : page);

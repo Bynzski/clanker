@@ -1,31 +1,42 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 import { workspaceBrowserPresented } from '../store/workspacePages';
 import { assistantBrowserOwnerId } from '../../shared/browserOwner';
+import { currentBrowserPresentation, ensureBrowserResource, markBrowserPresentationReady, setBrowserPresentation } from '../lib/browserPresentation';
 
-interface BrowserLifecycleCoordinatorProps {
-  /** The single Browser owner (a workspace id or an Assistant browser scope) allowed to show a native view. */
-  activeOwnerId: string | null;
-}
+interface BrowserLifecycleCoordinatorProps { activeOwnerId: string | null }
 
+/** The only renderer authority for native Browser presentation, across all destinations. */
 export default function BrowserLifecycleCoordinator({ activeOwnerId }: BrowserLifecycleCoordinatorProps) {
-  const { workspaces } = useWorkspaceStore();
-  const assistantSurfaces = useAssistantSurfaceStore((state) => state.byId);
-
-  useEffect(() => {
-    // Hide every owner except the active one: a workspace and an Assistant native view never coexist.
-    // Store invariant W4 guarantees workspace.id === activeWorkspaceId implies lifecycle === 'active'.
-    for (const workspace of workspaces) {
-      if ((!workspace.browserVisible && !workspace.browserPane && !workspace.pages?.some((page) => page.browser)) || (workspace.id === activeOwnerId && workspaceBrowserPresented(workspace) && !workspace.browserOverlayCount)) continue;
-      window.electronAPI.browserHide(workspace.id);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const assistants = useAssistantSurfaceStore((state) => state.byId);
+  const workspace = workspaces.find((entry) => entry.id === activeOwnerId);
+  const assistant = Object.entries(assistants).find(([id]) => assistantBrowserOwnerId(id) === activeOwnerId)?.[1];
+  const paneId = workspace?.browserPane?.id ?? (assistant ? activeOwnerId : null);
+  const tabId = workspace?.browserPane?.activeTabId ?? assistant?.activeTabId;
+  const tabs = workspace?.browserPane?.tabs ?? assistant?.tabs;
+  const visible = workspace ? workspaceBrowserPresented(workspace) && !workspace.browserOverlayCount
+    : assistant?.browserVisible && !assistant.browserOverlayCount;
+  const url = tabs?.find((tab) => tab.id === tabId)?.url ?? 'https://github.com';
+  useLayoutEffect(() => {
+    // Legacy embeddings may have unscoped resources and no canonical page state.
+    // Native ignores these calls for owners which have opted into leases.
+    for (const owner of workspaces) {
+      if (!owner.pages && owner.id !== activeOwnerId && (owner.browserVisible || owner.browserPane)) void window.electronAPI.browserHide(owner.id);
     }
-    for (const [assistantId, ui] of Object.entries(assistantSurfaces)) {
-      const ownerId = assistantBrowserOwnerId(assistantId);
-      if (!ui.browserVisible || ownerId === activeOwnerId) continue;
-      window.electronAPI.browserHide(ownerId);
-    }
-  }, [activeOwnerId, workspaces, assistantSurfaces]);
-
+    const presentation = setBrowserPresentation(visible ? activeOwnerId : null, paneId ?? undefined, tabId ?? undefined);
+    if (!presentation || presentation.ready) return;
+    let cancelled = false;
+    void ensureBrowserResource(presentation.ownerId, presentation.lease.paneId, presentation.tabId, url,
+      () => !cancelled && currentBrowserPresentation(presentation.ownerId) === presentation).then(async () => {
+      if (cancelled || currentBrowserPresentation(presentation.ownerId) !== presentation) return;
+      if (await window.electronAPI.browserActivate(presentation.ownerId, presentation.tabId, presentation.lease)) {
+        if (!cancelled) markBrowserPresentationReady(presentation);
+      }
+    }).catch(() => { /* A closed owner or retired tab cannot claim visibility. */ });
+    return () => { cancelled = true; };
+  }, [activeOwnerId, paneId, tabId, visible, url, workspaces]);
+  useLayoutEffect(() => () => { setBrowserPresentation(null); }, []);
   return null;
 }

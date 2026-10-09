@@ -509,8 +509,10 @@ function resolveTabIdForWorkspace(workspaceId: string, requestedTabId: string | 
   return tabOrderByWorkspace.get(workspaceId)?.[0] ?? FALLBACK_TAB_ID;
 }
 
-function selectFallbackTab(workspaceId: string, removedTabId: string): string | null {
-  const order = tabOrderByWorkspace.get(workspaceId) ?? [];
+function selectFallbackTab(workspaceId: string, removedTabId: string, deps: RegisterBrowserIpcDeps): string | null {
+  const views = getExistingWorkspaceTabViews(workspaceId, deps);
+  const paneId = views?.get(removedTabId)?.paneId;
+  const order = (tabOrderByWorkspace.get(workspaceId) ?? []).filter((id) => views?.get(id)?.paneId === paneId);
   const removedIndex = order.indexOf(removedTabId);
   const remaining = order.filter((id) => id !== removedTabId);
   if (remaining.length === 0) return null;
@@ -609,7 +611,8 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
   });
 
   ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => {
-    if (!workspaceId || (presentationAuthority.isScoped(workspaceId) && !tabId)) return false;
+    if (!workspaceId || (tabId && !getExistingWorkspaceTabViews(workspaceId, deps)?.has(tabId))
+      || (presentationAuthority.isScoped(workspaceId) && !tabId)) return false;
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 
@@ -706,7 +709,8 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
   ipcMain.handle(BROWSER_CREATE_TAB, (_, workspaceId: string, tabId: string, paneId?: string) => {
     if (!workspaceId || !tabId || (paneId !== undefined && (!validBrowserPaneId(paneId) || !validBrowserPaneId(tabId)))) return { url: '', title: '' };
     const existing = getExistingWorkspaceTabViews(workspaceId, deps)?.get(tabId);
-    if (existing?.paneId && existing.paneId !== paneId) return { url: '', title: '' };
+    if (!existing && presentationAuthority.isScoped(workspaceId) && !paneId) return { url: '', title: '' };
+    if (existing?.paneId && paneId !== undefined && existing.paneId !== paneId) return { url: '', title: '' };
     const entry = ensureTabViewEntry(workspaceId, tabId, deps);
     if (!entry) return { url: '', title: '' };
     if (paneId) entry.paneId = paneId;
@@ -723,12 +727,14 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
     if (!workspaceViews?.has(tabId)) return false;
 
-    if (workspaceViews.size <= 1) {
+    const paneId = workspaceViews.get(tabId)?.paneId;
+    const paneTabCount = [...workspaceViews.values()].filter((entry) => entry.paneId === paneId).length;
+    if (paneTabCount <= 1) {
       return false;
     }
 
     const closingActive = getActiveTabId(workspaceId) === tabId;
-    const fallbackTabId = closingActive ? selectFallbackTab(workspaceId, tabId) : getActiveTabId(workspaceId);
+    const fallbackTabId = closingActive ? selectFallbackTab(workspaceId, tabId, deps) : getActiveTabId(workspaceId);
     // Scoped selection is renderer-authorized. Never fall back into another pane.
     if (closingActive && presentationAuthority.isScoped(workspaceId)) {
       destroyTabView(workspaceId, tabId, deps);
@@ -785,8 +791,9 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return true;
   });
 
-  ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string) => {
-    if (!workspaceId) return [];
+  ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string, paneId?: string) => {
+    if (!workspaceId || (paneId !== undefined && !validBrowserPaneId(paneId))) return [];
+    if (presentationAuthority.isScoped(workspaceId) && !paneId) return [];
     const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
     const order = tabOrderByWorkspace.get(workspaceId) ?? [];
     if (!workspaceViews) return [];
@@ -794,7 +801,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return order
       .map((id) => {
         const entry = workspaceViews.get(id);
-        return entry ? { tabId: id, url: entry.url, title: entry.title } : null;
+        return entry && entry.paneId === paneId ? { tabId: id, url: entry.url, title: entry.title } : null;
       })
       .filter((entry): entry is { tabId: string; url: string; title: string } => entry != null);
   });
@@ -813,6 +820,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
   ipcMain.handle(BROWSER_TAB_NAVIGATE, (_, workspaceId: string, tabId: string, url: string) => {
     if (!workspaceId || !tabId) return false;
+    if (!getExistingWorkspaceTabViews(workspaceId, deps)?.has(tabId)) return false;
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 

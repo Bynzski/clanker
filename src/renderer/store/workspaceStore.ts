@@ -56,6 +56,7 @@ import {
   getWorkspaceResourcePolicy,
   patchWorkspaceById,
   patchBrowserTabById,
+  patchWorkspacePageById,
   resolveBrowserTabOwner,
   resolveWorkspaceByScope,
   resolveWorkspaceIdByScope,
@@ -586,14 +587,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-  setBrowserVisible: (visible, workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
+  setBrowserVisible: (visible, workspaceId, pageId) => set((state) => {
+    const owner = resolveWorkspaceByScope(state, workspaceId);
+    if (pageId && !owner?.pages?.some((page) => page.id === pageId)) return state;
+    const workspace = owner && pageId ? selectPage(owner, pageId) : owner;
     if (workspace == null) {
       return state;
     }
 
     if (visible && workspace.browserVisible && workspace.browserPane && workspace.pages && !paneIsPresented(workspace, workspace.browserPane.id)) {
-      return patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.browserPane!.id));
+      return patchWorkspacePageById(state, workspace.id, pageId, (current) => revealPane(current, workspace.browserPane!.id));
     }
     const browserLeafPresent = workspace.browserPane != null
       && collectLeafPaneIds(workspace.layoutRoot ?? null).includes(workspace.browserPane.id);
@@ -621,18 +624,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       nextHint = null;
     } else if (workspace.browserPane) {
-      nextHint = capturePanePlacementInLayout(workspace.layoutRoot, workspace.browserPane.id);
+      nextHint = workspace.minimizedPanes?.find((entry) => entry.paneId === workspace.browserPane!.id)?.placement
+        ?? capturePanePlacementInLayout(workspace.layoutRoot, workspace.browserPane.id);
       nextLayoutRoot = removePaneFromLayout(workspace.layoutRoot, workspace.browserPane.id);
     }
 
     // Visibility only: browser tabs/views are retained and no layout undo entry is recorded.
-    return patchWorkspaceById(state, workspace.id, (current) => ({
+    return patchWorkspacePageById(state, workspace.id, pageId, (current) => ({
       ...current,
       browserVisible: visible,
       browserPane: nextBrowserPane,
       layoutRoot: nextLayoutRoot,
       layoutRevision: (current.layoutRevision ?? 0) + 1,
       browserPlacementHint: nextHint,
+      minimizedPanes: visible ? current.minimizedPanes : current.minimizedPanes?.filter((entry) => entry.paneId !== nextBrowserPane?.id),
     }));
   }),
 
@@ -814,9 +819,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     })
   )),
 
-  addBrowserTab: (workspaceId) => {
+  addBrowserTab: (workspaceId, paneId) => {
     const state = get();
-    const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
+    const owner = resolveWorkspaceByScope(state, workspaceId);
+    const pane = paneId ? owner?.pages?.find((page) => page.browser?.pane?.id === paneId)?.browser?.pane : owner?.browserPane;
+    const scopedWorkspace = paneId && pane?.tabs[0] ? resolveBrowserTabOwner(owner, pane.tabs[0].id) : paneId ? null : owner;
     if (scopedWorkspace == null || scopedWorkspace.browserPane == null) {
       return null;
     }
@@ -824,7 +831,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const newTab = createDefaultBrowserTab();
     const newTabId = newTab.id;
 
-    set((current) => patchWorkspaceById(current, scopedWorkspace.id, (workspace) => {
+    set((current) => patchBrowserTabById(current, scopedWorkspace.id, scopedWorkspace.browserPane?.activeTabId, (workspace) => {
       const browserPane = workspace.browserPane;
       if (browserPane == null) {
         return workspace;
