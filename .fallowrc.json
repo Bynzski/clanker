@@ -10,6 +10,7 @@
     "scripts/ssh-preview-session-smoke.cjs",
     "scripts/terminal-geometry-smoke.cjs",
     "scripts/workspace-pages-smoke.cjs",
+    "scripts/workspace-multi-browser-smoke.cjs",
     "scripts/workspace-launch-race-smoke.cjs"
   ],
   "ignoreDependencies": ["@modelcontextprotocol/sdk", "node:sqlite"],
@@ -25,7 +26,8 @@
         "scripts/app-close-guard-smoke.cjs",
         "scripts/pi-bridge-smoke.cjs",
         "scripts/ssh-preview-session-smoke.cjs",
-        "scripts/workspace-pages-smoke.cjs"
+        "scripts/workspace-pages-smoke.cjs",
+        "scripts/workspace-multi-browser-smoke.cjs"
       ],
       "rules": { "unresolved-imports": "off" }
     },

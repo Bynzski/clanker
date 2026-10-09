@@ -57,9 +57,39 @@ page, and a page owning a hidden Browser cannot be removed. Moving a Browser tra
 association without replacing its pane or tabs; an occupied destination is refused.
 
 This is an incremental implementation checkpoint, **not yet the completed Browser-per-page
-feature**. Native presentation leases/stale-operation fencing, asynchronous preview routing,
-V2 persistence, occupied-drop feedback and real multi-Browser smoke coverage remain outstanding.
-Do not infer native multi-Browser lifecycle correctness from the store tests.
+feature**. Stages 1 (canonical state) and 2 (native protocol) are implemented. Renderer lease
+adoption, asynchronous preview routing, V2 persistence and occupied-drop feedback remain
+outstanding. Existing renderer calls still use the compatible legacy native protocol; the
+end-to-end multi-Browser race guarantees do **not** apply until Stage 3 adopts leases.
+
+`browserPresentationAuthority.ts` owns one native viewport lease: workspace owner, pane id,
+selected tab and a monotonically increasing epoch across all owners. Scoped Activate only
+accepts an existing tab belonging to that pane. A new lease clears remembered geometry; the
+view stays hidden until matching fresh bounds arrive. Hide, Switch, Move, geometry and native
+navigation controls reject stale leases, including old unmount cleanup. Hiding/closing retires
+the lease without resetting the epoch high-water mark. Background tab navigation does not
+select a scoped foreground view. Closed tab ids are tombstoned until workspace disposal, so
+late navigation cannot recreate them. Workspace ids remain the native security/session boundary;
+pane ids are associations, never synthetic workspace ids or new Chromium partitions.
+
+Run `npx electron scripts/workspace-multi-browser-smoke.cjs` after build. This real-native IPC
+smoke verifies two panes plus a background tab, 30 switches, JS/form/native identity retention,
+stale Activate/Hide/Bounds/Switch/Refresh rejection, closed-tab navigation, local shared sessions,
+shared SSH-workspace sessions, separate SSH-workspace isolation and private-session disposal.
+It is not a full-app multi-page visual acceptance test.
+
+Continuation order:
+1. Stage 3: make one renderer coordinator issue global epochs for the active destination's
+   presented pane/tab (including overlay suppression). Bounds/panel/tab actions must carry that
+   captured lease; components must not independently mint foreground authority. Ensure native
+   tabs are created with their pane id before scoped activation, and do not reload existing views.
+2. Stage 4: add invalid-drop feedback for occupied (including hidden/minimized) Browser pages;
+   capture terminal-to-page preview targets before probing, revalidate them afterwards, and never
+   reclaim focus after the user changes destination.
+3. Stage 5: replace singleton V1 utility keys with bounded V2 Browser identities/associations,
+   while retaining V1 migration and existing resource restoration semantics.
+4. Stage 6: extend full-app/race smokes to use the renderer lease path, finish documentation,
+   run full validation and perform interactive multi-page visual acceptance before a PR.
 
 `store/workspacePages.ts` owns normalization/projection and membership operations;
 `workspacePageActions.ts` owns the small page action layer. Existing layout writers pass through
