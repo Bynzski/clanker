@@ -112,6 +112,7 @@ function sanitizeBrowserPane(
   return {
     id: pane.id,
     position: pane.position,
+    ...(pane.remotePreviewInitialized ? { remotePreviewInitialized: true } : {}),
     tabs: sanitizedTabs,
     activeTabId,
   };

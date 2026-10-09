@@ -12,7 +12,14 @@ export interface PresentedBrowser {
   lease: BrowserPresentation;
   ready: boolean;
 }
-let epoch = 0;
+// sessionStorage survives renderer reload, not app restart. A time seed also
+// avoids replaying epochs when storage is unavailable; selection remains runtime-only.
+const EPOCH_KEY = 'clanker-grid:browser-presentation-epoch';
+let epoch = Date.now() * 1024;
+try {
+  const saved = Number(window.sessionStorage.getItem(EPOCH_KEY));
+  if (Number.isSafeInteger(saved) && saved >= 0 && saved < Number.MAX_SAFE_INTEGER - 1) epoch = Math.max(epoch, saved);
+} catch { /* Storage is optional; no Browser resource state is persisted here. */ }
 let current: PresentedBrowser | null = null;
 const listeners = new Set<() => void>();
 function publish() { for (const listener of listeners) listener(); }
@@ -21,6 +28,9 @@ export function setBrowserPresentation(ownerId: string | null, paneId?: string, 
   if (current?.ownerId === ownerId && current?.lease.paneId === paneId && current?.tabId === tabId) return current;
   const outgoing = current;
   current = ownerId && paneId && tabId ? { ownerId, tabId, lease: { paneId, epoch: ++epoch }, ready: false } : null;
+  if (current) {
+    try { window.sessionStorage.setItem(EPOCH_KEY, String(epoch)); } catch { /* Optional reload fencing. */ }
+  }
   if (outgoing) void window.electronAPI.browserHide(outgoing.ownerId, outgoing.lease);
   publish();
   return current;
@@ -50,6 +60,14 @@ export function useBrowserPresentation(ownerId: string, paneId?: string, tabId?:
   const presentation = useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => current);
   return presentation?.ownerId === ownerId && (!paneId || presentation.lease.paneId === paneId)
     && (!tabId || presentation.tabId === tabId) ? presentation : null;
+}
+
+export function browserResourceExists(ownerId: string, paneId: string, tabId: string): boolean {
+  const assistantId = assistantIdFromBrowserOwner(ownerId);
+  if (assistantId) return paneId === ownerId && Boolean(useAssistantSurfaceStore.getState().byId[assistantId]?.tabs.some((tab) => tab.id === tabId));
+  const workspace = useWorkspaceStore.getState().getWorkspaceById(ownerId);
+  return Boolean(workspace?.pages ? workspace.pages.some((page) => page.browser?.pane?.id === paneId && page.browser.pane.tabs.some((tab) => tab.id === tabId))
+    : workspace?.browserPane?.id === paneId && workspace.browserPane.tabs.some((tab) => tab.id === tabId));
 }
 
 /** Native existence, not React mounting, determines whether startup navigation is necessary. */

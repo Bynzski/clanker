@@ -7,10 +7,10 @@ import type { RemotePreviewUpdate, RemotePreviewResult, RemoteWebService } from 
 const active = { workspaceId: 'ssh-a', remotePort: 5173, remoteHost: '127.0.0.1' as const, protocol: 'http' as const, localPort: 4000, serviceId: 'vite', status: 'active' as const, url: 'http://127.0.0.1:4000/' };
 const service: RemoteWebService = { remoteHost: '127.0.0.1', remotePort: 5173, protocol: 'http', source: 'listener', processName: 'node', confidence: 'workspace' };
 beforeEach(() => installElectronApiMock());
-function fixture(showMenu = true) {
+function fixture(showMenu = true, options: { browserUrl?: string; preserveForwards?: boolean } = {}) {
   const onOpen = vi.fn().mockResolvedValue(undefined), onLayoutChange = vi.fn(); let notify!: (update: RemotePreviewUpdate) => void;
   vi.mocked(window.electronAPI.onRemotePreviewChanged).mockImplementation((callback) => { notify = callback; return vi.fn(); });
-  const view = render(<RemotePreviewControl workspaceId="ssh-a" onOpen={onOpen} />);
+  const view = render(<RemotePreviewControl workspaceId="ssh-a" onOpen={onOpen} {...options} />);
   if (showMenu) fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
   return { ...view, onOpen, onLayoutChange, notify: (update: Partial<RemotePreviewUpdate>) => act(() => notify({ workspaceId: 'ssh-a', forward: null, forwards: [], services: [], ...update })) };
 }
@@ -56,6 +56,25 @@ describe('detected SSH previews', () => {
     f.notify({ services: [{ ...service, remotePort: 5174 }], forwards: [active] });
     await waitFor(() => expect(window.electronAPI.remotePreviewStart).toHaveBeenLastCalledWith(expect.objectContaining({ remotePort: 5174 })));
     expect(window.electronAPI.remotePreviewStop).toHaveBeenCalledWith({ workspaceId: 'ssh-a', serviceId: 'vite' });
+  });
+  it('reassociates a pane preview on remount without navigating, while explicit Open still works', async () => {
+    vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: active });
+    const f = fixture(true, { browserUrl: active.url, preserveForwards: true });
+    f.notify({ services: [service], forwards: [active] });
+    expect(screen.getByLabelText('Detected web services')).toHaveValue('http:127.0.0.1:5173');
+    expect(f.onOpen).not.toHaveBeenCalled();
+    expect(window.electronAPI.remotePreviewStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^Open$/ }));
+    await waitFor(() => expect(f.onOpen).toHaveBeenCalledWith(active.url));
+  });
+  it('never auto-stops a forward potentially displayed by another page', async () => {
+    vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: active });
+    const f = fixture(true, { preserveForwards: true });
+    f.notify({ services: [service] });
+    await waitFor(() => expect(f.onOpen).toHaveBeenCalled());
+    f.notify({ services: [{ ...service, remotePort: 5174 }], forwards: [active] });
+    await waitFor(() => expect(window.electronAPI.remotePreviewStart).toHaveBeenLastCalledWith(expect.objectContaining({ remotePort: 5174 })));
+    expect(window.electronAPI.remotePreviewStop).not.toHaveBeenCalled();
   });
   it('manual fallback requests only a remote port/protocol and validates input', async () => {
     vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: false, forward: null, error: 'SSH server rejected TCP forwarding' });

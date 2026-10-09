@@ -8,8 +8,8 @@ import { useEffect, useRef, useState } from 'react';
 import { isPreviewPort, type RemotePreviewState, type RemotePreviewUpdate, type RemoteWebService, type RemotePreviewRequest } from '../../shared/types/remotePreview';
 type ServiceTarget = Pick<RemotePreviewRequest, 'remoteHost' | 'remotePort' | 'protocol'>;
 function key(service: ServiceTarget) { return `${service.protocol ?? 'http'}:${service.remoteHost ?? '127.0.0.1'}:${service.remotePort}`; }
-export default function RemotePreviewControl({ workspaceId, onOpen, enabled = true }: {
-  workspaceId: string; onOpen: (url: string) => Promise<unknown>; enabled?: boolean;
+export default function RemotePreviewControl({ workspaceId, onOpen, onAutoOpen, browserUrl, preserveForwards = false, enabled = true }: {
+  workspaceId: string; onOpen: (url: string) => Promise<unknown>; onAutoOpen?: (url: string) => Promise<unknown>; browserUrl?: string; preserveForwards?: boolean; enabled?: boolean;
 }) {
   const [state, setState] = useState<RemotePreviewUpdate>({ workspaceId, forward: null, forwards: [], services: [] });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -21,28 +21,37 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
   const generation = useRef(0), revision = useRef(0);
   const latest = useRef(state), selection = useRef(''), autoChoice = useRef(''), manualChoice = useRef(false);
   const verifiedChoice = useRef('');
-  if (!enabled) verifiedChoice.current = '';
+  const explicitPending = useRef<string | null>(null);
+  if (!enabled) { verifiedChoice.current = ''; explicitPending.current = null; }
   const opening = useRef<string | null>(null), previousStatus = useRef<string | null>(null);
-  const active = useRef(enabled), open = useRef(onOpen);
-  active.current = enabled; open.current = onOpen;
+  const active = useRef(enabled), open = useRef(onOpen), autoOpen = useRef(onAutoOpen);
+  active.current = enabled; open.current = onOpen; autoOpen.current = onAutoOpen;
   const apply = useRef<(snapshot: RemotePreviewUpdate) => void>(() => {});
   apply.current = (snapshot) => {
     snapshot = active.current ? snapshot : { ...snapshot, services: [] };
     latest.current = snapshot; setState(snapshot);
+    // Reassociate an already-loaded preview on remount, without reopening its URL.
+    const existing = !selection.current && browserUrl ? snapshot.forwards?.find((entry) => entry.url === browserUrl) : undefined;
+    if (existing) {
+      selection.current = key(existing); setSelected(selection.current); manualChoice.current = true;
+      previousStatus.current = existing.status;
+    }
     const forward = snapshot.forwards?.find((entry) => key(entry) === selection.current);
     if (snapshot.services?.some((service) => service.confidence === 'workspace' && key(service) === selection.current)) verifiedChoice.current = selection.current;
     // Ownership survives a temporary disappearance within this lease, but never a hidden/replaced lease.
     const canOpen = manualChoice.current || (selection.current !== '' && verifiedChoice.current === selection.current);
     if (active.current && canOpen && forward?.status === 'active' && previousStatus.current !== 'active') {
       const current = generation.current;
-      void open.current(forward.url).catch(() => { if (generation.current === current) setError('Could not open remote preview'); });
+      const navigate = explicitPending.current === selection.current ? open.current : autoOpen.current ?? open.current;
+      explicitPending.current = null;
+      void navigate(forward.url).catch(() => { if (generation.current === current) setError('Could not open remote preview'); });
     }
     previousStatus.current = active.current && canOpen ? forward?.status ?? null : null;
   };
   useEffect(() => {
     const current = ++generation.current;
     latest.current = { workspaceId, forward: null, services: [], forwards: [] }; setState(latest.current);
-    selection.current = ''; verifiedChoice.current = ''; autoChoice.current = ''; manualChoice.current = false; previousStatus.current = null;
+    selection.current = ''; verifiedChoice.current = ''; autoChoice.current = ''; manualChoice.current = false; previousStatus.current = null; explicitPending.current = null;
     setMenuOpen(false); setSelected(''); setError(''); setBusy(false);
     const unsubscribe = window.electronAPI.onRemotePreviewChanged((snapshot) => {
       if (generation.current !== current || snapshot.workspaceId !== workspaceId) return;
@@ -64,6 +73,7 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
   start.current = async (service) => {
     const chosen = key(service), current = generation.current, startRevision = revision.current;
     selection.current = chosen; setSelected(chosen); previousStatus.current = null; opening.current = chosen;
+    if (manualChoice.current) explicitPending.current = chosen;
     setBusy(true); setError('');
     try {
       const result = await window.electronAPI.remotePreviewStart({ workspaceId, remotePort: service.remotePort, remoteHost: service.remoteHost ?? '127.0.0.1', protocol: service.protocol ?? 'http' });
@@ -81,9 +91,9 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
     const owned = (state.services ?? []).filter((service) => service.confidence === 'workspace');
     if (owned.length !== 1 || key(owned[0]) === autoChoice.current) return;
     const previous = (state.forwards ?? []).find((entry) => key(entry) === autoChoice.current);
-    if (previous?.serviceId) void window.electronAPI.remotePreviewStop({ workspaceId, serviceId: previous.serviceId }).catch(() => setError('Could not stop previous preview')); 
+    if (!preserveForwards && previous?.serviceId) void window.electronAPI.remotePreviewStop({ workspaceId, serviceId: previous.serviceId }).catch(() => setError('Could not stop previous preview')); 
     autoChoice.current = key(owned[0]); void start.current(owned[0]);
-  }, [state, enabled, workspaceId, busy]);
+  }, [state, enabled, workspaceId, busy, preserveForwards]);
   const services: Array<RemoteWebService | RemotePreviewState> = [...(state.services ?? [])];
   for (const forward of state.forwards ?? []) if (!services.some((service) => key(service) === key(forward))) services.push(forward);
   const chosen = services.find((service) => key(service) === selected);

@@ -151,6 +151,7 @@ export interface WorkspaceState {
   /** Scoped, nondestructive browser visibility; restores placement best-effort on show. */
   setBrowserVisible: (visible: boolean, workspaceId?: string, pageId?: string) => void;
   toggleBrowser: (workspaceId?: string) => void;
+  initializeBrowserPreview: (workspaceId: string, paneId: string) => void;
   toggleNotesPane: () => void;
   closeNotesPane: (workspaceId?: string) => void;
   pushBrowserOverlay: (workspaceId?: string) => void;

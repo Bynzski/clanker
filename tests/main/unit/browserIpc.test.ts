@@ -1215,6 +1215,19 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     controller.disposeAll();
   });
 
+  test('unknown explicit navigation never creates resources, while legacy implicit navigation remains supported', async () => {
+    const { deps } = createMockDeps();
+    const controller = registerBrowserIpc(deps);
+    const navigate = findHandler('browser-tab-navigate');
+    expect(await navigate(null, 'ws-1', 'unknown', 'https://example.com')).toBe(false);
+    expect(deps.getBrowserViews().size).toBe(0);
+    expect(await findHandler('browser-navigate')(null, 'ws-1', 'https://example.com', 'unknown')).toBe(false);
+    expect(await findHandler('browser-navigate')(null, 'ws-1', 'https://example.com')).toBe(true);
+    controller.disposeWorkspace('ws-1');
+    expect(await navigate(null, 'ws-1', '__fallback_tab__', 'https://example.com')).toBe(false);
+    expect(deps.getBrowserViews().size).toBe(0);
+  });
+
   test('BROWSER_CREATE_TAB records the renderer-provided id and returns default url', async () => {
     const { deps } = createMockDeps();
     registerBrowserIpc(deps);

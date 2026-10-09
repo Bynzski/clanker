@@ -8,7 +8,7 @@ import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { pathKey } from '../../shared/pathKey';
-import { terminalPageId } from '../lib/browserPreviewTarget';
+import { browserPageSelection, terminalPageId } from '../lib/browserPreviewTarget';
 import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
 import { IconButton } from './ui/IconButton';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
@@ -69,6 +69,7 @@ export function DevServerControls({ workspace, command, service, terminalId, dis
         if (initiating.pages && !targetPageId) return;
         if (targetPageId) useWorkspaceStore.getState().selectWorkspacePage(workspace.id, targetPageId);
         const originalBrowserId = initiating.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id;
+        const originalBrowserSelection = browserPageSelection(initiating, targetPageId);
         const url = service.previewUrl!;
         const probe = await window.electronAPI.probeRecipePreview(url, true);
         if (probe.status !== 'ready') throw new Error('Dev server preview is not reachable yet');
@@ -77,7 +78,8 @@ export function DevServerControls({ workspace, command, service, terminalId, dis
         const live = state.getWorkspaceById(workspace.id);
         if (state.activeWorkspaceId !== workspace.id || useAssistantNavStore.getState().activeAssistantId || current?.previewUrl !== url || !['starting', 'running'].includes(current.status)
           || !live || live.activePageId !== targetPageId || terminalPageId(live, terminalId) !== targetPageId
-          || live.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id !== originalBrowserId) return;
+          || live.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id !== originalBrowserId
+          || browserPageSelection(live, targetPageId) !== originalBrowserSelection) return;
         if (!await openUrlInWorkspaceBrowser(workspace.id, url, targetPageId)) throw new Error('Could not open dev server preview');
       })}><ExternalLink size={12} /></IconButton>}
     </div>

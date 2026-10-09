@@ -38,6 +38,8 @@ export interface BrowserTab {
 }
 
 export interface BrowserPaneState {
+  /** Runtime-only: SSH discovery may auto-open once, never on a panel remount. */
+  remotePreviewInitialized?: boolean;
   id: string;
   position: PanePosition;
   tabs: BrowserTab[];

@@ -641,6 +641,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
   }),
 
+  initializeBrowserPreview: (workspaceId, paneId) => set((state) => {
+    const owner = resolveWorkspaceByScope(state, workspaceId);
+    const pane = owner?.pages?.find((page) => page.browser?.pane?.id === paneId)?.browser?.pane
+      ?? (owner?.browserPane?.id === paneId ? owner.browserPane : null);
+    return pane?.tabs[0] ? patchBrowserTabById(state, workspaceId, pane.tabs[0].id, (workspace) => ({
+      ...workspace, browserPane: workspace.browserPane ? { ...workspace.browserPane, remotePreviewInitialized: true } : null,
+    })) : state;
+  }),
+
   toggleBrowser: (workspaceId) => {
     const workspace = resolveWorkspaceByScope(get(), workspaceId);
     if (workspace == null) {
