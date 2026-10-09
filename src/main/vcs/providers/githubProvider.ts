@@ -9,7 +9,7 @@ import type {
   PullRequestContext,
   DeepLink,
 } from '../types';
-import { getWebBaseUrl } from '../providerDetector';
+import { providerLinks } from '../providerLinks';
 
 interface GitHubRepo {
   default_branch: string;
@@ -234,53 +234,6 @@ export class GitHubProvider extends BaseProvider {
     branch?: string,
     prNumber?: number
   ): DeepLink[] {
-    const baseUrl = getWebBaseUrl('github');
-    const path = `/${context.owner}/${context.repo}`;
-
-    const links: DeepLink[] = [
-      {
-        type: 'repo',
-        url: `${baseUrl}${path}`,
-        label: 'Repository',
-      },
-      {
-        type: 'branches',
-        url: `${baseUrl}${path}/branches`,
-        label: 'Branches',
-      },
-      {
-        type: 'issues',
-        url: `${baseUrl}${path}/issues`,
-        label: 'Issues',
-      },
-      {
-        type: 'releases',
-        url: `${baseUrl}${path}/releases`,
-        label: 'Releases',
-      },
-      {
-        type: 'actions',
-        url: `${baseUrl}${path}/actions`,
-        label: 'Actions',
-      },
-    ];
-
-    if (prNumber) {
-      links.unshift({
-        type: 'pr',
-        url: `${baseUrl}${path}/pull/${prNumber}`,
-        label: `PR #${prNumber}`,
-      });
-    }
-
-    if (branch) {
-      links.push({
-        type: 'create-pr',
-        url: `${baseUrl}${path}/compare/${encodeURIComponent(context.defaultBranch || 'main')}...${encodeURIComponent(branch)}`,
-        label: 'Create Pull Request',
-      });
-    }
-
-    return links;
+    return providerLinks(context, branch, prNumber);
   }
 }

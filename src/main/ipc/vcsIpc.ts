@@ -9,6 +9,7 @@ import {
   getProviderContext,
   getProviderDeepLinks,
   getDeepLinkUrl,
+  getProviderPrLink,
   type ProviderContextResult,
   type DeepLink,
 } from '../vcs';
@@ -129,15 +130,8 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     const currentBranch = branchState.currentBranch || undefined;
     const primaryRemote = remotesResult.remotes[0];
 
-    const contextResult = await getProviderContext(
-      primaryRemote.name,
-      primaryRemote.fetchUrl,
-      currentBranch || 'main'
-    );
-
-    const defaultBranch = contextResult.provider?.defaultBranch;
-
-    return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber, defaultBranch);
+    // All list destinations are static; creation pages select their native default target.
+    return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber);
   });
 
   ipcMain.handle(VCS_GET_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type'], workspaceId?: string) => {
@@ -155,17 +149,9 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     const currentBranch = branchState.currentBranch || undefined;
     const primaryRemote = remotesResult.remotes[0];
 
-    // First get context to find PR number if it exists
-    const contextResult = await getProviderContext(
-      primaryRemote.name,
-      primaryRemote.fetchUrl,
-      currentBranch || 'main'
-    );
-
-    const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
-    const defaultBranch = contextResult.provider?.defaultBranch;
-
-    return getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber, defaultBranch);
+    return type === 'pr'
+      ? getProviderPrLink(primaryRemote.fetchUrl, currentBranch)
+      : getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch);
   });
 
   ipcMain.handle(VCS_OPEN_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type'], workspaceId?: string) => {
@@ -183,16 +169,9 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     const currentBranch = branchState.currentBranch || undefined;
     const primaryRemote = remotesResult.remotes[0];
 
-    const contextResult = await getProviderContext(
-      primaryRemote.name,
-      primaryRemote.fetchUrl,
-      currentBranch || 'main'
-    );
-
-    const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
-    const defaultBranch = contextResult.provider?.defaultBranch;
-
-    const url = getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber, defaultBranch);
+    const url = type === 'pr'
+      ? await getProviderPrLink(primaryRemote.fetchUrl, currentBranch)
+      : getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch);
     if (url) {
       void shell.openExternal(url);
       return true;

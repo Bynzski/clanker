@@ -5,11 +5,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GitHubProvider } from '../../../../src/main/vcs/providers/githubProvider';
+import { responseFromFixture } from './responseFixture';
 import type { ProviderContext } from '../../../../src/main/vcs/types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
 
 describe('GitHubProvider', () => {
   let provider: GitHubProvider;
@@ -523,12 +524,12 @@ describe('GitHubProvider', () => {
       expect(createLink?.url).toContain('develop...');
     });
 
-    it('should use main as default when context has no defaultBranch', () => {
+    it('lets GitHub select its native default when the target is unknown', () => {
       const contextWithoutDefault = { ...context, defaultBranch: '' };
       const links = provider.getDeepLinks(contextWithoutDefault, 'feature-branch');
 
       const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toContain('main...');
+      expect(createLink?.url).toBe('https://github.com/owner/repo/compare/feature-branch');
     });
 
     it('should have repo link first when no PR', () => {
@@ -554,7 +555,7 @@ describe('GitHubProvider', () => {
       const links = provider.getDeepLinks(context, 'feature/branch-with-dashes');
 
       const createLink = links.find((l) => l.type === 'create-pr');
-      expect(createLink?.url).toContain('feature%2Fbranch-with-dashes');
+      expect(createLink?.url).toContain('feature/branch-with-dashes');
     });
   });
 });

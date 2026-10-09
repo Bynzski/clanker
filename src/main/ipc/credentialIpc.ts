@@ -10,7 +10,6 @@ import {
   readPublicKey,
   deleteSshKeyPair,
   savePat,
-  getPat,
   deletePat,
   getCredentialStatus,
   getGlobalCredentialStatus,
@@ -53,8 +52,9 @@ export function registerCredentialIpc(): void {
     return savePat(request);
   });
 
-  ipcMain.handle(CREDENTIAL_GET_PAT, async (_, provider: VcsProvider) => {
-    return getPat(provider);
+  // Deny the legacy channel too, including callers bypassing the preload API.
+  ipcMain.handle(CREDENTIAL_GET_PAT, async () => {
+    return { success: false, error: 'Stored tokens are available only to main-process provider requests.' };
   });
 
   ipcMain.handle(CREDENTIAL_DELETE_PAT, async (_, provider: VcsProvider) => {

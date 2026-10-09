@@ -306,7 +306,6 @@ export interface ElectronAPI {
   credentialDeleteSshKey: () => Promise<CredentialOperationResult>;
   credentialCheckExists: () => Promise<{ exists: boolean }>;
   credentialSavePat: (provider: string, token: string, scope?: string[]) => Promise<CredentialOperationResult>;
-  credentialGetPat: (provider: string) => Promise<PatResult>;
   credentialDeletePat: (provider: string) => Promise<CredentialOperationResult>;
   credentialGetStatus: (remoteName: string, remoteUrl: string, provider: string) => Promise<CredentialStatusResult>;
   credentialGetGlobalStatus: () => Promise<GlobalCredentialStatusResult>;

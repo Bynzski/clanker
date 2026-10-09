@@ -4,6 +4,7 @@
  */
 
 import { BaseProvider } from './baseProvider';
+import { providerLinks } from '../providerLinks';
 import type {
   ProviderContext,
   PullRequestContext,
@@ -88,7 +89,7 @@ export class GitLabProvider extends BaseProvider {
     const baseUrl = context ? this.getApiBaseUrl(context) : this.apiBaseUrl;
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${baseUrl}${endpoint}`, {
         headers: {
           'PRIVATE-TOKEN': token,
           Accept: 'application/json',
@@ -113,9 +114,8 @@ export class GitLabProvider extends BaseProvider {
 
       const data = JSON.parse(text) as T;
       return { success: true, data };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
-      return { success: false, error: message };
+    } catch {
+      return { success: false, error: 'Provider request failed or cancelled' };
     }
   }
 
@@ -129,7 +129,7 @@ export class GitLabProvider extends BaseProvider {
     const baseUrl = context ? this.getApiBaseUrl(context) : this.apiBaseUrl;
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${baseUrl}${endpoint}`, {
         headers: {
           Accept: 'application/json',
         },
@@ -149,9 +149,8 @@ export class GitLabProvider extends BaseProvider {
 
       const data = JSON.parse(text) as T;
       return { success: true, data };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
-      return { success: false, error: message };
+    } catch {
+      return { success: false, error: 'Provider request failed or cancelled' };
     }
   }
 
@@ -354,55 +353,6 @@ export class GitLabProvider extends BaseProvider {
     branch?: string,
     mrNumber?: number
   ): DeepLink[] {
-    const baseUrl = context.baseUrl || 'https://gitlab.com';
-    const path = `/${context.owner}/${context.repo}`;
-
-    const links: DeepLink[] = [
-      {
-        type: 'repo',
-        url: `${baseUrl}${path}`,
-        label: 'Repository',
-      },
-      {
-        type: 'branches',
-        url: `${baseUrl}${path}/-/branches`,
-        label: 'Branches',
-      },
-      {
-        type: 'issues',
-        url: `${baseUrl}${path}/-/issues`,
-        label: 'Issues',
-      },
-      {
-        type: 'releases',
-        url: `${baseUrl}${path}/-/releases`,
-        label: 'Releases',
-      },
-      {
-        type: 'actions',
-        url: `${baseUrl}${path}/-/pipelines`,
-        label: 'Pipelines',
-      },
-    ];
-
-    if (mrNumber) {
-      links.unshift({
-        type: 'pr',
-        url: `${baseUrl}${path}/-/merge_requests/${mrNumber}`,
-        label: `MR !${mrNumber}`,
-      });
-    }
-
-    if (branch) {
-      links.push({
-        type: 'create-pr',
-        url: `${baseUrl}${path}/-/merge_requests/new?merge_request[source_branch]=${encodeURIComponent(branch)}&merge_request[target_branch]=${encodeURIComponent(
-          context.defaultBranch || 'main'
-        )}`,
-        label: 'Create Merge Request',
-      });
-    }
-
-    return links;
+    return providerLinks(context, branch, mrNumber);
   }
 }

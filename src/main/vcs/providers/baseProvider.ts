@@ -3,6 +3,7 @@
  * Abstract interface for VCS provider implementations.
  */
 
+import { assertVcsBudget, currentVcsBudget, withVcsBudget, vcsRetryDelay } from '../requestBudget';
 import type {
   ProviderContext,
   PullRequestContext,
@@ -71,7 +72,7 @@ export abstract class BaseProvider implements IVcsProvider {
   abstract readonly type: VcsProvider;
   abstract readonly apiBaseUrl: string;
 
-  private static readonly DEFAULT_TIMEOUT_MS = 12_000;
+  private static readonly DEFAULT_TIMEOUT_MS = 4_000;
   private static readonly DEFAULT_MAX_RETRIES = 2;
   private static readonly DEFAULT_BACKOFF_BASE_MS = 250;
   private static readonly DEFAULT_BACKOFF_MAX_MS = 2_000;
@@ -81,30 +82,63 @@ export abstract class BaseProvider implements IVcsProvider {
     init: RequestInit,
     timeoutMs: number
   ): Promise<Response> {
+    assertVcsBudget();
+    const budget = currentVcsBudget()!;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const abort = () => controller.abort();
+    budget.signal.addEventListener('abort', abort, { once: true });
+    if (budget.signal.aborted) abort();
+    const timeoutId = setTimeout(() => {
+      abort();
+      budget.cancel();
+    }, Math.min(timeoutMs, Math.max(0, budget.deadline - Date.now())));
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      // PRIVATE-TOKEN must never follow redirects. Include body reads in the
+      // timeout; provider JSON parsing uses the already buffered body.
+      const response = await fetch(url, { ...init, redirect: 'error', signal: controller.signal });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return new Response(null, { status: response.status, headers: response.headers });
+      }
+      const body = await response.arrayBuffer();
+      if (controller.signal.aborted) throw new DOMException('Request timed out', 'AbortError');
+      assertVcsBudget();
+      return new Response([204, 205, 304].includes(response.status) ? null : body, {
+        status: response.status, headers: response.headers,
+      });
     } finally {
       clearTimeout(timeoutId);
+      budget.signal.removeEventListener('abort', abort);
     }
   }
 
-  private async fetchWithRetry(
+  protected async fetchWithRetry(
     url: string,
     init: RequestInit,
     options?: { timeoutMs?: number; maxRetries?: number }
   ): Promise<Response> {
+    if (!currentVcsBudget()) {
+      return withVcsBudget(() => this.fetchWithRetry(url, init, options));
+    }
+    assertVcsBudget();
+    const target = new URL(url);
+    const trustedOrigin = new URL(this.apiBaseUrl).origin;
+    if (target.protocol !== 'https:' || target.origin !== trustedOrigin || target.username || target.password) {
+      throw new Error('Unapproved provider API origin');
+    }
     const timeoutMs = options?.timeoutMs ?? BaseProvider.DEFAULT_TIMEOUT_MS;
     const maxRetries = options?.maxRetries ?? BaseProvider.DEFAULT_MAX_RETRIES;
 
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      assertVcsBudget();
       try {
         return await this.fetchWithTimeout(url, init, timeoutMs);
       } catch (error: unknown) {
         lastError = error;
-        const shouldRetry = attempt < maxRetries;
+        if (error instanceof Error && error.name === 'AbortError') currentVcsBudget()!.cancel();
+        assertVcsBudget();
+        const shouldRetry = attempt < maxRetries && !(error instanceof Error && error.name === 'AbortError');
         if (!shouldRetry) {
           throw error;
         }
@@ -112,7 +146,12 @@ export abstract class BaseProvider implements IVcsProvider {
         const exponential = BaseProvider.DEFAULT_BACKOFF_BASE_MS * Math.pow(2, attempt);
         const jitter = Math.floor(Math.random() * 100);
         const delay = Math.min(BaseProvider.DEFAULT_BACKOFF_MAX_MS, exponential + jitter);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        const budget = currentVcsBudget()!;
+        if (delay >= budget.deadline - Date.now()) {
+          budget.cancel();
+          throw new DOMException('Provider request deadline exhausted', 'AbortError');
+        }
+        await vcsRetryDelay(delay, budget.signal);
       }
     }
 
@@ -180,10 +219,8 @@ export abstract class BaseProvider implements IVcsProvider {
       const data = await response.json() as T;
       return { success: true, data };
     } catch (error) {
-      const message = error instanceof Error
-        ? (error.name === 'AbortError' ? 'Request timed out' : error.message)
-        : 'Network error';
-      return { success: false, error: message };
+      return { success: false, error: error instanceof Error && error.name === 'AbortError'
+        ? 'Request cancelled or timed out' : 'Provider request failed' };
     }
   }
 
@@ -208,10 +245,8 @@ export abstract class BaseProvider implements IVcsProvider {
       const data = await response.json() as T;
       return { success: true, data };
     } catch (error) {
-      const message = error instanceof Error
-        ? (error.name === 'AbortError' ? 'Request timed out' : error.message)
-        : 'Network error';
-      return { success: false, error: message };
+      return { success: false, error: error instanceof Error && error.name === 'AbortError'
+        ? 'Request cancelled or timed out' : 'Provider request failed' };
     }
   }
 }

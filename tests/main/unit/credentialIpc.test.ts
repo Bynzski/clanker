@@ -147,7 +147,7 @@ describe('registerCredentialIpc', () => {
     expect(result).toEqual(mockResult);
   });
 
-  test('credential:get-pat calls getPat with provider', async () => {
+  test('legacy credential:get-pat never exposes a stored secret', async () => {
     const mockResult = { success: true, token: 'test-token' };
     vi.mocked(getPat).mockReturnValue(mockResult);
 
@@ -157,8 +157,8 @@ describe('registerCredentialIpc', () => {
     )?.[1] as (_: unknown, provider: VcsProvider) => typeof mockResult;
     const result = await handler(null, 'github' as VcsProvider);
 
-    expect(getPat).toHaveBeenCalledWith('github');
-    expect(result).toEqual(mockResult);
+    expect(getPat).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: 'Stored tokens are available only to main-process provider requests.' });
   });
 
   test('credential:delete-pat calls deletePat with provider', async () => {

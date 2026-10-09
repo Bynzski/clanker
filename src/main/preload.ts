@@ -185,7 +185,6 @@ import {
   CREDENTIAL_DELETE_SSH_KEY,
   CREDENTIAL_CHECK_EXISTS,
   CREDENTIAL_SAVE_PAT,
-  CREDENTIAL_GET_PAT,
   CREDENTIAL_DELETE_PAT,
   CREDENTIAL_GET_STATUS,
   CREDENTIAL_GET_GLOBAL_STATUS,
@@ -536,7 +535,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   credentialCheckExists: () => ipcRenderer.invoke(CREDENTIAL_CHECK_EXISTS),
   credentialSavePat: (provider: VcsProvider, token: string, scope?: string[]) =>
     ipcRenderer.invoke(CREDENTIAL_SAVE_PAT, { provider, token, scope }),
-  credentialGetPat: (provider: VcsProvider) => ipcRenderer.invoke(CREDENTIAL_GET_PAT, provider),
   credentialDeletePat: (provider: VcsProvider) => ipcRenderer.invoke(CREDENTIAL_DELETE_PAT, provider),
   credentialGetStatus: (remoteName: string, remoteUrl: string, provider: VcsProvider) =>
     ipcRenderer.invoke(CREDENTIAL_GET_STATUS, remoteName, remoteUrl, provider),

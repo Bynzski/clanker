@@ -5,6 +5,7 @@
  */
 
 import { BaseProvider } from './baseProvider';
+import { providerLinks } from '../providerLinks';
 import type {
   ProviderContext,
   PullRequestContext,
@@ -88,7 +89,7 @@ export class BitbucketProvider extends BaseProvider {
     token: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -107,9 +108,8 @@ export class BitbucketProvider extends BaseProvider {
 
       const data = await response.json() as T;
       return { success: true, data };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
-      return { success: false, error: message };
+    } catch {
+      return { success: false, error: 'Provider request failed or cancelled' };
     }
   }
 
@@ -120,7 +120,7 @@ export class BitbucketProvider extends BaseProvider {
     endpoint: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Accept: 'application/json',
         },
@@ -132,9 +132,8 @@ export class BitbucketProvider extends BaseProvider {
 
       const data = await response.json() as T;
       return { success: true, data };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
-      return { success: false, error: message };
+    } catch {
+      return { success: false, error: 'Provider request failed or cancelled' };
     }
   }
 
@@ -369,58 +368,6 @@ export class BitbucketProvider extends BaseProvider {
     branch?: string,
     prNumber?: number
   ): DeepLink[] {
-    const baseUrl = 'https://bitbucket.org';
-    const workspace = this.getWorkspace(context);
-    const repoSlug = this.getRepoSlug(context);
-    const path = `/${workspace}/${repoSlug}`;
-    const baseBranch = context.defaultBranch || 'main';
-
-    const links: DeepLink[] = [
-      {
-        type: 'repo',
-        url: `${baseUrl}${path}`,
-        label: 'Repository',
-      },
-      {
-        type: 'branches',
-        url: `${baseUrl}${path}/branches`,
-        label: 'Branches',
-      },
-      {
-        type: 'issues',
-        url: `${baseUrl}${path}/issues`,
-        label: 'Issues',
-      },
-      {
-        type: 'releases',
-        url: `${baseUrl}${path}/downloads`,
-        label: 'Downloads',
-      },
-      {
-        type: 'actions',
-        url: `${baseUrl}${path}/pipelines`,
-        label: 'Pipelines',
-      },
-    ];
-
-    if (prNumber) {
-      links.unshift({
-        type: 'pr',
-        url: `${baseUrl}${path}/pull-requests/${prNumber}`,
-        label: `PR #${prNumber}`,
-      });
-    }
-
-    if (branch) {
-      links.push({
-        type: 'create-pr',
-        url: `${baseUrl}${path}/pull-requests/new?source_branch=${encodeURIComponent(branch)}&dest_branch=${encodeURIComponent(
-          baseBranch
-        )}`,
-        label: 'Create Pull Request',
-      });
-    }
-
-    return links;
+    return providerLinks(context, branch, prNumber);
   }
 }

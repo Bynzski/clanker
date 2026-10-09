@@ -5,11 +5,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BitbucketProvider } from '../../../../src/main/vcs/providers/bitbucketProvider';
+import { responseFromFixture } from './responseFixture';
 import type { ProviderContext } from '../../../../src/main/vcs/types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
 
 describe('BitbucketProvider', () => {
   let provider: BitbucketProvider;
@@ -310,7 +311,8 @@ describe('BitbucketProvider', () => {
       expect(links.length).toBeGreaterThan(0);
       expect(links.map((l) => l.type)).toContain('repo');
       expect(links.map((l) => l.type)).toContain('branches');
-      expect(links.map((l) => l.type)).toContain('issues');
+      expect(links.map((l) => l.type)).not.toContain('issues');
+      expect(links.map((l) => l.type)).not.toContain('releases');
     });
 
     it('should include PR link when prNumber provided', () => {
@@ -326,7 +328,7 @@ describe('BitbucketProvider', () => {
 
       const createLink = links.find((l) => l.type === 'create-pr');
       expect(createLink).toBeDefined();
-      expect(createLink?.url).toContain('feature-branch');
+      expect(createLink?.url).toBe('https://bitbucket.org/workspace/repo/pull-requests/new');
     });
 
     it('should use workspace/repo format for Bitbucket', () => {
