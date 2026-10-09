@@ -20,7 +20,11 @@ function parseRequest(raw: unknown): HarnessUsageRequest {
 
 export function registerUsageIpc(deps: RegisterUsageIpcDeps): void {
   ipcMain.handle(HARNESS_USAGE_GET, async (_event, workspaceId: unknown, request?: unknown) => {
+    const parsedRequest = parseRequest(request);
+    if (workspaceId === null || workspaceId === undefined || workspaceId === 'local') {
+      return deps.getUsageService().getLocal(parsedRequest);
+    }
     if (typeof workspaceId !== 'string' || !workspaceId) throw new Error('Workspace is not registered');
-    return deps.getUsageService().get(workspaceId, parseRequest(request));
+    return deps.getUsageService().get(workspaceId, parsedRequest);
   });
 }

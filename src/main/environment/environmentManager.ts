@@ -21,6 +21,10 @@ export class EnvironmentManager {
     this.sshExecutor = sshExecutor ?? new SshCommandExecutor();
   }
 
+  public getLocalEnvironment(): LocalEnvironment {
+    return this.localEnvironment;
+  }
+
   public async getEnvironment(id: WorkspaceEnvironmentId): Promise<WorkspaceEnvironment | null> {
     if (!id || id === LOCAL_ENVIRONMENT_ID) {
       return this.localEnvironment;
@@ -50,9 +54,18 @@ export class EnvironmentManager {
     finally { if (this.pendingEnvironments.get(id) === resolving) this.pendingEnvironments.delete(id); }
   }
 
+  private readonly environmentGenerations = new Map<string, number>();
+
+  public getEnvironmentGeneration(id: string): number {
+    if (!id || id === LOCAL_ENVIRONMENT_ID) return 0;
+    return this.environmentGenerations.get(id) ?? 0;
+  }
+
   public invalidateSshEnvironment(id: string): void {
     this.sshEnvironments.delete(id);
     this.pendingEnvironments.delete(id);
+    const next = (this.environmentGenerations.get(id) ?? 0) + 1;
+    this.environmentGenerations.set(id, next);
   }
 
   public getSshExecutor(): SshCommandExecutor {

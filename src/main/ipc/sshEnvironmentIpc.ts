@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import type Store from 'electron-store';
 import type { StoreSchema } from '../../shared/types/store';
 import type { EnvironmentManager } from '../environment/environmentManager';
@@ -9,6 +9,7 @@ import {
   SSH_ENVIRONMENT_LIST,
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
+  SSH_ENVIRONMENT_INVALIDATED,
   SSH_ENVIRONMENT_TEST,
   SSH_GET_HOME_DIRECTORY,
   SSH_LIST_DIRECTORIES,
@@ -21,10 +22,11 @@ export interface RegisterSshEnvironmentIpcDeps {
   getStore: () => Store<StoreSchema>;
   getEnvironmentManager: () => EnvironmentManager;
   getWorkspaceRegistry: () => WorkspaceRegistry;
+  getMainWindow?: () => BrowserWindow | null;
 }
 
 export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): void {
-  const { getStore, getEnvironmentManager, getWorkspaceRegistry } = deps;
+  const { getStore, getEnvironmentManager, getWorkspaceRegistry, getMainWindow } = deps;
   const persistence = new WorkspacePersistenceService(getStore);
 
   ipcMain.handle(SSH_ENVIRONMENT_LIST, () => {
@@ -39,6 +41,7 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
     try {
       const saved = persistence.saveSshEnvironment(payload);
       getEnvironmentManager().invalidateSshEnvironment(saved.id);
+      getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: saved.id, environmentGeneration: getEnvironmentManager().getEnvironmentGeneration(saved.id) });
       return { success: true, config: saved };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -55,6 +58,7 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
 
     const deleted = persistence.deleteSshEnvironment(id.trim());
     getEnvironmentManager().invalidateSshEnvironment(id.trim());
+    getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: id.trim(), environmentGeneration: getEnvironmentManager().getEnvironmentGeneration(id.trim()) });
     return { success: deleted };
   });
   ipcMain.handle(SSH_ENVIRONMENT_TEST, async (_, target: unknown) => {
@@ -123,4 +127,7 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
     const models = await env.discoverHarnessModels(harnessId);
     return models.map(({ id, label }) => ({ id, label }));
   });
+
+  // Main -> renderer progress events; registered so channel completeness can be verified.
+  ipcMain.on?.(SSH_ENVIRONMENT_INVALIDATED, () => { });
 }

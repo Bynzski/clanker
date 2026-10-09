@@ -1,6 +1,21 @@
-import type { HarnessUsageMeasurementView } from '../../shared/types/harnessUsage';
+import type { HarnessUsageEntry, HarnessUsageMeasurementView, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 
 /** Presentation-only helpers for the Usage panel. Nothing here influences capability, caching or correlation. */
+
+const STATUS_TEXT: Record<Exclude<HarnessUsageStatus, 'ok' | 'not-installed'>, string> = {
+  unsupported: 'No supported usage probe',
+  unauthenticated: 'Not signed in',
+  unavailable: 'Usage temporarily unavailable',
+  error: 'Usage could not be read',
+};
+
+/** Shared panel/chip status: scheduled expiry alone never marks a measurement stale. */
+export function usageProblem(entry: HarnessUsageEntry | undefined): string {
+  const stale = entry?.stale === true && entry.measurements.length > 0;
+  const status = entry && entry.status !== 'ok' && entry.status !== 'not-installed'
+    ? entry.error ?? STATUS_TEXT[entry.status] : undefined;
+  return [stale ? 'Stale usage data' : undefined, status].filter(Boolean).join(' · ');
+}
 
 const PROVIDER_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',

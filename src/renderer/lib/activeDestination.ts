@@ -32,13 +32,16 @@ const WORKSPACE_CAPABILITIES: DestinationCapabilities = {
 };
 const ASSISTANT_CAPABILITIES: DestinationCapabilities = {
   browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
+  git: false, layout: false, sessionHistory: false, usage: true,
+};
+const NONE_CAPABILITIES: DestinationCapabilities = {
+  browser: false, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
   git: false, layout: false, sessionHistory: false, usage: false,
 };
 export function resolveDestinationCapabilities(destination: ActiveDestination): DestinationCapabilities {
   if (destination.kind === 'workspace') return WORKSPACE_CAPABILITIES;
   if (destination.kind === 'assistant') return ASSISTANT_CAPABILITIES;
-  return { browser: false, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
-    git: false, layout: false, sessionHistory: false, usage: false };
+  return NONE_CAPABILITIES;
 }
 
 /** The single Browser owner allowed to show native views: the active Assistant's scope, else the active workspace. */

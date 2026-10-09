@@ -11,7 +11,7 @@ import type { VcsProvider, VcsRequestOptions } from '../shared/types/vcs';
 import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/git';
 import type { HarnessSession, SessionInvokeOptions } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
-import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
+import type { HarnessAccountAuthEvent, HarnessAccountChange } from '../shared/types/harnessAccounts';
 import type { AgentAttentionChange } from '../shared/types/agentAttention';
 import type { AgentCheckoutTransitionEvent } from '../shared/types/checkoutTransition';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
@@ -85,6 +85,7 @@ import {
   HARNESS_ACCOUNTS_REMOVE,
   HARNESS_ACCOUNTS_RENAME,
   HARNESS_ACCOUNTS_AUTH_STATE,
+  HARNESS_ACCOUNTS_CHANGED,
   TERMINAL_RESIZED,
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
@@ -213,6 +214,7 @@ import {
   SSH_ENVIRONMENT_LIST,
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
+  SSH_ENVIRONMENT_INVALIDATED,
   SSH_ENVIRONMENT_TEST,
   SSH_GET_HOME_DIRECTORY,
   SSH_LIST_DIRECTORIES,
@@ -592,7 +594,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork, options),
 
   // Harness usage (workspaceId is the only reference; main resolves the environment)
-  getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) =>
+  getHarnessUsage: (workspaceId: string | null, request?: HarnessUsageRequest) =>
     ipcRenderer.invoke(HARNESS_USAGE_GET, workspaceId, request),
 
   // Harness accounts. Plain strings only: main resolves identity, paths and environments itself.
@@ -614,6 +616,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: IpcRendererEvent, data: HarnessAccountAuthEvent) => callback(data);
     ipcRenderer.on(HARNESS_ACCOUNTS_AUTH_STATE, handler);
     return () => ipcRenderer.removeListener(HARNESS_ACCOUNTS_AUTH_STATE, handler);
+  },
+  onHarnessAccountsChanged: (callback: (change: HarnessAccountChange) => void) => {
+    const handler = (_event: IpcRendererEvent, data: HarnessAccountChange) => callback(data);
+    ipcRenderer.on(HARNESS_ACCOUNTS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(HARNESS_ACCOUNTS_CHANGED, handler);
   },
 
   // Workspace Recipes
@@ -683,4 +690,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SSH_CREATE_DIRECTORY, environmentId, parentPath, name),
   getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
   getEnvironmentHarnessModels: (environmentId: string, harnessId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_MODELS, environmentId, harnessId),
+  onSshEnvironmentInvalidated: (callback: (event: { environmentId: string; environmentGeneration: number }) => void) => {
+    const handler = (_event: IpcRendererEvent, data: { environmentId: string; environmentGeneration: number }) => callback(data);
+    ipcRenderer.on(SSH_ENVIRONMENT_INVALIDATED, handler);
+    return () => ipcRenderer.removeListener(SSH_ENVIRONMENT_INVALIDATED, handler);
+  },
 });

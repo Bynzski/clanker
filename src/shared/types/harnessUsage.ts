@@ -53,6 +53,9 @@ export interface HarnessUsageRequest {
 }
 
 export interface HarnessUsageResponse {
-  workspaceId: string;
+  workspaceId?: string;
+  /** Main-owned execution environment and incarnation. Local is stable at generation 0. */
+  environmentId: string;
+  environmentGeneration: number;
   entries: HarnessUsageEntry[];
 }

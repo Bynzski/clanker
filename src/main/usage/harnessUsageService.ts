@@ -1,5 +1,6 @@
 import { getHarnessProviders } from '../harnesses/registry';
 import { HarnessCapabilityError, classifyHarnessFailure, type HarnessProvider, type HarnessUsageSnapshot } from '../harnesses/types';
+import { LocalEnvironment } from '../environment/localEnvironment';
 import type { WorkspaceEnvironment } from '../environment/workspaceEnvironment';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type {
@@ -45,7 +46,7 @@ export interface UsageWorkspaceLookup {
 export interface UsageAccountSource {
   listBindings(environmentId: string, harness: HarnessId): ResolvedHarnessAccountBinding[];
   reportStatus(accountId: string, status: Exclude<HarnessAccountStatus, 'unknown'>): void;
-  onAccountsChanged?(listener: (change: { accountId: string }) => void): () => void;
+  onAccountsChanged?(listener: (change: { accountId: string; type?: string }) => void): () => void;
 }
 
 export interface HarnessUsageServiceOptions {
@@ -56,6 +57,10 @@ export interface HarnessUsageServiceOptions {
   providers?: () => readonly HarnessProvider[];
   /** Desktop application version, supplied by main (providers never touch Electron). */
   clientVersion?: () => string;
+  /** Optional local environment; if omitted, falls back to new LocalEnvironment(). */
+  localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
+  /** Optional environment generation provider for invalidation tracking. */
+  getEnvironmentGeneration?: (environmentId: string) => number;
 }
 
 /**
@@ -126,8 +131,7 @@ function statusFor(error: HarnessCapabilityError): Exclude<HarnessUsageStatus, '
  */
 export class HarnessUsageService {
   private readonly cache = new WeakMap<WorkspaceEnvironment, Map<string, UsageRecord>>();
-  /** Recently used per-environment record maps (bounded), so a removed account's entries can be dropped. */
-  private readonly recordMaps: Array<Map<string, UsageRecord>> = [];
+  private readonly accountGenerations = new Map<string, number>();
   private readonly flights = new WeakMap<WorkspaceEnvironment, Map<string, Promise<UsageRecord | 'not-installed'>>>();
   private readonly availability = new WeakMap<WorkspaceEnvironment, { ids: ReadonlySet<string>; at: number }>();
   private readonly availabilityFlights = new WeakMap<WorkspaceEnvironment, Promise<ReadonlySet<string> | undefined>>();
@@ -136,27 +140,42 @@ export class HarnessUsageService {
   private readonly listProviders: () => readonly HarnessProvider[];
   private readonly clientVersion: () => string;
   private readonly accounts?: UsageAccountSource;
+  private readonly localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
+  private defaultLocalEnvironment?: WorkspaceEnvironment;
+  private readonly getEnvironmentGeneration: (environmentId: string) => number;
 
   constructor(private readonly registry: UsageWorkspaceLookup, options: HarnessUsageServiceOptions = {}) {
     this.now = options.now ?? Date.now;
     this.listProviders = options.providers ?? getHarnessProviders;
     this.clientVersion = options.clientVersion ?? (() => 'unknown');
     this.accounts = options.accounts;
-    // A removed account's cached readings and backoff must not outlive it.
-    this.accounts?.onAccountsChanged?.((change) => this.forgetAccount(change.accountId));
+    this.localEnvironment = options.localEnvironment;
+    this.getEnvironmentGeneration = options.getEnvironmentGeneration ?? (() => 0);
+    // A removed or reconnected account's cached readings and backoff must not outlive it.
+    this.accounts?.onAccountsChanged?.((change) => {
+      if (change.type === 'removed' || change.type === 'reconnected') {
+        this.forgetAccount(change.accountId);
+      }
+    });
   }
 
   private forgetAccount(accountId: string): void {
-    for (const records of this.recordMaps) {
-      for (const key of [...records.keys()]) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
+    this.accountGenerations.set(accountId, (this.accountGenerations.get(accountId) ?? 0) + 1);
+    // Managed accounts are local-only. The canonical local cache remains reachable
+    // regardless of how many SSH environments have been visited.
+    const records = this.cache.get(this.resolveLocalEnvironment());
+    if (records) {
+      for (const key of records.keys()) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
     }
   }
 
-  public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
-    const workspace = typeof workspaceId === 'string' ? this.registry.getWorkspace(workspaceId) : null;
-    if (!workspace) throw new Error('Workspace is not registered');
-    const { environment } = workspace;
+  private resolveLocalEnvironment(): WorkspaceEnvironment {
+    if (typeof this.localEnvironment === 'function') return this.localEnvironment();
+    if (this.localEnvironment) return this.localEnvironment;
+    return (this.defaultLocalEnvironment ??= new LocalEnvironment());
+  }
 
+  private async resolveEntries(environment: WorkspaceEnvironment, request: HarnessUsageRequest): Promise<HarnessUsageEntry[]> {
     let providers = this.listProviders();
     if (request.harnessIds) {
       const wanted = new Set(request.harnessIds.slice(0, MAX_HARNESS_IDS));
@@ -166,19 +185,46 @@ export class HarnessUsageService {
     // One availability check per request, shared by every provider that needs it.
     let availability: Promise<ReadonlySet<string> | undefined> | undefined;
     const installed = () => availability ??= this.installedHarnesses(environment, force);
-    const entries = (await Promise.all(providers.map((provider) => this.resolveAccounts(environment, provider, force, installed)))).flat();
+    return (await Promise.all(providers.map((provider) => this.resolveAccounts(environment, provider, force, installed)))).flat();
+  }
+
+  public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
+    const workspace = typeof workspaceId === 'string' ? this.registry.getWorkspace(workspaceId) : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    const { environment } = workspace;
+    const environmentGeneration = this.getEnvironmentGeneration(environment.id);
+
+    const entries = await this.resolveEntries(environment, request);
 
     // The workspace may have closed (or been replaced under the same ID)
     // while probes ran. Never hand its result to whatever workspace is there now.
     if (this.registry.getWorkspace(workspaceId) !== workspace) throw new Error('Workspace closed during usage request');
-    return { workspaceId, entries };
+    if (this.getEnvironmentGeneration(environment.id) !== environmentGeneration) throw new Error('Environment changed during usage request');
+    return {
+      workspaceId,
+      environmentId: environment.id,
+      environmentGeneration,
+      entries,
+    };
+  }
+
+  public async getLocal(request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
+    const environment = this.resolveLocalEnvironment();
+    const entries = await this.resolveEntries(environment, request);
+    return {
+      environmentId: 'local',
+      environmentGeneration: 0,
+      entries,
+    };
   }
 
   /** Main-process access to the retained snapshots (including opaque account IDs). */
-  public getCachedSnapshots(workspaceId: string): CachedUsageSnapshot[] {
-    const workspace = this.registry.getWorkspace(workspaceId);
-    if (!workspace) throw new Error('Workspace is not registered');
-    return [...(this.cache.get(workspace.environment)?.values() ?? [])].flatMap((record) =>
+  public getCachedSnapshots(workspaceId?: string | null): CachedUsageSnapshot[] {
+    const isLocal = !workspaceId || workspaceId === 'local';
+    const environment = isLocal ? this.resolveLocalEnvironment() : this.registry.getWorkspace(workspaceId)?.environment;
+    if (!isLocal && !environment) throw new Error('Workspace is not registered');
+    if (!environment) return [];
+    return [...(this.cache.get(environment)?.values() ?? [])].flatMap((record) =>
       record.snapshot ? [{ harnessId: record.harnessId, status: record.status, snapshot: record.snapshot, stale: record.stale === true }] : []);
   }
 
@@ -234,12 +280,14 @@ export class HarnessUsageService {
     if (this.mustServeCache(cached, force, this.now())) return toEntry(cached);
     let flights = this.flights.get(environment);
     if (!flights) this.flights.set(environment, flights = new Map());
-    let flight = flights.get(key);
+    const accountGeneration = binding ? this.accountGenerations.get(binding.id) ?? 0 : 0;
+    const flightKey = `${key}\u0000${accountGeneration}`;
+    let flight = flights.get(flightKey);
     if (!flight) {
       flight = installedHarnesses()
-        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached, binding)))
-        .finally(() => { flights.delete(key); });
-      flights.set(key, flight);
+        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached, binding, accountGeneration)))
+        .finally(() => { if (flights.get(flightKey) === flight) flights.delete(flightKey); });
+      flights.set(flightKey, flight);
     }
     const outcome = await flight;
     return outcome === 'not-installed' ? plainEntry(harnessId, 'not-installed') : toEntry(outcome);
@@ -270,7 +318,7 @@ export class HarnessUsageService {
     return flight;
   }
 
-  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined, binding?: ResolvedHarnessAccountBinding): Promise<UsageRecord> {
+  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined, binding?: ResolvedHarnessAccountBinding, accountGeneration = 0): Promise<UsageRecord> {
     const harnessId = provider.descriptor.id;
     const capability = provider.usage!;
     const controller = new AbortController();
@@ -321,11 +369,12 @@ export class HarnessUsageService {
       controller.abort();
       await execution.disposeSessions();
     }
+    if (binding && (this.accountGenerations.get(binding.id) ?? 0) !== accountGeneration) {
+      throw new Error('Account changed during usage request');
+    }
     let perEnvironment = this.cache.get(environment);
     if (!perEnvironment) {
       this.cache.set(environment, perEnvironment = new Map());
-      this.recordMaps.push(perEnvironment);
-      if (this.recordMaps.length > 64) this.recordMaps.shift();
     }
     perEnvironment.set(usageKey(harnessId, binding), record);
     // A probe may only mark a managed account (never delete or reroute it).

@@ -74,7 +74,7 @@ export interface ManagedSessionDiscovery {
   }>;
 }
 
-export type HarnessAccountChange = { type: 'added' | 'removed' | 'reconnected'; accountId: HarnessAccountId; harness: HarnessId };
+export type HarnessAccountChange = { type: 'added' | 'removed' | 'reconnected' | 'selected'; accountId: HarnessAccountId; harness: HarnessId };
 
 export interface HarnessAccountServiceOptions {
   storage: HarnessAccountStorage;
@@ -200,6 +200,7 @@ export class HarnessAccountService {
     this.commit((next) => {
       if (accountId === DEFAULT_HARNESS_ACCOUNT_ID) delete next.selections[key]; else next.selections[key] = accountId;
     });
+    this.changed({ type: 'selected', accountId, harness: id });
     return this.list(env, id);
   }
 

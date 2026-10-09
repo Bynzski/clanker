@@ -53,7 +53,7 @@ import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession, SessionInvokeOptions, SessionInvokeResult } from '../../shared/types/session';
 import type { SessionDiscoveryResult } from '../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
-import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
+import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountChange, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
@@ -343,7 +343,7 @@ export interface ElectronAPI {
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
   discoverSessionHistory: (workspaceId: string, forceRefresh?: boolean) => Promise<SessionDiscoveryResult>;
-  getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
+  getHarnessUsage: (workspaceId: string | null, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
   listHarnessAccounts: (environmentId: string, harness: string) => Promise<HarnessAccountList>;
   selectHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
   startHarnessAccountAdd: (environmentId: string, harness: string, label?: string) => Promise<HarnessAccountAuthStart>;
@@ -352,6 +352,7 @@ export interface ElectronAPI {
   removeHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
   renameHarnessAccount: (environmentId: string, harness: string, accountId: string, label: string) => Promise<HarnessAccountList>;
   onHarnessAccountAuthState: (callback: (event: HarnessAccountAuthEvent) => void) => () => void;
+  onHarnessAccountsChanged: (callback: (change: HarnessAccountChange) => void) => () => void;
   invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) => Promise<SessionInvokeResult>;
 
   // Workspace Recipes
@@ -433,6 +434,7 @@ export interface ElectronAPI {
   sshCreateDirectory: (environmentId: string, parentPath: string, name: string) => Promise<{ path: string }>;
   getEnvironmentHarnessOptions: (environmentId: string) => Promise<Record<string, unknown>>;
   getEnvironmentHarnessModels: (environmentId: string, harnessId: string) => Promise<Array<{ id: string; label: string }>>;
+  onSshEnvironmentInvalidated: (callback: (event: { environmentId: string; environmentGeneration: number }) => void) => () => void;
 }
 
 declare global {

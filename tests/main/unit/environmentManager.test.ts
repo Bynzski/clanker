@@ -13,6 +13,21 @@ function fixture() {
   return { manager: new EnvironmentManager(() => store, executor, resolveIdentity), resolveIdentity, configs };
 }
 describe('environment resource resolution', () => {
+  it('owns monotonic SSH incarnations across reconfiguration/deletion/recreation; local stays stable', async () => {
+    const f = fixture();
+    expect(f.manager.getEnvironmentGeneration('a')).toBe(0);
+    const first = await f.manager.getEnvironment('a');
+    f.manager.invalidateSshEnvironment('a');
+    f.configs.splice(0, 1);
+    f.manager.invalidateSshEnvironment('a');
+    f.configs.push({ id: 'a', kind: 'ssh', label: 'New A', target: 'new-a' });
+    f.manager.invalidateSshEnvironment('a');
+    expect(f.manager.getEnvironmentGeneration('a')).toBe(3);
+    expect(await f.manager.getEnvironment('a')).not.toBe(first);
+    expect(f.manager.getEnvironmentGeneration('local')).toBe(0);
+    // A main-process restart creates a new manager AND a fresh renderer store.
+    expect(fixture().manager.getEnvironmentGeneration('a')).toBe(0);
+  });
   it('protects same-host aliases while preserving environment-scoped workspace identity', async () => {
     const f = fixture();
     const registry = new WorkspaceRegistry(id => f.manager.getEnvironment(id));

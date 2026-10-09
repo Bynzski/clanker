@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, Gauge } from 'lucide-react';
+import { Clock3, Gauge, TriangleAlert } from 'lucide-react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
@@ -7,7 +7,8 @@ import { useUsageWidgetStore } from '../store/usageWidgetStore';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import { onUsagePreferenceSaved, openAccountSettings } from '../lib/settingsHandoff';
-import { formatResetShort, pickWidgetUsage, usageTone } from '../lib/usageFormat';
+import { getRemoteEnvironmentLabel } from '../lib/workspaceLabels';
+import { formatChecked, formatResetShort, pickWidgetUsage, usageProblem, usageTone } from '../lib/usageFormat';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import UsageDropdown from './UsageDropdown';
 import { useHarnessUsage } from './useHarnessUsage';
@@ -16,17 +17,29 @@ import './UsageDropdown.css';
 /** Status-bar Usage control: the dial, plus a compact chip for each harness pinned from the panel. */
 export default function UsageWidget() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
-  const capabilities = resolveDestinationCapabilities(useActiveDestination());
+  const destination = useActiveDestination();
+  const capabilities = resolveDestinationCapabilities(destination);
   const pinned = useUsageWidgetStore((state) => state.ids);
   const togglePin = useUsageWidgetStore((state) => state.toggle);
   const [open, setOpen] = useState(false);
   const handoff = useRef(false);
-  // A workspace change closes the workspace-scoped panel (reset during render).
-  const [owner, setOwner] = useState(focusedWorkspace?.id);
-  if (owner !== focusedWorkspace?.id) { setOwner(focusedWorkspace?.id); setOpen(false); }
-  const environmentId = focusedWorkspace?.environmentId || 'local';
+  // A destination change closes the popover (reset during render).
+  const destinationKey = destination.kind === 'workspace'
+    ? destination.workspaceId
+    : destination.kind === 'assistant'
+    ? destination.assistantId
+    : 'none';
+  const [owner, setOwner] = useState(destinationKey);
+  if (owner !== destinationKey) { setOwner(destinationKey); setOpen(false); }
+
+  // Effective environment: Assistant and none are always local; workspace uses its environment.
+  const environmentId = destination.kind === 'assistant' || destination.kind === 'none'
+    ? 'local'
+    : (focusedWorkspace?.environmentId || 'local');
+  const workspaceId = destination.kind === 'workspace' ? (focusedWorkspace?.id ?? null) : null;
   // Background reads are local-only: they must never trigger unattended SSH probes.
   const local = environmentId === 'local';
+  const scopeLabel = local ? 'Local' : focusedWorkspace ? getRemoteEnvironmentLabel(focusedWorkspace) ?? 'SSH' : 'SSH';
 
   // Installed harnesses and the "Show in Usage" preference; usage is fail-closed until both have loaded.
   const [available, setAvailable] = useState<{ environmentId: string; ids: string[] } | null>(null);
@@ -52,12 +65,14 @@ export default function UsageWidget() {
   const usageIds = useMemo(() => !defaults || available?.environmentId !== environmentId ? [] : HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
     (USAGE_HARNESS_IDS as readonly string[]).includes(id) && available.ids.includes(id) && defaults[id]?.usageVisible !== false), [available, defaults, environmentId]);
   const chipIds = useMemo(() => usageIds.filter((id) => pinned.includes(id)), [usageIds, pinned]);
+  const shouldPoll = capabilities.usage && (open || (local && chipIds.length > 0));
+  const shouldPrefetch = capabilities.usage && local;
   const usage = useHarnessUsage({
-    workspaceId: focusedWorkspace?.id ?? null,
-    open: open || (local && chipIds.length > 0),
+    workspaceId,
+    open: shouldPoll,
     harnessIds: usageIds,
     environmentId,
-    prefetch: local,
+    prefetch: shouldPrefetch,
   });
 
   if (!capabilities.usage) return null;
@@ -66,19 +81,26 @@ export default function UsageWidget() {
     const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
     const picked = entry && pickWidgetUsage(entry.measurements, option.label);
     if (!picked) return [];
-    const description = `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`;
-    return [{ id, option, picked, description }];
+    const problem = usageProblem(entry);
+    const description = [
+      scopeLabel,
+      `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`,
+      problem,
+      problem && entry?.checkedAt !== undefined ? `last ${formatChecked(entry.checkedAt, usage.now)}` : undefined,
+    ].filter(Boolean).join(' · ');
+    return [{ id, option, picked, description, problem, error: entry?.status === 'error' }];
   });
   const summary = chips.map(({ description }) => description).join('\n');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={`usage-widget${open ? ' active' : ''}`} aria-label="Usage" title={summary || 'Usage'} disabled={!defaults && !open}>
+        <button type="button" className={`usage-widget${open ? ' active' : ''}`} aria-label="Usage" title={summary || `Usage · ${scopeLabel}`} disabled={!defaults && !open}>
           <Gauge size={12} strokeWidth={2} aria-hidden="true" />
-          {chips.map(({ id, option, picked, description }) => (
-            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}`} role="group" aria-label={description} title={description}>
+          {chips.map(({ id, option, picked, description, problem, error }) => (
+            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}${problem ? ' usage-chip-problem' : ''}`} role="group" aria-label={description} title={description}>
               <option.Icon size={11} strokeWidth={2} />
+              {problem && <TriangleAlert size={10} className={`usage-chip-status usage-status-${error ? 'error' : 'warning'}`} aria-hidden="true" />}
               <span className="usage-chip-meter">
                 <span className="usage-chip-percent">{picked.percent}%</span>
                 <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
@@ -88,12 +110,13 @@ export default function UsageWidget() {
           ))}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="usage-popover" aria-label="Usage" workspaceId={focusedWorkspace?.id}
+      <PopoverContent side="top" align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}
         onCloseAutoFocus={(event) => {
           // On a Usage -> Settings handoff, restoring focus here would dismiss the Settings popover that is opening.
           if (handoff.current) { event.preventDefault(); handoff.current = false; }
         }}>
         <UsageDropdown
+          scopeLabel={scopeLabel}
           harnessIds={usage.harnessIds}
           entries={usage.entries}
           otherAccounts={usage.otherAccounts}

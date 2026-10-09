@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { HarnessUsageEntry, HarnessUsageResponse } from '../../shared/types/harnessUsage';
-import { scheduleIdleWarmup } from '../lib/idleWarmup';
-export const USAGE_POLL_INTERVAL_MS = 60_000;
-const CLOCK_INTERVAL_MS = 30_000;
-const GENERIC_ERROR = 'Usage could not be read';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { HarnessUsageEntry } from '../../shared/types/harnessUsage';
+import { useUsageStore } from '../store/usageStore';
+
+export { USAGE_POLL_INTERVAL_MS } from '../store/usageStore';
 
 export interface UseHarnessUsageResult {
   /** The harnesses this panel operates on (usage-capable AND enabled); nothing else is requested. */
@@ -24,152 +23,127 @@ export interface UseHarnessUsageResult {
 }
 
 /**
- * Owns usage state for ONE workspace. Each harness is requested independently and concurrently so a slow
- * provider never delays the others. Ownership is explicit: every request captures a generation that is
- * bumped on workspace change/unmount, so late responses never land in a different workspace's panel.
- * Polling and the display clock exist only while `open`; with `prefetch`, one background read warms it. Cache TTLs, backoff and floors stay in main;
- * `refreshableAt` is used only to avoid knowingly pointless manual refreshes.
+ * Accesses usage readings for an effective environment (local or SSH) and selected harnesses.
+ * State is shared across workspaces in the same environment and Assistant destinations,
+ * with stale-while-revalidate presentation. Polling and refresh cycles are coordinated
+ * centrally through `useUsageStore`.
  */
-export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId = 'local', prefetch = false }: {
-  workspaceId: string | null; open: boolean; harnessIds: readonly string[]; environmentId?: string;
-  /** Warm the panel in the background shortly after the workspace becomes active (delayed, best-effort idle prefetch). */
+export function useHarnessUsage({
+  workspaceId,
+  open,
+  harnessIds,
+  environmentId = 'local',
+  prefetch = false,
+}: {
+  workspaceId: string | null;
+  open: boolean;
+  harnessIds: readonly string[];
+  environmentId?: string;
   prefetch?: boolean;
 }): UseHarnessUsageResult {
-  const [entries, setEntries] = useState<Record<string, HarnessUsageEntry | undefined>>({});
-  const [otherAccounts, setOtherAccounts] = useState<Record<string, HarnessUsageEntry[] | undefined>>({});
-  const [pending, setPending] = useState<Record<string, boolean>>({});
-  const [now, setNow] = useState(() => Date.now());
-  const generation = useRef(0);
-  const unmounted = useRef(false);
-  const inflight = useRef(new Map<string, { force: boolean }>());
-  // Stable identity for the selected set so effects only restart when membership actually changes.
   const idsKey = harnessIds.join('\u0000');
   const ids = useMemo(() => (idsKey ? idsKey.split('\u0000') : []), [idsKey]);
-  const idsRef = useRef<readonly string[]>(ids);
-  const [forcing, setForcing] = useState(0);
 
-  // New workspace (or none): drop everything that belonged to the old one. State is reset during render
-  // (derived-state pattern); the ownership generation and in-flight tokens are reset in the effect.
-  const [ownerWorkspace, setOwnerWorkspace] = useState(workspaceId);
-  if (ownerWorkspace !== workspaceId) {
-    setOwnerWorkspace(workspaceId);
-    setEntries({});
-    setOtherAccounts({});
-    setPending({});
-    setForcing(0);
-  }
-  useEffect(() => {
-    generation.current++;
-    inflight.current.clear();
-  }, [workspaceId]);
-
-  useEffect(() => {
-    unmounted.current = false;
-    return () => { unmounted.current = true; };
-  }, []);
-
-  // A harness that left the selected set loses its entry and pending flag (here) and its in-flight token
-  // (in the effect), so a late response can never bring its row back.
-  const [ownerIds, setOwnerIds] = useState(idsKey);
-  if (ownerIds !== idsKey) {
-    setOwnerIds(idsKey);
-    const keep = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([id]) => ids.includes(id)));
-    setEntries(keep);
-    setOtherAccounts(keep);
-    setPending(keep);
-  }
-  useEffect(() => {
-    idsRef.current = ids;
-    for (const id of [...inflight.current.keys()]) if (!ids.includes(id)) inflight.current.delete(id);
-  }, [ids]);
-
-  const request = useCallback((harnessId: string, force: boolean) => {
-    if (!workspaceId || !idsRef.current.includes(harnessId)) return;
-    const running = inflight.current.get(harnessId);
-    if (running && (running.force || !force)) return; // never duplicate work already in flight
-    const owner = generation.current;
-    const token = { force };
-    inflight.current.set(harnessId, token);
-    setPending((current) => ({ ...current, [harnessId]: true }));
-    if (force) setForcing((count) => count + 1);
-    void window.electronAPI.getHarnessUsage(workspaceId, { harnessIds: [harnessId], ...(force ? { force: true } : {}) })
-      .then((response: HarnessUsageResponse) => {
-        if (generation.current !== owner || unmounted.current || !idsRef.current.includes(harnessId)) return;
-        // Entries arrive selected-account first; a harness without managed accounts has exactly one.
-        const [entry, ...others] = response.entries.filter((candidate) => candidate.harnessId === harnessId);
-        if (entry) setEntries((current) => ({ ...current, [harnessId]: entry }));
-        setOtherAccounts((current) => ({ ...current, [harnessId]: others }));
-      }, () => {
-        if (generation.current !== owner || unmounted.current || !idsRef.current.includes(harnessId)) return;
-        // Safe text only; a prior good reading is kept and flagged stale.
-        setEntries((current) => {
-          const prior = current[harnessId];
-          return { ...current, [harnessId]: prior && prior.measurements.length > 0
-            ? { ...prior, status: 'error', stale: true, error: GENERIC_ERROR }
-            : { harnessId, status: 'error', measurements: [], error: GENERIC_ERROR } };
-        });
-      })
-      .finally(() => {
-        if (generation.current !== owner || unmounted.current) return;
-        if (inflight.current.get(harnessId) === token) inflight.current.delete(harnessId);
-        setPending((current) => { const next = { ...current }; if (!inflight.current.has(harnessId)) delete next[harnessId]; return next; });
-        if (force) setForcing((count) => Math.max(0, count - 1));
-      });
-  }, [workspaceId]);
+  const storeNow = useUsageStore((s) => s.now);
+  const storePending = useUsageStore((s) => s.pending[environmentId]);
+  const storeForcing = useUsageStore((s) => s.forcing[environmentId] ?? 0);
+  const storeReadings = useUsageStore((s) => s.readings[environmentId]);
+  const storeSelected = useUsageStore((s) => s.selectedAccounts[environmentId]);
 
   const refreshAll = useCallback((force: boolean) => {
-    for (const id of idsRef.current) request(id, force);
-  }, [request]);
+    useUsageStore.getState().refreshAll(environmentId, workspaceId, ids, force);
+  }, [environmentId, workspaceId, ids]);
 
   const selectAccount = useCallback((harnessId: string, accountId: string) => {
-    void window.electronAPI.selectHarnessAccount(environmentId, harnessId, accountId)
-      .then(() => request(harnessId, false), () => undefined);
-  }, [environmentId, request]);
+    void useUsageStore.getState().selectAccount(environmentId, workspaceId, harnessId, accountId);
+  }, [environmentId, workspaceId]);
 
-  // Closed: one ordinary read per workspace (and provider set) shortly after the workspace becomes active
-  // (a delayed, best-effort idle prefetch, see scheduleIdleWarmup), so the first opening already has
-  // numbers. It never repeats after the panel closes, and main's cache/backoff still governs what is actually probed.
-  const warmed = useRef<string | null>(null);
+  // Register consumer in shared store (manages centralized polling timers and prefetch)
   useEffect(() => {
-    const key = workspaceId ? `${workspaceId}\u0000${idsKey}` : null;
-    if (open || !prefetch || !key || ids.length === 0 || warmed.current === key) return;
-    return scheduleIdleWarmup(() => {
-      warmed.current = key;
-      refreshAll(false);
+    return useUsageStore.getState().registerConsumer({
+      environmentId,
+      workspaceId,
+      harnessIds: ids,
+      active: open,
+      prefetch,
     });
-  }, [open, prefetch, workspaceId, idsKey, ids, refreshAll]);
+  }, [environmentId, workspaceId, idsKey, open, prefetch, ids]);
 
-  // Open: immediate ordinary read, then an ordinary read every minute. Polling only runs while open.
-  useEffect(() => {
-    if (!open || !workspaceId) return;
-    warmed.current = `${workspaceId}\u0000${idsKey}`;
-    refreshAll(false);
-    const first = setTimeout(() => setNow(Date.now()), 0); // fresh clock on open
-    const poll = setInterval(() => refreshAll(false), USAGE_POLL_INTERVAL_MS);
-    const clock = setInterval(() => setNow(Date.now()), CLOCK_INTERVAL_MS);
-    return () => { clearTimeout(first); clearInterval(poll); clearInterval(clock); };
-  }, [open, workspaceId, refreshAll, ids, idsKey]);
+  // Project entries visible to this consumer
+  const entries = useMemo(() => {
+    const result: Record<string, HarnessUsageEntry | undefined> = {};
+    for (const id of ids) {
+      const selectedId = storeSelected?.[id] ?? 'default';
+      const entry = storeReadings?.[id]?.[selectedId];
+      if (entry) {
+        result[id] = {
+          ...entry,
+          account: entry.account ? { ...entry.account, selected: true } : undefined,
+        };
+      }
+    }
+    return result;
+  }, [ids, storeReadings, storeSelected]);
+
+  const otherAccounts = useMemo(() => {
+    const result: Record<string, HarnessUsageEntry[] | undefined> = {};
+    for (const id of ids) {
+      const selectedId = storeSelected?.[id] ?? 'default';
+      const harnessMap = storeReadings?.[id] ?? {};
+      const others = Object.entries(harnessMap)
+        .filter(([accId]) => accId !== selectedId)
+        .map(([, entry]) => ({
+          ...entry,
+          account: entry.account ? { ...entry.account, selected: false } : undefined,
+        }));
+      result[id] = others;
+    }
+    return result;
+  }, [ids, storeReadings, storeSelected]);
+
+  const pending = useMemo(() => {
+    const result: Record<string, boolean> = {};
+    for (const id of ids) {
+      if (storePending?.[id]) result[id] = true;
+    }
+    return result;
+  }, [ids, storePending]);
+
+  const [localNow, setLocalNow] = useState(() => Date.now());
+  const currentNow = Math.max(storeNow, localNow);
 
   const nextManualRefreshAt = useMemo(() => {
     const resolved = ids.map((id) => entries[id]).filter((entry): entry is HarnessUsageEntry => entry !== undefined);
-    // A resolved entry without refreshableAt (e.g. not-installed) can always be re-checked by a forced
-    // refresh; unresolved/initial-loading entries do not count.
     if (resolved.some((entry) => typeof entry.refreshableAt !== 'number')) return undefined;
     const times = resolved.map((entry) => entry.refreshableAt as number);
     if (times.length === 0) return undefined;
-    return times.some((time) => time <= now) ? undefined : Math.min(...times);
-  }, [entries, now, ids]);
+    return times.some((time) => time <= currentNow) ? undefined : Math.min(...times);
+  }, [entries, currentNow, ids]);
 
-  // Wake exactly when the earliest provider becomes force-refreshable.
+  // Wake up when the earliest refreshableAt arrives so the button enables itself promptly.
   useEffect(() => {
     if (!open || nextManualRefreshAt === undefined) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, nextManualRefreshAt - Date.now()) + 50);
+    const delay = Math.max(0, nextManualRefreshAt - Date.now()) + 50;
+    const timer = setTimeout(() => {
+      setLocalNow(Date.now());
+    }, delay);
     return () => clearTimeout(timer);
   }, [open, nextManualRefreshAt]);
 
-  const refreshing = forcing > 0;
-  // Any ordinary (initial/poll) or forced request in flight for a selected harness makes Refresh unavailable.
+  const refreshing = storeForcing > 0;
   const hasPending = ids.some((id) => pending[id] === true);
   const canManualRefresh = ids.length > 0 && !hasPending && !refreshing && nextManualRefreshAt === undefined;
-  return { harnessIds: ids, entries, otherAccounts, selectAccount, pending, refreshing, now, refreshAll, canManualRefresh, nextManualRefreshAt };
+
+  return {
+    harnessIds: ids,
+    entries,
+    otherAccounts,
+    selectAccount,
+    pending,
+    refreshing,
+    now: currentNow,
+    refreshAll,
+    canManualRefresh,
+    nextManualRefreshAt,
+  };
 }

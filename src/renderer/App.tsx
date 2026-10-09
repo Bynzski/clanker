@@ -6,6 +6,7 @@ import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import WorkspacePaneDragProvider from './components/WorkspacePaneDragProvider';
 import { ToastViewport } from './components/NotificationCenter';
+import { initUsageListeners } from './store/usageStore';
 import { useAssistantNavStore } from './store/assistantNavStore';
 
 const workspaceDestinationActive = () => useAssistantNavStore.getState().activeAssistantId === null
@@ -32,6 +33,7 @@ import { useCheckoutReconciliation } from './lib/checkoutReconciliation';
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
 function App() {
+  useEffect(() => initUsageListeners(), []);
   const [showOpenWorkspace, setShowOpenWorkspace] = useState(false);
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   const { 

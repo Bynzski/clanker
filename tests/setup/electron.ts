@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { FileListDirectoryResult } from '../../src/shared/types/fileExplorer';
+import { initUsageListeners, useUsageStore } from '../../src/renderer/store/usageStore';
 
 export type ElectronApiMock = {
   [K in keyof Window['electronAPI']]: ReturnType<typeof vi.fn>;
@@ -209,7 +210,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     // Session history
     discoverSessions: createAsyncMock([]),
     discoverSessionHistory: vi.fn(async (id: string) => ({ sessions: await window.electronAPI.discoverSessions(id), issues: [] })),
-    getHarnessUsage: createAsyncMock({ workspaceId: '', entries: [] }),
+    getHarnessUsage: createAsyncMock({ environmentId: 'local', environmentGeneration: 0, entries: [] }),
     listHarnessAccounts: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     selectHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     startHarnessAccountAdd: createAsyncMock({ flowId: 'flow', state: { status: 'starting' } }),
@@ -218,6 +219,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     removeHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     renameHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     onHarnessAccountAuthState: vi.fn(() => () => undefined),
+    onHarnessAccountsChanged: vi.fn<(callback: Parameters<Window['electronAPI']['onHarnessAccountsChanged']>[0]) => () => void>(() => () => undefined),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
     // Workspace Recipes
@@ -247,11 +249,15 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     sshCreateDirectory: createAsyncMock({ path: '/home/user/workspaces/new-folder' }),
     getEnvironmentHarnessOptions: createAsyncMock({}),
     getEnvironmentHarnessModels: createAsyncMock([]),
+    onSshEnvironmentInvalidated: vi.fn<(callback: Parameters<Window['electronAPI']['onSshEnvironmentInvalidated']>[0]) => () => void>(() => () => undefined),
     ...overrides,
   };
 }
 
-export function installElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
+let disposeUsageListeners: (() => void) | undefined;
+export function installElectronApiMock(overrides: Partial<ElectronApiMock> = {}, initializeUsageListeners = true): ElectronApiMock {
+  disposeUsageListeners?.();
+  useUsageStore.getState().reset();
   const electronApi = createElectronApiMock(overrides);
 
   if (typeof window !== 'undefined') {
@@ -260,9 +266,10 @@ export function installElectronApiMock(overrides: Partial<ElectronApiMock> = {})
       configurable: true,
       writable: true,
     });
-    return electronApi;
+  } else {
+    vi.stubGlobal('window', { electronAPI: electronApi } as unknown as Window & typeof globalThis);
   }
 
-  vi.stubGlobal('window', { electronAPI: electronApi } as unknown as Window & typeof globalThis);
+  disposeUsageListeners = initializeUsageListeners ? initUsageListeners() : undefined;
   return electronApi;
 }
