@@ -5,6 +5,10 @@
  */
 
 import * as fs from 'fs';
+import { isIP } from 'node:net';
+import { parseTrustedRemote } from '../vcs/trustedRemote';
+import { createHash } from 'node:crypto';
+import { approvedGitLabOrigins, canonicalGitLabOrigin, isApprovedGitLabOrigin, replaceApprovedGitLabOrigins } from '../vcs/instancePolicy';
 import * as path from 'path';
 import * as os from 'os';
 import { safeStorage } from 'electron';
@@ -41,6 +45,7 @@ interface CredentialStoreSchema {
   patMetadata: Record<string, Omit<PatConfig, 'provider'>>;
   /** SSH key configuration */
   sshKeyConfig: SshKeyConfig | null;
+  approvedGitLabOrigins: string[];
 }
 
 // ============================================================================
@@ -251,12 +256,23 @@ function secureStorageAvailable(): boolean {
  * Save a Personal Access Token for a provider.
  */
 export async function savePat(request: SavePatRequest): Promise<CredentialSaveResult> {
+  if (!request || typeof request !== 'object') return { success: false, error: 'Invalid credential request' };
   const { provider, token, scope } = request;
+  if (!['github', 'gitlab', 'bitbucket'].includes(provider)) return { success: false, error: 'Unsupported credential provider' };
+  return savePatToKey(provider, token, scope);
+}
 
-  if (!token || token.trim().length === 0) {
+let credentialRevision = 0;
+export function getCredentialRevision(): number { return credentialRevision; }
+
+async function savePatToKey(provider: string, token: string, scope?: string[]): Promise<CredentialSaveResult> {
+  if (typeof token !== 'string' || !token || token.length > 65536 || token.trim().length === 0) {
     return { success: false, error: 'Token cannot be empty' };
   }
 
+  if (scope !== undefined && (!Array.isArray(scope) || scope.length > 32
+    || scope.some((value) => typeof value !== 'string' || value.length > 128 || /[\r\n\0]/.test(value))))
+    return { success: false, error: 'Invalid declared token scopes' };
   try {
     if (!secureStorageAvailable()) {
       return {
@@ -269,9 +285,11 @@ export async function savePat(request: SavePatRequest): Promise<CredentialSaveRe
       : safeStorage.encryptString(token);
     storeSet(`encryptedPats.${provider}`, encrypted.toString('base64'));
 
+    credentialRevision++;
     // Store metadata
     storeSet(`patMetadata.${provider}`, {
-      scope: scope || ['repo'],
+      // User-declared metadata, not inferred permissions or a provider-agnostic scope.
+      scope: scope || [],
       storedAt: new Date().toISOString(),
       validated: false,
     });
@@ -286,6 +304,10 @@ export async function savePat(request: SavePatRequest): Promise<CredentialSaveRe
  * Retrieve a stored PAT for a provider.
  */
 export function getPat(provider: VcsProvider): { success: boolean; token?: string; error?: string } {
+  return getPatFromKey(provider);
+}
+
+function getPatFromKey(provider: string): { success: boolean; token?: string; error?: string } {
   try {
     const encrypted = storeGet(`encryptedPats.${provider}`) as string | undefined;
     if (!encrypted) {
@@ -313,21 +335,86 @@ export function getPat(provider: VcsProvider): { success: boolean; token?: strin
  * Delete a stored PAT for a provider.
  */
 export function deletePat(provider: VcsProvider): CredentialSaveResult {
+  if (!['github', 'gitlab', 'bitbucket'].includes(provider)) return { success: false, error: 'Unsupported credential provider' };
+  return deletePatFromKey(provider);
+}
+function deletePatFromKey(provider: string): CredentialSaveResult {
   try {
     storeDelete(`encryptedPats.${provider}`);
     storeDelete(`patMetadata.${provider}`);
+    credentialRevision++;
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to delete PAT';
-    return { success: false, error: message };
+  } catch {
+    credentialRevision++;
+    return { success: false, error: 'Failed to remove stored token.' };
   }
+}
+
+function instanceTokenKey(origin: string): string {
+  return `gitlab-instance-${createHash('sha256').update(origin).digest('hex')}`;
+}
+
+/** Main-only enrollment. Not exposed through renderer IPC. */
+export function approveGitLabInstance(input: string): CredentialSaveResult {
+  const origin = canonicalGitLabOrigin(input);
+  if (!origin || origin === 'https://gitlab.com') return { success: false, error: 'Invalid self-managed GitLab HTTPS origin.' };
+  try {
+    const origins = [...new Set([...approvedGitLabOrigins(), origin])];
+    if (origins.length > 16) return { success: false, error: 'GitLab instance approval limit reached.' };
+    storeSet('approvedGitLabOrigins', origins);
+    replaceApprovedGitLabOrigins(origins);
+    credentialRevision++;
+    return { success: true };
+  } catch { return { success: false, error: 'Failed to save instance approval.' }; }
+}
+export function revokeGitLabInstance(input: string): CredentialSaveResult {
+  const origin = canonicalGitLabOrigin(input);
+  if (!origin || origin === 'https://gitlab.com') return { success: false, error: 'Invalid self-managed GitLab origin.' };
+  const origins = approvedGitLabOrigins().filter((entry) => entry !== origin);
+  // Stop dispatch immediately, even if durable storage is currently unavailable.
+  replaceApprovedGitLabOrigins(origins);
+  credentialRevision++;
+  try {
+    storeSet('approvedGitLabOrigins', origins);
+    return deletePatFromKey(instanceTokenKey(origin));
+  } catch { return { success: false, error: 'Instance revoked for this session, but persistence failed. Retry before restarting.' }; }
+}
+export function restoreApprovedGitLabInstances(): void {
+  try {
+    const origins = storeGet('approvedGitLabOrigins');
+    replaceApprovedGitLabOrigins(Array.isArray(origins) ? origins.filter((v): v is string => typeof v === 'string') : []);
+  } catch { replaceApprovedGitLabOrigins([]); }
+}
+export async function saveGitLabInstancePat(input: string, token: string, scope?: string[]): Promise<CredentialSaveResult> {
+  const origin = canonicalGitLabOrigin(input);
+  if (!origin || origin === 'https://gitlab.com' || !isApprovedGitLabOrigin(origin)) return { success: false, error: 'GitLab instance is not approved.' };
+  return savePatToKey(instanceTokenKey(origin), token, scope);
+}
+function providerTokenKey(provider: VcsProvider, origin: string): string | null {
+  if (provider === 'gitlab') {
+    const valid = canonicalGitLabOrigin(origin);
+    return valid && isApprovedGitLabOrigin(valid) ? valid === 'https://gitlab.com' ? 'gitlab' : instanceTokenKey(valid) : null;
+  }
+  const expected = provider === 'github' ? 'https://github.com' : provider === 'bitbucket' ? 'https://bitbucket.org' : '';
+  return expected && origin === expected ? provider : null;
+}
+export function getProviderPat(provider: VcsProvider, origin: string): ReturnType<typeof getPat> {
+  const key = providerTokenKey(provider, origin);
+  return key ? getPatFromKey(key) : { success: false, error: 'Provider origin is not approved.' };
+}
+export function hasStoredProviderPat(provider: VcsProvider, origin: string): boolean {
+  const key = providerTokenKey(provider, origin);
+  return key ? !!storeGet(`encryptedPats.${key}`) : false;
 }
 
 /**
  * Get PAT metadata for a provider.
  */
 export function getPatMetadata(provider: VcsProvider): PatConfig | null {
-  const metadata = storeGet(`patMetadata.${provider}`) as {
+  return getPatMetadataFromKey(provider, provider);
+}
+function getPatMetadataFromKey(key: string, provider: VcsProvider): PatConfig | null {
+  const metadata = storeGet(`patMetadata.${key}`) as {
     scope?: string[];
     storedAt?: string;
     validated?: boolean;
@@ -338,7 +425,7 @@ export function getPatMetadata(provider: VcsProvider): PatConfig | null {
 
   return {
     provider,
-    scope: metadata.scope || ['repo'],
+    scope: metadata.scope || [],
     storedAt: metadata.storedAt || new Date().toISOString(),
     validated: metadata.validated || false,
   };
@@ -413,8 +500,10 @@ export async function getCredentialStatus(
   const credentialHelper = await detectCredentialHelper(remoteUrl);
   const hasSshKey = sshKeyExists();
   const sshKeyConfig = hasSshKey ? getSshKeyConfig() : undefined;
-  const hasPat = !!storeGet(`encryptedPats.${provider}`);
-  const patMetadata = getPatMetadata(provider);
+  const remote = parseTrustedRemote(remoteUrl);
+  const key = remote?.provider === provider ? providerTokenKey(provider, remote.baseUrl) : null;
+  const hasPat = key ? !!storeGet(`encryptedPats.${key}`) : false;
+  const patMetadata = key ? getPatMetadataFromKey(key, provider) : null;
 
   return {
     remoteName,
@@ -442,7 +531,7 @@ export async function getGlobalCredentialStatus(): Promise<GlobalCredentialStatu
       continue;
     }
 
-    let validated = metadata.validated;
+    let validated = false;
 
     const tokenResult = getPat(provider);
     const providerInstance = getProviderInstance(provider);
@@ -478,9 +567,16 @@ export async function getGlobalCredentialStatus(): Promise<GlobalCredentialStatu
  * Configure SSH to use the generated key for a specific host.
  */
 export async function configureSshForHost(hostname: string): Promise<CredentialSaveResult> {
+  if (typeof hostname !== 'string' || hostname.length === 0 || hostname.length > 253
+    || (!isIP(hostname) && !hostname.replace(/\.$/, '').split('.').every((label) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)))) {
+    return { success: false, error: 'Invalid SSH hostname. Use one DNS hostname, IP address, or simple host alias.' };
+  }
   const { privateKeyPath } = getDefaultSshKeyPaths();
   const sshConfigPath = getSshConfigPath();
+  if (/[\r\n\0]/.test(privateKeyPath)) return { success: false, error: 'Invalid SSH key path.' };
+  const identityFile = (process.platform === 'win32' ? privateKeyPath.replace(/\\/g, '/') : privateKeyPath.replace(/\\/g, '\\\\')).replace(/"/g, '\\"');
 
+  try {
   // Check if config file exists
   let configContent = '';
   if (fs.existsSync(sshConfigPath)) {
@@ -496,11 +592,10 @@ export async function configureSshForHost(hostname: string): Promise<CredentialS
   // Append host configuration
   const newConfig = `
 Host ${hostname}
-  IdentityFile ${privateKeyPath}
+  IdentityFile "${identityFile}"
   IdentitiesOnly yes
 `;
 
-  try {
     // Ensure .ssh directory exists
     const sshDir = path.dirname(sshConfigPath);
     if (!fs.existsSync(sshDir)) {
@@ -514,8 +609,7 @@ Host ${hostname}
 
     fs.appendFileSync(sshConfigPath, newConfig);
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to configure SSH';
-    return { success: false, error: message };
+  } catch {
+    return { success: false, error: 'Failed to configure SSH host.' };
   }
 }

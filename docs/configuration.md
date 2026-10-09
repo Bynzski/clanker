@@ -116,9 +116,13 @@ The app can automatically configure your SSH config to use the generated key for
 
 | Provider | Description |
 |----------|-------------|
-| GitHub | Personal Access Token (PAT) with repo scope |
+| GitHub | Fine-grained PAT with selected-repository Metadata, Pull requests, Checks and Commit statuses read access; classic private-repository PATs typically use `repo` |
 | GitLab | Personal Access Token with `read_api` scope |
-| Bitbucket | App Password with repository access |
+| Bitbucket | Bearer OAuth/repository/project/workspace access token with appropriate repository/pull-request/pipeline read permissions; not retired app passwords or email+API-token Basic auth |
+
+Saving/decrypting a token, validating identity, and accessing a repository/CI/reviews are separate facts. Declared scopes are metadata, not verified permissions. A repository-scoped Bitbucket token may lack `/user` access while repository reads work.
+
+Self-managed GitLab has main-only exact HTTPS-origin approval and separately encrypted host-bound tokens; ordinary provider settings still manage only SaaS tokens. There is no instance-enrollment UI or renderer approval IPC in this backend phase. SaaS credentials never fall back to another host. See [VCS providers](vcs-providers.md#credentials-and-approved-self-managed-gitlab) for the trusted-main interfaces, origin/port policy and limitations.
 
 ## Persistence
 

@@ -176,6 +176,7 @@ describe('GitButton', () => {
     vi.spyOn(window, 'setTimeout').mockImplementation(mockSetTimeout as unknown as typeof setTimeout);
     
     // Set up default mock responses
+    mockVcsGetContext.mockReset().mockResolvedValue({ success: false, error: 'Not configured' });
     mockGitStopPolling.mockResolvedValue(undefined);
     mockGitGetBranchState.mockResolvedValue({
       success: true,
@@ -267,6 +268,20 @@ describe('GitButton', () => {
     });
   };
 
+  it('ignores older provider replies after a newer explicit refresh', async () => {
+    await openRepoMenu();
+    let resolveOld!: (value: unknown) => void;
+    mockVcsGetContext.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
+    await act(async () => { fireEvent.click(screen.getByText('refresh-context')); });
+    const result = (owner: string) => ({ success: true, provider: { provider: 'github', baseUrl: 'https://github.com', owner, repo: 'repo', defaultBranch: '' },
+      pullRequest: { exists: false, outcome: 'none' }, deepLinks: [] });
+    mockVcsGetContext.mockResolvedValueOnce(result('new'));
+    await act(async () => { fireEvent.click(screen.getByText('refresh-context')); });
+    expect((componentMocks.gitBranchesLastProps as Record<string, { owner?: string }>).provider.owner).toBe('new');
+    await act(async () => { resolveOld(result('old')); });
+    expect((componentMocks.gitBranchesLastProps as Record<string, { owner?: string }>).provider.owner).toBe('new');
+  });
+
   it('keeps same-path workspace statuses isolated when switching between local and SSH', () => {
     const statuses: Array<(status: GitStatusResult) => void> = [];
     mockOnGitStatusUpdate.mockImplementation((listener: (status: GitStatusResult) => void) => {
@@ -274,8 +289,8 @@ describe('GitButton', () => {
       return vi.fn();
     });
 
-    const local = { id: 'local-ws', workspacePath: '/repo', environmentId: 'local', lifecycle: 'active' };
-    const remote = { id: 'ssh-ws', workspacePath: '/repo', environmentId: 'ssh-host', lifecycle: 'inactive' };
+    const local = { id: 'local-ws', workspacePath: '/repo', environmentId: 'local', lifecycle: 'active', terminals: [] };
+    const remote = { id: 'ssh-ws', workspacePath: '/repo', environmentId: 'ssh-host', lifecycle: 'inactive', terminals: [] };
     useWorkspaceStore.setState({
       activeWorkspaceId: local.id,
       workspaces: [local, remote],
@@ -1146,7 +1161,7 @@ describe('GitButton', () => {
         provider: 'github',
       });
 
-      mockVcsGetContext.mockResolvedValueOnce({
+      mockVcsGetContext.mockResolvedValue({
         success: true,
         provider: { provider: 'github', baseUrl: 'https://github.com', owner: 'o', repo: 'r', defaultBranch: 'main' },
         pullRequest: { exists: false },

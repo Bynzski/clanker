@@ -22,11 +22,12 @@ export function getWebBaseUrl(provider: VcsProvider, remoteUrl?: string): string
 
 export function getApiBaseUrl(provider: VcsProvider, remoteUrl?: string): string {
   if (remoteUrl !== undefined && detectProvider(remoteUrl) !== provider) return '';
+  if (provider === 'gitlab') return `${getWebBaseUrl(provider, remoteUrl)}/api/v4`;
   return { github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4', bitbucket: 'https://api.bitbucket.org/2.0', unknown: '' }[provider];
 }
 
 export function buildProviderContext(
-  _remoteName: string, remoteUrl: string, defaultBranch: string = 'main'
+  _remoteName: string, remoteUrl: string, defaultBranch: string = ''
 ): ProviderContext | null {
   const parsed = parseTrustedRemote(remoteUrl);
   return parsed ? { ...parsed, defaultBranch } : null;

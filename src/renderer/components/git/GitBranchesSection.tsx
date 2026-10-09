@@ -1,4 +1,5 @@
 import { Button } from '../ui/Button';
+import { currentVcsCheckoutId } from '../../lib/vcsCheckout';
 import { Input } from '../ui/Input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import type { GitBranch } from './types';
@@ -60,7 +61,10 @@ export function GitBranchesSection({
 
   // Handle creating PR
   const handleCreatePr = () => {
-    window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr', workspaceId);
+    const checkoutContextId = currentVcsCheckoutId(workspaceId);
+    if (checkoutContextId === null) return;
+    if (checkoutContextId) window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr', workspaceId, { checkoutContextId });
+    else window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr', workspaceId);
   };
 
   // Get provider name for badge

@@ -10,6 +10,7 @@ import type {
   ProviderContext,
   PullRequestContext,
   VcsProvider,
+  VcsContextResult,
 } from '../../shared/types/vcs';
 
 export type { VcsProvider, DeepLink, DeepLinkType, ProviderContext, PullRequestContext };
@@ -84,6 +85,8 @@ interface VcsCredentialActions {
  * Provider context state for the current workspace.
  */
 export interface VcsContextState {
+  /** Authoritative normalized snapshot for nonvisual consumers/future presentation. */
+  contextSnapshot: VcsContextResult | null;
   /** Provider context */
   provider: ProviderContext | null;
   /** Pull request info */
@@ -100,6 +103,7 @@ export interface VcsContextState {
  * Actions for provider context.
  */
 interface VcsContextActions {
+  setContextSnapshot: (snapshot: VcsContextResult | null) => void;
   /** Set provider context */
   setProviderContext: (provider: ProviderContext | null) => void;
   /** Set pull request info */
@@ -135,6 +139,7 @@ const initialCredentialState: VcsCredentialState = {
  * Initial context state.
  */
 const initialContextState: VcsContextState = {
+  contextSnapshot: null,
   provider: null,
   pullRequest: null,
   deepLinks: [],
@@ -197,6 +202,7 @@ export const useVcsStore = create<VcsStore>((set) => ({
     })),
 
   // Context actions
+  setContextSnapshot: (contextSnapshot) => set({ contextSnapshot }),
   setProviderContext: (provider: ProviderContext | null) =>
     set(() => ({
       provider,

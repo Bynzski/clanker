@@ -302,13 +302,15 @@ const gitService: GitService = new GitService(
     .map((terminal) => terminal.cwd)
     .filter((cwd): cwd is string => typeof cwd === 'string'),
   () => workspaceRegistry.getLocalOpenWorkspacePaths(),
-  async (workspacePath, args, timeoutMs, workspaceId, environmentId) => {
+  async (workspacePath, args, timeoutMs, workspaceId, environmentId, checkoutContextId) => {
     if (workspaceId !== undefined) {
       const ws = workspaceRegistry.getWorkspace(workspaceId);
-      if (!ws || ws.location.path !== workspacePath || ws.location.environmentId !== environmentId) {
+      const context = checkoutContextId ? workspaceRegistry.resolveCheckoutContext(workspaceId, checkoutContextId) : null;
+      const root = checkoutContextId ? context?.path : ws?.location.path;
+      if (!ws || root !== workspacePath || ws.location.environmentId !== environmentId || context?.missing) {
         throw new Error('Workspace identity is no longer registered');
       }
-      return ws.environment.execGit(ws.location.path, args, timeoutMs);
+      return ws.environment.execGit(root, args, timeoutMs);
     }
     // A path alone cannot distinguish an SSH workspace from a local checkout.
     // Legacy callers without an identity always run against the local filesystem.

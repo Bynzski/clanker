@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Loader2,
 } from 'lucide-react';
+import { currentVcsCheckoutId } from '../../lib/vcsCheckout';
 import type { DeepLink, ProviderContext } from '../../store/vcsStore';
 import './ProviderMenu.css';
 
@@ -80,7 +81,10 @@ export default function ProviderMenu({
     setIsOpen(false);
 
     // Open in system browser (could also open in browser panel)
-    window.electronAPI.vcsOpenDeepLink(workspacePath, link.type, workspaceId);
+    const checkoutContextId = currentVcsCheckoutId(workspaceId);
+    if (checkoutContextId === null) return;
+    if (checkoutContextId) window.electronAPI.vcsOpenDeepLink(workspacePath, link.type, workspaceId, { checkoutContextId });
+    else window.electronAPI.vcsOpenDeepLink(workspacePath, link.type, workspaceId);
   };
 
   const handleRefresh = () => {

@@ -56,7 +56,7 @@ describe('ProviderBadge', () => {
   // No PR State
   // =========================================================================
   describe('no PR state', () => {
-    it('shows Create PR button when pullRequest is null', () => {
+    it('does not imply absence when discovery has not completed', () => {
       render(
         <ProviderBadge
           pullRequest={null}
@@ -64,8 +64,7 @@ describe('ProviderBadge', () => {
       );
 
       const button = document.querySelector('.provider-badge');
-      expect(button?.textContent).toContain('Create PR');
-      expect(button).toHaveClass('create-pr-badge');
+      expect(button).toBeNull();
     });
 
     it('shows Create PR button when pullRequest.exists is false', () => {
@@ -84,7 +83,7 @@ describe('ProviderBadge', () => {
 
       render(
         <ProviderBadge
-          pullRequest={null}
+          pullRequest={createPrContext({ exists: false })}
           onCreatePr={onCreatePr}
         />
       );

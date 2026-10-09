@@ -26,6 +26,7 @@ vi.mock('../../../src/main/credential', () => ({
   getGlobalCredentialStatus: vi.fn<() => Promise<import('../../../src/main/credential/types').GlobalCredentialStatus>>(),
   configureSshForHost: vi.fn<() => Promise<{ success: boolean; error?: string }>>(),
   checkSshKeyExists: vi.fn<() => boolean>(),
+  restoreApprovedGitLabInstances: vi.fn(),
 }));
 
 // Import after mocking

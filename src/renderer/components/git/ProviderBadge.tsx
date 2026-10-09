@@ -59,23 +59,8 @@ export default function ProviderBadge({
   onViewPr,
   onCreatePr,
 }: ProviderBadgeProps) {
-  if (!pullRequest) {
-    // No PR exists - show "Create PR" button
-    return (
-      <div className="provider-badge-container">
-        <button
-          type="button"
-          className="provider-badge create-pr-badge"
-          onClick={onCreatePr}
-          title="Create Pull Request"
-        >
-          <ExternalLink size={10} />
-          <span>Create PR</span>
-        </button>
-      </div>
-    );
-  }
-
+  // Unknown/unavailable discovery is not confirmed absence. No new presentation is added.
+  if (!pullRequest || pullRequest.exists === undefined || (pullRequest.outcome && !['found', 'none'].includes(pullRequest.outcome))) return null;
   const { exists, number, title, state, checksStatus, reviewState } = pullRequest;
 
   if (!exists) {

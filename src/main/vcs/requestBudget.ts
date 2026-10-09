@@ -6,7 +6,7 @@ export interface VcsRequestOptions {
   /** May shorten, never extend, the production budget. */
   timeoutMs?: number;
 }
-interface RequestBudget { signal: AbortSignal; deadline: number; cancel: () => void }
+interface RequestBudget { signal: AbortSignal; deadline: number; cancel: (reason?: 'timeout') => void; requests: Map<string, Promise<unknown>>; bytesRead: number }
 const budgets = new AsyncLocalStorage<RequestBudget>();
 
 export function currentVcsBudget(): RequestBudget | undefined {
@@ -29,9 +29,10 @@ export async function withVcsBudget<T>(operation: () => Promise<T>, options: Vcs
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) abort();
-  const timer = setTimeout(abort, timeoutMs);
+  const timeout = () => controller.abort(new DOMException('Provider deadline exhausted', 'TimeoutError'));
+  const timer = setTimeout(timeout, timeoutMs);
   try {
-    return await budgets.run({ signal: controller.signal, deadline, cancel: abort }, operation);
+    return await budgets.run({ signal: controller.signal, deadline, cancel: (reason) => reason === 'timeout' ? timeout() : abort(), requests: new Map(), bytesRead: 0 }, operation);
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', abort);

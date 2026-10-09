@@ -525,7 +525,7 @@ describe('getPatMetadata', () => {
     const result = getPatMetadata('github');
 
     assert.notStrictEqual(result, null);
-    assert.deepEqual(result!.scope, ['repo']); // default
+    assert.deepEqual(result!.scope, []); // Unknown unless explicitly declared
     assert.equal(result!.validated, false); // default
     assert.ok(result!.storedAt); // generated
   });
@@ -773,7 +773,7 @@ describe('savePat', () => {
 
     assert.equal(result.success, true);
     const metadata = env.store.get('patMetadata.github') as Record<string, unknown>;
-    assert.deepEqual(metadata.scope, ['repo']);
+    assert.deepEqual(metadata.scope, []);
   });
 
   test('returns error for empty token', async () => {
@@ -1428,13 +1428,13 @@ describe('error handling expanded', () => {
 
   test('handles deletePat with non-existent provider', () => {
     const result = deletePat('nonexistent' as unknown as VcsProvider);
-    assert.equal(result.success, true); // Should succeed even if nothing to delete
+    assert.equal(result.success, false); // Provider enum cannot select arbitrary storage keys
   });
 
   test('handles configureSshForHost with empty hostname', async () => {
     const result = await configureSshForHost('');
-    // Should succeed and create config for empty host
-    assert.equal(result.success, true);
+    // Empty host input must never create an SSH config directive.
+    assert.equal(result.success, false);
   });
 
   test('handles configureSshForHost with localhost hostname', async () => {
@@ -1604,7 +1604,7 @@ describe('store operation edge cases', () => {
     // which results in default values being used
     assert.notStrictEqual(result, null);
     assert.equal(result!.provider, 'gitlab');
-    assert.deepEqual(result!.scope, ['repo']); // default
+    assert.deepEqual(result!.scope, []); // Unknown unless explicitly declared
   });
 
   test('deletePat handles invalid stored data', () => {
@@ -1662,8 +1662,8 @@ describe('configuration edge cases', () => {
     const specialHostnames = [
       'host.with.dots.example.com',
       'host-with-dashes.example.com',
-      'host+with+plus.example.com',
-      'host*with*star.example.com',
+      'host123.example.com',
+      '127.0.0.1',
     ];
 
     for (const hostname of specialHostnames) {

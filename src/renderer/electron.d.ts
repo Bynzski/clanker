@@ -14,6 +14,7 @@ import type {
   PullRequestContext,
   VcsProvider,
   VcsContextResult,
+  VcsRequestOptions,
   VcsPrInfoResult,
 } from '../../shared/types/vcs';
 import type {
@@ -312,11 +313,11 @@ export interface ElectronAPI {
   credentialConfigureSshHost: (hostname: string) => Promise<CredentialOperationResult>;
 
   // VCS Provider Context
-  vcsGetContext: (workspacePath: string, workspaceId?: string) => Promise<VcsContextResult>;
-  vcsGetPrInfo: (workspacePath: string, workspaceId?: string) => Promise<VcsPrInfoResult>;
-  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string) => Promise<DeepLink[]>;
-  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string) => Promise<string | null>;
-  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string) => Promise<boolean>;
+  vcsGetContext: (workspacePath: string, workspaceId?: string, options?: VcsRequestOptions) => Promise<VcsContextResult>;
+  vcsGetPrInfo: (workspacePath: string, workspaceId?: string, options?: VcsRequestOptions) => Promise<VcsPrInfoResult>;
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string, options?: VcsRequestOptions) => Promise<DeepLink[]>;
+  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string, options?: VcsRequestOptions) => Promise<string | null>;
+  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string, options?: VcsRequestOptions) => Promise<boolean>;
 
   // Editor
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
