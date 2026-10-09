@@ -33,7 +33,7 @@ describe('UsageWidget', () => {
     const resetsAt = Date.now() + 3 * 3_600_000 + 60_000;
     installElectronApiMock({
       getHarnessOptions: vi.fn().mockResolvedValue({ claude: { name: 'claude', command: 'claude', args: [], icon: 'terminal' } }),
-      getHarnessUsage: vi.fn().mockResolvedValue({ workspaceId: 'ws-1', entries: [{ harnessId: 'claude', status: 'ok', measurements: [pct('Claude · 5 hour', 17, resetsAt)] }] }),
+      getHarnessUsage: vi.fn().mockResolvedValue({ environmentId: 'local', environmentGeneration: 0, entries: [{ harnessId: 'claude', status: 'ok', measurements: [pct('Claude · 5 hour', 17, resetsAt)] }] }),
     });
     useWorkspaceStore.setState({ activeWorkspaceId: 'ws-1', workspaces: [createWorkspaceFixture({ id: 'ws-1', workspacePath: '/w', terminals: [], panes: [] })] });
     useUsageWidgetStore.setState({ ids: [] });

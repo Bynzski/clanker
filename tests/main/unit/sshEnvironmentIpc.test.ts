@@ -5,7 +5,7 @@ import { SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor'
 import { registerSshEnvironmentIpc } from '../../../src/main/ipc/sshEnvironmentIpc';
 import {
   SSH_ENVIRONMENT_DELETE, SSH_ENVIRONMENT_SAVE, SSH_GET_HOME_DIRECTORY, SSH_LIST_DIRECTORIES,
-  SSH_CREATE_DIRECTORY, GET_ENVIRONMENT_HARNESS_MODELS,
+  SSH_CREATE_DIRECTORY, GET_ENVIRONMENT_HARNESS_MODELS, SSH_ENVIRONMENT_INVALIDATED,
 } from '../../../src/shared/ipcChannels';
 import { ipcMain } from 'electron';
 
@@ -23,20 +23,25 @@ describe('SSH environment lifecycle', () => {
   let store: MemoryStore;
   let registry: WorkspaceRegistry;
   let invalidate: Mock;
+  let send: Mock;
+  let generations: Map<string, number>;
   let save: (_event: unknown, config: unknown) => { success: boolean; error?: string };
   let remove: (_event: unknown, id: unknown) => { success: boolean; error?: string };
 
   beforeEach(async () => {
     vi.clearAllMocks();
     store = new MemoryStore();
-    invalidate = vi.fn();
+    generations = new Map();
+    invalidate = vi.fn((id: string) => generations.set(id, (generations.get(id) ?? 0) + 1));
+    send = vi.fn();
     registry = new WorkspaceRegistry(async () => ({
       validateWorkspacePath: async (path: string) => ({ valid: true, resolvedPath: path }),
     } as never));
     registerSshEnvironmentIpc({
       getStore: () => store as never,
-      getEnvironmentManager: () => ({ invalidateSshEnvironment: invalidate }) as never,
+      getEnvironmentManager: () => ({ invalidateSshEnvironment: invalidate, getEnvironmentGeneration: (id: string) => generations.get(id) ?? 0 }) as never,
       getWorkspaceRegistry: () => registry,
+      getMainWindow: () => ({ webContents: { send } }) as never,
     });
     const handlers = vi.mocked(ipcMain.handle).mock.calls;
     save = handlers.find(([channel]) => channel === SSH_ENVIRONMENT_SAVE)![1] as typeof save;
@@ -62,6 +67,10 @@ describe('SSH environment lifecycle', () => {
     expect(remove(null, existing.id).success).toBe(true);
     expect(store.get('sshEnvironments')).toEqual([]);
     expect(invalidate).toHaveBeenCalledWith(existing.id);
+    expect(send).toHaveBeenCalledWith(SSH_ENVIRONMENT_INVALIDATED, { environmentId: existing.id, environmentGeneration: 1 });
+    expect(send).toHaveBeenLastCalledWith(SSH_ENVIRONMENT_INVALIDATED, { environmentId: existing.id, environmentGeneration: 2 });
+    expect(save(null, existing).success).toBe(true);
+    expect(send).toHaveBeenLastCalledWith(SSH_ENVIRONMENT_INVALIDATED, { environmentId: existing.id, environmentGeneration: 3 });
   });
 });
 

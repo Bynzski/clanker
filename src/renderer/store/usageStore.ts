@@ -21,7 +21,9 @@ interface UsageStoreState {
   readings: Record<string, Record<string, Record<string, HarnessUsageEntry>>>;
   // Keyed by environmentId -> harnessId -> accountId
   selectedAccounts: Record<string, Record<string, string>>;
+  // Absent until main supplies an identity; renderer never increments it.
   environmentGenerations: Record<string, number>;
+  // Renderer request invalidation version, keyed by environment + harness.
   accountGenerations: Record<string, number>;
   pending: Record<string, Record<string, boolean>>;
   forcing: Record<string, number>;
@@ -34,7 +36,7 @@ interface UsageStoreState {
   refreshAll: (environmentId: string, workspaceId: string | null, harnessIds: readonly string[], force?: boolean) => void;
   selectAccount: (environmentId: string, workspaceId: string | null, harnessId: string, accountId: string) => Promise<void>;
   handleAccountChange: (change: HarnessAccountChange) => void;
-  invalidateEnvironment: (environmentId: string) => void;
+  invalidateEnvironment: (environmentId: string, environmentGeneration: number) => void;
   registerConsumer: (consumer: UsageConsumer) => () => void;
   reset: () => void;
 }
@@ -42,9 +44,30 @@ interface UsageStoreState {
 let nextConsumerId = 0;
 const consumers = new Map<number, UsageConsumer>();
 const pollingTimers = new Map<string, ReturnType<typeof setInterval>>();
-const inflight = new Map<string, { promise: Promise<void>; force: boolean }>();
+interface UsageOperation {
+  promise: Promise<void>;
+  force: boolean;
+  environmentId: string;
+  harnessId: string;
+  workspaceId: string | null;
+  environmentGeneration: number | undefined;
+  accountGeneration: number;
+}
+const inflight = new Map<string, UsageOperation>();
+
+// Indicators are projections of owned operations, never counters updated by old promises.
+function operationIndicators() {
+  const pending: Record<string, Record<string, boolean>> = {};
+  const forcing: Record<string, number> = {};
+  for (const op of inflight.values()) {
+    (pending[op.environmentId] ??= {})[op.harnessId] = true;
+    if (op.force) forcing[op.environmentId] = (forcing[op.environmentId] ?? 0) + 1;
+  }
+  return { pending, forcing };
+}
 const warmedKeys = new Set<string>();
 let clockTimer: ReturnType<typeof setInterval> | null = null;
+const warmupDisposers = new Map<number, () => void>();
 
 export const useUsageStore = create<UsageStoreState>((set, get) => ({
   readings: {},
@@ -128,37 +151,39 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
       }
     }
 
-    const inflightKey = `${environmentId}\u0000${workspaceId ?? ''}\u0000${harnessId}`;
+    const inflightKey = `${environmentId}\u0000${harnessId}`;
+    const reqEnvGen = get().environmentGenerations[environmentId];
+    const reqAcctGen = get().accountGenerations[inflightKey] ?? 0;
+    const effectiveWsId = environmentId === 'local' ? null : workspaceId;
     const existing = inflight.get(inflightKey);
-    if (existing && (!force || existing.force)) {
+    if (existing && existing.workspaceId === effectiveWsId && existing.environmentGeneration === reqEnvGen && existing.accountGeneration === reqAcctGen && (!force || existing.force)) {
       return existing.promise;
     }
-
-    set((state) => ({
-      pending: {
-        ...state.pending,
-        [environmentId]: { ...(state.pending[environmentId] ?? {}), [harnessId]: true },
-      },
-      forcing: force
-        ? { ...state.forcing, [environmentId]: (state.forcing[environmentId] ?? 0) + 1 }
-        : state.forcing,
-    }));
-
-    const reqEnvGen = get().environmentGenerations[environmentId] ?? 0;
-    const reqAcctGen = get().accountGenerations[environmentId] ?? 0;
-    const effectiveWsId = environmentId === 'local' ? (workspaceId ?? null) : workspaceId;
+    const owned = () => inflight.get(inflightKey)?.promise === promise &&
+      (get().accountGenerations[inflightKey] ?? 0) === reqAcctGen;
+    const contextValid = () => environmentId === 'local' || consumers.size === 0 ||
+      [...consumers.values()].some((c) => c.environmentId === environmentId && c.workspaceId === workspaceId);
 
     const promise = window.electronAPI.getHarnessUsage(effectiveWsId, {
       harnessIds: [harnessId],
       ...(force ? { force: true } : {}),
     })
       .then((response: HarnessUsageResponse) => {
-        const currentEnvGen = get().environmentGenerations[environmentId] ?? 0;
-        if (currentEnvGen !== reqEnvGen) return;
-        if (typeof response.environmentGeneration === 'number' && response.environmentGeneration < reqEnvGen) return;
-        if (consumers.size > 0 && workspaceId !== null) {
-          const hasConsumerForWs = [...consumers.values()].some((c) => c.workspaceId === workspaceId);
-          if (!hasConsumerForWs) return;
+        if (!owned() || !contextValid()) return;
+        if (response.environmentId !== environmentId || !Number.isSafeInteger(response.environmentGeneration) || response.environmentGeneration < 0) return;
+        const currentEnvGen = get().environmentGenerations[environmentId];
+        if (currentEnvGen !== undefined && response.environmentGeneration < currentEnvGen) return;
+        if (currentEnvGen === undefined) {
+          set((state) => ({ environmentGenerations: { ...state.environmentGenerations, [environmentId]: response.environmentGeneration } }));
+          for (const op of inflight.values()) {
+            if (op.environmentId === environmentId) op.environmentGeneration = response.environmentGeneration;
+          }
+        } else if (currentEnvGen !== response.environmentGeneration) {
+          // Adopt main's identity, not a renderer-generated counter. Keep this
+          // operation owned, but retire every operation from the previous incarnation.
+          get().invalidateEnvironment(environmentId, response.environmentGeneration);
+          inflight.set(inflightKey, { promise, force, environmentId, harnessId, workspaceId: effectiveWsId, environmentGeneration: response.environmentGeneration, accountGeneration: reqAcctGen });
+          set(operationIndicators());
         }
 
         const matchedEntries = response.entries.filter((candidate) => candidate.harnessId === harnessId);
@@ -172,8 +197,7 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
           for (const entry of matchedEntries) {
             const accId = entry.account?.id ?? 'default';
             harnessReadings[accId] = entry;
-            // Only adopt reported selection if accounts haven't changed since request started
-            if ((state.accountGenerations[environmentId] ?? 0) === reqAcctGen && entry.account?.selected) {
+            if (entry.account?.selected) {
               selectedId = accId;
             }
           }
@@ -189,12 +213,7 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         });
       })
       .catch(() => {
-        const currentEnvGen = get().environmentGenerations[environmentId] ?? 0;
-        if (currentEnvGen !== reqEnvGen) return;
-        if (consumers.size > 0 && workspaceId !== null) {
-          const hasConsumerForWs = [...consumers.values()].some((c) => c.workspaceId === workspaceId);
-          if (!hasConsumerForWs) return;
-        }
+        if (!owned() || !contextValid() || get().environmentGenerations[environmentId] !== inflight.get(inflightKey)?.environmentGeneration) return;
 
         set((state) => {
           const envReadings = { ...(state.readings[environmentId] ?? {}) };
@@ -215,23 +234,13 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         });
       })
       .finally(() => {
-        if (inflight.get(inflightKey)?.promise === promise) {
-          inflight.delete(inflightKey);
-        }
-        set((state) => {
-          const envPending = { ...(state.pending[environmentId] ?? {}) };
-          delete envPending[harnessId];
-          const envForcing = force
-            ? Math.max(0, (state.forcing[environmentId] ?? 0) - 1)
-            : (state.forcing[environmentId] ?? 0);
-          return {
-            pending: { ...state.pending, [environmentId]: envPending },
-            forcing: { ...state.forcing, [environmentId]: envForcing },
-          };
-        });
+        if (inflight.get(inflightKey)?.promise !== promise) return;
+        inflight.delete(inflightKey);
+        set(operationIndicators());
       });
 
-    inflight.set(inflightKey, { promise, force });
+    inflight.set(inflightKey, { promise, force, environmentId, harnessId, workspaceId: effectiveWsId, environmentGeneration: reqEnvGen, accountGeneration: reqAcctGen });
+    set(operationIndicators());
     return promise;
   },
 
@@ -241,22 +250,12 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
     }
   },
 
-  selectAccount: async (environmentId: string, workspaceId: string | null, harnessId: string, accountId: string) => {
+  selectAccount: async (environmentId: string, _workspaceId: string | null, harnessId: string, accountId: string) => {
     // Never commit optimistically before main confirms success
     try {
       await window.electronAPI.selectHarnessAccount(environmentId, harnessId, accountId);
-      set((state) => {
-        const nextSelected = {
-          ...state.selectedAccounts,
-          [environmentId]: { ...(state.selectedAccounts[environmentId] ?? {}), [harnessId]: accountId },
-        };
-        const nextGen = (state.accountGenerations[environmentId] ?? 0) + 1;
-        return {
-          selectedAccounts: nextSelected,
-          accountGenerations: { ...state.accountGenerations, [environmentId]: nextGen },
-        };
-      });
-      void get().request(environmentId, workspaceId, harnessId, false);
+      // The account service broadcasts confirmed changes (also for Settings).
+      // Never replay an IPC completion: it may arrive after a newer selection.
     } catch {
       // Failed selections preserve authoritative state untouched
     }
@@ -265,66 +264,29 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
   handleAccountChange: (change: HarnessAccountChange) => {
     const env = change.environmentId ?? 'local';
     const harness = change.harness;
-
-    if (change.type === 'selected') {
-      set((state) => {
-        const nextSelected = {
-          ...state.selectedAccounts,
-          [env]: { ...(state.selectedAccounts[env] ?? {}), [harness]: change.accountId },
-        };
-        const nextGen = (state.accountGenerations[env] ?? 0) + 1;
-        return {
-          selectedAccounts: nextSelected,
-          accountGenerations: { ...state.accountGenerations, [env]: nextGen },
-        };
-      });
-      const activeConsumer = [...consumers.values()].find((c) => c.environmentId === env && c.active && c.harnessIds.includes(harness));
-      if (activeConsumer) {
-        void get().request(env, activeConsumer.workspaceId, harness, false);
-      }
-    } else if (change.type === 'removed') {
-      set((state) => {
-        const envReadings = { ...(state.readings[env] ?? {}) };
-        const harnessReadings = { ...(envReadings[harness] ?? {}) };
-        delete harnessReadings[change.accountId];
-        envReadings[harness] = harnessReadings;
-
-        const envSelected = { ...(state.selectedAccounts[env] ?? {}) };
-        if (envSelected[harness] === change.accountId) {
-          envSelected[harness] = 'default';
-        }
-        const nextGen = (state.accountGenerations[env] ?? 0) + 1;
-        return {
-          readings: { ...state.readings, [env]: envReadings },
-          selectedAccounts: { ...state.selectedAccounts, [env]: envSelected },
-          accountGenerations: { ...state.accountGenerations, [env]: nextGen },
-        };
-      });
-    } else if (change.type === 'reconnected') {
-      set((state) => {
-        const envReadings = { ...(state.readings[env] ?? {}) };
-        const harnessReadings = { ...(envReadings[harness] ?? {}) };
-        delete harnessReadings[change.accountId];
-        envReadings[harness] = harnessReadings;
-        const nextGen = (state.accountGenerations[env] ?? 0) + 1;
-        return {
-          readings: { ...state.readings, [env]: envReadings },
-          accountGenerations: { ...state.accountGenerations, [env]: nextGen },
-        };
-      });
-      const activeConsumer = [...consumers.values()].find((c) => c.environmentId === env && c.active && c.harnessIds.includes(harness));
-      if (activeConsumer) {
-        void get().request(env, activeConsumer.workspaceId, harness, false);
-      }
-    }
+    const key = `${env}\u0000${harness}`;
+    inflight.delete(key);
+    set((state) => {
+      const harnessReadings = { ...(state.readings[env]?.[harness] ?? {}) };
+      const selected = { ...(state.selectedAccounts[env] ?? {}) };
+      if (change.type === 'removed' || change.type === 'reconnected') delete harnessReadings[change.accountId];
+      if (change.type === 'selected') selected[harness] = change.accountId;
+      if (change.type === 'removed' && selected[harness] === change.accountId) selected[harness] = 'default';
+      return {
+        readings: { ...state.readings, [env]: { ...state.readings[env], [harness]: harnessReadings } },
+        selectedAccounts: { ...state.selectedAccounts, [env]: selected },
+        accountGenerations: { ...state.accountGenerations, [key]: (state.accountGenerations[key] ?? 0) + 1 },
+        ...operationIndicators(),
+      };
+    });
+    const activeConsumer = [...consumers.values()].find((c) => c.environmentId === env && c.active && c.harnessIds.includes(harness));
+    if (activeConsumer) void get().request(env, activeConsumer.workspaceId, harness, false);
   },
 
-  invalidateEnvironment: (environmentId: string) => {
-    const timer = pollingTimers.get(environmentId);
-    if (timer) {
-      clearInterval(timer);
-      pollingTimers.delete(environmentId);
-    }
+  invalidateEnvironment: (environmentId: string, environmentGeneration: number) => {
+    if (!Number.isSafeInteger(environmentGeneration) || environmentGeneration < 0) return;
+    const current = get().environmentGenerations[environmentId];
+    if (current !== undefined && environmentGeneration <= current) return;
     for (const [key] of inflight) {
       if (key.startsWith(`${environmentId}\u0000`)) inflight.delete(key);
     }
@@ -337,7 +299,7 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
       delete nextPending[environmentId];
       const nextForcing = { ...state.forcing };
       delete nextForcing[environmentId];
-      const nextGen = (state.environmentGenerations[environmentId] ?? 0) + 1;
+      const nextGen = environmentGeneration;
       return {
         readings: nextReadings,
         selectedAccounts: nextSelected,
@@ -381,20 +343,23 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         void get().request(env, ws, h, false);
       }
     } else if (consumer.prefetch && consumer.harnessIds.length > 0) {
-      const warmKey = `${env}\u0000${ws ?? ''}\u0000${consumer.harnessIds.join('\u0000')}`;
+      const warmKey = `${env}\u0000${env === 'local' ? '' : ws ?? ''}\u0000${consumer.harnessIds.join('\u0000')}`;
       if (!warmedKeys.has(warmKey)) {
-        scheduleIdleWarmup(() => {
-          if (consumers.has(id)) {
+        warmupDisposers.set(id, scheduleIdleWarmup(() => {
+          warmupDisposers.delete(id);
+          if (consumers.has(id) && !warmedKeys.has(warmKey)) {
             warmedKeys.add(warmKey);
             for (const h of consumer.harnessIds) {
               void get().request(env, ws, h, false);
             }
           }
-        });
+        }));
       }
     }
 
     return () => {
+      warmupDisposers.get(id)?.();
+      warmupDisposers.delete(id);
       consumers.delete(id);
       const hasActive = [...consumers.values()].some((c) => c.environmentId === env && c.active);
       if (!hasActive) {
@@ -417,6 +382,8 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
     inflight.clear();
     consumers.clear();
     warmedKeys.clear();
+    for (const dispose of warmupDisposers.values()) dispose();
+    warmupDisposers.clear();
     if (clockTimer) {
       clearInterval(clockTimer);
       clockTimer = null;
@@ -433,22 +400,29 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
   },
 }));
 
+let listenerOwners = 0;
+let disposeListeners: (() => void) | undefined;
+
 export function initUsageListeners(): () => void {
   if (typeof window === 'undefined' || !window.electronAPI) return () => {};
-  const unsubs: Array<() => void> = [];
-  if (window.electronAPI.onHarnessAccountsChanged) {
-    unsubs.push(window.electronAPI.onHarnessAccountsChanged((change) => {
-      useUsageStore.getState().handleAccountChange(change);
-    }));
+  if (listenerOwners++ === 0) {
+    const unsubs = [
+      window.electronAPI.onHarnessAccountsChanged((change) => {
+        useUsageStore.getState().handleAccountChange(change);
+      }),
+      window.electronAPI.onSshEnvironmentInvalidated((event) => {
+        useUsageStore.getState().invalidateEnvironment(event.environmentId, event.environmentGeneration);
+      }),
+    ];
+    disposeListeners = () => { for (const unsub of unsubs) unsub(); };
   }
-  if (window.electronAPI.onSshEnvironmentInvalidated) {
-    unsubs.push(window.electronAPI.onSshEnvironmentInvalidated((event) => {
-      useUsageStore.getState().invalidateEnvironment(event.environmentId);
-    }));
-  }
+  let disposed = false;
   return () => {
-    for (const unsub of unsubs) unsub();
+    if (disposed) return;
+    disposed = true;
+    if (--listenerOwners === 0) {
+      disposeListeners?.();
+      disposeListeners = undefined;
+    }
   };
 }
-
-initUsageListeners();

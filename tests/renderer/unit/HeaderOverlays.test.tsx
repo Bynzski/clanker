@@ -139,16 +139,16 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(Math.max(...counts)).toBeLessThanOrEqual(1);
     });
 
-    it('requests nothing before Usage opens, then queries only the focused workspace id', async () => {
+    it('requests nothing before Usage opens, then queries the shared local environment', async () => {
       const user = userEvent.setup();
       renderHeader();
       expect(window.electronAPI.getHarnessUsage).not.toHaveBeenCalled();
       await user.click(screen.getByRole('button', { name: 'Usage' }));
       expect(window.electronAPI.getHarnessUsage).toHaveBeenCalled();
-      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBe('ws-1');
+      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBeNull();
     });
 
-    it('closes Usage and balances its lease on workspace switch, ignoring a stale response, and queries the new workspace id', async () => {
+    it('closes Usage and balances its lease on workspace switch while retaining shared local readings', async () => {
       const user = userEvent.setup();
       let finish!: (response: import('../../../src/shared/types/harnessUsage').HarnessUsageResponse) => void;
       vi.mocked(window.electronAPI.getHarnessUsage).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
@@ -159,11 +159,11 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       act(() => useWorkspaceStore.getState().selectWorkspace('ws-2'));
       expect(count()).toBe(0);
       expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
-      await act(async () => finish({ workspaceId: 'ws-1', entries: [{ harnessId: 'codex', status: 'ok', checkedAt: Date.now(), measurements: [{ kind: 'rate-limit', unit: 'percent', used: 5, remaining: 95, limit: 100, label: 'Codex · OLD WORKSPACE' }] }] }));
+      await act(async () => finish({ workspaceId: 'ws-1', environmentId: 'local', environmentGeneration: 0, entries: [{ harnessId: 'codex', status: 'ok', checkedAt: Date.now(), measurements: [{ kind: 'rate-limit', unit: 'percent', used: 5, remaining: 95, limit: 100, label: 'Codex · OLD WORKSPACE' }] }] }));
       vi.mocked(window.electronAPI.getHarnessUsage).mockClear();
       await user.click(screen.getByRole('button', { name: 'Usage' }));
-      expect(screen.queryByText('OLD WORKSPACE')).not.toBeInTheDocument();
-      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBe('ws-2');
+      expect(screen.queryByText('OLD WORKSPACE')).toBeInTheDocument();
+      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBeNull();
       expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.length).toBeGreaterThan(0);
     });
 

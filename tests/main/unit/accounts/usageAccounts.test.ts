@@ -5,7 +5,7 @@ import { HarnessCapabilityError, type HarnessProvider, type HarnessUsageContext,
 import { HarnessUsageService } from '../../../../src/main/usage/harnessUsageService';
 import { WorkspaceRegistry } from '../../../../src/main/workspaceRegistry';
 import type { WorkspaceEnvironment } from '../../../../src/main/environment/workspaceEnvironment';
-import { addAccount, createHarness, type Harness } from './accountFixtures';
+import { addAccount, createHarness, settleFlow, type Harness } from './accountFixtures';
 
 const snapshot = (used = 10): HarnessUsageSnapshot => ({ observedAt: 1000, measurements: [{ kind: 'rate-limit', unit: 'percent', used, limit: 100, remaining: 100 - used, label: '5 hour', scope: { accountLabel: 'x@example.test' } }] });
 
@@ -133,6 +133,33 @@ describe('with managed accounts', () => {
     const records = (service as unknown as { recordMaps: Array<Map<string, unknown>> }).recordMaps.flatMap((map) => [...map.keys()]);
     expect(records.some((key) => key.includes(work.id))).toBe(false);
     expect(get).toHaveBeenCalledTimes(2); // default stayed cached
+  });
+
+  it.each(['removed', 'reconnected'] as const)('late %s account probes cannot repopulate main cache or join replacement requests', async (type) => {
+    const work = await addAccount(h, 'codex', 'Work');
+    let finish!: (value: HarnessUsageSnapshot) => void;
+    let managedCalls = 0;
+    const { service } = await setup({ get: async (context) => {
+      if (context.accountId === work.id && ++managedCalls === 1) return new Promise((resolve) => { finish = resolve; });
+      return snapshot(80);
+    } });
+    const old = service.get('ws');
+    const rejected = expect(old).rejects.toThrow('Account changed');
+    await vi.waitFor(() => expect(managedCalls).toBe(1));
+    if (type === 'removed') await h.service.remove('local', 'codex', work.id);
+    else {
+      const started = h.service.reconnect('local', 'codex', work.id);
+      expect((await settleFlow(h, started.flowId)).status).toBe('connected');
+    }
+    const replacement = await service.get('ws');
+    if (type === 'reconnected') {
+      expect(managedCalls).toBe(2);
+      expect(replacement.entries.find((entry) => entry.account?.id === work.id)?.measurements[0].used).toBe(80);
+    }
+    finish(snapshot(10)); await rejected;
+    const cached = await service.get('ws');
+    if (type === 'reconnected') expect(cached.entries.find((entry) => entry.account?.id === work.id)?.measurements[0].used).toBe(80);
+    else expect(cached.entries.some((entry) => entry.account?.id === work.id)).toBe(false);
   });
 
   it('a selected account whose home is broken stays visible as the active account and is never replaced by default', async () => {

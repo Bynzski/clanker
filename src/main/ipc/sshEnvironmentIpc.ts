@@ -41,7 +41,7 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
     try {
       const saved = persistence.saveSshEnvironment(payload);
       getEnvironmentManager().invalidateSshEnvironment(saved.id);
-      getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: saved.id });
+      getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: saved.id, environmentGeneration: getEnvironmentManager().getEnvironmentGeneration(saved.id) });
       return { success: true, config: saved };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -58,7 +58,7 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
 
     const deleted = persistence.deleteSshEnvironment(id.trim());
     getEnvironmentManager().invalidateSshEnvironment(id.trim());
-    getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: id.trim() });
+    getMainWindow?.()?.webContents.send(SSH_ENVIRONMENT_INVALIDATED, { environmentId: id.trim(), environmentGeneration: getEnvironmentManager().getEnvironmentGeneration(id.trim()) });
     return { success: deleted };
   });
   ipcMain.handle(SSH_ENVIRONMENT_TEST, async (_, target: unknown) => {

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import App from '../../../src/renderer/App';
+import { useUsageStore } from '../../../src/renderer/store/usageStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
@@ -44,6 +46,31 @@ beforeEach(() => {
 });
 
 describe('normal application shell and workspace identity opening', () => {
+  it('owns Usage event subscriptions through Strict Mode, independently of widgets, and disposes on teardown', async () => {
+    const accounts = new Set<Parameters<Window['electronAPI']['onHarnessAccountsChanged']>[0]>();
+    const environments = new Set<Parameters<Window['electronAPI']['onSshEnvironmentInvalidated']>[0]>();
+    const api = installElectronApiMock({
+      onHarnessAccountsChanged: vi.fn((callback) => { accounts.add(callback); return () => { accounts.delete(callback); }; }),
+      onSshEnvironmentInvalidated: vi.fn((callback) => { environments.add(callback); return () => { environments.delete(callback); }; }),
+    }, false);
+    const app = render(<StrictMode><App /></StrictMode>);
+    await screen.findByText('No workspace open');
+    expect(accounts.size).toBe(1); expect(environments.size).toBe(1);
+    expect(screen.queryByRole('dialog', { name: 'Usage' })).toBeNull();
+    act(() => {
+      for (const callback of accounts) callback({ type: 'selected', environmentId: 'local', harness: 'codex', accountId: 'a' });
+      for (const callback of environments) callback({ environmentId: 'ssh-1', environmentGeneration: 12 });
+    });
+    expect(useUsageStore.getState().selectedAccounts.local.codex).toBe('a');
+    expect(useUsageStore.getState().environmentGenerations['ssh-1']).toBe(12);
+    const setups = api.onHarnessAccountsChanged.mock.calls.length;
+    app.unmount();
+    expect(accounts.size).toBe(0); expect(environments.size).toBe(0);
+    const remount = render(<App />);
+    expect(accounts.size).toBe(1); expect(environments.size).toBe(1);
+    expect(api.onHarnessAccountsChanged).toHaveBeenCalledTimes(setups + 1);
+    remount.unmount();
+  });
   it.each(['sidebar', 'tabs'] as const)('%s navigation renders immediately with zero workspaces and no launcher', async (mode) => {
     useWorkspaceNavigationStore.setState({ mode });
     render(<App />);

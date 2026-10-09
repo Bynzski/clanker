@@ -21,7 +21,7 @@ const okEntry = (harnessId: string, label: string, used: number, extra: Partial<
 
 let pending: Deferred[];
 const calls = () => vi.mocked(window.electronAPI.getHarnessUsage).mock.calls as unknown as Array<[string | null, HarnessUsageRequest | undefined]>;
-const respond = (d: Deferred, entry: HarnessUsageEntry) => act(async () => d.resolve({ workspaceId: d.workspaceId ?? undefined, entries: [entry] }));
+const respond = (d: Deferred, entry: HarnessUsageEntry) => act(async () => d.resolve({ workspaceId: d.workspaceId ?? undefined, environmentId: 'local', environmentGeneration: 0, entries: [entry] }));
 
 /** Every request stays pending until the test resolves it, so progressive rendering is observable. */
 /** Every usage-capable harness is installed locally unless a test says otherwise. */
@@ -59,7 +59,7 @@ describe('Usage panel loading', () => {
   it('requests every harness independently and concurrently on open, with ordinary reads', async () => {
     await openUsage();
     expect(calls().map(([, request]) => request)).toEqual(PANEL_IDS.map((id) => ({ harnessIds: [id] })));
-    expect(calls().every(([id]) => id === 'ws-1')).toBe(true);
+    expect(calls().every(([id]) => id === null)).toBe(true);
     expect(calls().some(([, request]) => request?.force)).toBe(false);
     expect(within(panel()).getAllByText('Checking usage…')).toHaveLength(5);
   });
@@ -137,10 +137,8 @@ describe('Usage polling', () => {
     const before = calls().length;
     await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS * 2); });
     const after = calls().slice(before);
-    // The old workspace is no longer polled; the new one only gets its single background warm-up read.
-    expect(after.filter(([workspaceId]) => workspaceId === 'ws-1')).toHaveLength(0);
-    expect(after.map(([, request]) => request?.harnessIds?.[0])).toEqual(['codex', 'claude', 'omp', 'hermes', 'agy']);
-    expect(after.every(([workspaceId, request]) => workspaceId === 'ws-2' && !request?.force)).toBe(true);
+    // Equivalent local navigation shares the already pending operations.
+    expect(after).toHaveLength(0);
   });
 });
 

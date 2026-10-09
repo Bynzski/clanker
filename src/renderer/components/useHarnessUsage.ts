@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HarnessUsageEntry } from '../../shared/types/harnessUsage';
-import { scheduleIdleWarmup } from '../lib/idleWarmup';
 import { useUsageStore } from '../store/usageStore';
 
 export { USAGE_POLL_INTERVAL_MS } from '../store/usageStore';
@@ -44,8 +43,6 @@ export function useHarnessUsage({
 }): UseHarnessUsageResult {
   const idsKey = harnessIds.join('\u0000');
   const ids = useMemo(() => (idsKey ? idsKey.split('\u0000') : []), [idsKey]);
-  const idsRef = useRef<readonly string[]>(ids);
-  idsRef.current = ids;
 
   const storeNow = useUsageStore((s) => s.now);
   const storePending = useUsageStore((s) => s.pending[environmentId]);
@@ -53,43 +50,9 @@ export function useHarnessUsage({
   const storeReadings = useUsageStore((s) => s.readings[environmentId]);
   const storeSelected = useUsageStore((s) => s.selectedAccounts[environmentId]);
 
-  const [ownerKey, setOwnerKey] = useState(() => `${environmentId}\u0000${workspaceId ?? ''}`);
-  const [cachedAtSwitch, setCachedAtSwitch] = useState<Record<string, HarnessUsageEntry | undefined>>(() =>
-    useUsageStore.getState().getEntries(environmentId)
-  );
-  const [allowedHarnesses, setAllowedHarnesses] = useState<Record<string, boolean>>({});
-  const generation = useRef(0);
-  const unmounted = useRef(false);
-
-  const currentOwner = `${environmentId}\u0000${workspaceId ?? ''}`;
-  if (ownerKey !== currentOwner) {
-    setOwnerKey(currentOwner);
-    setCachedAtSwitch(useUsageStore.getState().getEntries(environmentId));
-    setAllowedHarnesses({});
-  }
-
-  useEffect(() => {
-    generation.current++;
-  }, [workspaceId, environmentId]);
-
-  useEffect(() => {
-    unmounted.current = false;
-    return () => { unmounted.current = true; };
-  }, []);
-
-  const request = useCallback((harnessId: string, force: boolean) => {
-    if (!idsRef.current.includes(harnessId)) return;
-    const reqGen = generation.current;
-    void useUsageStore.getState().request(environmentId, workspaceId, harnessId, force).then(() => {
-      if (generation.current === reqGen && !unmounted.current) {
-        setAllowedHarnesses((cur) => ({ ...cur, [harnessId]: true }));
-      }
-    });
-  }, [environmentId, workspaceId]);
-
   const refreshAll = useCallback((force: boolean) => {
-    for (const id of idsRef.current) request(id, force);
-  }, [request]);
+    useUsageStore.getState().refreshAll(environmentId, workspaceId, ids, force);
+  }, [environmentId, workspaceId, ids]);
 
   const selectAccount = useCallback((harnessId: string, accountId: string) => {
     void useUsageStore.getState().selectAccount(environmentId, workspaceId, harnessId, accountId);
@@ -106,43 +69,21 @@ export function useHarnessUsage({
     });
   }, [environmentId, workspaceId, idsKey, open, prefetch, ids]);
 
-  // Initial request when open or when ids change while open
-  useEffect(() => {
-    if (open) {
-      for (const id of ids) {
-        request(id, false);
-      }
-    }
-  }, [open, idsKey, ids, request]);
-
-  // Closed idle warmup
-  const warmed = useRef<string | null>(null);
-  useEffect(() => {
-    const key = `${environmentId}\u0000${workspaceId ?? ''}\u0000${idsKey}`;
-    if (open || !prefetch || ids.length === 0 || warmed.current === key) return;
-    return scheduleIdleWarmup(() => {
-      warmed.current = key;
-      refreshAll(false);
-    });
-  }, [open, prefetch, environmentId, workspaceId, idsKey, ids, refreshAll]);
-
   // Project entries visible to this consumer
   const entries = useMemo(() => {
     const result: Record<string, HarnessUsageEntry | undefined> = {};
     for (const id of ids) {
-      if (cachedAtSwitch[id] !== undefined || allowedHarnesses[id]) {
-        const selectedId = storeSelected?.[id] ?? 'default';
-        const entry = storeReadings?.[id]?.[selectedId];
-        if (entry) {
-          result[id] = {
-            ...entry,
-            account: entry.account ? { ...entry.account, selected: true } : undefined,
-          };
-        }
+      const selectedId = storeSelected?.[id] ?? 'default';
+      const entry = storeReadings?.[id]?.[selectedId];
+      if (entry) {
+        result[id] = {
+          ...entry,
+          account: entry.account ? { ...entry.account, selected: true } : undefined,
+        };
       }
     }
     return result;
-  }, [ids, cachedAtSwitch, allowedHarnesses, storeReadings, storeSelected]);
+  }, [ids, storeReadings, storeSelected]);
 
   const otherAccounts = useMemo(() => {
     const result: Record<string, HarnessUsageEntry[] | undefined> = {};

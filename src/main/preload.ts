@@ -690,8 +690,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SSH_CREATE_DIRECTORY, environmentId, parentPath, name),
   getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
   getEnvironmentHarnessModels: (environmentId: string, harnessId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_MODELS, environmentId, harnessId),
-  onSshEnvironmentInvalidated: (callback: (event: { environmentId: string }) => void) => {
-    const handler = (_event: IpcRendererEvent, data: { environmentId: string }) => callback(data);
+  onSshEnvironmentInvalidated: (callback: (event: { environmentId: string; environmentGeneration: number }) => void) => {
+    const handler = (_event: IpcRendererEvent, data: { environmentId: string; environmentGeneration: number }) => callback(data);
     ipcRenderer.on(SSH_ENVIRONMENT_INVALIDATED, handler);
     return () => ipcRenderer.removeListener(SSH_ENVIRONMENT_INVALIDATED, handler);
   },

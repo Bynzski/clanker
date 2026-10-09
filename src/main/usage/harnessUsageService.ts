@@ -133,6 +133,7 @@ export class HarnessUsageService {
   private readonly cache = new WeakMap<WorkspaceEnvironment, Map<string, UsageRecord>>();
   /** Recently used per-environment record maps (bounded), so a removed account's entries can be dropped. */
   private readonly recordMaps: Array<Map<string, UsageRecord>> = [];
+  private readonly accountGenerations = new Map<string, number>();
   private readonly flights = new WeakMap<WorkspaceEnvironment, Map<string, Promise<UsageRecord | 'not-installed'>>>();
   private readonly availability = new WeakMap<WorkspaceEnvironment, { ids: ReadonlySet<string>; at: number }>();
   private readonly availabilityFlights = new WeakMap<WorkspaceEnvironment, Promise<ReadonlySet<string> | undefined>>();
@@ -161,6 +162,7 @@ export class HarnessUsageService {
   }
 
   private forgetAccount(accountId: string): void {
+    this.accountGenerations.set(accountId, (this.accountGenerations.get(accountId) ?? 0) + 1);
     for (const records of this.recordMaps) {
       for (const key of [...records.keys()]) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
     }
@@ -189,16 +191,18 @@ export class HarnessUsageService {
     const workspace = typeof workspaceId === 'string' ? this.registry.getWorkspace(workspaceId) : null;
     if (!workspace) throw new Error('Workspace is not registered');
     const { environment } = workspace;
+    const environmentGeneration = this.getEnvironmentGeneration(environment.id);
 
     const entries = await this.resolveEntries(environment, request);
 
     // The workspace may have closed (or been replaced under the same ID)
     // while probes ran. Never hand its result to whatever workspace is there now.
     if (this.registry.getWorkspace(workspaceId) !== workspace) throw new Error('Workspace closed during usage request');
+    if (this.getEnvironmentGeneration(environment.id) !== environmentGeneration) throw new Error('Environment changed during usage request');
     return {
       workspaceId,
       environmentId: environment.id,
-      environmentGeneration: this.getEnvironmentGeneration(environment.id),
+      environmentGeneration,
       entries,
     };
   }
@@ -275,12 +279,14 @@ export class HarnessUsageService {
     if (this.mustServeCache(cached, force, this.now())) return toEntry(cached);
     let flights = this.flights.get(environment);
     if (!flights) this.flights.set(environment, flights = new Map());
-    let flight = flights.get(key);
+    const accountGeneration = binding ? this.accountGenerations.get(binding.id) ?? 0 : 0;
+    const flightKey = `${key}\u0000${accountGeneration}`;
+    let flight = flights.get(flightKey);
     if (!flight) {
       flight = installedHarnesses()
-        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached, binding)))
-        .finally(() => { flights.delete(key); });
-      flights.set(key, flight);
+        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached, binding, accountGeneration)))
+        .finally(() => { if (flights.get(flightKey) === flight) flights.delete(flightKey); });
+      flights.set(flightKey, flight);
     }
     const outcome = await flight;
     return outcome === 'not-installed' ? plainEntry(harnessId, 'not-installed') : toEntry(outcome);
@@ -311,7 +317,7 @@ export class HarnessUsageService {
     return flight;
   }
 
-  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined, binding?: ResolvedHarnessAccountBinding): Promise<UsageRecord> {
+  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined, binding?: ResolvedHarnessAccountBinding, accountGeneration = 0): Promise<UsageRecord> {
     const harnessId = provider.descriptor.id;
     const capability = provider.usage!;
     const controller = new AbortController();
@@ -361,6 +367,9 @@ export class HarnessUsageService {
       this.controllers.delete(controller);
       controller.abort();
       await execution.disposeSessions();
+    }
+    if (binding && (this.accountGenerations.get(binding.id) ?? 0) !== accountGeneration) {
+      throw new Error('Account changed during usage request');
     }
     let perEnvironment = this.cache.get(environment);
     if (!perEnvironment) {

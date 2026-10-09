@@ -134,7 +134,7 @@ describe('useHarnessUsage accounts', () => {
     const { renderHook } = await import('@testing-library/react');
     const { useHarnessUsage } = await import('../../../../src/renderer/components/useHarnessUsage');
     const entry = (id: string, selected: boolean): HarnessUsageEntry => ({ harnessId: 'codex', status: 'ok', measurements: [], account: { id, name: id, selected } });
-    vi.mocked(window.electronAPI.getHarnessUsage).mockResolvedValue({ workspaceId: 'w', entries: [entry('acct_1', true), entry('default', false)] });
+    vi.mocked(window.electronAPI.getHarnessUsage).mockResolvedValue({ environmentId: 'local', environmentGeneration: 0, entries: [entry('acct_1', true), entry('default', false)] });
     vi.mocked(window.electronAPI.selectHarnessAccount).mockResolvedValue(list([def()]));
     const { result } = renderHook(() => useHarnessUsage({ workspaceId: 'w', open: true, harnessIds: ['codex'], environmentId: 'local' }));
     await waitFor(() => expect(result.current.entries.codex?.account?.id).toBe('acct_1'));

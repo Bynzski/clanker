@@ -195,7 +195,7 @@ describe('Usage → Settings account handoff', () => {
   beforeEach(() => {
     setWorkspaces({ id: 'ws-local', environmentId: 'local' });
     vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation(async (workspaceId: string | null, request) => ({
-      workspaceId: workspaceId ?? undefined,
+      workspaceId: workspaceId ?? undefined, environmentId: 'local', environmentGeneration: 0,
       entries: request?.harnessIds?.[0] === 'codex' ? [usageEntry('Default', 'default', true), usageEntry('Work', 'acct_1', false)] : [],
     }));
     vi.mocked(window.electronAPI.listHarnessAccounts).mockImplementation(async (_environmentId: string, harness: string) =>
@@ -228,7 +228,7 @@ describe('Usage → Settings account handoff', () => {
 
   it('default-only Usage shows no account actions', async () => {
     vi.mocked(window.electronAPI.getHarnessUsage).mockImplementation(async (workspaceId: string | null) => ({
-      workspaceId: workspaceId ?? undefined, entries: [{ harnessId: 'codex', status: 'ok', measurements: [], checkedAt: 1 }],
+      workspaceId: workspaceId ?? undefined, environmentId: 'local', environmentGeneration: 0, entries: [{ harnessId: 'codex', status: 'ok', measurements: [], checkedAt: 1 }],
     }));
     const user = userEvent.setup();
     render(<><Header /><UsageWidget /></>);

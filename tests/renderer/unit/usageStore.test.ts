@@ -200,7 +200,7 @@ describe('useUsageStore architecture hardening', () => {
 
     // Ordinary request populates cache
     await useUsageStore.getState().request('local', 'ws-1', 'claude', false);
-    expect(mockApi.getHarnessUsage).toHaveBeenLastCalledWith('ws-1', { harnessIds: ['claude'] });
+    expect(mockApi.getHarnessUsage).toHaveBeenLastCalledWith(null, { harnessIds: ['claude'] });
 
     // Ordinary request within freshness window is skipped
     await useUsageStore.getState().request('local', 'ws-1', 'claude', false);
@@ -209,7 +209,7 @@ describe('useUsageStore architecture hardening', () => {
     // Force request bypasses freshness window and passes force: true
     await useUsageStore.getState().request('local', 'ws-1', 'claude', true);
     expect(mockApi.getHarnessUsage).toHaveBeenCalledTimes(2);
-    expect(mockApi.getHarnessUsage).toHaveBeenLastCalledWith('ws-1', { harnessIds: ['claude'], force: true });
+    expect(mockApi.getHarnessUsage).toHaveBeenLastCalledWith(null, { harnessIds: ['claude'], force: true });
   });
 
   it('Account selection through Usage and through Settings both reconcile the displayed readings', async () => {
@@ -232,7 +232,10 @@ describe('useUsageStore architecture hardening', () => {
     expect(useUsageStore.getState().getOtherAccounts('local').claude?.[0]?.account?.id).toBe('acc-2');
 
     // 1. Account selection through Usage
-    vi.mocked(mockApi.selectHarnessAccount).mockResolvedValueOnce({ accounts: [], selections: {} });
+    vi.mocked(mockApi.selectHarnessAccount).mockImplementationOnce(async () => {
+      mockApi.onHarnessAccountsChanged.mock.calls[0][0]({ type: 'selected', accountId: 'acc-2', harness: 'claude', environmentId: 'local' });
+      return { accounts: [], selections: {} };
+    });
     const acc2Selected = { ...acc2Entry, account: { id: 'acc-2', name: 'Personal Account', selected: true } };
     const acc1Deselected = { ...acc1Entry, account: { id: 'acc-1', name: 'Work Account', selected: false } };
     vi.mocked(mockApi.getHarnessUsage).mockResolvedValueOnce({
@@ -264,6 +267,7 @@ describe('useUsageStore architecture hardening', () => {
     const acc1Entry = okEntry('claude', 'acc-1', { account: { id: 'acc-1', name: 'Account 1', selected: true } });
     vi.mocked(mockApi.getHarnessUsage).mockResolvedValueOnce({
       environmentId: 'local',
+      environmentGeneration: 0,
       entries: [acc1Entry],
     });
     await useUsageStore.getState().request('local', 'ws-1', 'claude', false);
@@ -298,6 +302,7 @@ describe('useUsageStore architecture hardening', () => {
     // Old in-flight response for account 1 resolves claiming it is selected
     resolveP1({
       environmentId: 'local',
+      environmentGeneration: 0,
       entries: [okEntry('claude', 'acc-1', { account: { id: 'acc-1', name: 'Account 1', selected: true } })],
     });
     await p1;
@@ -355,7 +360,7 @@ describe('useUsageStore architecture hardening', () => {
 
     // Host A workspaces close, user edits ssh-1 to point to host B.
     // Main broadcasts onSshEnvironmentInvalidated.
-    useUsageStore.getState().invalidateEnvironment('ssh-1');
+    mockApi.onSshEnvironmentInvalidated.mock.calls[0][0]({ environmentId: 'ssh-1', environmentGeneration: 1 });
 
     // ssh-1 usage is immediately wiped clean; host A readings are never presented for host B!
     expect(useUsageStore.getState().getEntries('ssh-1').claude).toBeUndefined();
@@ -371,7 +376,7 @@ describe('useUsageStore architecture hardening', () => {
     const p1 = useUsageStore.getState().request('ssh-1', 'ws-ssh-a', 'claude', false);
 
     // Environment ssh-1 is invalidated while request is in flight
-    useUsageStore.getState().invalidateEnvironment('ssh-1');
+    mockApi.onSshEnvironmentInvalidated.mock.calls[0][0]({ environmentId: 'ssh-1', environmentGeneration: 1 });
 
     // Host A response arrives late
     resolveHostA({
@@ -397,7 +402,7 @@ describe('useUsageStore architecture hardening', () => {
     expect(useUsageStore.getState().getEntries('ssh-1').claude?.measurements[0].used).toBe(80);
 
     // Invalidating SSH does not affect local
-    useUsageStore.getState().invalidateEnvironment('ssh-1');
+    mockApi.onSshEnvironmentInvalidated.mock.calls[0][0]({ environmentId: 'ssh-1', environmentGeneration: 1 });
     expect(useUsageStore.getState().getEntries('local').claude?.measurements[0].used).toBe(10);
     expect(useUsageStore.getState().getEntries('ssh-1').claude).toBeUndefined();
   });
@@ -409,6 +414,7 @@ describe('useUsageStore architecture hardening', () => {
 
     vi.mocked(mockApi.getHarnessUsage).mockResolvedValueOnce({
       environmentId: 'local',
+      environmentGeneration: 0,
       entries: [goodEntry],
     });
     await useUsageStore.getState().request('local', 'ws-1', 'claude', false);

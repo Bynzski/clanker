@@ -363,6 +363,29 @@ describe('isolation, caching and bounds', () => {
   });
 });
 
+describe('authoritative usage environment identity', () => {
+  it('captures identity before probing and rejects a changed incarnation rather than relabeling readings', async () => {
+    const env = fakeEnv('ssh');
+    const { registry, register } = registryFor(env); await register();
+    let generation = 5;
+    let finish!: (value: HarnessUsageSnapshot) => void;
+    const get = vi.fn(() => new Promise<HarnessUsageSnapshot>((resolve) => { finish = resolve; }));
+    const service = new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get })], getEnvironmentGeneration: () => generation });
+    const pending = service.get('ws');
+    const rejected = expect(pending).rejects.toThrow('Environment changed');
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+    generation = 6; finish(snapshot()); await rejected;
+  });
+
+  it('reports the captured current generation and stable local identity', async () => {
+    const env = fakeEnv('ssh');
+    const { registry, register } = registryFor(env); await register();
+    const service = new HarnessUsageService(registry, { providers: () => [], getEnvironmentGeneration: () => 9, localEnvironment: fakeEnv('local') });
+    expect(await service.get('ws')).toEqual({ workspaceId: 'ws', environmentId: 'ssh-1', environmentGeneration: 9, entries: [] });
+    expect(await service.getLocal()).toEqual({ environmentId: 'local', environmentGeneration: 0, entries: [] });
+  });
+});
+
 describe('hard provider limits vs ordinary cache freshness', () => {
   async function setup(refresh: HarnessUsageCapability['refresh'], failing = () => false) {
     let now = 1_000_000;
