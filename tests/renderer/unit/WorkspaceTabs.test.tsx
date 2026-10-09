@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
 import { installElectronApiMock } from '../../setup/electron';
@@ -173,6 +174,22 @@ describe('WorkspaceTabs', () => {
       const transfer = { effectAllowed: '', setData: vi.fn() };
       const control = label === 'Close workspace' ? screen.getByLabelText(label) : screen.getByTitle(label);
       const target = svg ? control.querySelector('svg path')! : control;
+      expect(target).toBeTruthy();
+      expect(fireEvent.dragStart(target, { dataTransfer: transfer })).toBe(false);
+      expect(transfer.setData).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('does not start a drag from the agent selector trigger (SVG descendant: %s)', (svg) => {
+      const ws = createMockWorkspace({
+        id: 'ws1',
+        terminals: [{ id: 't1', pid: 1, harnessId: 'codex', displayName: 'Agent 1', workingDir: '/workspace' }],
+        panes: [{ id: 'p1', terminalId: 't1' }],
+      });
+      useWorkspaceStore.setState({ workspaces: [ws], activeWorkspaceId: 'ws1' });
+      render(<WorkspaceTabs />);
+      const transfer = { effectAllowed: '', setData: vi.fn() };
+      const control = screen.getByRole('button', { name: /Agents in /i });
+      const target = svg ? control.querySelector('svg path') ?? control.querySelector('svg')! : control;
       expect(target).toBeTruthy();
       expect(fireEvent.dragStart(target, { dataTransfer: transfer })).toBe(false);
       expect(transfer.setData).not.toHaveBeenCalled();
@@ -1004,6 +1021,272 @@ describe('WorkspaceTabs', () => {
       fireEvent.click(agentBtn);
 
       expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't1');
+    });
+
+    it('restores a minimized agent across pages using the real store action pipeline', () => {
+      useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+
+      const ws = createMockWorkspace({
+        id: 'ws-real',
+        name: 'Real Store WS',
+        activePageId: 'pg1',
+        pages: [
+          {
+            id: 'pg1',
+            layoutRoot: {
+              type: 'split',
+              nodeId: 'split-1',
+              orientation: 'horizontal',
+              ratio: 0.5,
+              first: { type: 'leaf', nodeId: 'leaf-1', paneId: 'p1' },
+              second: { type: 'leaf', nodeId: 'leaf-2', paneId: 'p2' },
+            },
+            layoutRevision: 1,
+            layoutUndoStack: [],
+            activeTerminalId: 't1',
+          },
+          {
+            id: 'pg2',
+            layoutRoot: { type: 'leaf', nodeId: 'leaf-3', paneId: 'p3' },
+            layoutRevision: 1,
+            layoutUndoStack: [],
+            activeTerminalId: 't3',
+          },
+        ],
+        terminals: [
+          { id: 't1', pid: 101, harnessId: 'codex', displayName: 'Agent 1', workingDir: '/workspace' },
+          { id: 't2', pid: 102, harnessId: 'claude', displayName: 'Agent 2', workingDir: '/workspace' },
+          { id: 't3', pid: 103, harnessId: 'opencode', displayName: 'Agent 3', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+          { id: 'p2', terminalId: 't2' },
+          { id: 'p3', terminalId: 't3' },
+        ],
+        layoutRoot: {
+          type: 'split',
+          nodeId: 'split-1',
+          orientation: 'horizontal',
+          ratio: 0.5,
+          first: { type: 'leaf', nodeId: 'leaf-1', paneId: 'p1' },
+          second: { type: 'leaf', nodeId: 'leaf-2', paneId: 'p2' },
+        },
+        activeTerminalId: 't1',
+      });
+
+      useWorkspaceStore.getState().addWorkspace(ws);
+      useWorkspaceStore.getState().selectWorkspace('ws-real');
+
+      // Minimize Agent 1 on Page 1
+      act(() => {
+        useWorkspaceStore.getState().minimizeWorkspacePane('ws-real', 'p1');
+      });
+
+      let currentWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-real')!;
+      const minimized = currentWs.minimizedPanes ?? [];
+      expect(minimized).toHaveLength(1);
+      expect(minimized[0]?.paneId).toBe('p1');
+      expect(minimized[0]?.pageId).toBe('pg1');
+
+      // Navigate to Page 2
+      act(() => {
+        useWorkspaceStore.getState().selectWorkspacePage('ws-real', 'pg2');
+      });
+
+      currentWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-real')!;
+      expect(currentWs.activePageId).toBe('pg2');
+      expect(currentWs.activeTerminalId).toBe('t3');
+
+      render(<WorkspaceTabs />);
+
+      // Open the agent popover
+      const trigger = screen.getByRole('button', { name: /Agents in Real Store WS/i });
+      fireEvent.click(trigger);
+
+      // Restore Agent 1 from the tabs agent menu
+      const agent1Row = screen.getByText('Agent 1').closest('button')!;
+      fireEvent.click(agent1Row);
+
+      // Verify the store state after restoration
+      const restoredWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-real')!;
+      // 1. Active workspace page switches back to the agent's page (pg1)
+      expect(restoredWs.activePageId).toBe('pg1');
+      // 2. Minimized entry is cleared from minimizedPanes
+      expect(restoredWs.minimizedPanes?.some((entry) => entry.paneId === 'p1')).toBe(false);
+      // 3. The pane is restored to its layout position
+      const page1 = restoredWs.pages!.find((p) => p.id === 'pg1');
+      expect(page1).toBeDefined();
+      expect(page1!.layoutRoot).not.toBeNull();
+      expect(collectLeafPaneIds(page1!.layoutRoot)).toContain('p1');
+      // 4. The restored terminal is marked as active terminal
+      expect(restoredWs.activeTerminalId).toBe('t1');
+      expect(page1!.activeTerminalId).toBe('t1');
+      // 5. PTY process / terminal ID is preserved (no recreation)
+      const t1 = restoredWs.terminals.find((t) => t.id === 't1')!;
+      expect(t1.pid).toBe(101);
+      expect(restoredWs.terminals).toHaveLength(3);
+    });
+
+    it('restores properly when all panes on a page are minimized using the real store action pipeline', () => {
+      useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+
+      const ws = createMockWorkspace({
+        id: 'ws-empty-page',
+        name: 'Empty Page WS',
+        activePageId: 'pg1',
+        pages: [
+          {
+            id: 'pg1',
+            layoutRoot: { type: 'leaf', nodeId: 'leaf-1', paneId: 'p1' },
+            layoutRevision: 1,
+            layoutUndoStack: [],
+            activeTerminalId: 't1',
+          },
+        ],
+        terminals: [
+          { id: 't1', pid: 201, harnessId: 'codex', displayName: 'Sole Agent', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+        ],
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-1', paneId: 'p1' },
+        activeTerminalId: 't1',
+      });
+
+      useWorkspaceStore.getState().addWorkspace(ws);
+      useWorkspaceStore.getState().selectWorkspace('ws-empty-page');
+
+      // Minimize the sole pane on page 1
+      act(() => {
+        useWorkspaceStore.getState().minimizeWorkspacePane('ws-empty-page', 'p1');
+      });
+
+      const currentWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-empty-page')!;
+      const emptyMinimized = currentWs.minimizedPanes ?? [];
+      expect(emptyMinimized).toHaveLength(1);
+      const page1 = currentWs.pages!.find((p) => p.id === 'pg1');
+      expect(page1?.layoutRoot).toBeNull();
+
+      render(<WorkspaceTabs />);
+
+      // Restore via tabs-mode agent selector
+      const trigger = screen.getByRole('button', { name: /Agents in Empty Page WS/i });
+      fireEvent.click(trigger);
+
+      const agentRow = screen.getByText('Sole Agent').closest('button')!;
+      fireEvent.click(agentRow);
+
+      const restoredWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-empty-page')!;
+      expect(restoredWs.activePageId).toBe('pg1');
+      expect(restoredWs.minimizedPanes?.some((entry) => entry.paneId === 'p1')).toBe(false);
+      const restoredPage1 = restoredWs.pages!.find((p) => p.id === 'pg1');
+      expect(restoredPage1).toBeDefined();
+      expect(restoredPage1!.layoutRoot).not.toBeNull();
+      expect(collectLeafPaneIds(restoredPage1!.layoutRoot)).toContain('p1');
+      expect(restoredWs.activeTerminalId).toBe('t1');
+      expect(restoredWs.terminals[0].pid).toBe(201);
+    });
+
+    it('manages browser overlay suppression lifecycle without leaking across open, close, escape, outside click, and workspace switch', () => {
+      useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+
+      const ws1 = createMockWorkspace({
+        id: 'ws1',
+        name: 'Workspace 1',
+        browserOverlayCount: 0,
+        terminals: [
+          { id: 't1', pid: 1, harnessId: 'codex', displayName: 'Agent 1', workingDir: '/workspace' },
+        ],
+        panes: [{ id: 'p1', terminalId: 't1' }],
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-1', paneId: 'p1' },
+      });
+      const ws2 = createMockWorkspace({
+        id: 'ws2',
+        name: 'Workspace 2',
+        browserOverlayCount: 0,
+        terminals: [
+          { id: 't2', pid: 2, harnessId: 'claude', displayName: 'Agent 2', workingDir: '/workspace' },
+        ],
+        panes: [{ id: 'p2', terminalId: 't2' }],
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-2', paneId: 'p2' },
+      });
+
+      useWorkspaceStore.getState().addWorkspace(ws1);
+      useWorkspaceStore.getState().addWorkspace(ws2);
+      useWorkspaceStore.getState().selectWorkspace('ws1');
+
+      const count = (id: string) =>
+        useWorkspaceStore.getState().workspaces.find((w) => w.id === id)?.browserOverlayCount ?? 0;
+
+      const { unmount } = render(<>
+        <WorkspaceTabs />
+        <button data-testid="outside-button">Outside</button>
+      </>);
+
+      expect(count('ws1')).toBe(0);
+
+      const trigger = screen.getByRole('button', { name: /Agents in Workspace 1/i });
+      const outsideButton = screen.getByTestId('outside-button');
+
+      // 1. Open -> lease acquired (+1)
+      fireEvent.click(trigger);
+      expect(count('ws1')).toBe(1);
+
+      // 2. Close by selecting agent -> lease released (0)
+      const agent1Row = screen.getByText('Agent 1').closest('button')!;
+      fireEvent.click(agent1Row);
+      expect(count('ws1')).toBe(0);
+
+      // 3. Open -> lease acquired (+1), close by outside click -> lease released (0)
+      fireEvent.click(trigger);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(count('ws1')).toBe(1);
+      fireEvent.pointerDown(outsideButton);
+      fireEvent.click(outsideButton);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(count('ws1')).toBe(0);
+
+      // 4. Open -> lease acquired (+1), close by Escape -> lease released (0)
+      fireEvent.click(trigger);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(count('ws1')).toBe(1);
+      fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape', code: 'Escape' });
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(count('ws1')).toBe(0);
+
+      // 5. Open -> lease acquired (+1), close by switching workspace -> lease released (0)
+      fireEvent.click(trigger);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(count('ws1')).toBe(1);
+      act(() => {
+        useWorkspaceStore.getState().selectWorkspace('ws2');
+      });
+      expect(count('ws1')).toBe(0);
+
+      // 6. Rapid open/close cycles -> no leaks
+      act(() => {
+        useWorkspaceStore.getState().selectWorkspace('ws1');
+      });
+      for (let i = 0; i < 5; i++) {
+        fireEvent.click(trigger);
+        expect(count('ws1')).toBe(1);
+        fireEvent.click(trigger);
+        expect(count('ws1')).toBe(0);
+      }
+      expect(count('ws1')).toBe(0);
+
+      unmount();
+      expect(count('ws1')).toBe(0);
     });
   });
 });

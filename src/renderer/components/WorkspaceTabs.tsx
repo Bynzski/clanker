@@ -57,6 +57,13 @@ function WorkspaceTabItem({
   seenByTerminalId,
 }: WorkspaceTabItemProps) {
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [prevActive, setPrevActive] = useState(isActive);
+  if (prevActive !== isActive) {
+    setPrevActive(isActive);
+    if (!isActive && agentMenuOpen) {
+      setAgentMenuOpen(false);
+    }
+  }
   const isEditing = workspace.id === editingId;
   const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId, seenByTerminalId);
   const tabLabel = getWorkspaceTabLabel(workspace);
@@ -201,7 +208,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const { editingId, editValue, setEditValue, inputRef, startEditing: beginEditing, saveEdit, handleEditKeyDown } = useWorkspaceRename();
   const reorder = useWorkspaceReorder(workspaces, moveWorkspace, {
     axis: 'horizontal',
-    ignoreDragSelector: '.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close',
+    ignoreDragSelector: '.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close, .workspace-tab-agents-trigger',
   });
 
   const handleClose = async (id: string, event: MouseEvent) => {

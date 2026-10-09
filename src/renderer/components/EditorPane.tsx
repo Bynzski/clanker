@@ -19,10 +19,11 @@ import ConfirmCloseDialog from './ConfirmCloseDialog';
 import { getLanguageExtension } from '../lib/editorLanguage';
 import { isMarkdownFile } from '../lib/markdownPreview';
 import MarkdownPreview from './MarkdownPreview';
+import { PanePresentationControls } from './WorkspacePageControls';
 import './EditorPane.css';
 import { editorCreate, editorDestroy, editorReactMount, editorReactUnmount } from '../lib/workspaceSwitchDebug';
 
-export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
+export default function EditorPane({ workspaceId, paneId }: { workspaceId?: string; paneId?: string }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -37,6 +38,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const [previewTabs, setPreviewTabs] = useState<ReadonlySet<string>>(() => new Set());
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
+  const editorPaneId = paneId ?? workspace?.editorPane?.id;
 
   // ── Actual React component mount/unmount (Phase 2 lifecycle separation) ──
   // This fires ONCE on component mount and ONCE on unmount, regardless of
@@ -281,6 +283,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <Button size="xs" variant="ghost" aria-pressed={!showingPreview} disabled={!isInteractive} onClick={() => setPreviewMode(false)}>Edit</Button>
             <Button size="xs" variant="ghost" aria-pressed={showingPreview} disabled={!isInteractive} onClick={() => setPreviewMode(true)}>Preview</Button>
           </div>}
+          {workspace && isInteractive && editorPaneId && (
+            <PanePresentationControls workspace={workspace} paneId={editorPaneId} />
+          )}
           <IconButton variant="ghost"
             className="editor-pane-close-btn"
             onClick={handleClosePane}
