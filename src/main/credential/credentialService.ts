@@ -277,9 +277,8 @@ export async function savePat(request: SavePatRequest): Promise<CredentialSaveRe
     });
 
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to save PAT';
-    return { success: false, error: message };
+  } catch {
+    return { success: false, error: 'Failed to securely save token. Unlock your OS credential store and try again.' };
   }
 }
 

@@ -5,11 +5,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GitLabProvider } from '../../../../src/main/vcs/providers/gitlabProvider';
+import { responseFromFixture } from './responseFixture';
 import type { ProviderContext } from '../../../../src/main/vcs/types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
 
 describe('GitLabProvider', () => {
   let provider: GitLabProvider;
@@ -295,7 +296,7 @@ describe('GitLabProvider', () => {
   });
 
   describe('custom baseUrl', () => {
-    it('should use custom baseUrl for self-hosted GitLab', () => {
+    it('omits links for unapproved self-hosted GitLab', () => {
       const customContext: ProviderContext = {
         provider: 'gitlab',
         baseUrl: 'https://gitlab.internal.company.com',
@@ -305,9 +306,7 @@ describe('GitLabProvider', () => {
       };
 
       const links = provider.getDeepLinks(customContext);
-      const repoLink = links.find((l) => l.type === 'repo');
-
-      expect(repoLink?.url).toContain('gitlab.internal.company.com');
+      expect(links).toEqual([]);
     });
   });
 });

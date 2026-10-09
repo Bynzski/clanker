@@ -194,19 +194,17 @@ describe('buildDeepLink', () => {
 
   it('should build create PR deep link', () => {
     const url = buildDeepLink('github', 'https://github.com', 'owner', 'repo', 'create-pr', 'feature-branch');
-    expect(url).toBe('https://github.com/owner/repo/compare/main...feature-branch');
+    expect(url).toBe('https://github.com/owner/repo/compare/feature-branch');
   });
 
   it('should build issues deep link', () => {
     const url = buildDeepLink('gitlab', 'https://gitlab.com', 'owner', 'repo', 'issues');
-    expect(url).toBe('https://gitlab.com/owner/repo/issues');
+    expect(url).toBe('https://gitlab.com/owner/repo/-/issues');
   });
 
   it('should build branches deep link for GitLab', () => {
-    // Note: The generic buildDeepLink uses /branches
-    // Provider-specific implementations (GitLabProvider.getDeepLinks) use /-/branches
     const url = buildDeepLink('gitlab', 'https://gitlab.com', 'owner', 'repo', 'branches');
-    expect(url).toBe('https://gitlab.com/owner/repo/branches');
+    expect(url).toBe('https://gitlab.com/owner/repo/-/branches');
   });
 });
 

@@ -1286,6 +1286,18 @@ describe('safeStorage unavailable', () => {
     assert.equal(env.store.get('encryptedPats.github'), 'ciphertext');
   });
 
+  test('encryption failures do not serialize secret-bearing errors to renderer callers', async () => {
+    _setTestSafeStorage({
+      isEncryptionAvailable: () => true,
+      encryptString: () => { throw new Error('secret-token'); },
+      decryptString: (buffer) => buffer.toString(),
+    });
+    const result = await savePat({ provider: 'github', token: 'secret-token' });
+    assert.equal(result.success, false);
+    assert.ok(!JSON.stringify(result).includes('secret-token'));
+    assert.equal(env.store.get('encryptedPats.github'), undefined);
+  });
+
   test('decryption failure returns no token or sensitive error details', () => {
     _setTestSafeStorage({
       isEncryptionAvailable: () => true,

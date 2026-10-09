@@ -1,6 +1,7 @@
 /** Provider identity is derived only from validated hosted remote origins. */
 import type { ProviderContext, VcsProvider, DeepLink } from './types';
 import { parseTrustedRemote } from './trustedRemote';
+import { providerLinks } from './providerLinks';
 
 export function parseRemoteUrl(remoteUrl: string): { owner: string; repo: string } | null {
   const parsed = parseTrustedRemote(remoteUrl);
@@ -32,22 +33,11 @@ export function buildProviderContext(
 }
 
 export function buildDeepLink(
-  _provider: VcsProvider, baseUrl: string, owner: string, repo: string,
-  type: DeepLink['type'], branch?: string, prNumber?: number, defaultBranch: string = 'main'
-): string {
-  const path = `/${owner}/${repo}`;
-  switch (type) {
-    case 'repo': return `${baseUrl}${path}`;
-    case 'pr': return prNumber ? `${baseUrl}${path}/pull/${prNumber}` : `${baseUrl}${path}/pulls`;
-    case 'create-pr': return branch
-      ? `${baseUrl}${path}/compare/${encodeURIComponent(defaultBranch || 'main')}...${encodeURIComponent(branch)}`
-      : `${baseUrl}${path}/compare`;
-    case 'issues': return `${baseUrl}${path}/issues`;
-    case 'releases': return `${baseUrl}${path}/releases`;
-    case 'actions': return `${baseUrl}${path}/actions`;
-    case 'branches': return `${baseUrl}${path}/branches`;
-    default: return `${baseUrl}${path}`;
-  }
+  provider: VcsProvider, baseUrl: string, owner: string, repo: string,
+  type: DeepLink['type'], branch?: string, prNumber?: number, defaultBranch: string = ''
+): string | null {
+  return providerLinks({ provider, baseUrl, owner, repo, defaultBranch }, branch, prNumber)
+    .find((link) => link.type === type)?.url ?? null;
 }
 
 /** Static links never query the provider API or retrieve credentials. */
@@ -56,15 +46,7 @@ export function getProviderDeepLinks(
 ): DeepLink[] {
   const context = parseTrustedRemote(remoteUrl);
   if (!context) return [];
-  const { provider, baseUrl, owner, repo } = context;
-  const link = (type: DeepLink['type'], label: string): DeepLink => ({
-    type, label, url: buildDeepLink(provider, baseUrl, owner, repo, type, branch, prNumber, defaultBranch),
-  });
-  const links = [link('repo', 'Repository')];
-  if (prNumber) links.push(link('pr', `PR #${prNumber}`));
-  if (branch) links.push(link('create-pr', 'Create Pull Request'));
-  links.push(link('branches', 'Branches'), link('issues', 'Issues'), link('releases', 'Releases'), link('actions', 'Actions'));
-  return links;
+  return providerLinks({ ...context, defaultBranch: defaultBranch || '' }, branch, prNumber);
 }
 
 export function getDeepLinkUrl(

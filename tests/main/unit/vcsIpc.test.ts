@@ -7,7 +7,6 @@
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 import type { ProviderContextResult, DeepLink } from '../../../src/main/vcs/types';
-import type { VcsProvider } from '../../../src/shared/types/vcs';
 
 // Mock electron module
 vi.mock('electron', () => ({
@@ -24,6 +23,7 @@ vi.mock('../../../src/main/vcs', () => ({
   getProviderContext: vi.fn<() => Promise<ProviderContextResult>>(),
   getProviderDeepLinks: vi.fn<() => DeepLink[]>(),
   getDeepLinkUrl: vi.fn<() => string | null>(),
+  getProviderPrLink: vi.fn<() => Promise<string | null>>(),
 }));
 
 // Mock the aiCommitIpc module for getValidatedWorkspacePath
@@ -43,10 +43,12 @@ vi.mock('../../../src/main/gitService', () => ({
 }));
 
 // Import after mocking
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import {
   getProviderContext,
   getProviderDeepLinks,
+  getDeepLinkUrl,
+  getProviderPrLink,
 } from '../../../src/main/vcs';
 
 import { getValidatedWorkspacePath } from '../../../src/main/ipc/aiCommitIpc';
@@ -208,12 +210,6 @@ describe('registerVcsIpc', () => {
       remotes: [{ name: 'origin', fetchUrl: 'https://github.com/user/repo.git' }],
       provider: 'github',
     });
-    vi.mocked(getProviderContext).mockResolvedValue({
-      success: true,
-      provider: { provider: 'github' as VcsProvider, baseUrl: 'https://github.com', owner: 'user', repo: 'repo', defaultBranch: 'main' },
-      pullRequest: { exists: false },
-      deepLinks: [],
-    });
     vi.mocked(getProviderDeepLinks).mockReturnValue(mockDeepLinks);
 
     registerVcsIpc({
@@ -224,7 +220,9 @@ describe('registerVcsIpc', () => {
     )?.[1] as (_: unknown, workspacePath: string, prNumber?: number) => DeepLink[];
     const result = await handler(null, '/valid/path', 1);
 
-    expect(getProviderDeepLinks).toHaveBeenCalled();
+    expect(getProviderDeepLinks).toHaveBeenCalledWith('https://github.com/user/repo.git', 'feature-branch', 1);
+    expect(getProviderContext).not.toHaveBeenCalled();
+    expect(getProviderPrLink).not.toHaveBeenCalled();
     expect(result).toEqual(mockDeepLinks);
   });
 
@@ -255,6 +253,36 @@ describe('registerVcsIpc', () => {
 
     expect(result).toBe(false);
   });
+  test.each(['repo', 'branches', 'issues', 'releases', 'actions', 'create-pr'] as const)(
+    'static %s link and open requests never fetch provider context', async (type) => {
+      vi.mocked(getValidatedWorkspacePath).mockReturnValue('/valid/path');
+      mockGitService.getBranchState.mockResolvedValue({ success: true, currentBranch: 'feature/branch' });
+      mockGitService.getRemotes.mockResolvedValue({ success: true, remotes: [{ name: 'origin', fetchUrl: 'https://github.com/user/repo.git' }] });
+      vi.mocked(getDeepLinkUrl).mockReturnValue('https://github.com/user/repo');
+      registerVcsIpc({ getGitService: () => mockGitService as unknown as GitService });
+      const handler = (channel: string) => mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)?.[1] as
+        (_: unknown, path: string, type: DeepLink['type']) => Promise<unknown>;
+      expect(await handler('vcs:get-deep-link')(null, '/valid/path', type)).toBe('https://github.com/user/repo');
+      expect(await handler('vcs:open-deep-link')(null, '/valid/path', type)).toBe(true);
+      expect(shell.openExternal).toHaveBeenCalledWith('https://github.com/user/repo');
+      expect(getProviderContext).not.toHaveBeenCalled();
+      expect(getProviderPrLink).not.toHaveBeenCalled();
+    }
+  );
+
+  test('PR navigation discovers only PR identity and does not invent a detached branch', async () => {
+    vi.mocked(getValidatedWorkspacePath).mockReturnValue('/valid/path');
+    mockGitService.getBranchState.mockResolvedValue({ success: true, currentBranch: undefined });
+    mockGitService.getRemotes.mockResolvedValue({ success: true, remotes: [{ name: 'origin', fetchUrl: 'https://github.com/user/repo.git' }] });
+    vi.mocked(getProviderPrLink).mockResolvedValue(null);
+    registerVcsIpc({ getGitService: () => mockGitService as unknown as GitService });
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'vcs:get-deep-link')?.[1] as
+      (_: unknown, path: string, type: DeepLink['type']) => Promise<unknown>;
+    expect(await handler(null, '/valid/path', 'pr')).toBeNull();
+    expect(getProviderPrLink).toHaveBeenCalledWith('https://github.com/user/repo.git', undefined);
+    expect(getProviderContext).not.toHaveBeenCalled();
+  });
+
   test('uses registered SSH workspace identity for provider metadata at the same local path', async () => {
     vi.mocked(getValidatedWorkspacePath).mockReturnValue('/same/path');
     vi.mocked(mockGitService.getBranchState).mockResolvedValue({

@@ -5,11 +5,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GitLabProvider } from '../../../../src/main/vcs/providers/gitlabProvider';
+import { responseFromFixture } from './responseFixture';
 import type { ProviderContext } from '../../../../src/main/vcs/types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+global.fetch = async (...args) => responseFromFixture(await mockFetch(...args));
 
 describe('GitLabProvider Edge Cases', () => {
   let provider: GitLabProvider;
@@ -242,34 +243,12 @@ describe('GitLabProvider Edge Cases', () => {
   // getDeepLinks Edge Cases
   // =========================================================================
   describe('getDeepLinks - edge cases', () => {
-    it('should use default baseUrl when context.baseUrl is empty', () => {
-      const contextNoBase: ProviderContext = {
-        provider: 'gitlab',
-        baseUrl: '',
-        owner: 'owner',
-        repo: 'repo',
-        defaultBranch: 'main',
-      };
-
-      const links = provider.getDeepLinks(contextNoBase);
-      const repoLink = links.find((l) => l.type === 'repo');
-
-      expect(repoLink?.url).toContain('https://gitlab.com');
+    it('rejects an empty baseUrl rather than guessing an origin', () => {
+      expect(provider.getDeepLinks({ ...context, baseUrl: '' })).toEqual([]);
     });
 
-    it('should use default baseUrl when context.baseUrl is undefined', () => {
-      const contextNoBase: ProviderContext = {
-        provider: 'gitlab',
-        baseUrl: '' as unknown as string,
-        owner: 'owner',
-        repo: 'repo',
-        defaultBranch: 'main',
-      };
-
-      const links = provider.getDeepLinks(contextNoBase);
-      const repoLink = links.find((l) => l.type === 'repo');
-
-      expect(repoLink?.url).toContain('https://gitlab.com');
+    it('rejects a missing baseUrl rather than guessing an origin', () => {
+      expect(provider.getDeepLinks({ ...context, baseUrl: undefined as unknown as string })).toEqual([]);
     });
 
     it('should encode special characters in branch name for create-pr link', () => {
@@ -279,7 +258,7 @@ describe('GitLabProvider Edge Cases', () => {
       expect(createLink?.url).toContain('feature%2Fbranch%20with%20spaces');
     });
 
-    it('should use "main" as fallback when defaultBranch is missing', () => {
+    it('lets GitLab select its native target when defaultBranch is missing', () => {
       const contextNoDefault: ProviderContext = {
         provider: 'gitlab',
         baseUrl: 'https://gitlab.com',
@@ -291,8 +270,8 @@ describe('GitLabProvider Edge Cases', () => {
       const links = provider.getDeepLinks(contextNoDefault, 'feature-branch');
 
       const createLink = links.find((l) => l.type === 'create-pr');
-      // URL contains 'merge_request[target_branch]='
-      expect(createLink?.url).toContain('merge_request[target_branch]=');
+      expect(createLink?.url).not.toContain('merge_request[target_branch]=');
+      expect(createLink?.url).toContain('merge_request[source_branch]=feature-branch');
       expect(createLink).toBeDefined();
     });
 
@@ -337,8 +316,7 @@ describe('GitLabProvider Edge Cases', () => {
 
       const links = provider.getDeepLinks(contextEmpty);
 
-      const repoLink = links.find((l) => l.type === 'repo');
-      expect(repoLink?.url).toBe('https://gitlab.com//');
+      expect(links).toEqual([]);
     });
   });
 
