@@ -39,7 +39,7 @@ export function WorkspacePageSwitcher({ workspace }: { workspace: WorkspaceTab }
   const pages = workspace.pages ?? [];
   const minimized = workspace.minimizedPanes ?? [];
   const selected = activePage(workspace);
-  const removable = pages.length > 1 && !selected?.layoutRoot && !minimized.some((entry) => entry.pageId === selected?.id);
+  const removable = pages.length > 1 && !selected?.browser?.pane && !selected?.layoutRoot && !minimized.some((entry) => entry.pageId === selected?.id);
   return <nav className="workspace-page-switcher" aria-label="Workspace pages">
     {pages.map((page, index) => <PageDropButton key={page.id} workspace={workspace} pageId={page.id} index={index} />)}
     <PageDropButton workspace={workspace} />

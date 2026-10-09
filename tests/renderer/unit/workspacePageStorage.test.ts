@@ -24,7 +24,8 @@ describe('bounded page preferences, without conversation resurrection', () => {
     const browser = { id: 'runtime-browser', tabs: [], activeTabId: null, position: { x: 0, y: 0, w: 6, h: 6 } };
     const result = restoreWorkspacePages({ ...workspace, browserPane: browser, browserVisible: true }, saved());
     expect(collectLeafPaneIds(result.pages![0].layoutRoot)).toEqual(['runtime-browser']);
-    expect(result.browserPane).toBe(browser); expect(result.pages![1].layoutRoot).toBeNull();
+    expect(result.pages![0].browser?.pane).toBe(browser);
+    expect(result.browserPane).toBeNull(); expect(result.pages![1].layoutRoot).toBeNull();
   });
   it('refuses to replace the layout or attach saved slots to unrelated live terminals', () => {
     const live = sanitizeWorkspace(createWorkspaceFixture());

@@ -17,7 +17,7 @@ export default function BrowserLifecycleCoordinator({ activeOwnerId }: BrowserLi
     // Hide every owner except the active one: a workspace and an Assistant native view never coexist.
     // Store invariant W4 guarantees workspace.id === activeWorkspaceId implies lifecycle === 'active'.
     for (const workspace of workspaces) {
-      if ((!workspace.browserVisible && !workspace.browserPane) || (workspace.id === activeOwnerId && workspaceBrowserPresented(workspace) && !workspace.browserOverlayCount)) continue;
+      if ((!workspace.browserVisible && !workspace.browserPane && !workspace.pages?.some((page) => page.browser)) || (workspace.id === activeOwnerId && workspaceBrowserPresented(workspace) && !workspace.browserOverlayCount)) continue;
       window.electronAPI.browserHide(workspace.id);
     }
     for (const [assistantId, ui] of Object.entries(assistantSurfaces)) {

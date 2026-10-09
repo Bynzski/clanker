@@ -28,7 +28,7 @@ export function workspacePageActions(set: StoreApi<WorkspaceState>['setState']):
       if (!allowed()) return state;
       return patchWorkspaceById(state, workspaceId, (workspace) => {
         const page = workspace.pages?.find((item) => item.id === pageId);
-        if (!page || workspace.pages!.length <= 1 || page.layoutRoot || workspace.minimizedPanes?.some((item) => item.pageId === pageId)) return workspace;
+        if (!page || workspace.pages!.length <= 1 || page.browser?.pane || page.layoutRoot || workspace.minimizedPanes?.some((item) => item.pageId === pageId)) return workspace;
         const pages = workspace.pages!.filter((item) => item.id !== pageId);
         return selectPage({ ...workspace, pages }, workspace.activePageId === pageId ? pages[0].id : workspace.activePageId!);
       });

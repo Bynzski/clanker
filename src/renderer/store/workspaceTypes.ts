@@ -132,7 +132,17 @@ export interface LayoutSplit {
   second: LayoutNode;
 }
 
+/** Canonical Browser state; the workspace fields project the selected page only. */
+export interface WorkspacePageBrowser {
+  /** Null only for legacy URL/visibility seeds before the first pane is created. */
+  pane: BrowserPaneState | null;
+  visible: boolean;
+  url: string;
+  placementHint?: PanePlacementRestoreHint | null;
+}
+
 export interface WorkspacePage {
+  browser?: WorkspacePageBrowser;
   id: string;
   layoutRoot: LayoutNode | null;
   layoutRevision: number;
@@ -175,6 +185,7 @@ export interface WorkspaceTab {
   model: string;
   terminals: Terminal[];
   panes: Pane[];
+  /** Compatibility projection of the selected page's canonical Browser. */
   browserVisible: boolean;
   browserOverlayCount?: number;
   browserUrl: string;

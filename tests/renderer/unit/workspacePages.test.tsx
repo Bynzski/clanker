@@ -233,8 +233,10 @@ describe('page-aware Browser and asynchronous resource ownership', () => {
     expect(workspaceBrowserPresented(workspace())).toBe(true);
     act(() => store().addWorkspacePage('w')); rerender(<BrowserLifecycleCoordinator activeOwnerId="w" />);
     expect(window.electronAPI.browserHide).toHaveBeenCalledWith('w');
-    expect(workspace().browserPane).toBe(browser);
-    act(() => store().toggleBrowser('w')); expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(workspace().browserPane).toBeNull();
+    expect(firstPage().browser?.pane).toBe(browser);
+    act(() => store().selectWorkspacePage('w', firstPage().id));
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
     act(() => store().toggleMaximizedPane('w', 'p1')); expect(workspaceBrowserPresented(workspace())).toBe(false);
     act(() => store().toggleMaximizedPane('w', 'p1'));
     act(() => store().minimizeWorkspacePane('w', browser.id)); expect(workspaceBrowserPresented(workspace())).toBe(false);

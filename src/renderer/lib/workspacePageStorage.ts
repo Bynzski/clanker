@@ -106,7 +106,16 @@ export function restoreWorkspacePages(workspace: WorkspaceTab, value: unknown): 
     const paneId = paneIds.get(entry.key);
     return paneId ? [{ paneId, pageId: entry.pageId, placement: null }] : [];
   });
-  const next = selectPage({ ...workspace, pages, minimizedPanes }, saved.activePageId);
+  // V1 maps only an already-present singleton; capture ownership before selecting
+  // projects an empty page's Browser fields over the legacy input.
+  const browserPageId = saved.pages.find((page) => {
+    const contains = (node: SavedNode | null): boolean => Boolean(node && (node.type === 'leaf'
+      ? node.key === 'browser' : contains(node.first) || contains(node.second)));
+    return contains(page.root);
+  })?.id ?? saved.minimized.find((entry) => entry.key === 'browser')?.pageId ?? saved.activePageId;
+  const ownedPages = pages.map((page) => page.id === browserPageId && workspace.browserPane
+    ? { ...page, browser: { pane: workspace.browserPane, visible: workspace.browserVisible, url: workspace.browserUrl } } : page);
+  const next = selectPage({ ...workspace, pages: ownedPages, minimizedPanes }, saved.activePageId);
   return synchronizePages(undefined, next);
 }
 function storageKey(workspace: WorkspaceTab): string {

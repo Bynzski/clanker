@@ -46,6 +46,21 @@ Workspace page controls/commands do not act on a parked workspace while an Assis
 
 ## Implementation
 
+### Independent Browser implementation checkpoint
+
+Browser state is now canonical on `WorkspacePage.browser`: a stable pane with its tabs,
+selected tab, URL, visibility and hidden-placement hint. Workspace-level Browser fields are
+only the selected-page compatibility projection, committed by the same normalization boundary
+as layout fields. Tab-identified events and mutations resolve the owning page even when parked;
+unknown/closed tab ids cannot create Browser state. Legacy singleton state backfills its original
+page, and a page owning a hidden Browser cannot be removed. Moving a Browser transfers this
+association without replacing its pane or tabs; an occupied destination is refused.
+
+This is an incremental implementation checkpoint, **not yet the completed Browser-per-page
+feature**. Native presentation leases/stale-operation fencing, asynchronous preview routing,
+V2 persistence, occupied-drop feedback and real multi-Browser smoke coverage remain outstanding.
+Do not infer native multi-Browser lifecycle correctness from the store tests.
+
 `store/workspacePages.ts` owns normalization/projection and membership operations;
 `workspacePageActions.ts` owns the small page action layer. Existing layout writers pass through
 `syncActiveWorkspace`/`patchWorkspaceById`, which synchronize the active-page compatibility fields.

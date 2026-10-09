@@ -12,6 +12,26 @@ export function paneIsPresented(workspace: WorkspaceTab, paneId: string): boolea
     && (!page?.maximizedPaneId || page.maximizedPaneId === paneId);
 }
 
+/** Project, never copy ownership: pages are the authority once initialized. */
+export function projectPageBrowser(workspace: WorkspaceTab, page: WorkspacePage): WorkspaceTab {
+  return { ...workspace, browserPane: page.browser?.pane ?? null,
+    browserVisible: page.browser?.visible ?? false, browserUrl: page.browser?.url ?? 'https://github.com',
+    browserPlacementHint: page.browser?.placementHint ?? null };
+}
+
+/** Route a late native event by its resource id, never by the selected page. */
+export function updateBrowserOwner(workspace: WorkspaceTab, tabId: string, update: (owner: WorkspaceTab) => WorkspaceTab): WorkspaceTab {
+  if (!workspace.pages) return update(workspace);
+  const page = workspace.pages.find((entry) => entry.browser?.pane?.tabs.some((tab) => tab.id === tabId));
+  if (!page) return workspace;
+  const updated = update(projectPageBrowser(workspace, page));
+  if (!updated.browserPane) return workspace;
+  const browser = { pane: updated.browserPane, visible: updated.browserVisible,
+    url: updated.browserUrl, placementHint: updated.browserPlacementHint };
+  const next = { ...workspace, pages: workspace.pages.map((entry) => entry.id === page.id ? { ...entry, browser } : entry) };
+  return page.id === workspace.activePageId ? projectPageBrowser(next, { ...page, browser }) : next;
+}
+
 export function workspaceBrowserPresented(workspace: WorkspaceTab): boolean {
   return workspace.browserVisible && (!workspace.pages || Boolean(workspace.browserPane && paneIsPresented(workspace, workspace.browserPane.id)));
 }
@@ -19,7 +39,8 @@ export function workspaceBrowserPresented(workspace: WorkspaceTab): boolean {
 function validPaneIds(workspace: WorkspaceTab): Set<string> {
   return new Set([
     ...workspace.panes.map((pane) => pane.id),
-    ...(workspace.browserVisible && workspace.browserPane ? [workspace.browserPane.id] : []),
+    ...(workspace.pages ? workspace.pages.flatMap((page) => page.browser?.pane ? [page.browser.pane.id] : [])
+      : workspace.browserPane ? [workspace.browserPane.id] : []),
     ...(workspace.editorVisible && workspace.editorPane ? [workspace.editorPane.id] : []),
     ...(workspace.notesVisible && workspace.notesPane ? [workspace.notesPane.id] : []),
   ]);
@@ -47,11 +68,31 @@ export function synchronizePages(previous: WorkspaceTab | undefined, next: Works
     id: `${next.id}::page-1`, layoutRoot: next.layoutRoot,
     layoutRevision: next.layoutRevision ?? 0, layoutUndoStack: next.layoutUndoStack ?? [],
     activeTerminalId: next.activeTerminalId,
+    browser: { pane: next.browserPane, visible: next.browserVisible, url: next.browserUrl,
+      placementHint: next.browserPlacementHint },
   };
-  const pages = next.pages?.length ? next.pages : [initial];
+  let pages = next.pages?.length ? next.pages : [initial];
+  // Backfill the previous singleton only on first initialization. Never bind a
+  // Browser created later to an old, empty page.
+  if (!previous?.pages && !pages.some((page) => page.browser)) {
+    const owner = pages.find((page) => next.browserPane && collectLeafPaneIds(page.layoutRoot).includes(next.browserPane.id))
+      ?? pages.find((page) => next.minimizedPanes?.some((entry) => entry.paneId === next.browserPane?.id && entry.pageId === page.id))
+      ?? pages.find((page) => page.id === next.activePageId) ?? pages[0];
+    pages = pages.map((page) => page.id === owner.id ? { ...page, browser: initial.browser } : page);
+  }
   const activePageId = pages.some((page) => page.id === next.activePageId) ? next.activePageId! : pages[0].id;
   const switched = previous?.activePageId !== undefined && previous.activePageId !== activePageId;
-  const allowed = validPaneIds(next);
+  // Legacy writers update the selected-page projection. Commit that write at
+  // this one boundary; explicit page mutations/page switches are already canonical.
+  if (!switched) {
+    const projectionChanged = !previous || next.browserPane !== previous.browserPane
+      || next.browserVisible !== previous.browserVisible || next.browserUrl !== previous.browserUrl
+      || next.browserPlacementHint !== previous.browserPlacementHint;
+    if (projectionChanged) pages = pages.map((page) => page.id === activePageId
+      ? { ...page, browser: { pane: next.browserPane, visible: next.browserVisible,
+        url: next.browserUrl, placementHint: next.browserPlacementHint } } : page);
+  }
+  const allowed = validPaneIds({ ...next, pages });
   const minimizedPanes = (next.minimizedPanes ?? []).filter((entry) => allowed.has(entry.paneId) && pages.some((page) => page.id === entry.pageId));
   const seen = new Set(minimizedPanes.map((entry) => entry.paneId));
   const updatedPages = pages.map((page) => {
@@ -70,7 +111,7 @@ export function synchronizePages(previous: WorkspaceTab | undefined, next: Works
   const selected = updatedPages.find((page) => page.id === activePageId)!;
   const editorPresented = next.editorVisible && next.editorPane && collectLeafPaneIds(selected.layoutRoot).includes(next.editorPane.id)
     && (!selected.maximizedPaneId || selected.maximizedPaneId === next.editorPane.id);
-  return { ...next, pages: updatedPages, activePageId, minimizedPanes,
+  return { ...projectPageBrowser(next, selected), pages: updatedPages, activePageId, minimizedPanes,
     pendingTerminalIds: next.pendingTerminalIds?.filter((id) => next.terminals.some((terminal) => terminal.id === id)),
     layoutRoot: selected.layoutRoot, layoutRevision: selected.layoutRevision, layoutUndoStack: selected.layoutUndoStack,
     activeTerminalId: selected.activeTerminalId, fileSurfaceContextId: !switched && editorPresented ? next.fileSurfaceContextId : undefined };
@@ -79,7 +120,7 @@ export function synchronizePages(previous: WorkspaceTab | undefined, next: Works
 export function selectPage(workspace: WorkspaceTab, pageId: string): WorkspaceTab {
   const page = workspace.pages?.find((entry) => entry.id === pageId);
   if (!page) return workspace;
-  return { ...workspace, activePageId: pageId, layoutRoot: page.layoutRoot,
+  return { ...projectPageBrowser(workspace, page), activePageId: pageId, layoutRoot: page.layoutRoot,
     layoutRevision: page.layoutRevision, layoutUndoStack: page.layoutUndoStack, activeTerminalId: page.activeTerminalId,
     fileSurfaceContextId: undefined };
 }
@@ -105,13 +146,16 @@ export function movePaneToPage(workspace: WorkspaceTab, paneId: string, destinat
     pages = [...pages, destination];
   }
   if (!destination || destination === source) return workspace;
+  const movingBrowser = source.browser?.pane?.id === paneId ? source.browser : undefined;
+  if (movingBrowser && destination.browser?.pane) return workspace;
   const target = selectPage({ ...workspace, pages }, destination.id);
   const layoutRoot = insertPaneIntoLayout(destination.layoutRoot, paneId, {
     ...target, explorerPane: target.explorerPane ?? null, notesPane: target.notesPane ?? null, notesVisible: target.notesVisible ?? false,
   });
   pages = pages.map((page) => page.id === source.id
-    ? { ...page, layoutRoot: removePaneFromLayout(source.layoutRoot, paneId), layoutRevision: page.layoutRevision + 1 }
-    : page.id === destination.id ? { ...page, layoutRoot, layoutRevision: page.layoutRevision + 1,
+    ? { ...page, browser: movingBrowser ? undefined : page.browser,
+      layoutRoot: removePaneFromLayout(source.layoutRoot, paneId), layoutRevision: page.layoutRevision + 1 }
+    : page.id === destination.id ? { ...page, browser: movingBrowser ?? page.browser, layoutRoot, layoutRevision: page.layoutRevision + 1,
       activeTerminalId: pane?.terminalId ?? page.activeTerminalId, maximizedPaneId: undefined, focusBeforeMaximize: undefined } : page);
   return selectPage({ ...workspace, pages }, destination.id);
 }
