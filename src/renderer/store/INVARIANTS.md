@@ -16,6 +16,36 @@ The `gitChanges` field is stored in the explorer section of workspace state. Thi
 
 `workspaceLayout.ts` has direct unit test coverage in `tests/renderer/unit/workspaceLayout.test.ts`.
 
+### Workspace Pages
+
+Sanitized workspaces own one to nine `pages` and a valid `activePageId`. Each page owns topology,
+revision, undo, focus, and ephemeral maximize state. `workspacePages.ts` synchronizes existing
+layout writers at `syncActiveWorkspace`/`patchWorkspaceById`; workspace/top-level layout fields
+are the selected page's projection, never a second independent layout. Normalization filters
+other-page/minimized membership before using the existing algorithms.
+
+Every terminal pane is tiled exactly once or has one minimized record, whose original page cannot
+be removed. Utility panes are workspace-owned singletons; Explorer remains outside the split tree.
+Minimize/restore/page switch/maximize do not spawn or terminate resources or change checkout identity.
+Page drops move one tiled pane within its owning workspace, select its destination and never
+clone resources. Pending placeholders and maximized-source topology edits remain protected; a new
+destination still obeys the nine-page cap. Source/destination revisions change, not resource IDs.
+The App drag domain includes the footer; inactive warm surfaces use disabled, scoped edge targets.
+Undo repairs only the current tiled membership; it cannot resurrect closed/minimized/other-page panes.
+Maximize never changes the stored tree or ratios and remains per-page until explicitly restored.
+Attention is acknowledged only for the presented, focused terminal in the active app destination.
+Terminal dispatch reserves its original page's pane before awaiting spawn, even if the captured
+page is no longer selected after asynchronous checkout resolution. Reservation/attachment/cleanup
+on that page preserve the selected page's topology, history and editor focus. A removed destination
+is refused, never replaced by the selected page. Close is bound to the original workspace/terminal,
+not whichever workspace is selected when IPC completes; a retirement acknowledgment is not proof
+that the underlying process has exited.
+
+Page preferences are scoped by environment + canonical path and contain no runtime pane/PTY IDs
+or undo/focus/maximize history. Location-only reopening retains pages, not running conversations:
+absent terminal slots are pruned and never rebound to unrelated new chats. Recipes are disabled
+with their stored records retained. See `docs/workspace-pages.md`.
+
 ### Workspace Identity
 
 A workspace's persistent identity is its environment ID plus canonical POSIX path. Legacy records without an environment ID are local. A local and an SSH workspace may have the same path while keeping separate layouts, notes, Explorer state, terminals, and browser tabs. Runtime actions use `workspaceId` to select the workspace; a resource file path does not identify one by itself.
@@ -36,6 +66,14 @@ service; a conversation moving or closing never moves/stops it. Orphaned service
 as checkout-labelled rows. Main counts pending/live service processes as checkout usage, so a
 renderer-only inactive checkout row cannot bypass removal protections. Browser handoff re-probes
 readiness and respects newer destination/service selections.
+
+Successful checkout settings saves include a bounded cumulative root/fingerprint manifest in the
+same ordered snapshots (never values). Rows compare canonical local path keys and rediscover only
+when their root fingerprint changes; clearing a root uses the manifest's empty/default fingerprint.
+This metadata invalidates presentation only, never authorizes launches. Run is disabled until stale
+discovery refreshes; there is no automatic retry. Open settings dialogs pin the explicitly opened
+command/terminal and their original editing fingerprint: refreshes cannot replace dirty text, and a
+service becoming live disables Save without unmounting the dialog or making it reopen on Stop.
 
 ## Workspace Lifecycle Model
 
@@ -73,14 +111,14 @@ These rules describe the implemented workspace residency system.
 
 | Resource / behavior | Behavior |
 |-------|-----------|
-| Workspace layout tree | All workspace shells render in one shared container; an LRU cap keeps three pane trees mounted and cold-unmounts older parked trees |
-| Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
-| Terminal input/focus | Active workspace only |
+| Workspace layout tree | An LRU cap keeps three workspace trees mounted; newly spawned/replaced terminals temporarily keep their workspace warm until readiness completes |
+| Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `lib/terminalRuntimeCache.ts` |
+| Terminal input/focus | Presented pane on active page and active Workspace destination only; invisible startup surfaces accept protocol responses, never user keys |
 | Local checkout dev services | Main-owned headless PTYs; app-scoped `workspaceServiceStore` snapshots continue while parked/cold, independent of agent and pane lifetime; workspace close stops them |
 | Editor file watchers | Local watched editor tabs across active and parked workspaces via `editorFileWatcher`; none on SSH workspaces |
 | Explorer watcher | Local active-workspace-only; SSH uses one bounded batched poll for the active workspace's visible/expanded directories and open editor files; parked workspaces retain cached contents |
 | SSH focus refresh | While the active SSH workspace's Explorer is visible, desktop focus refreshes Explorer contents and reloads clean editor tabs; dirty tabs are not automatically overwritten |
-| Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
+| Browser native view | Retained per workspace; visible only on its active page when not minimized, maximize-occluded, or overlay-suppressed; Assistant destination remains separate |
 | Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
 | Global shortcuts | Read the active workspace snapshot via `syncActiveWorkspace` |
 
@@ -105,7 +143,7 @@ xterm buffers, and native browser sessions remain warm across both states.
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `activeTerminalId` | `null` ↔ `terminals.length === 0` | When no terminals exist, no terminal can be active |
+| `activeTerminalId` | Null when the selected page presents no terminal | Other-page/minimized terminals may still be alive |
 | `activeTerminalId` | `activeTerminalId !== null` → `terminals.some(t => t.id === activeTerminalId)` | The active terminal ID always references an existing terminal |
 
 **Why:** Same pattern as workspace. Active terminal is a pointer to the terminal collection.
@@ -116,9 +154,9 @@ xterm buffers, and native browser sessions remain warm across both states.
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `layoutRoot` | `null` ↔ no terminal or Explorer/Browser/Editor/Notes pane is visible | Visible pane IDs are tracked in the layout state |
+| `layoutRoot` | Mirrors the active page; null on empty/all-minimized pages | Running workspace resources are independent of active-page leaves |
 | `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Explorer/Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
-| `layoutUndoStack` | Restored roots are reconciled with the current visible pane set | Undo cannot resurrect closed panes or orphan newly opened panes |
+| `layoutUndoStack` | Per-page history reconciled against that page's current tiled membership | Undo cannot resurrect closed/minimized panes or steal other-page panes |
 
 **Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in pane state, rendering can fail. The Explorer UI is rendered as a separate left sidebar even though its ID remains part of layout state for compatibility; it is not a draggable pane in the current UI.
 
@@ -160,10 +198,10 @@ The store's actions maintain these invariants internally:
 - `selectWorkspace` → moves the top-level snapshot to the selected workspace
 - `addWorkspace` / `selectWorkspace` / `closeWorkspace` → also normalize workspace lifecycle so exactly one workspace is `active`
 - `closeWorkspace` → clears `activeWorkspaceId` if closing the last workspace, otherwise switches to another
-- `addTerminal` → sets `activeTerminalId` to new terminal's ID
+- `addTerminal` → attaches/focuses the new terminal on the captured target page, without stealing active-page selection
 - `removeTerminal` → updates `activeTerminalId` if removing the active terminal
 - `closeEditorTab` → updates `activeEditorTabId` if closing the active tab
-- `setPanes`, `addPane`, `removePane` → rebuilds `layoutRoot` via `buildWorkspaceLayout`
+- `setPanes`, `addPane`, `removePane` → update page-scoped topology and reconcile ownership without rebuilding other pages
 
 ### In Development
 

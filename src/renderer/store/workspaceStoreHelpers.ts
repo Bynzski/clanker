@@ -2,6 +2,7 @@ import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
 } from './workspaceLayout';
+import { synchronizePages } from './workspacePages';
 import type { GitStatus } from '../components/git/types';
 import { backfillCheckoutContexts, bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
@@ -243,7 +244,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
   const environmentId = workspace.environmentId || 'local';
   const environmentLabel = workspace.environmentLabel || (environmentId !== 'local' ? environmentId : 'Local');
 
-  return {
+  return synchronizePages(undefined, {
     ...workspace,
     environmentId,
     environmentLabel,
@@ -271,7 +272,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     layoutUndoStack: [...(workspace.layoutUndoStack ?? [])],
     layoutRoot: buildWorkspaceLayout(layoutSource),
     runtimeState: sanitizeRuntimeState(workspace),
-  };
+  });
 };
 
 function withWorkspaceLifecycle(
@@ -486,7 +487,7 @@ export function syncActiveWorkspace(
   updateWorkspace: (workspace: WorkspaceTab) => WorkspaceTab
 ): Partial<WorkspaceState> {
   const nextWorkspaces = state.workspaces.map((workspace) =>
-    workspace.id === state.activeWorkspaceId ? updateWorkspace(workspace) : workspace
+    workspace.id === state.activeWorkspaceId ? synchronizePages(workspace, updateWorkspace(workspace)) : workspace
   );
 
   const activeWorkspace = findWorkspaceById(nextWorkspaces, state.activeWorkspaceId);
@@ -509,7 +510,7 @@ export function patchWorkspaceById(
   let updatedWorkspace: WorkspaceTab | null = null;
   const nextWorkspaces = state.workspaces.map((workspace) => {
     if (workspace.id === workspaceId) {
-      updatedWorkspace = updater(workspace);
+      updatedWorkspace = synchronizePages(workspace, updater(workspace));
       return updatedWorkspace;
     }
     return workspace;
@@ -597,10 +598,10 @@ function validateWorkspaceInvariants(state: Partial<WorkspaceState>): string[] {
 
 function validateTerminalInvariants(state: Partial<WorkspaceState>): string[] {
   const warnings: string[] = [];
-
-  if (state.activeTerminalId === null && (state.terminals?.length ?? 0) > 0) {
+  if (!state.workspaces?.some((workspace) => workspace.pages) && state.activeTerminalId === null && (state.terminals?.length ?? 0) > 0) {
     warnings.push('T1 violated: activeTerminalId is null but terminals[] is non-empty');
   }
+
   if (typeof state.activeTerminalId === 'string' && Array.isArray(state.terminals)) {
     if (!state.terminals.some(t => t.id === state.activeTerminalId)) {
       warnings.push(`T2 violated: activeTerminalId "${state.activeTerminalId}" not found in terminals[]`);
@@ -620,17 +621,11 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
   const layoutRoot = state.layoutRoot ?? null;
 
   if (layoutRoot === null) {
-    if (Array.isArray(state.panes) && state.panes.length > 0) {
-      warnings.push('L1 violated: layoutRoot is null but panes[] is non-empty');
-    }
-    if (state.browserVisible === true) {
-      warnings.push('L1 violated: layoutRoot is null but browser is visible');
-    }
-    if (state.editorVisible === true) {
-      warnings.push('L1 violated: layoutRoot is null but editor is visible');
-    }
-    if (state.notesVisible === true) {
-      warnings.push('L1 violated: layoutRoot is null but notes is visible');
+    if (!state.workspaces?.some((workspace) => workspace.pages)) {
+      if ((state.panes?.length ?? 0) > 0) warnings.push('L1 violated: layoutRoot is null but panes[] is non-empty');
+      if (state.browserVisible) warnings.push('L1 violated: layoutRoot is null but browser is visible');
+      if (state.editorVisible) warnings.push('L1 violated: layoutRoot is null but editor is visible');
+      if (state.notesVisible) warnings.push('L1 violated: layoutRoot is null but notes is visible');
     }
     return warnings;
   }
@@ -725,8 +720,38 @@ function validateEditorInvariants(state: Partial<WorkspaceState>): string[] {
   return warnings;
 }
 
+function validatePageInvariants(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
+  for (const workspace of state.workspaces ?? []) {
+    if (!workspace.pages) continue;
+    if (!workspace.pages.length || !workspace.pages.some((page) => page.id === workspace.activePageId)) warnings.push('P1 violated: invalid active page');
+    const ids = new Set<string>();
+    const valid = new Set([...workspace.panes.map((pane) => pane.id), workspace.browserPane?.id, workspace.editorPane?.id, workspace.notesPane?.id]);
+    const pageIds = new Set<string>();
+    for (const page of workspace.pages) {
+      if (pageIds.has(page.id)) warnings.push('P2 violated: duplicate page id');
+      pageIds.add(page.id);
+      const tiled = collectLeafPaneIds(page.layoutRoot);
+      for (const id of tiled) {
+        if (!valid.has(id) || ids.has(id)) warnings.push('P3 violated: invalid or duplicated pane membership');
+        ids.add(id);
+      }
+      if (page.maximizedPaneId && !tiled.includes(page.maximizedPaneId)) warnings.push('P4 violated: invalid maximized pane');
+    }
+    for (const entry of workspace.minimizedPanes ?? []) {
+      if (!valid.has(entry.paneId) || ids.has(entry.paneId) || !pageIds.has(entry.pageId)) warnings.push('P5 violated: invalid minimized pane');
+      ids.add(entry.paneId);
+    }
+    const page = workspace.pages.find((entry) => entry.id === workspace.activePageId);
+    if (page && page.layoutRoot !== workspace.layoutRoot) warnings.push('P6 violated: active page projection differs');
+    if (workspace.panes.some((pane) => !ids.has(pane.id))) warnings.push('P7 violated: pane has no page membership');
+  }
+  return warnings;
+}
+
 export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): string[] {
   return [
+    ...validatePageInvariants(state),
     ...validateWorkspaceInvariants(state),
     ...validateTerminalInvariants(state),
     ...validateLayoutInvariants(state),

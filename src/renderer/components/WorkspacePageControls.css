@@ -1,0 +1,17 @@
+.workspace-page-switcher { display: flex; align-items: center; gap: 3px; }
+.workspace-page-switcher > button, .pane-presentation-button { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); min-width: 22px; height: 22px; cursor: pointer; }
+.workspace-page-switcher > button:hover, .pane-presentation-button:hover { background: var(--surface-control); color: var(--text-primary); }
+.workspace-page-switcher > button[aria-current="page"] { background: color-mix(in srgb, var(--accent-interactive) 18%, var(--surface-control)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-interactive) 60%, transparent); color: var(--text-primary); }
+.workspace-page-switcher > button.page-drop-valid { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-interactive) 50%, transparent); }
+.workspace-page-switcher > button.page-drop-over { background: color-mix(in srgb, var(--accent-interactive) 32%, var(--surface-control)); box-shadow: inset 0 0 0 1px var(--accent-interactive); color: var(--text-primary); }
+.workspace-page-switcher > button:focus-visible { outline: 1px solid var(--accent-interactive); outline-offset: 1px; }
+.workspace-page-switcher button:disabled { opacity: .35; cursor: default; }
+.minimized-pane-menu { position: relative; font-size: 11px; }
+.minimized-pane-menu summary { cursor: pointer; padding: 3px 6px; }
+.minimized-pane-menu ul { position: absolute; bottom: 24px; right: 0; min-width: 180px; max-height: 260px; overflow: auto; list-style: none; padding: 6px; margin: 0; background: var(--surface-app); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); z-index: 100; }
+.minimized-pane-menu li { display: flex; }
+.minimized-pane-menu li button { border: 0; padding: 6px; background: transparent; color: var(--text-primary); cursor: pointer; }
+.minimized-pane-menu li button:first-child { flex: 1; text-align: left; }
+.utility-presentation-controls { display: flex; justify-content: flex-end; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); }
+.background-terminal-surfaces { position: absolute; inset: 0; visibility: hidden; pointer-events: none; overflow: hidden; z-index: -1; }
+.background-terminal-surfaces > div { position: absolute; inset: 0; }

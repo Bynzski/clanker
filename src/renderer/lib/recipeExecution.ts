@@ -6,6 +6,8 @@ import type {
   RecipePreviewProbeResult,
 } from '../../shared/types/recipes';
 
+import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
+
 export interface RecipeExecutionDeps {
   ensureWorkspaceOpen: (workspacePath: string) => Promise<string | null>;
   spawnTerminal: (
@@ -30,6 +32,10 @@ export async function executeWorkspaceRecipe(
   recipe: WorkspaceRecipe,
   deps: RecipeExecutionDeps,
 ): Promise<RecipeLaunchResult> {
+  if (!WORKSPACE_RECIPES_ENABLED) return {
+    recipeId: recipe.id, success: false,
+    steps: [{ id: 'disabled', type: 'command', status: 'failed', error: RECIPES_DISABLED_MESSAGE }],
+  };
   if (recipe.environmentId && recipe.environmentId !== 'local') {
     return {
       recipeId: recipe.id,

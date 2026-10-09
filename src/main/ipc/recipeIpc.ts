@@ -7,6 +7,7 @@ import {
   RECIPE_DELETE,
 } from '../../shared/ipcChannels';
 import { WorkspacePersistenceService } from '../workspacePersistence';
+import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { toNativePath } from '../../shared/pathNormalize';
 
 export interface RegisterRecipeIpcDeps {
@@ -26,6 +27,7 @@ export function registerRecipeIpc(deps: RegisterRecipeIpcDeps): WorkspacePersist
   });
 
   ipcMain.handle(RECIPE_SAVE, async (_, recipeInput: unknown) => {
+    if (!WORKSPACE_RECIPES_ENABLED) throw new Error(RECIPES_DISABLED_MESSAGE);
     if (typeof recipeInput !== 'object' || recipeInput === null) {
       throw new Error('Invalid recipe payload');
     }
@@ -42,6 +44,7 @@ export function registerRecipeIpc(deps: RegisterRecipeIpcDeps): WorkspacePersist
   });
 
   ipcMain.handle(RECIPE_DELETE, async (_, recipeId: string) => {
+    if (!WORKSPACE_RECIPES_ENABLED) throw new Error(RECIPES_DISABLED_MESSAGE);
     if (typeof recipeId !== 'string' || !recipeId.trim()) {
       return false;
     }

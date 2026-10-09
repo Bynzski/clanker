@@ -86,6 +86,8 @@ export interface StoreSchema {
   aiCommitModel: string;
   harnessDefaults: HarnessDefaultsMap;
   workspaceRecipes: WorkspaceRecipe[];
+  /** Non-secret local checkout launch configuration; never persisted running state. */
+  devServiceSettings?: Array<{ root: string; environment: Record<string, string> }>;
   sshEnvironments: SshEnvironmentConfig[];
   remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
   worktreeProvenance?: WorktreeProvenanceRecord[];

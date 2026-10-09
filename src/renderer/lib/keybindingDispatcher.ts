@@ -1,4 +1,5 @@
 import type { KeybindingCommandId, KeybindingContext } from '../../shared/keybindings';
+import { executeWorkspacePageCommand } from './workspacePageCommands';
 import { useKeybindingStore } from '../store/keybindingStore';
 import { getZoomActionForCommand, resolveKeyboardCommand, type ZoomShortcutAction } from './keyboardShortcuts';
 
@@ -73,7 +74,7 @@ export function dispatchAppKeybinding(event: KeyboardEvent, actions: AppCommandA
   // Modal dialogs keep ordinary input semantics; only zoom stays global.
   if (isInsideModalDialog(event.target) && getZoomActionForCommand(command) == null) return false;
 
-  if (!runCommand(command, actions)) return false;
+  if (!executeWorkspacePageCommand(command) && !runCommand(command, actions)) return false;
   event.preventDefault();
   return true;
 }

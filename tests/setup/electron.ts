@@ -58,6 +58,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     writeClipboard: createAsyncMock({ success: true }),
     resolveDroppedFilePath: vi.fn(() => ''),
     remotePreviewWatch: createAsyncMock(null),
+    workspaceServiceSaveSettings: createAsyncMock({ success: true }),
     workspaceServiceDiscover: createAsyncMock({ success: true }),
     workspaceServiceStart: createAsyncMock({ success: true }),
     workspaceServiceStop: createAsyncMock({ success: true }),

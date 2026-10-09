@@ -1,5 +1,5 @@
 import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
-import { markTerminalDisposed } from '../components/TerminalPane';
+import { markTerminalDisposed } from './terminalRuntimeCache';
 import { useNotificationStore } from '../store/notificationStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { Terminal } from '../store/workspaceTypes';

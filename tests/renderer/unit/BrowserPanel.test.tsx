@@ -306,7 +306,7 @@ describe('BrowserPanel', () => {
         expect(mockDragPointerDown).toHaveBeenCalledTimes(1);
       });
 
-      it('orders header as title, tab strip (with + after tabs), empty drag chrome', () => {
+      it('orders header as title, tabs, empty drag chrome, then pane controls without an extra row', () => {
         setupStore({ browserPane: pane });
 
         render(<BrowserPanel {...defaultProps} />);
@@ -316,7 +316,11 @@ describe('BrowserPanel', () => {
         expect(children[0]).toHaveClass('pane-drag-surface');
         expect(children[1]).toHaveClass('browser-tab-strip');
         expect(children[2]).toBe(screen.getByTestId('browser-header-drag-fill'));
-        expect(children).toHaveLength(3);
+        expect(children).toHaveLength(4);
+        expect(children[3]).toHaveClass('browser-pane-actions');
+        expect(children[3]).toContainElement(screen.getByRole('button', { name: 'Minimize pane' }));
+        expect(children[3]).toContainElement(screen.getByRole('button', { name: 'Maximize pane' }));
+        expect(document.querySelector('.utility-presentation-controls')).toBeNull();
         const strip = children[1];
         expect(strip.children[0]).toBe(screen.getByRole('tablist'));
         expect(strip.children[1]).toBe(screen.getByRole('button', { name: 'New tab' }));

@@ -10,6 +10,8 @@ import type {
   Ref,
 } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
+import { executeWorkspacePageCommand } from '../lib/workspacePageCommands';
+import { workspaceBrowserPresented } from '../store/workspacePages';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import type { BrowserTab } from '../store/workspaceTypes';
@@ -19,6 +21,7 @@ import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
+import { PanePresentationControls } from './WorkspacePageControls';
 import './BrowserPanel.css';
 import RemotePreviewControl from './RemotePreviewControl';
 import BrowserUrlInput from './BrowserUrlInput';
@@ -65,6 +68,8 @@ export interface BrowserPanelModel {
     /** The pane header is a workspace drag handle. */
     paneDrag: boolean;
   };
+  /** Optional owner-provided controls inside the existing pane header (no extra chrome row). */
+  headerControls?: ReactNode;
   /** Workspace-only: SSH remote preview control. */
   renderRemotePreview?: (navigate: (url: string) => Promise<string | null>) => ReactNode;
 }
@@ -438,7 +443,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
   // arrive here as one typed signal; this runs them through the panel's own actions.
   const runKeybindingCommand = useRef<(payload: BrowserKeybindingCommandPayload) => void>(() => undefined);
   runKeybindingCommand.current = (payload) => {
-    if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId) return;
+    if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId || !isActiveOwner) return;
+    if (executeWorkspacePageCommand(payload.command, ownerId)) return;
     switch (payload.command) {
       case 'browser.focusAddress':
         urlInputRef.current?.focus();
@@ -496,6 +502,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
         />
         <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={model.features.paneDrag ? dragPointerDown : undefined} />
         <BrowserToastSlot />
+        {model.headerControls && <div className="browser-pane-actions">{model.headerControls}</div>}
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}
@@ -546,9 +553,9 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     const remote = workspace.environmentId && workspace.environmentId !== 'local';
     return {
       ownerId: id,
-      visible: workspace.browserVisible,
+      visible: workspaceBrowserPresented(workspace),
       // A workspace owns the native view only while it is the single active Browser owner.
-      isActiveOwner: !assistantActive && activeOwner === id,
+      isActiveOwner: !assistantActive && activeOwner === id && workspaceBrowserPresented(workspace),
       tabs: workspace.browserPane?.tabs ?? [],
       activeTabId: workspace.browserPane?.activeTabId ?? null,
       browserUrl: workspace.browserUrl ?? '',
@@ -562,8 +569,10 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       createTab: () => createAndActivateBrowserTab(id),
       syncSelectedTab: () => syncSelectedBrowserTab(id),
       features: { annotation: true, paneDrag: true },
+      headerControls: !assistantActive && activeOwner === id && workspace.browserPane && workspaceBrowserPresented(workspace)
+        ? <PanePresentationControls workspace={workspace} paneId={workspace.browserPane.id} /> : undefined,
       renderRemotePreview: remote
-        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && Boolean(workspace.browserVisible)} onOpen={navigate} />
+        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && workspaceBrowserPresented(workspace)} onOpen={navigate} />
         : undefined,
     };
   }, [workspace, id, activeOwner, assistantActive, updateBrowserTab, removeBrowserTab, setActiveBrowserTab, moveBrowserTab, pushBrowserOverlay, popBrowserOverlay]);

@@ -1,0 +1,6 @@
+.dev-settings-dialog { width: min(560px, calc(100vw - 32px)); }
+.dev-settings-body { display: flex; flex-direction: column; gap: 12px; }
+.dev-settings-root { overflow-wrap: anywhere; }
+.dev-settings-body textarea { min-height: 150px; resize: vertical; font-family: var(--font-mono); background: var(--surface-app); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px; }
+.dev-settings-body p { font-size: 12px; color: var(--text-secondary); }
+.dev-settings-body [role="alert"] { color: var(--status-error); }

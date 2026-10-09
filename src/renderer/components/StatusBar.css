@@ -5,10 +5,12 @@
   grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
   column-gap: var(--space-md);
-  padding: 4px var(--space-md);
+  padding: 0 var(--space-md);
   background: var(--surface-raised);
   border-top: 1px solid var(--border-default);
+  height: 26px;
   min-height: 26px;
+  flex-shrink: 0;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -48,7 +50,6 @@
   gap: 5px;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 160px;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -67,7 +68,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 45%;
+  flex: 0 1 auto;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   color: var(--text-primary);
@@ -90,7 +91,7 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  max-width: 40%;
+  flex: 0 1 auto;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -101,6 +102,7 @@
   content: '';
   width: 1px;
   height: 11px;
+  flex-shrink: 0;
   background: var(--surface-control-hover);
   margin-right: var(--space-xs);
 }

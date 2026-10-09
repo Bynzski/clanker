@@ -5,6 +5,7 @@
  */
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { WORKSPACE_RECIPES_ENABLED } from '../../shared/recipeAvailability';
 import { assistantBrowserOwnerId } from '../../shared/browserOwner';
 
 export type ActiveDestination =
@@ -26,7 +27,7 @@ export interface DestinationCapabilities {
 }
 
 const WORKSPACE_CAPABILITIES: DestinationCapabilities = {
-  browser: true, explorer: true, notes: true, recipes: true, terminalLaunch: true, isolatedAgent: true,
+  browser: true, explorer: true, notes: true, recipes: WORKSPACE_RECIPES_ENABLED, terminalLaunch: true, isolatedAgent: true,
   git: true, layout: true, sessionHistory: true, usage: true,
 };
 const ASSISTANT_CAPABILITIES: DestinationCapabilities = {

@@ -39,7 +39,7 @@ server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.add
   const start = async (terminalId: string) => {
     const discovered = await manager.discover({ workspaceId: 'ws', terminalId });
     expect(discovered.success).toBe(true);
-    return manager.start({ workspaceId: 'ws', terminalId, checkoutContextId: discovered.command!.checkoutContextId, cwd: discovered.command!.cwd, command: discovered.command!.command });
+    return manager.start({ workspaceId: 'ws', terminalId, checkoutContextId: discovered.command!.checkoutContextId, cwd: discovered.command!.cwd, command: discovered.command!.command, settingsRevision: discovered.command!.settingsRevision });
   };
   it('runs two different checkout apps without panes and terminates only the targeted process group', async () => {
     const worktree = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: fixture('worktree'), kind: 'worktree' })).checkoutContext!;
@@ -60,6 +60,39 @@ server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.add
     expect((await probeRecipePreview(two.previewUrl!, false)).status).toBe('unavailable');
     expect(manager.snapshot().services).toEqual([]);
   }, 15000);
+  it('runs independently configured frontend/backend pairs with matching proxies through real npm launches', async () => {
+    // Reserve four distinct ephemeral ports while constructing the fixture; Clanker does not allocate them.
+    const sockets = await Promise.all(Array.from({ length: 4 }, () => new Promise<net.Server>((resolve) => {
+      const server = net.createServer(); server.listen(0, '127.0.0.1', () => resolve(server));
+    })));
+    const ports = sockets.map((server) => (server.address() as net.AddressInfo).port);
+    await Promise.all(sockets.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    const worktree = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: fixture('configured'), kind: 'worktree' })).checkoutContext!;
+    terminals.set('agent', { workspaceId: 'ws', checkoutContextId: worktree.id });
+    for (const [index, terminalId] of ['main', 'agent'].entries()) {
+      const discovered = (await manager.discover({ workspaceId: 'ws', terminalId })).command!;
+      fs.writeFileSync(path.join(discovered.cwd, 'server.cjs'), `const http = require('node:http');
+http.createServer((_, response) => response.end(${JSON.stringify(terminalId)})).listen(Number(process.env.PORT), '127.0.0.1');
+const frontend = http.createServer((_, response) => {
+  http.get('http://127.0.0.1:' + process.env.VITE_BACKEND_PORT, upstream => upstream.pipe(response)).on('error', () => { response.statusCode = 502; response.end('unavailable'); });
+});
+frontend.listen(Number(process.env.VITE_DEV_PORT), '127.0.0.1', () => console.log('http://127.0.0.1:' + frontend.address().port + '/'));
+`);
+      expect((await manager.saveSettings({ workspaceId: 'ws', terminalId, checkoutContextId: discovered.checkoutContextId,
+        cwd: discovered.cwd, command: discovered.command, settingsRevision: discovered.settingsRevision,
+        environment: { PORT: String(ports[index * 2]), VITE_BACKEND_PORT: String(ports[index * 2]), VITE_DEV_PORT: String(ports[index * 2 + 1]) } })).success).toBe(true);
+    }
+    expect((await start('main')).success).toBe(true);
+    expect((await start('agent')).success).toBe(true);
+    await vi.waitFor(() => expect(manager.snapshot().services.every((service) => service.previewUrl)).toBe(true), { timeout: 10000 });
+    const [main, branch] = manager.snapshot().services;
+    expect(main.previewUrl).toContain(`:${ports[1]}/`);
+    expect(branch.previewUrl).toContain(`:${ports[3]}/`);
+    expect(await (await fetch(main.previewUrl!)).text()).toBe('main');
+    expect(await (await fetch(branch.previewUrl!)).text()).toBe('agent');
+    expect((await manager.stop('ws', main.id)).success).toBe(true);
+    expect(await (await fetch(branch.previewUrl!)).text()).toBe('agent');
+  }, 20000);
   it('reports an immediate failed npm script and shutdown closes a live server', async () => {
     const worktree = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: fixture('broken', 'node -e "process.exit(7)"'), kind: 'worktree' })).checkoutContext!;
     terminals.set('broken', { workspaceId: 'ws', checkoutContextId: worktree.id });

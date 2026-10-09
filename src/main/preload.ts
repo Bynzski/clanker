@@ -18,7 +18,7 @@ import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchReque
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
 import type { AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
-import type { DevServiceTarget, DevServiceStartRequest, WorkspaceServicesUpdate } from '../shared/types/workspaceServices';
+import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, WorkspaceServicesUpdate } from '../shared/types/workspaceServices';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
   ASSISTANTS_GET,
@@ -89,6 +89,7 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  WORKSPACE_SERVICE_SETTINGS_SAVE,
   WORKSPACE_SERVICE_DISCOVER,
   WORKSPACE_SERVICE_START,
   WORKSPACE_SERVICE_STOP,
@@ -305,6 +306,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(TERMINAL_RESIZED, handler);
   },
   terminalReady: (id: string) => ipcRenderer.invoke(TERMINAL_READY, id),
+  workspaceServiceSaveSettings: (request: DevServiceSettingsRequest) => ipcRenderer.invoke(WORKSPACE_SERVICE_SETTINGS_SAVE, request),
   workspaceServiceDiscover: (request: DevServiceTarget) => ipcRenderer.invoke(WORKSPACE_SERVICE_DISCOVER, request),
   workspaceServiceStart: (request: DevServiceStartRequest) => ipcRenderer.invoke(WORKSPACE_SERVICE_START, request),
   workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => ipcRenderer.invoke(WORKSPACE_SERVICE_STOP, request),

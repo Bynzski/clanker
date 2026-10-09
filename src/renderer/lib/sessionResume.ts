@@ -1,6 +1,7 @@
 import type { HarnessSession, SessionInvokeOptions, SessionInvokeResult } from '../../shared/types/session';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
+import { paneIsPresented } from '../store/workspacePages';
 import { waitForTerminalPaneGeometry, clearTerminalPaneGeometry } from './terminalPaneGeometry';
 
 /** Reserve the actual destination split and measure its xterm before main can start a native TUI. */
@@ -19,15 +20,26 @@ export async function resumeSessionInMeasuredPane(params: {
     const workspace = state.getWorkspaceById(workspaceId);
     return workspace?.workspacePath === workspacePath && (workspace.environmentId ?? 'local') === environmentId ? workspace : null;
   };
-  const mayStart = () => !signal?.aborted && liveWorkspace() && useWorkspaceStore.getState().activeWorkspaceId === workspaceId
+  const pageId = liveWorkspace()?.activePageId;
+  const mayStart = () => !signal?.aborted && liveWorkspace() && liveWorkspace()?.activePageId === pageId && useWorkspaceStore.getState().activeWorkspaceId === workspaceId
     && !useAssistantNavStore.getState().activeAssistantId;
   if (!mayStart()) throw new Error('The workspace is no longer active');
   const paneId = useWorkspaceStore.getState().addPane(null, undefined, workspaceId);
   if (!paneId) throw new Error('Could not reserve a resume pane');
   let attached = false;
+  const measurement = new AbortController();
+  const abortMeasurement = () => measurement.abort();
+  signal?.addEventListener('abort', abortMeasurement, { once: true });
+  const unsubscribeMeasurement = useWorkspaceStore.subscribe(() => {
+    const workspace = liveWorkspace();
+    if (!mayStart() || !availablePane() || (workspace?.pages && !paneIsPresented(workspace, paneId))) abortMeasurement();
+  });
+  const unsubscribeAssistant = useAssistantNavStore.subscribe(() => { if (!mayStart()) abortMeasurement(); });
   const availablePane = () => liveWorkspace()?.panes.some((pane) => pane.id === paneId && pane.terminalId === null);
   try {
-    const initialGeometry = await waitForTerminalPaneGeometry(paneId, signal);
+    const initialGeometry = await waitForTerminalPaneGeometry(paneId, measurement.signal);
+    unsubscribeMeasurement();
+    unsubscribeAssistant();
     if (!mayStart() || !availablePane()) throw new Error('The resume pane is no longer available');
     const result = await window.electronAPI.invokeSession(workspaceId, session, params.fork ?? false, {
       ...params.options, initialGeometry,
@@ -49,7 +61,7 @@ export async function resumeSessionInMeasuredPane(params: {
         workingDir: result.workingDir ?? result.checkoutContext?.path ?? workspacePath,
         harnessId: result.harnessId ?? session.harness, attentionEnabled: result.attentionEnabled === true,
         ...(result.checkoutContextId ? { checkoutContextId: result.checkoutContextId } : {}),
-      }, workspaceId, paneId);
+      }, workspaceId, paneId, pageId);
       const recorded = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
       if (!recorded?.terminals.some((terminal) => terminal.id === result.id)
         || !recorded.panes.some((pane) => pane.id === paneId && pane.terminalId === result.id)) {
@@ -62,6 +74,9 @@ export async function resumeSessionInMeasuredPane(params: {
       throw error;
     }
   } finally {
+    unsubscribeMeasurement();
+    unsubscribeAssistant();
+    signal?.removeEventListener('abort', abortMeasurement);
     clearTerminalPaneGeometry(paneId);
     if (!attached && useWorkspaceStore.getState().getWorkspaceById(workspaceId)?.panes.some((pane) => pane.id === paneId && pane.terminalId === null)) {
       useWorkspaceStore.getState().removePane(paneId, workspaceId);

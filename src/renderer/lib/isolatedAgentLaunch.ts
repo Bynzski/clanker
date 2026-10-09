@@ -106,7 +106,7 @@ export async function launchIsolatedAgent(request: LaunchIsolatedAgentRequest): 
     environmentId: workspace.environmentId,
   });
   try {
-    await launchTerminalInCheckoutContext(workspace, context, { harness: launch.harness, model: launch.model });
+    await launchTerminalInCheckoutContext(workspace, context, { harness: launch.harness, model: launch.model, pageId: workspace.activePageId });
   } catch (cause) {
     return fail(`The worktree for "${label}" ${resolved.created ? 'was created' : 'is attached'} but the agent could not be started: ${messageOf(cause, 'launch failed')}. It remains listed under the workspace.`, resolved.created);
   }

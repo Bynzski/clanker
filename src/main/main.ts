@@ -65,6 +65,7 @@ import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
 import { registerRemotePreviewIpc } from './ipc/remotePreviewIpc';
 import { RemotePreviewManager } from './remote/remotePreviewManager';
+import { DevServiceSettings } from './services/devServiceSettings';
 import { WorkspaceServiceManager } from './services/workspaceServiceManager';
 import { registerWorkspaceServiceIpc } from './ipc/workspaceServiceIpc';
 import { WORKSPACE_SERVICE_CHANGED, REMOTE_PREVIEW_CHANGED } from '../shared/ipcChannels';
@@ -273,6 +274,7 @@ const agentBridge = new AgentBridgeService({
   capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(checkoutLifecyclePort.port)],
 });
 const workspaceServiceManager = new WorkspaceServiceManager({
+  settings: new DevServiceSettings({ read: () => store.get('devServiceSettings', []), write: (records) => store.set('devServiceSettings', records) }),
   registry: workspaceRegistry,
   getTerminal: (id) => terminals.get(id),
   getLocation: (id) => agentAttentionBroker.snapshot(id)?.location ?? null,
