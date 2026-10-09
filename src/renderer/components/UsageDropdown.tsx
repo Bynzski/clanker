@@ -1,10 +1,12 @@
 import { CircleAlert, Info, Pin, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { HarnessUsageEntry, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
-import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName } from '../lib/usageFormat';
+import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName, usageProblem } from '../lib/usageFormat';
 import './UsageDropdown.css';
 
 interface Props {
+  /** Display-safe execution scope, never a connection target. */
+  scopeLabel?: string;
   /** Usage-capable, enabled harnesses to render, in canonical order. */
   harnessIds: readonly string[];
   entries: Record<string, HarnessUsageEntry | undefined>;
@@ -23,12 +25,6 @@ interface Props {
   onRefresh: () => void;
 }
 
-const STATUS_TEXT: Record<Exclude<HarnessUsageStatus, 'ok' | 'not-installed'>, string> = {
-  unsupported: 'No supported usage probe',
-  unauthenticated: 'Not signed in',
-  unavailable: 'Usage temporarily unavailable',
-  error: 'Usage could not be read',
-};
 const STATUS_TONE: Record<HarnessUsageStatus, string> = {
   ok: 'ok', unsupported: 'muted', 'not-installed': 'muted', unauthenticated: 'warning', unavailable: 'warning', error: 'error',
 };
@@ -39,7 +35,7 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
   return 'Refresh usage';
 }
 
-export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, widgetIds, onToggleWidget, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
+export default function UsageDropdown({ scopeLabel = 'Local', harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, widgetIds, onToggleWidget, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
   // A harness missing from this environment is hidden, as everywhere else, rather than listed as absent.
   const shownIds = harnessIds.filter((id) => entries[id]?.status !== 'not-installed');
@@ -47,6 +43,7 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
     <div className="usage-dropdown">
       <div className="usage-header">
         <span className="usage-title">Usage</span>
+        <span className="usage-scope" title={scopeLabel}>{scopeLabel}</span>
         <button type="button" className="usage-refresh" onClick={onRefresh} disabled={!canRefresh} aria-label="Refresh usage" title={title}>
           <RefreshCw size={12} strokeWidth={2} className={refreshing ? 'usage-spin' : undefined} />
         </button>
@@ -91,8 +88,7 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse, pinned, onTo
   const single = groups.length === 1 ? groups[0] : undefined;
   const meta = single ? groupMeta(single) : '';
   const stale = entry?.stale === true && (entry?.measurements.length ?? 0) > 0;
-  const statusText = entry && entry.status !== 'ok' && entry.status !== 'not-installed' ? (entry.error ?? STATUS_TEXT[entry.status]) : undefined;
-  const problem = [stale ? 'Stale usage data' : undefined, statusText].filter(Boolean).join(' · ');
+  const problem = usageProblem(entry);
   const problemTitle = problem && [problem, entry?.checkedAt !== undefined ? `last ${formatChecked(entry.checkedAt, now)}` : undefined].filter(Boolean).join(' · ');
   const tone = stale && entry?.status === 'ok' ? 'warning' : STATUS_TONE[entry?.status ?? 'unsupported'];
   const StatusIcon = tone === 'error' ? CircleAlert : tone === 'warning' ? TriangleAlert : Info;

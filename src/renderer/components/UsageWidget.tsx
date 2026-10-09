@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, Gauge } from 'lucide-react';
+import { Clock3, Gauge, TriangleAlert } from 'lucide-react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
@@ -7,7 +7,8 @@ import { useUsageWidgetStore } from '../store/usageWidgetStore';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import { onUsagePreferenceSaved, openAccountSettings } from '../lib/settingsHandoff';
-import { formatResetShort, pickWidgetUsage, usageTone } from '../lib/usageFormat';
+import { getRemoteEnvironmentLabel } from '../lib/workspaceLabels';
+import { formatChecked, formatResetShort, pickWidgetUsage, usageProblem, usageTone } from '../lib/usageFormat';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import UsageDropdown from './UsageDropdown';
 import { useHarnessUsage } from './useHarnessUsage';
@@ -38,6 +39,7 @@ export default function UsageWidget() {
   const workspaceId = destination.kind === 'workspace' ? (focusedWorkspace?.id ?? null) : null;
   // Background reads are local-only: they must never trigger unattended SSH probes.
   const local = environmentId === 'local';
+  const scopeLabel = local ? 'Local' : focusedWorkspace ? getRemoteEnvironmentLabel(focusedWorkspace) ?? 'SSH' : 'SSH';
 
   // Installed harnesses and the "Show in Usage" preference; usage is fail-closed until both have loaded.
   const [available, setAvailable] = useState<{ environmentId: string; ids: string[] } | null>(null);
@@ -79,19 +81,26 @@ export default function UsageWidget() {
     const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
     const picked = entry && pickWidgetUsage(entry.measurements, option.label);
     if (!picked) return [];
-    const description = `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`;
-    return [{ id, option, picked, description }];
+    const problem = usageProblem(entry);
+    const description = [
+      scopeLabel,
+      `${option.label} ${picked.label}: ${picked.percent}% left${picked.resetsAt !== undefined ? `, resets in ${formatResetShort(picked.resetsAt, usage.now)}` : ''}`,
+      problem,
+      problem && entry?.checkedAt !== undefined ? `last ${formatChecked(entry.checkedAt, usage.now)}` : undefined,
+    ].filter(Boolean).join(' · ');
+    return [{ id, option, picked, description, problem, error: entry?.status === 'error' }];
   });
   const summary = chips.map(({ description }) => description).join('\n');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={`usage-widget${open ? ' active' : ''}`} aria-label="Usage" title={summary || 'Usage'} disabled={!defaults && !open}>
+        <button type="button" className={`usage-widget${open ? ' active' : ''}`} aria-label="Usage" title={summary || `Usage · ${scopeLabel}`} disabled={!defaults && !open}>
           <Gauge size={12} strokeWidth={2} aria-hidden="true" />
-          {chips.map(({ id, option, picked, description }) => (
-            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}`} role="group" aria-label={description} title={description}>
+          {chips.map(({ id, option, picked, description, problem, error }) => (
+            <span key={id} className={`usage-chip ${usageTone(picked.ratio)}${problem ? ' usage-chip-problem' : ''}`} role="group" aria-label={description} title={description}>
               <option.Icon size={11} strokeWidth={2} />
+              {problem && <TriangleAlert size={10} className={`usage-chip-status usage-status-${error ? 'error' : 'warning'}`} aria-hidden="true" />}
               <span className="usage-chip-meter">
                 <span className="usage-chip-percent">{picked.percent}%</span>
                 <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
@@ -107,6 +116,7 @@ export default function UsageWidget() {
           if (handoff.current) { event.preventDefault(); handoff.current = false; }
         }}>
         <UsageDropdown
+          scopeLabel={scopeLabel}
           harnessIds={usage.harnessIds}
           entries={usage.entries}
           otherAccounts={usage.otherAccounts}

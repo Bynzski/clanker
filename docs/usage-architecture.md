@@ -55,7 +55,10 @@ are discarded entirely. Removal/reconnection drops only that account's readings;
 other account/provider caches remain. Active consumers may request the new version
 immediately, subject to freshness. Main also versions removed/reconnected account
 probes: a new credential incarnation cannot join an old flight, and an old probe
-cannot restore cache or report account status after retirement.
+cannot restore cache or report account status after retirement. Account invalidation
+addresses the canonical local environment's cache directly; visiting any number of
+SSH environments cannot evict it from an auxiliary invalidation index. No strong
+list of remote cache maps is retained.
 
 ## Operation and consumer ownership
 
@@ -77,18 +80,41 @@ remaining consumers retain updates. Reset cancels warm-ups/timers and retires al
 promises. SSH has no unattended polling: the existing widget enables remote polling
 only while Usage is open. Invalidation does not create a polling owner.
 
+Passive local warm-up checks selected readings' `nextRefreshAt` on registration and
+again at idle execution. Expired readings can warm on a later consumer registration;
+fresh readings do not re-fetch on workspace/Assistant navigation. Requests still
+deduplicate in the shared coordinator. Missing/empty results or an IPC failure with
+no new authoritative deadline get a one-minute, per-provider navigation throttle;
+a successful response with a refresh deadline supersedes that fallback. This is
+not a second scheduler: no expiry timers or unattended passive/SSH polling are
+added, and pending warm-ups remain cancellable.
+
+## Compact scope and stale presentation
+
+The dropdown header shows `Local` or `SSH · <environment display name>`, using the
+existing display-safe workspace metadata, never its connection target. Assistant
+Usage is always local even with a parked SSH workspace. Pinned tooltips/accessibility
+descriptions include the same scope. On a failed refresh, retained measurements
+keep their percentage/remaining-capacity color and gain a small status icon and the
+panel's existing stale/error description. Successful readings remove the warning;
+merely reaching `nextRefreshAt` does not label a measurement stale.
+
 ## Manual pre-PR smoke checklist
 
 1. Open Usage and pin a provider. Navigate between two local workspaces and a Hermes
    Assistant; readings/chips should remain consistent, without extra refreshes.
-   Also test Assistant-only Usage with zero registered workspaces.
+   Also test Assistant-only Usage with zero registered workspaces. Confirm the
+   dropdown/chip tooltip says Local for Assistants and the saved SSH name remotely.
 2. Select accounts through Usage and Settings, including rapid A/B/A selection and
    a failed selection. The latest confirmed selection wins; failure preserves it.
 3. With a refresh pending, remove or reconnect its account. Old measurements must
    not return, and a rejected old refresh must not mark another account failed.
 4. Refresh while initial reads are pending; navigate or change an account during
    refresh. Checking/refreshing indicators must follow the replacement operation
-   and finish normally. Close one consumer while another remains pinned.
+   and finish normally. Force a provider failure: the pinned percentage stays, with
+   a warning and stale/error tooltip; recovery clears it. Close one consumer while
+   another remains pinned. Navigate locally before/after cache expiry: idle warming
+   skips fresh data but refreshes expired data after the idle delay.
 5. Close SSH workspaces, reconfigure an environment from host A to B, reopen Usage,
    then delete/recreate the same saved ID. No previous host reading may return.
 6. Switch local/SSH repeatedly; SSH readings stay isolated. Close remote Usage and

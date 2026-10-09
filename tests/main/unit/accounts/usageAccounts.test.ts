@@ -9,9 +9,9 @@ import { addAccount, createHarness, settleFlow, type Harness } from './accountFi
 
 const snapshot = (used = 10): HarnessUsageSnapshot => ({ observedAt: 1000, measurements: [{ kind: 'rate-limit', unit: 'percent', used, limit: 100, remaining: 100 - used, label: '5 hour', scope: { accountLabel: 'x@example.test' } }] });
 
-function env(kind: 'local' | 'ssh' = 'local') {
+function env(kind: 'local' | 'ssh' = 'local', id = kind === 'local' ? 'local' : 'ssh-1') {
   return {
-    id: kind === 'local' ? 'local' : 'ssh-1', kind, label: kind, capabilities: {},
+    id, kind, label: kind, capabilities: {},
     validateWorkspacePath: async () => ({ valid: true, resolvedPath: '/ws' }),
     executeHarnessCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
     openHarnessCommandSession: vi.fn(),
@@ -25,12 +25,15 @@ afterEach(() => { fs.rmSync(h.root, { recursive: true, force: true }); });
 
 async function setup(options: { kind?: 'local' | 'ssh'; get?: (context: HarnessUsageContext) => Promise<HarnessUsageSnapshot> } = {}) {
   const environment = env(options.kind);
-  const registry = new WorkspaceRegistry(() => environment);
+  const environments = new Map([[environment.id, environment]]);
+  const registry = new WorkspaceRegistry((id) => environments.get(id) ?? null);
   await registry.registerWorkspace({ workspaceId: 'ws', workspacePath: '/ws', environmentId: environment.id });
   const get = vi.fn(options.get ?? (async () => snapshot()));
   const provider: HarnessProvider = { ...getHarnessProvider('codex'), usage: { get, refresh: { cacheTtlMs: 60_000, minimumProbeIntervalMs: 60_000, failureBackoffMs: 120_000 } }, accounts: h.capabilities.codex };
-  const service = new HarnessUsageService(registry, { providers: () => [provider], accounts: h.service, now: () => clock });
-  return { service, get, environment };
+  const service = new HarnessUsageService(registry, { providers: () => [provider], accounts: h.service, now: () => clock,
+    ...(environment.kind === 'local' ? { localEnvironment: environment } : {}),
+  });
+  return { service, get, environment, environments, registry };
 }
 
 describe('default-only users', () => {
@@ -130,9 +133,42 @@ describe('with managed accounts', () => {
     const { entries } = await service.get('ws');
     expect(entries).toHaveLength(1);
     expect(entries[0]).not.toHaveProperty('account');
-    const records = (service as unknown as { recordMaps: Array<Map<string, unknown>> }).recordMaps.flatMap((map) => [...map.keys()]);
-    expect(records.some((key) => key.includes(work.id))).toBe(false);
+    expect(service.getCachedSnapshots()).toHaveLength(1); // only the canonical local default cache remains
     expect(get).toHaveBeenCalledTimes(2); // default stayed cached
+  });
+
+  it.each(['removed', 'reconnected'] as const)('%s invalidates the local cache after more than 64 remote caches, without disturbing SSH/default', async (type) => {
+    const work = await addAccount(h, 'codex', 'Work');
+    let used = 10;
+    const { service, get, environments, registry } = await setup({ get: async () => snapshot(used) });
+    await service.getLocal(); // canonical local cache is the oldest reachable cache
+    const remotes = Array.from({ length: 65 }, (_, index) => `ssh-${index}`);
+    for (const id of remotes) {
+      const remote = env('ssh', id);
+      environments.set(id, remote);
+      await registry.registerWorkspace({ workspaceId: id, workspacePath: '/ws', environmentId: id });
+      await service.get(id);
+    }
+    expect(get).toHaveBeenCalledTimes(67); // default + managed + 65 isolated SSH caches
+    expect(service.getCachedSnapshots()).toHaveLength(2);
+    used = 80;
+    if (type === 'removed') await h.service.remove('local', 'codex', work.id);
+    else {
+      const started = h.service.reconnect('local', 'codex', work.id);
+      expect((await settleFlow(h, started.flowId)).status).toBe('connected');
+    }
+    expect(service.getCachedSnapshots()).toHaveLength(1); // invalidated even before another read
+    const result = await service.getLocal();
+    if (type === 'reconnected') {
+      expect(result.entries.find((entry) => entry.account?.id === work.id)?.measurements[0].used).toBe(80);
+      expect(get).toHaveBeenCalledTimes(68);
+    } else {
+      expect(result.entries).toHaveLength(1);
+      expect(get).toHaveBeenCalledTimes(67);
+    }
+    expect(result.entries.find((entry) => !entry.account || entry.account.id === 'default')?.measurements[0].used).toBe(10);
+    for (const id of remotes) expect((await service.get(id)).entries[0].measurements[0].used).toBe(10);
+    expect(get).toHaveBeenCalledTimes(type === 'reconnected' ? 68 : 67);
   });
 
   it.each(['removed', 'reconnected'] as const)('late %s account probes cannot repopulate main cache or join replacement requests', async (type) => {

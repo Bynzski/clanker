@@ -319,7 +319,7 @@ describe('Usage provider selection (Show in Usage)', () => {
   it('the header trigger is compact (icon only) but still named Usage; the popover keeps its USAGE heading', async () => {
     await openUsage();
     const trigger = screen.getByRole('button', { name: 'Usage' });
-    expect(trigger).toHaveAttribute('title', 'Usage');
+    expect(trigger).toHaveAttribute('title', 'Usage · Local');
     expect(trigger.textContent?.trim()).toBe('');
     expect(within(panel()).getByText('Usage')).toBeInTheDocument();
   });

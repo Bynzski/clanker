@@ -5,6 +5,7 @@ import { initUsageListeners, useUsageStore, USAGE_POLL_INTERVAL_MS } from '../..
 import { useHarnessUsage } from '../../../src/renderer/components/useHarnessUsage';
 import type { HarnessUsageResponse } from '../../../src/shared/types/harnessUsage';
 import { installElectronApiMock } from '../../setup/electron';
+import { WARMUP_DELAY_MS } from '../../../src/renderer/lib/idleWarmup';
 
 function deferred() {
   let resolve!: (response: HarnessUsageResponse) => void;
@@ -112,6 +113,86 @@ describe('Usage owned operations', () => {
     last(); const count = api.getHarnessUsage.mock.calls.length;
     await vi.advanceTimersByTimeAsync(3 * USAGE_POLL_INTERVAL_MS);
     expect(api.getHarnessUsage).toHaveBeenCalledTimes(count);
+  });
+});
+
+describe('freshness-aware local idle warm-up', () => {
+  const consumer = (workspaceId: string | null, harnessIds = ['codex']) => ({ environmentId: 'local', workspaceId, harnessIds, active: false, prefetch: true });
+
+  it('expired cached readings can warm again; concurrent workspace/Assistant consumers still deduplicate', async () => {
+    vi.useFakeTimers();
+    const initial = response(); initial.entries[0].nextRefreshAt = Date.now() + WARMUP_DELAY_MS + 100;
+    api.getHarnessUsage.mockResolvedValueOnce(initial).mockResolvedValue(response());
+    const first = store().registerConsumer(consumer('w1'));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(1);
+    first();
+    await vi.advanceTimersByTimeAsync(101); // nextRefreshAt is authoritative even before the fallback throttle
+    const next = store().registerConsumer(consumer('w2'));
+    const assistant = store().registerConsumer(consumer(null));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(2);
+    expect(api.getHarnessUsage.mock.calls.every(([ws]) => ws === null)).toBe(true);
+    next(); assistant();
+  });
+
+  it('fresh readings skip warm-up across navigation and partial provider sets', async () => {
+    vi.useFakeTimers();
+    const value = response(); value.entries[0].nextRefreshAt = Date.now() + 30 * USAGE_POLL_INTERVAL_MS;
+    api.getHarnessUsage.mockResolvedValue(value);
+    const first = store().registerConsumer(consumer('w1'));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS); first();
+    for (const workspaceId of ['w2', null, 'w3']) {
+      const release = store().registerConsumer(consumer(workspaceId));
+      await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS); release();
+    }
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(1);
+    const partial = store().registerConsumer(consumer(null, ['codex', 'claude']));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).toHaveBeenLastCalledWith(null, { harnessIds: ['claude'] });
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(2); partial();
+  });
+
+  it('failed or empty warm-ups without a new authoritative deadline do not repeat on every navigation', async () => {
+    vi.useFakeTimers(); api.getHarnessUsage.mockRejectedValueOnce(new Error('IPC unavailable'));
+    const expired = response().entries[0]; expired.nextRefreshAt = Date.now() - 1;
+    store().setEntry('local', 'codex', expired);
+    const first = store().registerConsumer(consumer('w1'));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS); first();
+    const next = store().registerConsumer(consumer(null));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS); next();
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(1);
+    // This fallback is bounded in time, not a permanent warmed flag.
+    await vi.advanceTimersByTimeAsync(USAGE_POLL_INTERVAL_MS);
+    const retry = store().registerConsumer(consumer('w2'));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(2); retry();
+  });
+
+  it('rechecks freshness at idle time if another consumer already populated readings', async () => {
+    vi.useFakeTimers();
+    const release = store().registerConsumer(consumer(null));
+    const entry = response().entries[0]; entry.nextRefreshAt = Date.now() + 60_000;
+    store().setEntry('local', 'codex', entry);
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).not.toHaveBeenCalled(); release();
+  });
+
+  it('unmounting cancels a pending warm-up but leaves another consumer eligible', async () => {
+    vi.useFakeTimers(); api.getHarnessUsage.mockResolvedValue(response());
+    const first = store().registerConsumer(consumer('w1')); first();
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).not.toHaveBeenCalled();
+    const remaining = store().registerConsumer(consumer(null));
+    await vi.advanceTimersByTimeAsync(WARMUP_DELAY_MS);
+    expect(api.getHarnessUsage).toHaveBeenCalledTimes(1); remaining();
+  });
+
+  it('never schedules unattended SSH warm-up even if a caller requests prefetch', async () => {
+    vi.useFakeTimers();
+    const release = store().registerConsumer({ ...consumer('remote'), environmentId: 'ssh-1' });
+    await vi.advanceTimersByTimeAsync(3 * USAGE_POLL_INTERVAL_MS);
+    expect(api.getHarnessUsage).not.toHaveBeenCalled(); release();
   });
 });
 

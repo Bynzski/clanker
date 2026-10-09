@@ -131,8 +131,6 @@ function statusFor(error: HarnessCapabilityError): Exclude<HarnessUsageStatus, '
  */
 export class HarnessUsageService {
   private readonly cache = new WeakMap<WorkspaceEnvironment, Map<string, UsageRecord>>();
-  /** Recently used per-environment record maps (bounded), so a removed account's entries can be dropped. */
-  private readonly recordMaps: Array<Map<string, UsageRecord>> = [];
   private readonly accountGenerations = new Map<string, number>();
   private readonly flights = new WeakMap<WorkspaceEnvironment, Map<string, Promise<UsageRecord | 'not-installed'>>>();
   private readonly availability = new WeakMap<WorkspaceEnvironment, { ids: ReadonlySet<string>; at: number }>();
@@ -163,8 +161,11 @@ export class HarnessUsageService {
 
   private forgetAccount(accountId: string): void {
     this.accountGenerations.set(accountId, (this.accountGenerations.get(accountId) ?? 0) + 1);
-    for (const records of this.recordMaps) {
-      for (const key of [...records.keys()]) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
+    // Managed accounts are local-only. The canonical local cache remains reachable
+    // regardless of how many SSH environments have been visited.
+    const records = this.cache.get(this.resolveLocalEnvironment());
+    if (records) {
+      for (const key of records.keys()) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
     }
   }
 
@@ -374,8 +375,6 @@ export class HarnessUsageService {
     let perEnvironment = this.cache.get(environment);
     if (!perEnvironment) {
       this.cache.set(environment, perEnvironment = new Map());
-      this.recordMaps.push(perEnvironment);
-      if (this.recordMaps.length > 64) this.recordMaps.shift();
     }
     perEnvironment.set(usageKey(harnessId, binding), record);
     // A probe may only mark a managed account (never delete or reroute it).

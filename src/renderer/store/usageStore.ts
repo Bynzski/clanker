@@ -65,7 +65,9 @@ function operationIndicators() {
   }
   return { pending, forcing };
 }
-const warmedKeys = new Set<string>();
+// Local provider attempts without a freshness timestamp (e.g. unsupported/empty
+// results) get a short navigation throttle, not permanent warmed identities.
+const idleRefreshAfter = new Map<string, number>();
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 const warmupDisposers = new Map<number, () => void>();
 
@@ -188,6 +190,10 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
 
         const matchedEntries = response.entries.filter((candidate) => candidate.harnessId === harnessId);
         if (matchedEntries.length === 0) return;
+        // An authoritative refresh deadline supersedes the navigation throttle.
+        if (environmentId === 'local' && matchedEntries.some((entry) => typeof entry.nextRefreshAt === 'number')) {
+          idleRefreshAfter.delete(harnessId);
+        }
 
         set((state) => {
           const envReadings = { ...(state.readings[environmentId] ?? {}) };
@@ -342,16 +348,20 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
       for (const h of consumer.harnessIds) {
         void get().request(env, ws, h, false);
       }
-    } else if (consumer.prefetch && consumer.harnessIds.length > 0) {
-      const warmKey = `${env}\u0000${env === 'local' ? '' : ws ?? ''}\u0000${consumer.harnessIds.join('\u0000')}`;
-      if (!warmedKeys.has(warmKey)) {
+    } else if (env === 'local' && consumer.prefetch && consumer.harnessIds.length > 0) {
+      const needsWarmup = (harnessId: string) => {
+        const selected = get().selectedAccounts.local?.[harnessId] ?? 'default';
+        const entry = get().readings.local?.[harnessId]?.[selected];
+        const nextAt = Math.max(entry?.nextRefreshAt ?? 0, idleRefreshAfter.get(harnessId) ?? 0);
+        return Date.now() >= nextAt;
+      };
+      if (consumer.harnessIds.some(needsWarmup)) {
         warmupDisposers.set(id, scheduleIdleWarmup(() => {
           warmupDisposers.delete(id);
-          if (consumers.has(id) && !warmedKeys.has(warmKey)) {
-            warmedKeys.add(warmKey);
-            for (const h of consumer.harnessIds) {
-              void get().request(env, ws, h, false);
-            }
+          if (!consumers.has(id)) return;
+          for (const h of consumer.harnessIds.filter(needsWarmup)) {
+            idleRefreshAfter.set(h, Date.now() + USAGE_POLL_INTERVAL_MS);
+            void get().request(env, ws, h, false);
           }
         }));
       }
@@ -381,7 +391,7 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
     pollingTimers.clear();
     inflight.clear();
     consumers.clear();
-    warmedKeys.clear();
+    idleRefreshAfter.clear();
     for (const dispose of warmupDisposers.values()) dispose();
     warmupDisposers.clear();
     if (clockTimer) {
