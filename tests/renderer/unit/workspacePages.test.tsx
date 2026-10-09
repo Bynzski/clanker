@@ -403,4 +403,79 @@ describe('page-aware Browser and asynchronous resource ownership', () => {
     expect(activePage(workspace())?.maximizedPaneId).toBeUndefined();
     expect(collectLeafPaneIds(workspace().layoutRoot)).toContain('p1');
   });
+
+  it('minimizes and restores an empty Editor pane without tabs or duplicate panes', () => {
+    open();
+    // Open an empty Editor pane
+    store().toggleEditorPane();
+    const edId = workspace().editorPane!.id;
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(edId);
+    expect(workspace().editorTabs).toEqual([]);
+
+    // Minimize empty Editor pane
+    store().minimizeWorkspacePane('w', edId);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).not.toContain(edId);
+    expect(workspace().minimizedPanes?.some((e) => e.paneId === edId)).toBe(true);
+    expect(workspace().editorVisible).toBe(true);
+
+    // Restore empty Editor pane via toggleEditorPane
+    store().toggleEditorPane();
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(edId);
+    expect(workspace().editorPane?.id).toBe(edId);
+    expect(workspace().minimizedPanes?.some((e) => e.paneId === edId)).toBe(false);
+  });
+
+  it('preserves dirty editor buffers through minimize and restore', () => {
+    open();
+    const editorId = 'ed-dirty';
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      workspaces: state.workspaces.map((ws) => ws.id === 'w' ? {
+        ...ws,
+        editorVisible: true,
+        editorPane: { id: editorId },
+        editorTabs: [{ id: 'tab1', filePath: '/test.ts', fileName: 'test.ts', isDirty: true, content: 'modified text', originalContent: 'original text' }],
+        activeEditorTabId: 'tab1',
+        layoutRoot: {
+          type: 'split',
+          nodeId: 'split-dirty',
+          orientation: 'horizontal',
+          ratio: 0.5,
+          first: ws.layoutRoot!,
+          second: { type: 'leaf', nodeId: 'leaf-dirty', paneId: editorId },
+        },
+      } : ws),
+    }));
+
+    // Minimize
+    store().minimizeWorkspacePane('w', editorId);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).not.toContain(editorId);
+
+    // Restore
+    store().toggleEditorPane();
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(editorId);
+    const tab = workspace().editorTabs.find((t) => t.id === 'tab1');
+    expect(tab).toBeDefined();
+    expect(tab?.isDirty).toBe(true);
+    expect(tab?.content).toBe('modified text');
+    expect(tab?.originalContent).toBe('original text');
+  });
+
+  it('verifies Browser overlay count and visibility during and after minimize and restore', () => {
+    open();
+    store().setBrowserVisible(true, 'w');
+    const browserId = workspace().browserPane!.id;
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(workspace().browserOverlayCount).toBe(0);
+
+    // Minimize browser
+    store().minimizeWorkspacePane('w', browserId);
+    expect(workspaceBrowserPresented(workspace())).toBe(false);
+    expect(workspace().browserOverlayCount).toBe(0);
+
+    // Restore browser
+    store().toggleBrowser('w');
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(workspace().browserOverlayCount).toBe(0);
+  });
 });

@@ -24,7 +24,17 @@ import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } fr
 import { useAgentLocation } from '../lib/useAgentLocation';
 import './WorkspaceNavigatorSection.css';
 
-function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
+export function AgentRow({
+  workspace,
+  terminal,
+  isCurrent,
+  onSelect,
+}: {
+  workspace: WorkspaceTab;
+  terminal: Terminal;
+  isCurrent: boolean;
+  onSelect?: () => void;
+}) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const attention = useTerminalAttention(terminal.id);
   const harness = getHarnessOption(terminal.harnessId);
@@ -48,7 +58,10 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         title={worktree
           ? `${name} · ${harness.label} · ${branch}${removed ? ' (checkout removed)' : ''}${attentionSuffix}${minimizedSuffix}\n${worktree.path}`
           : `${name} · ${harness.label}${attentionSuffix}${minimizedSuffix}`}
-        onClick={() => selectWorkspace(workspace.id, terminal.id)}
+        onClick={() => {
+          selectWorkspace(workspace.id, terminal.id);
+          onSelect?.();
+        }}
       >
         <span className="ws-agent-primary">
           <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>

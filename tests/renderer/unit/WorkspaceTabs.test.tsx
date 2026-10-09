@@ -854,4 +854,156 @@ describe('WorkspaceTabs', () => {
       expect(editButton).toBeTruthy();
     });
   });
+
+  // =========================================================================
+  // Agent Selector and Tabs-Mode Recovery
+  // =========================================================================
+  describe('agent selector and tabs-mode minimize/restore', () => {
+    it('renders agent trigger button when terminals exist and marks minimized agents', () => {
+      const selectWorkspace = vi.fn();
+      const ws = createMockWorkspace({
+        id: 'ws1',
+        name: 'Project 1',
+        terminals: [
+          { id: 't1', pid: 1, harnessId: 'codex', displayName: 'Agent 1', workingDir: '/workspace' },
+          { id: 't2', pid: 2, harnessId: 'claude', displayName: 'Agent 2', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+          { id: 'p2', terminalId: 't2' },
+        ],
+        minimizedPanes: [{ paneId: 'p2', pageId: 'pg1', placement: null }],
+      });
+      useWorkspaceStore.setState({
+        workspaces: [ws],
+        activeWorkspaceId: 'ws1',
+        selectWorkspace,
+      });
+
+      render(<WorkspaceTabs />);
+      const trigger = screen.getByRole('button', { name: /Agents in Project 1/i });
+      expect(trigger).toHaveClass('has-minimized');
+
+      // Click trigger to open popover
+      fireEvent.click(trigger);
+
+      // Verify both agents render in the menu
+      expect(screen.getByText('Agent 1')).toBeTruthy();
+      expect(screen.getByText('Agent 2')).toBeTruthy();
+
+      // Click minimized agent 2
+      const agent2Row = screen.getByText('Agent 2').closest('button')!;
+      fireEvent.click(agent2Row);
+
+      expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't2');
+    });
+
+    it('restores multiple minimized agents independently from the agent dropdown', () => {
+      const selectWorkspace = vi.fn();
+      const ws = createMockWorkspace({
+        id: 'ws1',
+        name: 'Project Multi',
+        terminals: [
+          { id: 't1', pid: 1, harnessId: 'codex', displayName: 'Agent 1', workingDir: '/workspace' },
+          { id: 't2', pid: 2, harnessId: 'claude', displayName: 'Agent 2', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+          { id: 'p2', terminalId: 't2' },
+        ],
+        minimizedPanes: [
+          { paneId: 'p1', pageId: 'pg1', placement: null },
+          { paneId: 'p2', pageId: 'pg1', placement: null },
+        ],
+      });
+      useWorkspaceStore.setState({
+        workspaces: [ws],
+        activeWorkspaceId: 'ws1',
+        selectWorkspace,
+      });
+
+      render(<WorkspaceTabs />);
+      const trigger = screen.getByRole('button', { name: /Agents in Project Multi/i });
+      fireEvent.click(trigger);
+
+      // Restore agent 1
+      fireEvent.click(screen.getByText('Agent 1').closest('button')!);
+      expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't1');
+
+      // Restore agent 2
+      fireEvent.click(trigger);
+      fireEvent.click(screen.getByText('Agent 2').closest('button')!);
+      expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't2');
+    });
+
+    it('recovers an agent when all panes on a page are minimized', () => {
+      const selectWorkspace = vi.fn();
+      const ws = createMockWorkspace({
+        id: 'ws1',
+        name: 'Empty Page WS',
+        terminals: [
+          { id: 't1', pid: 1, harnessId: 'codex', displayName: 'Sole Agent', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+        ],
+        layoutRoot: null,
+        minimizedPanes: [
+          { paneId: 'p1', pageId: 'pg1', placement: null },
+        ],
+      });
+      useWorkspaceStore.setState({
+        workspaces: [ws],
+        activeWorkspaceId: 'ws1',
+        selectWorkspace,
+      });
+
+      render(<WorkspaceTabs />);
+      const trigger = screen.getByRole('button', { name: /Agents in Empty Page WS/i });
+      fireEvent.click(trigger);
+
+      const agentBtn = screen.getByText('Sole Agent').closest('button')!;
+      fireEvent.click(agentBtn);
+
+      expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't1');
+    });
+
+    it('restores an agent from another page without requiring attention', () => {
+      const selectWorkspace = vi.fn();
+      const ws = createMockWorkspace({
+        id: 'ws1',
+        name: 'Cross Page WS',
+        activePageId: 'pg2',
+        pages: [
+          { id: 'pg1', layoutRoot: null, layoutRevision: 1, layoutUndoStack: [], activeTerminalId: null },
+          { id: 'pg2', layoutRoot: { type: 'leaf', nodeId: 'n3', paneId: 'p3' }, layoutRevision: 1, layoutUndoStack: [], activeTerminalId: null },
+        ],
+        terminals: [
+          { id: 't1', pid: 1, harnessId: 'codex', displayName: 'Agent on Page 1', workingDir: '/workspace' },
+          { id: 't3', pid: 3, harnessId: 'codex', displayName: 'Agent on Page 2', workingDir: '/workspace' },
+        ],
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+          { id: 'p3', terminalId: 't3' },
+        ],
+        minimizedPanes: [
+          { paneId: 'p1', pageId: 'pg1', placement: null },
+        ],
+      });
+      useWorkspaceStore.setState({
+        workspaces: [ws],
+        activeWorkspaceId: 'ws1',
+        selectWorkspace,
+      });
+
+      render(<WorkspaceTabs />);
+      const trigger = screen.getByRole('button', { name: /Agents in Cross Page WS/i });
+      fireEvent.click(trigger);
+
+      const agentBtn = screen.getByText('Agent on Page 1').closest('button')!;
+      fireEvent.click(agentBtn);
+
+      expect(selectWorkspace).toHaveBeenCalledWith('ws1', 't1');
+    });
+  });
 });

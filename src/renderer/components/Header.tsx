@@ -259,7 +259,13 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
           <NotebookPen size={14} strokeWidth={2} />
         </IconButton>
       )}
-      {capabilities.explorer && (focusedWorkspace?.editorTabs?.length ?? 0) > 0 && (
+      {capabilities.explorer && focusedWorkspace && (
+        (focusedWorkspace.editorTabs?.length ?? 0) > 0 ||
+        Boolean(focusedWorkspace.editorPane && (
+          focusedWorkspace.editorVisible ||
+          focusedWorkspace.minimizedPanes?.some((entry) => entry.paneId === focusedWorkspace.editorPane?.id)
+        ))
+      ) && (
         <IconButton
           type="button"
           size="xs"

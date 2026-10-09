@@ -23,11 +23,15 @@ notes and services. A page owns **presentation**, not processes or filesystem au
   until size is restored. Switching pages retains each page's maximize state.
 - Minimized agents stay in the workspace's left-hand agent list and collapsed rail with a compact,
   subdued minimized icon (`Minus`). Clicking the agent row or rail icon automatically restores it to its
-  previous layout position and selects its original page.
+  previous layout position and selects its original page. In tabs navigation mode (where the sidebar is
+  not displayed), each workspace tab provides a compact agent dropdown trigger (`▾`) that indicates
+  minimized agents with a subdued `Minus` icon; opening the dropdown lists all workspace agents and
+  allows clicking any agent to restore it to its original page and layout placement.
 - Minimized utility panes (Browser, Editor, Notes) are restored by clicking their existing toolbar
   toggle buttons (or opening/focusing an open file in FileExplorer for the Editor), distinguishing a
-  minimized pane from a genuinely closed pane while preserving underlying state. The footer `Minimized · N`
-  dropdown mechanism has been removed.
+  minimized pane from a genuinely closed pane while preserving underlying state. Empty Editor panes
+  can be minimized and restored via the Editor toolbar button without requiring open file tabs.
+  The footer `Minimized · N` dropdown mechanism has been removed.
 - Restore reuses the original sibling placement hint if its anchor still exists; otherwise it
   inserts safely into the original page. It never rebuilds the whole arrangement.
 - Close requests retirement of the captured terminal and removes its pane/membership/cache after
