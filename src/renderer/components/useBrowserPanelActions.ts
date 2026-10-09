@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import type { BrowserPresentation } from '../../shared/types/browserPresentation';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 interface RemoveBrowserTabResult {
@@ -7,6 +8,8 @@ interface RemoveBrowserTabResult {
 }
 
 interface UseBrowserPanelActionsOptions {
+  presentation?: BrowserPresentation;
+  scoped?: boolean;
   /** Opaque Browser owner: a workspace id or an Assistant browser scope. */
   ownerId: string | null;
   activeTabId: string | null;
@@ -35,6 +38,8 @@ interface UseBrowserPanelActionsResult {
 }
 
 export function useBrowserPanelActions({
+  presentation,
+  scoped,
   ownerId,
   activeTabId,
   browserTabsCount,
@@ -49,23 +54,27 @@ export function useBrowserPanelActions({
 }: UseBrowserPanelActionsOptions): UseBrowserPanelActionsResult {
   const handleBack = useCallback(() => {
     if (!ownerId) return;
-    window.electronAPI.browserBack(ownerId);
-  }, [ownerId]);
+    if (presentation) window.electronAPI.browserBack(ownerId, presentation);
+    else if (!scoped) window.electronAPI.browserBack(ownerId);
+  }, [ownerId, presentation, scoped]);
 
   const handleForward = useCallback(() => {
     if (!ownerId) return;
-    window.electronAPI.browserForward(ownerId);
-  }, [ownerId]);
+    if (presentation) window.electronAPI.browserForward(ownerId, presentation);
+    else if (!scoped) window.electronAPI.browserForward(ownerId);
+  }, [ownerId, presentation, scoped]);
 
   const handleRefresh = useCallback(() => {
     if (!ownerId) return;
-    window.electronAPI.browserRefresh(ownerId);
-  }, [ownerId]);
+    if (presentation) window.electronAPI.browserRefresh(ownerId, presentation);
+    else if (!scoped) window.electronAPI.browserRefresh(ownerId);
+  }, [ownerId, presentation, scoped]);
 
   const handleStop = useCallback(() => {
     if (!ownerId) return;
-    window.electronAPI.browserStop(ownerId);
-  }, [ownerId]);
+    if (presentation) window.electronAPI.browserStop(ownerId, presentation);
+    else if (!scoped) window.electronAPI.browserStop(ownerId);
+  }, [ownerId, presentation, scoped]);
 
   const handleOpenExternal = useCallback(() => {
     if (displayedUrl) {
@@ -100,9 +109,10 @@ export function useBrowserPanelActions({
 
     const changed = setActiveBrowserTab(tabId);
     if (!changed) return;
-    await window.electronAPI.browserSwitchTab(ownerId, tabId);
+    if (!scoped) await window.electronAPI.browserSwitchTab(ownerId, tabId);
+    else await syncSelectedTab();
     scheduleBoundsUpdate(true);
-  }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, ownerId]);
+  }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, ownerId, scoped, syncSelectedTab]);
 
   const closeTabById = useCallback(async (tabId: string) => {
     if (!ownerId || browserTabsCount <= 1) return;

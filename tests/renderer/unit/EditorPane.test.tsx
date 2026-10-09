@@ -388,6 +388,57 @@ describe('EditorPane', () => {
       const contentArea = document.querySelector('.editor-content-area');
       expect(contentArea).toBeTruthy();
     });
+
+    it('renders presentation controls inside editor-pane-header before close button and minimizes editor', () => {
+      const workspace = createWorkspaceFixture({
+        id: 'ws-editor',
+        editorVisible: true,
+        editorPane: { id: 'ed-1' },
+        activePageId: 'page-1',
+        pages: [
+          {
+            id: 'page-1',
+            layoutRoot: { type: 'leaf', nodeId: 'leaf-editor', paneId: 'ed-1' },
+            layoutRevision: 1,
+            layoutUndoStack: [],
+            activeTerminalId: null,
+          },
+        ],
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-editor', paneId: 'ed-1' },
+        minimizedPanes: [],
+      });
+      useWorkspaceStore.setState({
+        workspaces: [workspace],
+        activeWorkspaceId: workspace.id,
+        activeWorkspaceLifecycle: 'active',
+        ...workspace,
+      });
+
+      render(<EditorPane workspaceId="ws-editor" />);
+
+      const header = document.querySelector('.editor-pane-header')!;
+      expect(header).toBeTruthy();
+      expect(document.querySelector('.utility-presentation-controls')).toBeNull();
+
+      const minimizeBtn = screen.getByRole('button', { name: 'Minimize pane' });
+      const maximizeBtn = screen.getByRole('button', { name: 'Maximize pane' });
+      const closeBtn = screen.getByRole('button', { name: 'Close editor' });
+
+      expect(header).toContainElement(minimizeBtn);
+      expect(header).toContainElement(maximizeBtn);
+      expect(header).toContainElement(closeBtn);
+
+      const children = Array.from(header.children);
+      const minimizeIndex = children.indexOf(minimizeBtn);
+      const maximizeIndex = children.indexOf(maximizeBtn);
+      const closeIndex = children.indexOf(closeBtn);
+
+      expect(minimizeIndex).toBeLessThan(maximizeIndex);
+      expect(maximizeIndex).toBeLessThan(closeIndex);
+
+      fireEvent.click(minimizeBtn);
+      expect(useWorkspaceStore.getState().workspaces[0].minimizedPanes?.some((e) => e.paneId === 'ed-1')).toBe(true);
+    });
   });
 
   // =========================================================================

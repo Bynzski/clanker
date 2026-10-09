@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
+import type { BrowserPresentation } from '../shared/types/browserPresentation';
 import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
@@ -95,6 +96,7 @@ import {
   WORKSPACE_SERVICE_START,
   WORKSPACE_SERVICE_STOP,
   WORKSPACE_SERVICE_GET,
+  WORKSPACE_SERVICE_PREVIEW_PROBE,
   WORKSPACE_SERVICE_CHANGED,
   REMOTE_PREVIEW_WATCH,
   REMOTE_PREVIEW_GET,
@@ -313,6 +315,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   workspaceServiceStart: (request: DevServiceStartRequest) => ipcRenderer.invoke(WORKSPACE_SERVICE_START, request),
   workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => ipcRenderer.invoke(WORKSPACE_SERVICE_STOP, request),
   workspaceServiceGet: () => ipcRenderer.invoke(WORKSPACE_SERVICE_GET),
+  workspaceServiceProbePreview: (request: { workspaceId: string; serviceId: string }) => ipcRenderer.invoke(WORKSPACE_SERVICE_PREVIEW_PROBE, request),
   onWorkspaceServicesChanged: (callback: (update: WorkspaceServicesUpdate) => void) => {
     const listener = (_event: IpcRendererEvent, update: WorkspaceServicesUpdate) => callback(update);
     ipcRenderer.on(WORKSPACE_SERVICE_CHANGED, listener);
@@ -359,32 +362,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(REMOTE_PREVIEW_CHANGED, handler);
     return () => ipcRenderer.removeListener(REMOTE_PREVIEW_CHANGED, handler);
   },
-  browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),
+  browserHide: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId, presentation),
   browserSetBounds: (
     workspaceId: string,
     bounds: { x: number; y: number; width: number; height: number },
     tabId?: string,
-  ) => ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds, tabId),
+    presentation?: BrowserPresentation,
+  ) => ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds, tabId, presentation),
   browserNavigate: (workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) =>
     ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url, tabId, awaitLoad),
   probeRecipePreview: (url: string, waitForReady: boolean) =>
     ipcRenderer.invoke(RECIPE_PREVIEW_PROBE, url, waitForReady),
-  browserBack: (workspaceId: string) => ipcRenderer.invoke(BROWSER_BACK, workspaceId),
-  browserForward: (workspaceId: string) => ipcRenderer.invoke(BROWSER_FORWARD, workspaceId),
-  browserRefresh: (workspaceId: string) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId),
-  browserStop: (workspaceId: string) => ipcRenderer.invoke(BROWSER_STOP, workspaceId),
-  browserCreateTab: (workspaceId: string, tabId: string) =>
-    ipcRenderer.invoke(BROWSER_CREATE_TAB, workspaceId, tabId),
+  browserBack: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(BROWSER_BACK, workspaceId, presentation),
+  browserForward: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(BROWSER_FORWARD, workspaceId, presentation),
+  browserRefresh: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId, presentation),
+  browserStop: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(BROWSER_STOP, workspaceId, presentation),
+  browserCreateTab: (workspaceId: string, tabId: string, paneId?: string) =>
+    ipcRenderer.invoke(BROWSER_CREATE_TAB, workspaceId, tabId, paneId),
   browserCloseTab: (workspaceId: string, tabId: string) =>
     ipcRenderer.invoke(BROWSER_CLOSE_TAB, workspaceId, tabId),
-  browserSwitchTab: (workspaceId: string, tabId: string) =>
-    ipcRenderer.invoke(BROWSER_SWITCH_TAB, workspaceId, tabId),
-  browserActivate: (workspaceId: string, tabId?: string) =>
-    ipcRenderer.invoke(BROWSER_ACTIVATE, workspaceId, tabId),
-  browserMoveTab: (workspaceId: string, tabId: string, targetTabId: string, activeTabId: string) =>
-    ipcRenderer.invoke(BROWSER_MOVE_TAB, workspaceId, tabId, targetTabId, activeTabId),
-  browserGetTabs: (workspaceId: string) =>
-    ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId),
+  browserSwitchTab: (workspaceId: string, tabId: string, presentation?: BrowserPresentation) =>
+    ipcRenderer.invoke(BROWSER_SWITCH_TAB, workspaceId, tabId, presentation),
+  browserActivate: (workspaceId: string, tabId?: string, presentation?: BrowserPresentation) =>
+    ipcRenderer.invoke(BROWSER_ACTIVATE, workspaceId, tabId, presentation),
+  browserMoveTab: (workspaceId: string, tabId: string, targetTabId: string, activeTabId: string, presentation?: BrowserPresentation) =>
+    ipcRenderer.invoke(BROWSER_MOVE_TAB, workspaceId, tabId, targetTabId, activeTabId, presentation),
+  browserGetTabs: (workspaceId: string, paneId?: string) =>
+    ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId, paneId),
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) =>
     ipcRenderer.invoke(BROWSER_TAB_NAVIGATE, workspaceId, tabId, url),
   browserHistoryGet: (prefix?: string) => ipcRenderer.invoke(BROWSER_HISTORY_GET, prefix),
@@ -392,8 +396,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserHistoryClear: () => ipcRenderer.invoke(BROWSER_HISTORY_CLEAR),
   openExternal: (url: string) => ipcRenderer.invoke(OPEN_EXTERNAL, url),
   revealInFileManager: (filePath: string, workspaceId?: string) => ipcRenderer.invoke(REVEAL_IN_FILE_MANAGER, filePath, workspaceId),
-  canGoBack: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId),
-  canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
+  canGoBack: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId, presentation),
+  canGoForward: (workspaceId: string, presentation?: BrowserPresentation) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId, presentation),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
   onBrowserUrlUpdated: (
     callback: (payload: {

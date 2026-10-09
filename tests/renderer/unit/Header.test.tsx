@@ -424,6 +424,76 @@ describe('Header', () => {
         expect(screen.getByText('Terminal')).toBeTruthy();
       });
     });
+
+    it('renders and toggles editor panel button when editor tabs exist', () => {
+      renderHeader();
+      expect(screen.queryByRole('button', { name: 'Toggle editor panel' })).toBeNull();
+      cleanup();
+
+      const toggleEditorPane = vi.fn();
+      useWorkspaceStore.setState((state) => ({
+        toggleEditorPane,
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? {
+            ...workspace,
+            editorTabs: [{ id: 'tab-1', filePath: '/src/main.ts', fileName: 'main.ts', isDirty: false, content: '', originalContent: '' }],
+            editorVisible: true,
+            editorPane: { id: 'ed-pane' },
+            layoutRoot: { type: 'leaf', nodeId: 'ed-node', paneId: 'ed-pane' },
+          } : workspace
+        )),
+      }));
+      renderHeader();
+      const editorBtn = screen.getByRole('button', { name: 'Toggle editor panel' });
+      expect(editorBtn).toHaveClass('active');
+      fireEvent.click(editorBtn);
+      expect(toggleEditorPane).toHaveBeenCalledOnce();
+    });
+
+    it('renders and toggles editor panel button when an empty editor pane exists', () => {
+      const toggleEditorPane = vi.fn();
+      useWorkspaceStore.setState((state) => ({
+        toggleEditorPane,
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? {
+            ...workspace,
+            editorTabs: [],
+            editorVisible: true,
+            editorPane: { id: 'ed-pane' },
+            layoutRoot: { type: 'leaf', nodeId: 'ed-node', paneId: 'ed-pane' },
+          } : workspace
+        )),
+      }));
+      renderHeader();
+      const editorBtn = screen.getByRole('button', { name: 'Toggle editor panel' });
+      expect(editorBtn).toHaveClass('active');
+      fireEvent.click(editorBtn);
+      expect(toggleEditorPane).toHaveBeenCalledOnce();
+    });
+
+    it('renders inactive editor button and calls toggleEditorPane when an empty editor pane is minimized', () => {
+      const toggleEditorPane = vi.fn();
+      useWorkspaceStore.setState((state) => ({
+        toggleEditorPane,
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? {
+            ...workspace,
+            editorTabs: [],
+            editorVisible: true,
+            editorPane: { id: 'ed-pane' },
+            layoutRoot: null,
+            activePageId: 'pg-1',
+            pages: [{ id: 'pg-1', layoutRoot: null, layoutRevision: 1, layoutUndoStack: [], activeTerminalId: null }],
+            minimizedPanes: [{ paneId: 'ed-pane', pageId: 'pg-1', placement: null }],
+          } : workspace
+        )),
+      }));
+      renderHeader();
+      const editorBtn = screen.getByRole('button', { name: 'Toggle editor panel' });
+      expect(editorBtn).not.toHaveClass('active');
+      fireEvent.click(editorBtn);
+      expect(toggleEditorPane).toHaveBeenCalledOnce();
+    });
   });
 
   // =========================================================================

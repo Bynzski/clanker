@@ -1,4 +1,5 @@
 import { Button } from './ui/Button';
+import { browserResourceExists, currentBrowserPresentation, ensureBrowserResource, useBrowserPresentation } from '../lib/browserPresentation';
 import { IconButton } from './ui/IconButton';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type {
@@ -46,6 +47,7 @@ interface BrowserPanelProps {
  * adapters build this from their own state; the core knows nothing about either.
  */
 export interface BrowserPanelModel {
+  paneId?: string;
   ownerId: string;
   visible: boolean;
   /** This owner is the single active Browser owner (the only one allowed to show a native view). */
@@ -197,6 +199,8 @@ function BrowserToolbar({
 
 export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanelModel; layoutVersion: number }) {
   const { ownerId, tabs: browserTabs, activeTabId, isActiveOwner } = model;
+  const presentation = useBrowserPresentation(ownerId, model.paneId, activeTabId ?? undefined);
+  const lease = presentation?.lease;
   const activeTab = browserTabs.find((tab) => tab.id === activeTabId) ?? null;
   const displayedUrl = activeTab?.url ?? model.browserUrl;
   const annotationEnabled = model.features.annotation;
@@ -234,6 +238,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     layoutVersion,
     containerRef,
     contentRef,
+    paneId: model.paneId,
   });
 
   useEffect(() => {
@@ -249,6 +254,12 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
 
     navigateUrl = normalizeBrowserInputUrl(navigateUrl);
 
+    const paneId = modelRef.current.paneId;
+    if (paneId && activeTabId) {
+      const exists = () => browserResourceExists(ownerId, paneId, activeTabId);
+      await ensureBrowserResource(ownerId, paneId, activeTabId, displayedUrl, exists);
+      if (!exists()) return null;
+    }
     const success = activeTabId
       ? await window.electronAPI.browserTabNavigate(ownerId, activeTabId, navigateUrl)
       : await window.electronAPI.browserNavigate(ownerId, navigateUrl);
@@ -262,7 +273,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     }
 
     return navigateUrl;
-  }, [activeTabId, ownerId]);
+  }, [activeTabId, ownerId, displayedUrl]);
 
   const {
     inputUrl,
@@ -321,8 +332,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     const updateState = async () => {
       try {
         const [back, forward] = await Promise.all([
-          window.electronAPI.canGoBack(ownerId),
-          window.electronAPI.canGoForward(ownerId),
+          window.electronAPI.canGoBack(ownerId, lease),
+          window.electronAPI.canGoForward(ownerId, lease),
         ]);
         if (!cancelled) {
           setCanGoBack(back);
@@ -342,7 +353,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
       cancelled = true;
       clearInterval(interval);
     };
-  }, [activeTabId, isActiveOwner, ownerId]);
+  }, [activeTabId, isActiveOwner, ownerId, lease]);
 
   useEffect(() => {
     if (!annotationEnabled || !isActiveOwner) {
@@ -437,6 +448,8 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     createTab: () => modelRef.current.createTab(),
     syncSelectedTab: () => modelRef.current.syncSelectedTab(),
     scheduleBoundsUpdate,
+    presentation: lease,
+    scoped: Boolean(model.paneId),
   });
 
   // Browser-context keybindings are matched in main (the native view owns focus) and
@@ -444,6 +457,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
   const runKeybindingCommand = useRef<(payload: BrowserKeybindingCommandPayload) => void>(() => undefined);
   runKeybindingCommand.current = (payload) => {
     if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId || !isActiveOwner) return;
+    if (model.paneId && !currentBrowserPresentation(ownerId, model.paneId, payload.tabId)) return;
     if (executeWorkspacePageCommand(payload.command, ownerId)) return;
     switch (payload.command) {
       case 'browser.focusAddress':
@@ -475,11 +489,12 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
 
   const handleMoveTab = useCallback(async (tabId: string, targetTabId: string) => {
     if (!activeTabId) return;
-    const moved = await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId);
+    const moved = lease ? await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId, lease)
+      : await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId);
     if (!moved) return;
     modelRef.current.moveTab(tabId, targetTabId);
     scheduleBoundsUpdate(true);
-  }, [activeTabId, ownerId, scheduleBoundsUpdate]);
+  }, [activeTabId, ownerId, scheduleBoundsUpdate, lease]);
 
   return (
     <div className="browser-panel" ref={containerRef}>
@@ -553,6 +568,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     const remote = workspace.environmentId && workspace.environmentId !== 'local';
     return {
       ownerId: id,
+      paneId: workspace.pages ? workspace.browserPane?.id : undefined,
       visible: workspaceBrowserPresented(workspace),
       // A workspace owns the native view only while it is the single active Browser owner.
       isActiveOwner: !assistantActive && activeOwner === id && workspaceBrowserPresented(workspace),
@@ -566,13 +582,35 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       moveTab: (tabId, targetTabId) => moveBrowserTab(tabId, targetTabId, id),
       pushOverlay: () => pushBrowserOverlay(id),
       popOverlay: () => popBrowserOverlay(id),
-      createTab: () => createAndActivateBrowserTab(id),
+      createTab: () => createAndActivateBrowserTab(id, undefined, workspace.pages ? workspace.browserPane?.id : undefined),
       syncSelectedTab: () => syncSelectedBrowserTab(id),
       features: { annotation: true, paneDrag: true },
       headerControls: !assistantActive && activeOwner === id && workspace.browserPane && workspaceBrowserPresented(workspace)
         ? <PanePresentationControls workspace={workspace} paneId={workspace.browserPane.id} /> : undefined,
       renderRemotePreview: remote
-        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && workspaceBrowserPresented(workspace)} onOpen={navigate} />
+        ? (navigate) => <RemotePreviewControl key={workspace.browserPane?.id ?? id} workspaceId={id} enabled={!assistantActive && activeOwner === id && workspaceBrowserPresented(workspace)} onOpen={navigate} browserUrl={workspace.browserUrl} preserveForwards={Boolean(workspace.pages)}
+          onAutoOpen={async (url) => {
+            const state = useWorkspaceStore.getState();
+            const live = state.getWorkspaceById(id);
+            const pane = live?.browserPane;
+            if (state.activeWorkspaceId !== id || useAssistantNavStore.getState().activeAssistantId || !live
+              || !workspaceBrowserPresented(live) || pane?.id !== workspace.browserPane?.id || !pane) return;
+            if (pane.remotePreviewInitialized || !pane.activeTabId) return;
+            const selectedTab = pane.tabs.find((tab) => tab.id === pane.activeTabId);
+            if (!selectedTab) return;
+            const stillSelected = () => {
+              const current = useWorkspaceStore.getState();
+              const target = current.getWorkspaceById(id);
+              return current.activeWorkspaceId === id && !useAssistantNavStore.getState().activeAssistantId && Boolean(target
+                && workspaceBrowserPresented(target) && target.browserPane?.id === pane.id && target.browserPane.activeTabId === selectedTab.id);
+            };
+            await ensureBrowserResource(id, pane.id, selectedTab.id, selectedTab.url, stillSelected);
+            if (!stillSelected() || useWorkspaceStore.getState().getWorkspaceById(id)?.browserPane?.remotePreviewInitialized) return;
+            useWorkspaceStore.getState().initializeBrowserPreview(id, pane.id);
+            // Existing previews/docs must not be navigated by discovery on a remount.
+            if (selectedTab.url === 'https://github.com'
+              && useWorkspaceStore.getState().getWorkspaceById(id)?.browserUrl === selectedTab.url) await navigate(url);
+          }} />
         : undefined,
     };
   }, [workspace, id, activeOwner, assistantActive, updateBrowserTab, removeBrowserTab, setActiveBrowserTab, moveBrowserTab, pushBrowserOverlay, popBrowserOverlay]);

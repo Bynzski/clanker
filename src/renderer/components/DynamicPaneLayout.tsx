@@ -37,7 +37,6 @@ import NotesPane from './NotesPane';
 import { DockEdgeTargets } from './DockEdgeTargets';
 import { collectLeafPaneIds } from '../store/workspaceLayout';
 import { activePage, paneIsPresented } from '../store/workspacePages';
-import { PanePresentationControls } from './WorkspacePageControls';
 import { useSharedPaneDrag } from './WorkspacePaneDragProvider';
 import { currentPaneDrag, pageDropTarget, paneCollisionDetection } from '../lib/workspacePaneDrag';
 import { getTerminalReadinessRevision, subscribeTerminalReadiness, terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
@@ -211,10 +210,10 @@ function LeafView({
     />
   ) : workspace?.editorPane?.id === paneId ? (
     <Suspense fallback={<div className="layout-pane-loading">Loading editor…</div>}>
-      <EditorPane workspaceId={workspaceId} />
+      <EditorPane workspaceId={workspaceId} paneId={paneId} />
     </Suspense>
   ) : workspace?.notesVisible && workspace.notesPane?.id === paneId ? (
-    <NotesPane workspaceId={workspaceId} />
+    <NotesPane workspaceId={workspaceId} paneId={paneId} />
   ) : (
     <Suspense fallback={<div className="layout-pane-loading">Loading terminal…</div>}>
       <TerminalPane workspaceId={workspaceId} paneId={paneId} background={!isInteractive} />
@@ -233,7 +232,6 @@ function LeafView({
         && !workspace?.panes.some((pane) => pane.id === paneId && !pane.terminalId)}
     >
       <ErrorBoundary paneId={paneId}>
-        {workspace && workspace.browserPane?.id !== paneId && !workspace.panes.some((pane) => pane.id === paneId) && isInteractive && <div className="utility-presentation-controls"><PanePresentationControls workspace={workspace} paneId={paneId} /></div>}
         {content}
       </ErrorBoundary>
     </PanelWrapper>

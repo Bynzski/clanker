@@ -417,7 +417,7 @@ describe('Assistant Browser with no Workspace', () => {
       expect(ui?.tabs).toHaveLength(1);
       return ui!.tabs[0];
     });
-    await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, tab.id));
+    await waitFor(() => expect(window.electronAPI.browserActivate).toHaveBeenCalledWith(FRED_OWNER, tab.id, expect.objectContaining({ paneId: FRED_OWNER, epoch: expect.any(Number) })));
     // Every Browser call went to Fred's owner; none to any workspace id.
     const browserCalls = Object.entries(window.electronAPI)
       .filter(([name, fn]) => /^browser(Create|Activate|Switch|Set|Navigate|Show|Hide)/.test(name) && vi.isMockFunction(fn))
@@ -452,7 +452,7 @@ describe('transitions while Fred is active', () => {
     expect(useAssistantNavStore.getState().activeAssistantId).toBeNull();
     expect(useAssistantNavStore.getState().openedAssistantIds).toEqual([FRED]);
     expect(surfaceOf(FRED)).toHaveClass('parked');
-    await waitFor(() => expect(window.electronAPI.browserHide).toHaveBeenCalledWith(FRED_OWNER));
+    await waitFor(() => expect(window.electronAPI.browserHide).toHaveBeenCalledWith(FRED_OWNER, expect.objectContaining({ paneId: FRED_OWNER, epoch: expect.any(Number) })));
     expect(xterms[0].dispose).not.toHaveBeenCalled();
 
     fireEvent.click(await screen.findByRole('button', { name: /Fred/ }));

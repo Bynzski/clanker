@@ -64,6 +64,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     workspaceServiceStart: createAsyncMock({ success: true }),
     workspaceServiceStop: createAsyncMock({ success: true }),
     workspaceServiceGet: createAsyncMock({ revision: 0, services: [] }),
+    workspaceServiceProbePreview: createAsyncMock({ status: 'ready' }),
     onWorkspaceServicesChanged: vi.fn(() => vi.fn()),
     remotePreviewGet: createAsyncMock(null),
     remotePreviewStart: createAsyncMock({ success: false, forward: null, error: 'Unavailable' }),

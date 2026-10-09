@@ -1159,6 +1159,75 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
   });
 
+  test('presentation leases fence stale cross-pane operations, navigation and closed-tab recreation', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    const controller = registerBrowserIpc(deps);
+    const create = findHandler('browser-create-tab');
+    const activate = findHandler('browser-activate');
+    const bounds = findHandler('browser-set-bounds');
+    const hide = findHandler('browser-hide');
+    const switchTab = findHandler('browser-switch-tab');
+    const navigate = findHandler('browser-tab-navigate');
+    const aLease = { paneId: 'pane-a', epoch: 1 };
+    const bLease = { paneId: 'pane-b', epoch: 2 };
+    await create(null, 'ws-1', 'tab-a', 'pane-a');
+    await create(null, 'ws-1', 'tab-b', 'pane-b');
+    const a = mockBrowserViews.get('ws-1').get('tab-a');
+    const b = mockBrowserViews.get('ws-1').get('tab-b');
+    const rect = { x: 20, y: 30, width: 400, height: 300 };
+    expect(await activate(null, 'ws-1', 'tab-a', aLease)).toBe(true);
+    await bounds(null, 'ws-1', rect, 'tab-a', aLease);
+    expect(await activate(null, 'ws-1', 'tab-b', bLease)).toBe(true);
+    expect(b.view.setVisible).toHaveBeenLastCalledWith(false);
+    await bounds(null, 'ws-1', rect, 'tab-b', bLease);
+    const calls = b.view.setBounds.mock.calls.length;
+    expect(await activate(null, 'ws-1', 'tab-a', aLease)).toBe(false);
+    await bounds(null, 'ws-1', { ...rect, x: 999 }, 'tab-a', aLease);
+    await bounds(null, 'ws-1', rect, 'tab-a', bLease);
+    await bounds(null, 'ws-1', { ...rect, width: NaN }, 'tab-b', bLease);
+    await hide(null, 'ws-1', aLease);
+    await hide(null, 'ws-1');
+    expect(await switchTab(null, 'ws-1', 'tab-a', aLease)).toBeNull();
+    expect(await switchTab(null, 'ws-1', 'tab-a')).toBeNull();
+    await findHandler('browser-refresh')(null, 'ws-1', aLease);
+    expect(b.view.webContents.reload).not.toHaveBeenCalled();
+    expect(b.view.setBounds.mock.calls).toHaveLength(calls);
+    expect(b.view.setVisible).toHaveBeenLastCalledWith(true);
+    expect(await navigate(null, 'ws-1', 'tab-a', 'https://example.com')).toBe(true);
+    expect(a.view.webContents.loadURL).toHaveBeenLastCalledWith('https://example.com/');
+    expect(b.view.setVisible).toHaveBeenLastCalledWith(true);
+    expect(await activate(null, 'ws-1', 'tab-a', { paneId: 'pane-b', epoch: 3 })).toBe(false);
+    expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-a')).toBe(false);
+    expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-b')).toBe(false);
+    expect(await findHandler('browser-get-tabs')(null, 'ws-1', 'pane-b')).toEqual([{ tabId: 'tab-b', url: 'https://github.com', title: '' }]);
+    expect(await findHandler('browser-get-tabs')(null, 'ws-1')).toEqual([]);
+    expect(await navigate(null, 'ws-1', 'unknown', 'https://example.com')).toBe(false);
+    expect(mockBrowserViews.get('ws-1').has('unknown')).toBe(false);
+    await create(null, 'ws-1', 'tab-a2', 'pane-a');
+    expect(await findHandler('browser-close-tab')(null, 'ws-1', 'tab-a')).toBe(true);
+    expect(await navigate(null, 'ws-1', 'tab-a', 'https://example.com')).toBe(false);
+    expect(await activate(null, 'ws-1', 'tab-a', { paneId: 'pane-a', epoch: 4 })).toBe(false);
+    expect(mockBrowserViews.get('ws-1').has('tab-a')).toBe(false);
+    await hide(null, 'ws-1', bLease);
+    expect(b.view.setVisible).toHaveBeenLastCalledWith(false);
+    expect(await activate(null, 'ws-1', 'tab-b', bLease)).toBe(false);
+    expect(await activate(null, 'ws-1', 'tab-b', { ...bLease, epoch: 5 })).toBe(true);
+    controller.disposeAll();
+  });
+
+  test('unknown explicit navigation never creates resources, while legacy implicit navigation remains supported', async () => {
+    const { deps } = createMockDeps();
+    const controller = registerBrowserIpc(deps);
+    const navigate = findHandler('browser-tab-navigate');
+    expect(await navigate(null, 'ws-1', 'unknown', 'https://example.com')).toBe(false);
+    expect(deps.getBrowserViews().size).toBe(0);
+    expect(await findHandler('browser-navigate')(null, 'ws-1', 'https://example.com', 'unknown')).toBe(false);
+    expect(await findHandler('browser-navigate')(null, 'ws-1', 'https://example.com')).toBe(true);
+    controller.disposeWorkspace('ws-1');
+    expect(await navigate(null, 'ws-1', '__fallback_tab__', 'https://example.com')).toBe(false);
+    expect(deps.getBrowserViews().size).toBe(0);
+  });
+
   test('BROWSER_CREATE_TAB records the renderer-provided id and returns default url', async () => {
     const { deps } = createMockDeps();
     registerBrowserIpc(deps);

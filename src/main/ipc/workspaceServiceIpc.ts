@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
-import { WORKSPACE_SERVICE_SETTINGS_SAVE, WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET, WORKSPACE_SERVICE_CHANGED } from '../../shared/ipcChannels';
+import { WORKSPACE_SERVICE_SETTINGS_SAVE, WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET, WORKSPACE_SERVICE_PREVIEW_PROBE, WORKSPACE_SERVICE_CHANGED } from '../../shared/ipcChannels';
 import type { WorkspaceServiceManager } from '../services/workspaceServiceManager';
+import { probeRecipePreview } from '../recipePreview';
 import { validateDevServiceEnvironment } from '../../shared/devServiceEnvironment';
 
 export function registerWorkspaceServiceIpc(manager: WorkspaceServiceManager): void {
@@ -10,6 +11,17 @@ export function registerWorkspaceServiceIpc(manager: WorkspaceServiceManager): v
   // Push-only; inbound messages cannot change service state.
   ipcMain.on(WORKSPACE_SERVICE_CHANGED, () => {});
   ipcMain.handle(WORKSPACE_SERVICE_GET, () => manager.snapshot());
+  ipcMain.handle(WORKSPACE_SERVICE_PREVIEW_PROBE, async (_event, request: unknown) => {
+    if (!record(request) || !text(request.workspaceId) || !text(request.serviceId)) return { status: 'invalid' };
+    const current = () => manager.snapshot().services.find((service) => service.workspaceId === request.workspaceId && service.id === request.serviceId
+      && (service.status === 'starting' || service.status === 'running'));
+    const url = current()?.previewUrl;
+    if (!url) return { status: 'unavailable' };
+    // Main chooses the service URL. This is not a renderer-controlled recipe or
+    // arbitrary network probe, and remains available while recipes are disabled.
+    const result = await probeRecipePreview(url, true);
+    return current()?.previewUrl === url ? result : { status: 'unavailable' };
+  });
   ipcMain.handle(WORKSPACE_SERVICE_DISCOVER, (_event, request: unknown) => {
     if (!record(request) || !text(request.workspaceId) || !text(request.terminalId)) return invalid();
     return manager.discover({ workspaceId: request.workspaceId, terminalId: request.terminalId });

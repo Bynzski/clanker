@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { DevServerControls } from '../../../src/renderer/components/DevServerRow';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceServiceStore, startWorkspaceServiceBridge } from '../../../src/renderer/store/workspaceServiceStore';
@@ -17,7 +18,7 @@ const wt: CheckoutContext = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'l
 const command: DevServiceCommand = { workspaceId: 'ws', checkoutContextId: wt.id, checkoutRoot: wt.path, cwd: wt.path, command: 'npm run dev', packageManager: 'npm' };
 const service: WorkspaceService = { ...command, id: 'service', sourceTerminalId: 'agent', status: 'running', previewUrl: 'http://localhost:5173/' };
 function setup() {
-  useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'ws', workspacePath: '/repo', checkoutContexts: [main, wt], terminals: [createTerminalFixture({ id: 'agent', displayName: 'Sam', harnessId: 'codex', checkoutContextId: wt.id })], activeTerminalId: 'agent' })], activeWorkspaceId: 'ws' });
+  useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'ws', workspacePath: '/repo', checkoutContexts: [main, wt], terminals: [createTerminalFixture({ id: 'agent', displayName: 'Sam', harnessId: 'codex', checkoutContextId: wt.id })], activeTerminalId: 'agent', panes: [{ id: 'agent-pane', terminalId: 'agent' }] })], activeWorkspaceId: 'ws' });
   useWorkspaceServiceStore.setState({ revision: -1, services: [] });
   useAgentAttentionStore.setState({ byTerminalId: {}, revisionByTerminalId: {}, seenByTerminalId: {} });
   useAssistantNavStore.getState().clearAllAssistants();
@@ -153,16 +154,64 @@ describe('checkout-aware sidebar service controls', () => {
   });
   it('opens the owning workspace Browser only after a fresh probe and never spawns a visible terminal', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     await waitFor(() => expect(window.electronAPI.browserTabNavigate).toHaveBeenCalledWith('ws', expect.any(String), service.previewUrl));
+    expect(window.electronAPI.workspaceServiceProbePreview).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'ws', serviceId: service.id });
+    expect(window.electronAPI.probeRecipePreview).not.toHaveBeenCalled();
     expect(useWorkspaceStore.getState().workspaces[0].browserVisible).toBe(true);
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
   });
+  it('targets the requesting minimized agent page, keeps the other Browser independent, and cancels a page-switching probe', async () => {
+    const store = () => useWorkspaceStore.getState();
+    store().selectWorkspace('ws');
+    const first = store().workspaces[0].activePageId!;
+    store().toggleBrowser('ws');
+    const a = store().workspaces[0].browserPane!;
+    store().minimizeWorkspacePane('ws', 'agent-pane');
+    store().addWorkspacePage('ws');
+    const second = store().workspaces[0].activePageId!;
+    store().addTerminal(createTerminalFixture({ id: 'agent2', checkoutContextId: main.id }), 'ws');
+    store().toggleBrowser('ws');
+    const b = store().workspaces[0].browserPane!;
+    useWorkspaceServiceStore.setState({ services: [service] });
+    installElectronApiMock({ workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
+    const { unmount } = render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
+    await waitFor(() => expect(window.electronAPI.browserTabNavigate).toHaveBeenCalledWith('ws', expect.any(String), service.previewUrl));
+    expect(store().workspaces[0].activePageId).toBe(first);
+    expect(store().workspaces[0].browserPane?.id).toBe(a.id);
+    expect(store().workspaces[0].pages?.find((page) => page.id === second)?.browser?.pane).toEqual(b);
+    expect(store().workspaces[0].minimizedPanes?.some((entry) => entry.paneId === 'agent-pane')).toBe(true);
+    unmount();
+    let finish!: (value: { status: 'ready' }) => void;
+    vi.mocked(window.electronAPI.browserTabNavigate).mockClear();
+    vi.mocked(window.electronAPI.workspaceServiceProbePreview).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
+    act(() => store().selectWorkspacePage('ws', second));
+    await act(async () => finish({ status: 'ready' }));
+    expect(window.electronAPI.browserTabNavigate).not.toHaveBeenCalled();
+    expect(store().workspaces[0].browserPane).toEqual(b);
+  });
+  it('does not undo a newer Browser hide while readiness is pending', async () => {
+    const store = () => useWorkspaceStore.getState();
+    store().selectWorkspace('ws'); store().toggleBrowser('ws');
+    useWorkspaceServiceStore.setState({ services: [service] });
+    let finish!: (value: { status: 'ready' }) => void;
+    installElectronApiMock({ workspaceServiceProbePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
+    render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
+    act(() => store().toggleBrowser('ws'));
+    await act(async () => finish({ status: 'ready' }));
+    expect(store().workspaces[0].browserVisible).toBe(false);
+    expect(window.electronAPI.browserTabNavigate).not.toHaveBeenCalled();
+    expect(window.electronAPI.browserCreateTab).not.toHaveBeenCalled();
+  });
   it('does not navigate on failed readiness', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockResolvedValue({ status: 'unavailable' }) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'unavailable' }) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('not reachable');
@@ -171,7 +220,7 @@ describe('checkout-aware sidebar service controls', () => {
   it('does not redirect Browser after the user switches workspace/Assistant during a readiness probe', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
     let finish!: (value: { status: 'ready' }) => void;
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     act(() => useAssistantNavStore.getState().openAssistantSurface('assistant'));

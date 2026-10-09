@@ -81,6 +81,11 @@ async function run() {
   workspace = selectPage(workspace, originalPage); await reconcile();
   workspace = synchronizePages(workspace, minimizePane(workspace, 'browser')); await reconcile();
   workspace = synchronizePages(workspace, restorePane(workspace, 'browser')); await reconcile();
+  // Minimizing or restoring another pane must not hide the native Browser
+  workspace = synchronizePages(workspace, minimizePane(workspace, 'agent-pane')); await reconcile();
+  assert(entry.view.getVisible());
+  workspace = synchronizePages(workspace, restorePane(workspace, 'agent-pane')); await reconcile();
+  assert(entry.view.getVisible());
   workspace = { ...workspace, pages: workspace.pages.map(page => page.id === originalPage ? { ...page, maximizedPaneId: 'agent-pane' } : page) };
   await reconcile(); assert(!entry.view.getVisible());
   workspace = { ...workspace, pages: workspace.pages.map(page => ({ ...page, maximizedPaneId: undefined })) }; await reconcile();
@@ -90,7 +95,7 @@ async function run() {
   assert.equal(workspace.layoutRoot.ratio, originalRoot.ratio);
   assert.equal(workspace.terminals[0].id, 'terminal');
   controller.disposeAll(); window.destroy();
-  console.log('PASS: real native Browser hides on inactive/minimized/maximize-occluded pages; late bounds/tab calls stay hidden; tab identity/form/JS state survives rapid switching');
+  console.log('PASS: real native Browser hides on inactive/minimized/maximize-occluded pages; stays visible when another pane is minimized; late bounds/tab calls stay hidden; tab identity/form/JS state survives rapid switching');
   app.quit();
 }
 run().catch(error => { console.error(error); controller?.disposeAll(); window?.destroy(); app.exit(1); });

@@ -153,4 +153,47 @@ describe('NotesPane', () => {
 
     expect(useWorkspaceStore.getState().notesVisible).toBe(false);
   });
+
+  it('renders presentation controls inside the single notes header before close button', () => {
+    setupWorkspace({
+      activePageId: 'page-1',
+      pages: [
+        {
+          id: 'page-1',
+          layoutRoot: { type: 'leaf', nodeId: 'leaf-notes', paneId: 'notes-1' },
+          layoutRevision: 1,
+          layoutUndoStack: [],
+          activeTerminalId: null,
+        },
+      ],
+      layoutRoot: { type: 'leaf', nodeId: 'leaf-notes', paneId: 'notes-1' },
+      minimizedPanes: [],
+    });
+    render(<NotesPane workspaceId="ws-notes" />);
+
+    const header = document.querySelector('.notes-pane-header')!;
+    expect(header).toBeTruthy();
+    expect(document.querySelector('.utility-presentation-controls')).toBeNull();
+
+    const minimizeBtn = screen.getByRole('button', { name: 'Minimize pane' });
+    const maximizeBtn = screen.getByRole('button', { name: 'Maximize pane' });
+    const closeBtn = screen.getByRole('button', { name: 'Close notes' });
+
+    expect(header).toContainElement(minimizeBtn);
+    expect(header).toContainElement(maximizeBtn);
+    expect(header).toContainElement(closeBtn);
+
+    // Verify ordering: minimize -> maximize -> close
+    const children = Array.from(header.children);
+    const minimizeIndex = children.indexOf(minimizeBtn);
+    const maximizeIndex = children.indexOf(maximizeBtn);
+    const closeIndex = children.indexOf(closeBtn);
+
+    expect(minimizeIndex).toBeLessThan(maximizeIndex);
+    expect(maximizeIndex).toBeLessThan(closeIndex);
+
+    // Test clicking minimize pane from header
+    fireEvent.click(minimizeBtn);
+    expect(useWorkspaceStore.getState().workspaces[0].minimizedPanes?.some((e) => e.paneId === 'notes-1')).toBe(true);
+  });
 });

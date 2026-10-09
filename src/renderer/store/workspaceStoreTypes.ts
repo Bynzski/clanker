@@ -149,8 +149,9 @@ export interface WorkspaceState {
   replaceTerminal: (workspaceId: string, previousTerminalId: string, replacement: Terminal) => boolean;
   setActiveTerminal: (id: string) => void;
   /** Scoped, nondestructive browser visibility; restores placement best-effort on show. */
-  setBrowserVisible: (visible: boolean, workspaceId?: string) => void;
+  setBrowserVisible: (visible: boolean, workspaceId?: string, pageId?: string) => void;
   toggleBrowser: (workspaceId?: string) => void;
+  initializeBrowserPreview: (workspaceId: string, paneId: string) => void;
   toggleNotesPane: () => void;
   closeNotesPane: (workspaceId?: string) => void;
   pushBrowserOverlay: (workspaceId?: string) => void;
@@ -162,7 +163,7 @@ export interface WorkspaceState {
     url: string,
     title?: string,
   ) => void;
-  addBrowserTab: (workspaceId?: string) => string | null;
+  addBrowserTab: (workspaceId?: string, paneId?: string) => string | null;
   removeBrowserTab: (
     tabId: string,
     workspaceId?: string,

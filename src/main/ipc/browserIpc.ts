@@ -49,11 +49,15 @@ import {
   type KeybindingOverrides,
 } from '../../shared/keybindings';
 import { BrowserSessionScopes } from '../browserSessionScope';
+import { BrowserPresentationAuthority, validBrowserPaneId, validBrowserPresentation } from '../browserPresentationAuthority';
+import type { BrowserPresentation } from '../../shared/types/browserPresentation';
 import { getBrowserHistoryService } from '../browserHistory';
 import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { probeRecipePreview } from '../recipePreview';
 
 export interface BrowserViewEntry {
+  /** Stable renderer pane association; native resource/security ownership stays workspace-scoped. */
+  paneId?: string;
   view: WebContentsView;
   url: string;
   title: string;
@@ -63,6 +67,8 @@ export type BrowserWorkspaceViews = Map<string, BrowserViewEntry>;
 export type BrowserViewsByWorkspace = Map<string, BrowserWorkspaceViews>;
 
 const browserSessionScopes = new BrowserSessionScopes();
+const presentationAuthority = new BrowserPresentationAuthority();
+const retiredTabIdsByWorkspace = new Map<string, Set<string>>();
 const tabOrderByWorkspace = new Map<string, string[]>();
 const activeTabIdsByWorkspace = new Map<string, string>();
 const lastBrowserBoundsByWorkspace = new Map<string, Rectangle>();
@@ -389,7 +395,7 @@ function ensureTabViewEntry(
   tabId: string,
   deps: RegisterBrowserIpcDeps,
 ): BrowserViewEntry | null {
-  if (!workspaceId || !tabId) return null;
+  if (!workspaceId || !tabId || retiredTabIdsByWorkspace.get(workspaceId)?.has(tabId)) return null;
 
   const workspaceViews = getWorkspaceTabViews(workspaceId, deps);
   const existing = workspaceViews.get(tabId);
@@ -424,7 +430,7 @@ function hideAllOtherWorkspaceTabViews(workspaceId: string, deps: RegisterBrowse
 
 function showTabView(workspaceId: string, tabId: string, deps: RegisterBrowserIpcDeps): boolean {
   // Remembered geometry is not permission to take over the visible browser.
-  if (deps.getActiveBrowserWorkspaceId() !== workspaceId) return false;
+  if (deps.getActiveBrowserWorkspaceId() !== workspaceId || !presentationAuthority.canShow(workspaceId, tabId)) return false;
   const entry = getExistingWorkspaceTabViews(workspaceId, deps)?.get(tabId);
   const bounds = lastBrowserBoundsByWorkspace.get(workspaceId);
   if (!entry || !bounds) return false;
@@ -445,6 +451,10 @@ function destroyTabView(workspaceId: string, tabId: string, deps: RegisterBrowse
   if (!workspaceViews || !entry) return false;
 
   closeBrowserView(entry.view);
+  presentationAuthority.retireTab(workspaceId, tabId);
+  const retired = retiredTabIdsByWorkspace.get(workspaceId) ?? new Set<string>();
+  retired.add(tabId);
+  retiredTabIdsByWorkspace.set(workspaceId, retired);
   workspaceViews.delete(tabId);
   forgetTabId(workspaceId, tabId);
 
@@ -480,6 +490,8 @@ function destroyWorkspaceBrowserViews(workspaceId: string, deps: RegisterBrowser
 
   deps.getBrowserViews().delete(workspaceId);
   browserSessionScopes.dispose(workspaceId);
+  presentationAuthority.dispose(workspaceId);
+  retiredTabIdsByWorkspace.delete(workspaceId);
   tabOrderByWorkspace.delete(workspaceId);
   activeTabIdsByWorkspace.delete(workspaceId);
   lastBrowserBoundsByWorkspace.delete(workspaceId);
@@ -497,8 +509,10 @@ function resolveTabIdForWorkspace(workspaceId: string, requestedTabId: string | 
   return tabOrderByWorkspace.get(workspaceId)?.[0] ?? FALLBACK_TAB_ID;
 }
 
-function selectFallbackTab(workspaceId: string, removedTabId: string): string | null {
-  const order = tabOrderByWorkspace.get(workspaceId) ?? [];
+function selectFallbackTab(workspaceId: string, removedTabId: string, deps: RegisterBrowserIpcDeps): string | null {
+  const views = getExistingWorkspaceTabViews(workspaceId, deps);
+  const paneId = views?.get(removedTabId)?.paneId;
+  const order = (tabOrderByWorkspace.get(workspaceId) ?? []).filter((id) => views?.get(id)?.paneId === paneId);
   const removedIndex = order.indexOf(removedTabId);
   const remaining = order.filter((id) => id !== removedTabId);
   if (remaining.length === 0) return null;
@@ -506,17 +520,33 @@ function selectFallbackTab(workspaceId: string, removedTabId: string): string | 
   return remaining[Math.min(removedIndex, remaining.length - 1)] ?? remaining[0] ?? null;
 }
 
-function getActiveBrowserEntryForOperation(workspaceId: string, deps: RegisterBrowserIpcDeps): BrowserViewEntry | null {
+function getActiveBrowserEntryForOperation(workspaceId: string, deps: RegisterBrowserIpcDeps, presentation?: BrowserPresentation): BrowserViewEntry | null {
+  if ((presentation !== undefined || presentationAuthority.isScoped(workspaceId))
+    && !presentationAuthority.matches(workspaceId, undefined, presentation)) return null;
   return getActiveViewEntry(workspaceId, deps);
 }
 
 export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcController {
   const { getMainWindow } = deps;
 
-  ipcMain.handle(BROWSER_ACTIVATE, (_, workspaceId: string, tabId?: string) => {
+  ipcMain.handle(BROWSER_ACTIVATE, (_, workspaceId: string, tabId?: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return false;
+    if (presentation !== undefined && (!validBrowserPresentation(presentation) || !validBrowserPaneId(tabId))) return false;
+    if (presentation === undefined && !presentationAuthority.allowsLegacyActivation(workspaceId)) return false;
     const targetTabId = resolveTabIdForWorkspace(workspaceId, tabId);
-    if (!targetTabId || !ensureTabViewEntry(workspaceId, targetTabId, deps)) return false;
+    if (!targetTabId) return false;
+    // Reject stale activation before it can recreate a closed resource.
+    if (presentation && !presentationAuthority.matches(workspaceId, targetTabId, presentation)
+      && !getExistingWorkspaceTabViews(workspaceId, deps)?.has(targetTabId)) return false;
+    const entry = ensureTabViewEntry(workspaceId, targetTabId, deps);
+    if (!entry || (presentation && entry.paneId && entry.paneId !== presentation.paneId)) return false;
+    if (presentation) {
+      const sameLease = presentationAuthority.matches(workspaceId, targetTabId, presentation);
+      if (!presentationAuthority.claim(workspaceId, targetTabId, presentation)) return false;
+      entry.paneId = presentation.paneId;
+      // New presentation needs fresh geometry, never the outgoing page's bounds.
+      if (!sameLease) lastBrowserBoundsByWorkspace.delete(workspaceId);
+    }
     hideAllOtherWorkspaceTabViews(workspaceId, deps);
     hideWorkspaceTabViews(workspaceId, deps);
     deps.setActiveBrowserWorkspaceId(workspaceId);
@@ -530,8 +560,14 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     workspaceId: string,
     viewportBounds: Rectangle,
     tabId?: string,
+    presentation?: BrowserPresentation,
   ) => {
     if (!workspaceId) return;
+    if (presentation !== undefined || presentationAuthority.isScoped(workspaceId)) {
+      if (!presentationAuthority.matches(workspaceId, tabId, presentation)) return;
+    }
+    if (!viewportBounds || ![viewportBounds.x, viewportBounds.y, viewportBounds.width, viewportBounds.height].every(Number.isFinite)
+      || viewportBounds.width < 0 || viewportBounds.height < 0) return;
 
     const bounds = {
       x: viewportBounds.x,
@@ -558,8 +594,11 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     showTabView(workspaceId, targetTabId, deps);
   });
 
-  ipcMain.handle(BROWSER_HIDE, (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_HIDE, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
+    if (presentation !== undefined || presentationAuthority.isScoped(workspaceId)) {
+      if (!presentationAuthority.hide(workspaceId, presentation)) return;
+    }
     hideWorkspaceTabViews(workspaceId, deps);
     if (deps.getActiveBrowserWorkspaceId() === workspaceId) {
       deps.setActiveBrowserWorkspaceId(null);
@@ -572,7 +611,8 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
   });
 
   ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => {
-    if (!workspaceId) return false;
+    if (!workspaceId || (tabId && !getExistingWorkspaceTabViews(workspaceId, deps)?.has(tabId))
+      || (presentationAuthority.isScoped(workspaceId) && !tabId)) return false;
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 
@@ -583,7 +623,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     if (!entry) return false;
 
     entry.url = safeUrl;
-    setActiveTabId(workspaceId, targetTabId, deps);
+    if (!presentationAuthority.isScoped(workspaceId)) setActiveTabId(workspaceId, targetTabId, deps);
     getMainWindow()?.webContents.send(BROWSER_URL_UPDATED, { workspaceId, tabId: targetTabId, url: safeUrl });
     const loading = entry.view.webContents.loadURL(safeUrl);
     if (awaitLoad === true) {
@@ -605,30 +645,30 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return true;
   });
 
-  ipcMain.handle(BROWSER_BACK, (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_BACK, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    const entry = getActiveBrowserEntryForOperation(workspaceId, deps);
+    const entry = getActiveBrowserEntryForOperation(workspaceId, deps, presentation);
     if (entry?.view.webContents.navigationHistory.canGoBack()) {
       entry.view.webContents.navigationHistory.goBack();
     }
   });
 
-  ipcMain.handle(BROWSER_FORWARD, (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_FORWARD, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    const entry = getActiveBrowserEntryForOperation(workspaceId, deps);
+    const entry = getActiveBrowserEntryForOperation(workspaceId, deps, presentation);
     if (entry?.view.webContents.navigationHistory.canGoForward()) {
       entry.view.webContents.navigationHistory.goForward();
     }
   });
 
-  ipcMain.handle(BROWSER_REFRESH, (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_REFRESH, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    getActiveBrowserEntryForOperation(workspaceId, deps)?.view.webContents.reload();
+    getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.reload();
   });
 
-  ipcMain.handle(BROWSER_STOP, (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_STOP, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    getActiveBrowserEntryForOperation(workspaceId, deps)?.view.webContents.stop();
+    getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.stop();
   });
 
   ipcMain.handle(BROWSER_DISPOSE_WORKSPACE, (_, workspaceId: string) => {
@@ -643,35 +683,39 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return true;
   });
 
-  ipcMain.handle(CAN_GO_BACK, (_, workspaceId: string) => {
+  ipcMain.handle(CAN_GO_BACK, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return false;
-    return getActiveBrowserEntryForOperation(workspaceId, deps)?.view.webContents.navigationHistory.canGoBack() ?? false;
+    return getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.navigationHistory.canGoBack() ?? false;
   });
 
-  ipcMain.handle(CAN_GO_FORWARD, (_, workspaceId: string) => {
+  ipcMain.handle(CAN_GO_FORWARD, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return false;
-    return getActiveBrowserEntryForOperation(workspaceId, deps)?.view.webContents.navigationHistory.canGoForward() ?? false;
+    return getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.navigationHistory.canGoForward() ?? false;
   });
 
-  ipcMain.handle(BROWSER_GET_URL, (_, workspaceId: string) => {
-    return getActiveBrowserEntryForOperation(workspaceId, deps)?.url ?? null;
+  ipcMain.handle(BROWSER_GET_URL, (_, workspaceId: string, presentation?: BrowserPresentation) => {
+    return getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.url ?? null;
   });
 
-  ipcMain.handle(BROWSER_SAVE_URL, (_, workspaceId: string, url: string) => {
+  ipcMain.handle(BROWSER_SAVE_URL, (_, workspaceId: string, url: string, presentation?: BrowserPresentation) => {
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
-    const entry = getActiveBrowserEntryForOperation(workspaceId, deps);
+    const entry = getActiveBrowserEntryForOperation(workspaceId, deps, presentation);
     if (!entry) return false;
     entry.url = safeUrl;
     return true;
   });
 
-  ipcMain.handle(BROWSER_CREATE_TAB, (_, workspaceId: string, tabId: string) => {
-    if (!workspaceId || !tabId) return { url: '', title: '' };
+  ipcMain.handle(BROWSER_CREATE_TAB, (_, workspaceId: string, tabId: string, paneId?: string) => {
+    if (!workspaceId || !tabId || (paneId !== undefined && (!validBrowserPaneId(paneId) || !validBrowserPaneId(tabId)))) return { url: '', title: '' };
+    const existing = getExistingWorkspaceTabViews(workspaceId, deps)?.get(tabId);
+    if (!existing && presentationAuthority.isScoped(workspaceId) && !paneId) return { url: '', title: '' };
+    if (existing?.paneId && paneId !== undefined && existing.paneId !== paneId) return { url: '', title: '' };
     const entry = ensureTabViewEntry(workspaceId, tabId, deps);
     if (!entry) return { url: '', title: '' };
+    if (paneId) entry.paneId = paneId;
 
-    if (!getActiveTabId(workspaceId)) {
+    if (!getActiveTabId(workspaceId) && !presentationAuthority.isScoped(workspaceId)) {
       setActiveTabId(workspaceId, tabId, deps);
     }
     return { url: entry.url, title: entry.title };
@@ -683,12 +727,20 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
     if (!workspaceViews?.has(tabId)) return false;
 
-    if (workspaceViews.size <= 1) {
+    const paneId = workspaceViews.get(tabId)?.paneId;
+    const paneTabCount = [...workspaceViews.values()].filter((entry) => entry.paneId === paneId).length;
+    if (paneTabCount <= 1) {
       return false;
     }
 
     const closingActive = getActiveTabId(workspaceId) === tabId;
-    const fallbackTabId = closingActive ? selectFallbackTab(workspaceId, tabId) : getActiveTabId(workspaceId);
+    const fallbackTabId = closingActive ? selectFallbackTab(workspaceId, tabId, deps) : getActiveTabId(workspaceId);
+    // Scoped selection is renderer-authorized. Never fall back into another pane.
+    if (closingActive && presentationAuthority.isScoped(workspaceId)) {
+      destroyTabView(workspaceId, tabId, deps);
+      setActiveTabId(workspaceId, null, deps);
+      return true;
+    }
 
     destroyTabView(workspaceId, tabId, deps);
 
@@ -702,8 +754,11 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return true;
   });
 
-  ipcMain.handle(BROWSER_SWITCH_TAB, (_, workspaceId: string, tabId: string) => {
+  ipcMain.handle(BROWSER_SWITCH_TAB, (_, workspaceId: string, tabId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId || !tabId) return null;
+    if (presentation !== undefined || presentationAuthority.isScoped(workspaceId)) {
+      if (!presentationAuthority.matches(workspaceId, tabId, presentation)) return null;
+    }
 
     const entry = getExistingWorkspaceTabViews(workspaceId, deps)?.get(tabId);
     if (!entry) return null;
@@ -714,11 +769,16 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
   });
 
   ipcMain.handle(BROWSER_MOVE_TAB, (
-    _, workspaceId: string, tabId: string, targetTabId: string, activeTabId: string,
+    _, workspaceId: string, tabId: string, targetTabId: string, activeTabId: string, presentation?: BrowserPresentation,
   ) => {
+    if (presentation !== undefined || presentationAuthority.isScoped(workspaceId)) {
+      if (!presentationAuthority.matches(workspaceId, activeTabId, presentation)) return false;
+    }
     const views = getExistingWorkspaceTabViews(workspaceId, deps);
     const order = tabOrderByWorkspace.get(workspaceId);
     if (!views || !order || !views.has(activeTabId)) return false;
+    const paneId = views.get(activeTabId)?.paneId;
+    if (paneId && (views.get(tabId)?.paneId !== paneId || views.get(targetTabId)?.paneId !== paneId)) return false;
     const fromIndex = order.indexOf(tabId);
     const targetIndex = order.indexOf(targetTabId);
     if (fromIndex < 0 || targetIndex < 0) return false;
@@ -731,8 +791,9 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return true;
   });
 
-  ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string) => {
-    if (!workspaceId) return [];
+  ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string, paneId?: string) => {
+    if (!workspaceId || (paneId !== undefined && !validBrowserPaneId(paneId))) return [];
+    if (presentationAuthority.isScoped(workspaceId) && !paneId) return [];
     const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
     const order = tabOrderByWorkspace.get(workspaceId) ?? [];
     if (!workspaceViews) return [];
@@ -740,7 +801,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     return order
       .map((id) => {
         const entry = workspaceViews.get(id);
-        return entry ? { tabId: id, url: entry.url, title: entry.title } : null;
+        return entry && entry.paneId === paneId ? { tabId: id, url: entry.url, title: entry.title } : null;
       })
       .filter((entry): entry is { tabId: string; url: string; title: string } => entry != null);
   });
@@ -759,6 +820,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
   ipcMain.handle(BROWSER_TAB_NAVIGATE, (_, workspaceId: string, tabId: string, url: string) => {
     if (!workspaceId || !tabId) return false;
+    if (!getExistingWorkspaceTabViews(workspaceId, deps)?.has(tabId)) return false;
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 
@@ -792,7 +854,9 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
       }
       deps.getBrowserViews().clear();
       browserSessionScopes.disposeAll();
-  tabOrderByWorkspace.clear();
+      presentationAuthority.reset();
+      retiredTabIdsByWorkspace.clear();
+      tabOrderByWorkspace.clear();
       activeTabIdsByWorkspace.clear();
       lastBrowserBoundsByWorkspace.clear();
       deps.setActiveBrowserWorkspaceId(null);
@@ -803,6 +867,8 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 /** Test-only: clear all in-memory tab tracking state. */
 export function __resetBrowserTabState(): void {
   browserSessionScopes.disposeAll();
+  presentationAuthority.reset();
+  retiredTabIdsByWorkspace.clear();
   tabOrderByWorkspace.clear();
   activeTabIdsByWorkspace.clear();
   lastBrowserBoundsByWorkspace.clear();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { BellRing, Check, ChevronDown, ChevronRight, Edit2, GitBranch, PanelLeftClose, Plus, Server, X } from 'lucide-react';
+import { BellRing, Check, ChevronDown, ChevronRight, Edit2, GitBranch, Minus, PanelLeftClose, Plus, Server, X } from 'lucide-react';
 import { IconButton } from './ui/IconButton';
 import { Input } from './ui/Input';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -22,10 +22,19 @@ import { isLiveWorkspaceService } from '../../shared/types/workspaceServices';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
-import { closeWorkspaceTerminal } from '../lib/workspaceTerminalClose';
 import './WorkspaceNavigatorSection.css';
 
-function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
+export function AgentRow({
+  workspace,
+  terminal,
+  isCurrent,
+  onSelect,
+}: {
+  workspace: WorkspaceTab;
+  terminal: Terminal;
+  isCurrent: boolean;
+  onSelect?: () => void;
+}) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const attention = useTerminalAttention(terminal.id);
   const harness = getHarnessOption(terminal.harnessId);
@@ -37,22 +46,32 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const removed = Boolean(worktree?.missing);
   const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
   const pane = workspace.panes.find((item) => item.terminalId === terminal.id);
-  const minimized = workspace.minimizedPanes?.some((item) => item.paneId === pane?.id);
+  const minimized = Boolean(workspace.minimizedPanes?.some((item) => item.paneId === pane?.id));
+  const minimizedSuffix = minimized ? ' · minimized (click to restore)' : '';
 
   return (
-    <li className={`ws-agent-card${isCurrent ? ' current' : ''}`}>
+    <li className={`ws-agent-card${isCurrent ? ' current' : ''}${minimized ? ' ws-agent-card-minimized' : ''}`}>
       <button
         type="button"
-        className={`ws-agent-row${isCurrent ? ' current' : ''}`}
+        className={`ws-agent-row${isCurrent ? ' current' : ''}${minimized ? ' ws-agent-minimized' : ''}`}
         aria-current={isCurrent ? 'true' : undefined}
         title={worktree
-          ? `${name} · ${harness.label} · ${branch}${removed ? ' (checkout removed)' : ''}${attentionSuffix}\n${worktree.path}`
-          : `${name} · ${harness.label}${attentionSuffix}`}
-        onClick={() => selectWorkspace(workspace.id, terminal.id)}
+          ? `${name} · ${harness.label} · ${branch}${removed ? ' (checkout removed)' : ''}${attentionSuffix}${minimizedSuffix}\n${worktree.path}`
+          : `${name} · ${harness.label}${attentionSuffix}${minimizedSuffix}`}
+        onClick={() => {
+          selectWorkspace(workspace.id, terminal.id);
+          onSelect?.();
+        }}
       >
         <span className="ws-agent-primary">
           <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
-          <span className="ws-agent-name">{name}{minimized && <span className="ws-agent-meta"> · minimized</span>}</span>
+          <span className="ws-agent-name">{name}</span>
+          {minimized && (
+            <span className="ws-agent-minimized-icon" title="Minimized (click to restore)" aria-hidden="true">
+              <Minus size={11} strokeWidth={2.5} />
+            </span>
+          )}
+          {minimized && <span className="sr-only"> (minimized, click to restore)</span>}
           <span className="sr-only">{harness.label}</span>
           {showAttention && <AgentAttentionState attention={attention} name={name} />}
         </span>
@@ -68,7 +87,6 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
           )}
         </span>}
       </button>
-      {minimized && <IconButton aria-label={`Close ${name}`} title="Close conversation (keep history)" onClick={() => void closeWorkspaceTerminal(workspace.id, terminal.id)}><X size={12} /></IconButton>}
       <DevServerRow workspace={workspace} terminal={terminal} />
     </li>
   );

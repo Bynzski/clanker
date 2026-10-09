@@ -21,10 +21,17 @@ notes and services. A page owns **presentation**, not processes or filesystem au
 - Pane headers offer Minimize and Maximize/Restore size. Maximize is temporary, per-page, and
   leaves the split tree, ratios, revision and undo history untouched. Layout edits are disabled
   until size is restored. Switching pages retains each page's maximize state.
-- Minimized chats stay in the workspace's existing left-hand agent list with attention and a
-  minimized label. Selecting one restores it and selects its original page. The status-bar
-  Minimized menu also provides access in tabs mode and with the sidebar collapsed, including
-  minimized Browser/editor/notes panes.
+- Minimized agents stay in the workspace's left-hand agent list and collapsed rail with a compact,
+  subdued minimized icon (`Minus`). Clicking the agent row or rail icon automatically restores it to its
+  previous layout position and selects its original page. In tabs navigation mode (where the sidebar is
+  not displayed), each workspace tab provides a compact agent dropdown trigger (`▾`) that indicates
+  minimized agents with a subdued `Minus` icon; opening the dropdown lists all workspace agents and
+  allows clicking any agent to restore it to its original page and layout placement.
+- Minimized utility panes (Browser, Editor, Notes) are restored by clicking their existing toolbar
+  toggle buttons (or opening/focusing an open file in FileExplorer for the Editor), distinguishing a
+  minimized pane from a genuinely closed pane while preserving underlying state. Empty Editor panes
+  can be minimized and restored via the Editor toolbar button without requiring open file tabs.
+  The footer `Minimized · N` dropdown mechanism has been removed.
 - Restore reuses the original sibling placement hint if its anchor still exists; otherwise it
   inserts safely into the original page. It never rebuilds the whole arrangement.
 - Close requests retirement of the captured terminal and removes its pane/membership/cache after
@@ -38,6 +45,73 @@ Here primary is Ctrl (Linux/Windows) or Command (macOS). Missing page slots are 
 Workspace page controls/commands do not act on a parked workspace while an Assistant is selected.
 
 ## Implementation
+
+### Independent Browsers
+
+Browser state is now canonical on `WorkspacePage.browser`: a stable pane with its tabs,
+selected tab, URL, visibility and hidden-placement hint. Workspace-level Browser fields are
+only the selected-page compatibility projection, committed by the same normalization boundary
+as layout fields. Tab-identified events and mutations resolve the owning page even when parked;
+unknown/closed tab ids cannot create Browser state. Legacy singleton state backfills its original
+page, and a page owning a hidden Browser cannot be removed. Moving a Browser transfers this
+association without replacing its pane or tabs; an occupied destination is refused.
+
+Each page may own one Browser, with independent tabs and navigation. The existing toolbar
+creates it on the selected page, reveals a hidden Browser, restores a minimized Browser to its
+saved placement, or hides a visible Browser. It never visits another page to find a Browser.
+Minimize, toolbar visibility and maximize/restore size remain distinct and nondestructive.
+Switching pages reuses native WebContentsViews without navigation: JavaScript, forms, history,
+scroll position and loaded application state remain live. Moving to an empty page or `+` retains
+identity; occupied destinations (including hidden/minimized Browsers) show invalid-drop feedback
+and reject the move. No swapping, merging or Browser-management UI is introduced.
+
+`BrowserLifecycleCoordinator` is the sole renderer lease issuer, across Workspace and Assistant
+owners. Panes only consume captured leases. Asynchronous resource preparation rechecks the
+live destination, pane and tab before activation; existing native resources are never navigated
+again merely because a panel remounts. Old panel unmounts do not hide the replacement Browser.
+Legacy embeddings without canonical page state retain their single-Browser API, but main rejects
+legacy presentation/control calls for an owner that has opted into scoped leases.
+
+`browserPresentationAuthority.ts` owns one native viewport lease: workspace owner, pane id,
+selected tab and a monotonically increasing epoch across all owners. Scoped Activate only
+accepts an existing tab belonging to that pane. A new lease clears remembered geometry; the
+view stays hidden until matching fresh bounds arrive. Hide, Switch, Move, geometry and native
+navigation controls reject stale leases, including old unmount cleanup. Hiding/closing retires
+the lease without resetting the epoch high-water mark. Background tab navigation does not
+select a scoped foreground view. Closed tab ids are tombstoned until workspace disposal, so
+late navigation cannot recreate them. Workspace ids remain the native security/session boundary;
+pane ids are associations, never synthetic workspace ids or new Chromium partitions.
+
+Run `npx electron scripts/workspace-multi-browser-smoke.cjs` after build. This real-native IPC
+smoke verifies two panes plus a background tab, 30 switches, JS/form/native identity retention,
+stale Activate/Hide/Bounds/Switch/Refresh rejection, closed-tab navigation, local shared sessions,
+shared SSH-workspace sessions, separate SSH-workspace isolation and private-session disposal.
+It also runs `workspace-page-browser-renderer-smoke.cjs`: the full built app creates two Browsers
+through the toolbar, navigates local fixtures, switches pages repeatedly, verifies independent
+native/form/JS state and tabs, replays captured stale renderer bounds, exercises presentation
+controls and real pointer drops (occupied rejection and movement onto `+`), and checks V2 storage.
+Set `CLANKER_SMOKE_SCREENSHOT` for renderer and native-view captures (renderer-only screenshots
+exclude Electron's native child views, so both are captured separately). Manual interactive acceptance,
+real harness/SSH transport and live dev-service checks remain separate from these fixtures.
+
+Dev-server previews capture the requesting terminal's page, including minimized membership,
+before probing. The explicit click selects that page without restoring/moving the terminal.
+The completion rechecks page membership, Browser identity, service readiness and the current
+Workspace/Assistant destination; changing pages or destinations cancels rather than reclaiming
+focus. Preview actions with no originating terminal use the current page. Checkouts and service
+process ownership are unchanged.
+
+Local panes all use the existing persistent local Chromium session. SSH panes share only their
+workspace's private nonpersistent session, distinct from local and other SSH workspaces.
+Local service previews probe an opaque workspace/service identity through the service IPC path;
+main chooses and rechecks the live URL. This remains independent of disabled workspace recipes.
+SSH discovery auto-opens only an uninitialized default Browser; page remounts never navigate an
+existing preview or documentation tab. Its selected forward is re-associated from the pane's URL
+without reopening it. Automatic discovery does not stop a forward another page may still display;
+the existing per-workspace/global tunnel limits and explicit Stop/cleanup behavior remain in force.
+Hiding/moving/minimizing/closing a tab never clears that shared session; workspace disposal closes
+all of its views and performs the existing private-session cleanup. URL restrictions, permissions,
+registered workspace authority and external-link validation are unchanged.
 
 `store/workspacePages.ts` owns normalization/projection and membership operations;
 `workspacePageActions.ts` owns the small page action layer. Existing layout writers pass through
@@ -75,13 +149,22 @@ file/editor authority remains pinned to validated checkout contexts, not page id
 
 ## Persistence boundary
 
-`workspacePageStorage.ts` persists bounded V1 page preferences by environment + canonical path:
-page order, active page, semantic topology and minimized utility metadata. Runtime pane/PTY/node
-ids, focus, maximize and undo are not persisted. Existing runtime single layouts backfill Page 1.
+`workspacePageStorage.ts` writes bounded V2 page preferences by environment + canonical path:
+page order, active page, semantic topology, minimized destinations and Browser pane/tab identities
+with explicit page ownership and hidden visibility. V1 storage is still read when V2 is absent;
+its singleton Browser maps to its saved page only when that Browser already exists. V2 permits
+one Browser per page, rejects duplicate pane/tab identities, unknown/foreign page associations,
+hidden Browser leaves, malformed ratios, oversized records and excessive topology depth/nodes.
+Limits remain nine pages, 512 topology nodes and 512 minimized entries, depth 32 and 128 KiB; Browser metadata
+allows at most 128 tab identities per pane. Oversized/invalid snapshots do not overwrite valid
+previous preferences.
+PTY/node ids, focus, maximize and undo are not persisted. Existing single layouts backfill Page 1.
 Location-only reopen keeps pages but safely prunes absent resource leaves. Saved terminal slots
 **never** bind unrelated future chats, spawn new processes, or resume native conversations.
-Already-present utility panes can map by singleton identity. A live workspace is never overwritten
-by restored preferences. Invalid/duplicate/deep/oversized records fall back safely.
+Already-present Editor/Notes panes can map by singleton identity; V2 Browsers map only by exact
+pane and tab identities. Absent Browsers are not automatically recreated or navigated on location-only
+reopen (the existing restoration semantics); preference data cannot bind to a newly generated Browser.
+Restoration refuses to orphan live Browsers or replace a workspace with live terminal panes. Invalid/duplicate/deep/oversized records fall back safely.
 
 This is not saved working sessions or conversation resurrection. That feature, durable native
 conversation bindings, and automatic resume are deferred. Recipes are temporarily hidden and

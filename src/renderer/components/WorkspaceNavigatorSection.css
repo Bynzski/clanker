@@ -152,6 +152,7 @@
 .ws-agent-card:hover { background: var(--surface-control); color: var(--text-primary); }
 /* Quiet marker for the focused agent: a faint tint, nothing louder. */
 .ws-agent-card.current { background: var(--surface-selected); color: var(--text-primary); }
+.ws-agent-card.ws-agent-card-minimized { opacity: 0.85; }
 
 .ws-agent-row {
   display: flex;
@@ -172,6 +173,14 @@
 .ws-agent-primary > :last-child:not(.ws-agent-name) { flex-shrink: 0; }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-agent-minimized-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
 
 .ws-agent-meta { display: flex; min-width: 0; padding-left: 20px; }
 .ws-agent-branch {

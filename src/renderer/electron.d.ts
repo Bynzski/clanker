@@ -1,3 +1,4 @@
+import type { BrowserPresentation } from '../shared/types/browserPresentation';
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
@@ -99,6 +100,7 @@ export interface ElectronAPI {
   workspaceServiceStart: (request: import('../shared/types/workspaceServices').DevServiceStartRequest) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
   workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
   workspaceServiceGet: () => Promise<import('../shared/types/workspaceServices').WorkspaceServicesUpdate>;
+  workspaceServiceProbePreview: (request: { workspaceId: string; serviceId: string }) => Promise<Pick<RecipePreviewProbeResult, 'status'>>;
   onWorkspaceServicesChanged: (callback: (update: import('../shared/types/workspaceServices').WorkspaceServicesUpdate) => void) => () => void;
   getAssistants: () => Promise<AssistantSnapshot>;
   configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
@@ -165,42 +167,39 @@ export interface ElectronAPI {
   remotePreviewStart: (request: RemotePreviewRequest) => Promise<RemotePreviewResult>;
   remotePreviewStop: (request: { workspaceId: string; serviceId?: string }) => Promise<boolean>;
   onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => () => void;
-  browserHide: (workspaceId: string) => Promise<void>;
-  /**
-   * Phase 1: optional `tabId` is recorded as the active tab for the workspace
-   * before bounds are applied. Phase 2 will route bounds to the named tab view.
-   */
+  browserHide: (workspaceId: string, presentation?: BrowserPresentation) => Promise<void>;
+  /** Scoped geometry cannot select a tab or outlive its presentation lease. */
   browserSetBounds: (
     workspaceId: string,
     bounds: { x: number; y: number; width: number; height: number },
     tabId?: string,
+    presentation?: BrowserPresentation,
   ) => Promise<void>;
-  /**
-   * Phase 1: optional `tabId` updates the per-tab url record; navigation is
-   * applied to the underlying single view. Phase 2 will route navigation to
-   * the named tab view.
-   */
+  /** Navigation targets a native tab resource, not presentation authority. */
   browserNavigate: (workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => Promise<boolean>;
   probeRecipePreview: (url: string, waitForReady: boolean) => Promise<RecipePreviewProbeResult>;
-  browserBack: (workspaceId: string) => Promise<void>;
-  browserForward: (workspaceId: string) => Promise<void>;
-  browserRefresh: (workspaceId: string) => Promise<void>;
-  browserStop: (workspaceId: string) => Promise<void>;
-  browserCreateTab: (workspaceId: string, tabId: string) => Promise<{ url: string; title: string }>;
+  browserBack: (workspaceId: string, presentation?: BrowserPresentation) => Promise<void>;
+  browserForward: (workspaceId: string, presentation?: BrowserPresentation) => Promise<void>;
+  browserRefresh: (workspaceId: string, presentation?: BrowserPresentation) => Promise<void>;
+  browserStop: (workspaceId: string, presentation?: BrowserPresentation) => Promise<void>;
+  browserCreateTab: (workspaceId: string, tabId: string, paneId?: string) => Promise<{ url: string; title: string }>;
   browserCloseTab: (workspaceId: string, tabId: string) => Promise<boolean>;
-  browserActivate: (workspaceId: string, tabId?: string) => Promise<boolean>;
+  browserActivate: (workspaceId: string, tabId?: string, presentation?: BrowserPresentation) => Promise<boolean>;
   browserSwitchTab: (
     workspaceId: string,
     tabId: string,
+    presentation?: BrowserPresentation,
   ) => Promise<{ url: string; title?: string } | null>;
   browserMoveTab: (
     workspaceId: string,
     tabId: string,
     targetTabId: string,
     activeTabId: string,
+    presentation?: BrowserPresentation,
   ) => Promise<boolean>;
   browserGetTabs: (
     workspaceId: string,
+    paneId?: string,
   ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) => Promise<boolean>;
   browserHistoryGet: (prefix?: string) => Promise<BrowserHistoryEntry[]>;
@@ -208,8 +207,8 @@ export interface ElectronAPI {
   browserHistoryClear: () => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
   revealInFileManager: (filePath: string, workspaceId?: string) => Promise<boolean>;
-  canGoBack: (workspaceId: string) => Promise<boolean>;
-  canGoForward: (workspaceId: string) => Promise<boolean>;
+  canGoBack: (workspaceId: string, presentation?: BrowserPresentation) => Promise<boolean>;
+  canGoForward: (workspaceId: string, presentation?: BrowserPresentation) => Promise<boolean>;
   browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
   onBrowserUrlUpdated: (
     callback: (payload: {

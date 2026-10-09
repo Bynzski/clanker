@@ -173,3 +173,60 @@
   height: 18px;
   flex-shrink: 0;
 }
+
+/* Inline agent dropdown trigger */
+.workspace-tab .workspace-tab-agents-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition), background var(--transition);
+}
+
+.workspace-tab .workspace-tab-agents-trigger.has-minimized {
+  opacity: 0.85;
+  color: var(--text-secondary);
+}
+
+.workspace-tab .workspace-tab-agents-trigger:hover,
+.workspace-tab .workspace-tab-agents-trigger:focus-visible,
+.workspace-tab .workspace-tab-agents-trigger.active {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  opacity: 1;
+}
+
+.workspace-tab:hover .workspace-tab-agents-trigger,
+.workspace-tab:focus-within .workspace-tab-agents-trigger,
+.workspace-tab.active .workspace-tab-agents-trigger {
+  opacity: 1;
+}
+
+.workspace-tab:not(.active):not(:focus-within) .workspace-tab-agents-trigger:not(.has-minimized) {
+  display: none;
+}
+
+.workspace-tab-minimized {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.workspace-tab-agents-popover {
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px;
+}

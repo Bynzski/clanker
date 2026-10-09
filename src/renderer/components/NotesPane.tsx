@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
+import { PanePresentationControls } from './WorkspacePageControls';
 import {
   getNotesContentStorageKey,
   readStoredNote,
@@ -12,7 +13,7 @@ import {
 } from '../lib/notesStorage';
 import './NotesPane.css';
 
-export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
+export default function NotesPane({ workspaceId, paneId }: { workspaceId?: string; paneId?: string }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
@@ -20,6 +21,7 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
   const dragHandleProps = useDragHandle();
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
   const notesVisible = workspace?.notesVisible ?? false;
+  const notesPaneId = paneId ?? workspace?.notesPane?.id;
   const storageKey = useMemo(
     () => getNotesContentStorageKey(workspace?.workspacePath ?? '', workspace?.id ?? null, workspace?.environmentId),
     [workspace?.id, workspace?.workspacePath, workspace?.environmentId],
@@ -61,6 +63,9 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
           <span className="notes-pane-title">Notes</span>
           <span className="notes-pane-spacer" />
         </div>
+        {workspace && isInteractive && notesPaneId && (
+          <PanePresentationControls workspace={workspace} paneId={notesPaneId} />
+        )}
         <IconButton variant="ghost"
           className="notes-pane-close-btn"
           onClick={handleClosePane}

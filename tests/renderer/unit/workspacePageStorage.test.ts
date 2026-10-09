@@ -24,7 +24,8 @@ describe('bounded page preferences, without conversation resurrection', () => {
     const browser = { id: 'runtime-browser', tabs: [], activeTabId: null, position: { x: 0, y: 0, w: 6, h: 6 } };
     const result = restoreWorkspacePages({ ...workspace, browserPane: browser, browserVisible: true }, saved());
     expect(collectLeafPaneIds(result.pages![0].layoutRoot)).toEqual(['runtime-browser']);
-    expect(result.browserPane).toBe(browser); expect(result.pages![1].layoutRoot).toBeNull();
+    expect(result.pages![0].browser?.pane).toBe(browser);
+    expect(result.browserPane).toBeNull(); expect(result.pages![1].layoutRoot).toBeNull();
   });
   it('refuses to replace the layout or attach saved slots to unrelated live terminals', () => {
     const live = sanitizeWorkspace(createWorkspaceFixture());
@@ -38,6 +39,43 @@ describe('bounded page preferences, without conversation resurrection', () => {
     expect(json).not.toContain('layoutUndoStack'); expect(json).not.toContain('maximizedPaneId'); expect(json).not.toContain('activeTerminalId');
     expect(parseWorkspacePages(JSON.parse(json))).toEqual(result);
     expect(restoreWorkspacePages(empty(), result).pages).toHaveLength(1);
+  });
+  it('round trips V2 hidden/minimized ownership without recreating absent Browser resources', () => {
+    const workspace = empty();
+    const pane = (id: string) => ({ id, position: { x: 0, y: 0, w: 6, h: 6 }, activeTabId: `${id}-tab`,
+      tabs: [{ id: `${id}-tab`, url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }] });
+    const a = pane('a'), b = pane('b');
+    const source = { ...workspace, pages: [
+      { id: 'one', layoutRoot: null, layoutRevision: 0, layoutUndoStack: [], activeTerminalId: null,
+        browser: { pane: a, visible: false, url: 'https://github.com' } },
+      { id: 'two', layoutRoot: null, layoutRevision: 0, layoutUndoStack: [], activeTerminalId: null,
+        browser: { pane: b, visible: true, url: 'https://github.com' } },
+    ], activePageId: 'two', browserPane: b, browserVisible: true,
+    minimizedPanes: [{ paneId: 'b', pageId: 'two', placement: null }] };
+    const savedV2 = serializeWorkspacePages(source);
+    expect(savedV2.version).toBe(2);
+    expect(parseWorkspacePages(savedV2)).toEqual(savedV2);
+    const restored = restoreWorkspacePages(source, savedV2);
+    expect(restored.pages![0].browser?.pane).toBe(a);
+    expect(restored.pages![0].browser?.visible).toBe(false);
+    expect(restored.pages![1].browser?.pane).toBe(b);
+    expect(restored.minimizedPanes).toEqual(source.minimizedPanes);
+    const absent = restoreWorkspacePages(empty(), savedV2);
+    expect(absent.pages).toHaveLength(2);
+    expect(absent.pages?.some((page) => page.browser?.pane)).toBe(false);
+    expect(absent.minimizedPanes).toEqual([]);
+  });
+  it.each(['duplicate pane', 'duplicate tab', 'foreign page', 'foreign leaf', 'too many tabs', 'hidden leaf'])('rejects malformed V2 %s', (kind) => {
+    const browser = { id: 'a', pageId: 'one', visible: true, tabIds: ['t'] };
+    const value = { version: 2, activePageId: 'one', pages: [{ id: 'one', root: { type: 'leaf', key: 'browser:a' } }, { id: 'two', root: null }], minimized: [], browsers: [browser] };
+    if (kind === 'duplicate pane') value.browsers.push({ ...browser, pageId: 'two', tabIds: ['u'] });
+    if (kind === 'duplicate tab') value.browsers.push({ ...browser, id: 'b', pageId: 'two' });
+    if (kind === 'foreign page') browser.pageId = 'absent';
+    if (kind === 'foreign leaf') browser.pageId = 'two';
+    if (kind === 'too many tabs') browser.tabIds = Array.from({ length: 129 }, (_, index) => `${index}`);
+    if (kind === 'hidden leaf') browser.visible = false;
+    expect(parseWorkspacePages(value)).toBeNull();
+    const workspace = empty(); expect(restoreWorkspacePages(workspace, value)).toBe(workspace);
   });
   it.each(['version', 'active', 'duplicate page', 'duplicate pane', 'duplicate minimized', 'bad ratio', 'too many pages', 'deep tree'])('rejects %s safely', (kind) => {
     const value: Record<string, unknown> = saved();

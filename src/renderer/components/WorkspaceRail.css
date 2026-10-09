@@ -107,6 +107,20 @@
   color: var(--text-primary);
 }
 
+.ws-rail-agent.minimized {
+  opacity: 0.75;
+}
+
+.ws-rail-agent-minimized {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
 .ws-rail-mark:focus-visible,
 .ws-rail-agent:focus-visible {
   outline: 1px solid var(--focus-ring);

@@ -1,4 +1,4 @@
-import { BellRing, FolderTree, GitBranch, PanelLeftOpen, Plus } from 'lucide-react';
+import { BellRing, FolderTree, GitBranch, Minus, PanelLeftOpen, Plus } from 'lucide-react';
 import { IconButton } from './ui/IconButton';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { MutableRefObject } from 'react';
@@ -44,21 +44,29 @@ function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAge
   const display = attention?.display ?? null;
   const suffix = getAttentionSuffix(attention);
   const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
+  const pane = workspace.panes.find((item) => item.terminalId === terminal.id);
+  const minimized = Boolean(workspace.minimizedPanes?.some((item) => item.paneId === pane?.id));
+  const minimizedSuffix = minimized ? ' · minimized (click to restore)' : '';
   // Branch identity only: management of checkouts lives in the expanded sidebar.
   const description = worktree
-    ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${worktree.missing ? ' (checkout removed)' : ''}${suffix}`
-    : `${name} · ${harness.label}${suffix}`;
+    ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${worktree.missing ? ' (checkout removed)' : ''}${suffix}${minimizedSuffix}`
+    : `${name} · ${harness.label}${suffix}${minimizedSuffix}`;
 
   return (
     <button
       type="button"
-      className={`ws-rail-agent${isCurrent ? ' current' : ''}${worktree ? ' worktree' : ''}`}
+      className={`ws-rail-agent${isCurrent ? ' current' : ''}${minimized ? ' minimized' : ''}${worktree ? ' worktree' : ''}`}
       aria-current={isCurrent ? 'true' : undefined}
       aria-label={description}
       title={worktree ? `${description}\n${worktree.path}` : description}
       onClick={() => { if (!suppressClickRef.current) selectWorkspace(workspace.id, terminal.id); }}
     >
       <HarnessIcon size={14} strokeWidth={2} />
+      {minimized && (
+        <span className="ws-rail-agent-minimized" title="Minimized (click to restore)" aria-hidden="true">
+          <Minus size={8} strokeWidth={2.5} />
+        </span>
+      )}
       {worktree && <GitBranch className="ws-rail-agent-worktree" size={8} strokeWidth={2.5} aria-hidden="true" />}
       {display && (
         <span className={`ws-rail-agent-state state-${display}${attention?.unseen ? ' unseen' : ''}`} aria-hidden="true" />

@@ -1,35 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react';
-import {
-  browserMount,
-  browserUnmount,
-  browserFirstBounds,
-} from '../lib/workspaceSwitchDebug';
-
-interface BrowserBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export function browserBoundsFromDomRect(
-  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
-  scrollX: number,
-  scrollY: number,
-  zoomFactor: number,
-): BrowserBounds {
+import { currentBrowserPresentation, useBrowserPresentation } from '../lib/browserPresentation';
+import { browserMount, browserUnmount, browserFirstBounds } from '../lib/workspaceSwitchDebug';
+interface BrowserBounds { x: number; y: number; width: number; height: number }
+export function browserBoundsFromDomRect(rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>, scrollX: number, scrollY: number, zoomFactor: number): BrowserBounds {
   const scale = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
-  return {
-    x: Math.round((rect.left + scrollX) * scale),
-    y: Math.round((rect.top + scrollY) * scale),
-    width: Math.round(rect.width * scale),
-    height: Math.round(rect.height * scale),
-  };
+  return { x: Math.round((rect.left + scrollX) * scale), y: Math.round((rect.top + scrollY) * scale),
+    width: Math.round(rect.width * scale), height: Math.round(rect.height * scale) };
 }
-
 interface UseBrowserBoundsLifecycleOptions {
-  /** Opaque Browser owner: a workspace id or an Assistant browser scope. */
   ownerId?: string;
+  paneId?: string;
   activeTabId: string | null;
   browserVisible?: boolean;
   browserOverlayCount: number;
@@ -38,183 +18,67 @@ interface UseBrowserBoundsLifecycleOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
   contentRef: React.RefObject<HTMLDivElement | null>;
 }
-
-export function useBrowserBoundsLifecycle({
-  ownerId,
-  activeTabId,
-  browserVisible,
-  browserOverlayCount,
-  isActiveOwner,
-  layoutVersion,
-  containerRef,
-  contentRef,
-}: UseBrowserBoundsLifecycleOptions): { scheduleBoundsUpdate: (force?: boolean) => void } {
-  const rafRef = useRef<number | null>(null);
-  const lastBoundsRef = useRef<BrowserBounds | null>(null);
-  const firstBoundsSentRef = useRef(false);
-
+export function useBrowserBoundsLifecycle({ ownerId, paneId, activeTabId, browserVisible, browserOverlayCount,
+  isActiveOwner, layoutVersion, containerRef, contentRef }: UseBrowserBoundsLifecycleOptions) {
+  const presentation = useBrowserPresentation(ownerId ?? '', paneId, activeTabId ?? undefined);
+  const lease = presentation?.lease;
+  const ready = !paneId || Boolean(presentation?.ready);
+  const raf = useRef<number | null>(null);
+  const last = useRef<BrowserBounds | null>(null);
+  const first = useRef(false);
+  // Legacy embeddings without pane state retain their supported single-Browser API.
+  // All application panes have an id and only consume coordinator-issued authority.
   useEffect(() => {
-    if (!ownerId || !isActiveOwner || !browserVisible || browserOverlayCount > 0) return;
-    // Reconcile selection separately from geometry; late bounds cannot select a tab.
-    void window.electronAPI.browserActivate(ownerId, activeTabId ?? undefined);
-  }, [ownerId, activeTabId, isActiveOwner, browserVisible, browserOverlayCount]);
-
-  const callBrowserSetBounds = useCallback((bounds: BrowserBounds) => {
-    if (!ownerId) return;
-    if (activeTabId) {
-      window.electronAPI.browserSetBounds(ownerId, bounds, activeTabId);
-    } else {
-      window.electronAPI.browserSetBounds(ownerId, bounds);
-    }
-  }, [activeTabId, ownerId]);
-
-  const updateBounds = useCallback(() => {
-    if (!contentRef.current || !browserVisible || browserOverlayCount > 0 || !ownerId || !isActiveOwner) return;
-
+    if (!paneId && ownerId && isActiveOwner && browserVisible && !browserOverlayCount)
+      void window.electronAPI.browserActivate(ownerId, activeTabId ?? undefined);
+  }, [paneId, ownerId, isActiveOwner, browserVisible, browserOverlayCount, activeTabId]);
+  const update = useCallback(() => {
+    if (!ready || !contentRef.current || !ownerId || !browserVisible || browserOverlayCount || !isActiveOwner) return;
+    if (paneId && currentBrowserPresentation(ownerId, paneId, activeTabId ?? undefined)?.lease !== lease) return;
     const rect = contentRef.current.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-
-    // DOMRect is expressed in zoomed renderer CSS pixels. WebContentsView uses
-    // window DIPs, so apply renderer zoom only. devicePixelRatio also contains
-    // monitor scale and would incorrectly double-scale on HiDPI displays.
-    const newBounds = browserBoundsFromDomRect(
-      rect,
-      window.scrollX,
-      window.scrollY,
-      window.electronAPI.getWindowZoomFactor(),
-    );
-
-    if (lastBoundsRef.current !== null) {
-      const { x, y, width, height } = lastBoundsRef.current;
-      if (
-        Math.abs(newBounds.x - x) <= 1 &&
-        Math.abs(newBounds.y - y) <= 1 &&
-        Math.abs(newBounds.width - width) <= 1 &&
-        Math.abs(newBounds.height - height) <= 1
-      ) {
-        return;
-      }
-    }
-
-    lastBoundsRef.current = newBounds;
-    callBrowserSetBounds(newBounds);
-
-    if (!firstBoundsSentRef.current) {
-      firstBoundsSentRef.current = true;
-      browserFirstBounds(ownerId, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
-    }
-  }, [browserOverlayCount, browserVisible, callBrowserSetBounds, contentRef, isActiveOwner, ownerId]);
-
+    const bounds = browserBoundsFromDomRect(rect, window.scrollX, window.scrollY, window.electronAPI.getWindowZoomFactor());
+    if (last.current && Object.keys(bounds).every((key) => Math.abs(bounds[key as keyof BrowserBounds] - last.current![key as keyof BrowserBounds]) <= 1)) return;
+    last.current = bounds;
+    if (paneId) void window.electronAPI.browserSetBounds(ownerId, bounds, activeTabId ?? undefined, lease);
+    else if (activeTabId) void window.electronAPI.browserSetBounds(ownerId, bounds, activeTabId);
+    else void window.electronAPI.browserSetBounds(ownerId, bounds);
+    if (!first.current) { first.current = true; browserFirstBounds(ownerId, bounds.x, bounds.y, bounds.width, bounds.height); }
+  }, [ready, contentRef, ownerId, browserVisible, browserOverlayCount, isActiveOwner, paneId, activeTabId, lease]);
   const scheduleBoundsUpdate = useCallback((force = false) => {
-    if (force) {
-      lastBoundsRef.current = null;
-    }
-    if (rafRef.current != null) {
-      window.cancelAnimationFrame(rafRef.current);
-    }
-
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null;
-      updateBounds();
-    });
-  }, [updateBounds]);
-
+    if (force) last.current = null;
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => { raf.current = null; update(); });
+  }, [update]);
   useEffect(() => {
-    scheduleBoundsUpdate();
-  }, [layoutVersion, scheduleBoundsUpdate]);
-
-  useEffect(() => {
-    if (!browserVisible || browserOverlayCount > 0 || !ownerId || !isActiveOwner) return;
-    const healthCheckInterval = setInterval(() => {
-      scheduleBoundsUpdate();
-    }, 2000);
-    return () => clearInterval(healthCheckInterval);
-  }, [browserOverlayCount, browserVisible, isActiveOwner, scheduleBoundsUpdate, ownerId]);
-
+    if (!paneId && ownerId && browserVisible && isActiveOwner && !browserOverlayCount && last.current) {
+      if (activeTabId) void window.electronAPI.browserSetBounds(ownerId, last.current, activeTabId);
+      else void window.electronAPI.browserSetBounds(ownerId, last.current);
+    }
+    if (!browserVisible || !isActiveOwner || browserOverlayCount) return;
+    scheduleBoundsUpdate(Boolean(paneId));
+    const followUp = requestAnimationFrame(() => scheduleBoundsUpdate());
+    return () => cancelAnimationFrame(followUp);
+  }, [layoutVersion, lease, ready, scheduleBoundsUpdate, paneId, ownerId, browserVisible, isActiveOwner, browserOverlayCount, activeTabId]);
   useEffect(() => {
     if (!containerRef.current) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleBoundsUpdate();
-    });
-
-    resizeObserver.observe(containerRef.current);
-    firstBoundsSentRef.current = false;
-    if (ownerId && isActiveOwner) {
-      browserMount(ownerId, lastBoundsRef.current === null);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [containerRef, isActiveOwner, scheduleBoundsUpdate, ownerId]);
-
+    const observer = new ResizeObserver(() => scheduleBoundsUpdate());
+    observer.observe(containerRef.current);
+    const resized = () => scheduleBoundsUpdate();
+    window.addEventListener('resize', resized);
+    const interval = setInterval(resized, 2000);
+    if (ownerId) browserMount(ownerId, true);
+    return () => { observer.disconnect(); window.removeEventListener('resize', resized); clearInterval(interval); };
+  }, [containerRef, ownerId, scheduleBoundsUpdate]);
   useEffect(() => {
-    const handleWindowResize = () => {
-      scheduleBoundsUpdate();
-    };
-
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, [scheduleBoundsUpdate]);
-
-  useEffect(() => {
-    if (!ownerId) return;
-
-    if (!isActiveOwner || !browserVisible) {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      window.electronAPI.browserHide(ownerId);
-      return;
+    if (!paneId && ownerId && (!browserVisible || !isActiveOwner || browserOverlayCount)) void window.electronAPI.browserHide(ownerId);
+  }, [paneId, ownerId, browserVisible, isActiveOwner, browserOverlayCount]);
+  useEffect(() => () => {
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+    if (ownerId) {
+      browserUnmount(ownerId, last.current?.x ?? null, last.current?.y ?? null, last.current?.width ?? null, last.current?.height ?? null);
+      if (!paneId) void window.electronAPI.browserHide(ownerId);
     }
-
-    if (lastBoundsRef.current !== null) {
-      callBrowserSetBounds(lastBoundsRef.current);
-    }
-
-    if (browserOverlayCount > 0) {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      lastBoundsRef.current = null;
-      window.electronAPI.browserHide(ownerId);
-      return;
-    }
-
-    scheduleBoundsUpdate();
-    const followUpFrame = window.requestAnimationFrame(() => {
-      scheduleBoundsUpdate();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(followUpFrame);
-    };
-  }, [
-    browserOverlayCount,
-    browserVisible,
-    callBrowserSetBounds,
-    isActiveOwner,
-    scheduleBoundsUpdate,
-    ownerId,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-      }
-      const lb = lastBoundsRef.current;
-      lastBoundsRef.current = null;
-      firstBoundsSentRef.current = false;
-      if (ownerId) {
-        browserUnmount(ownerId, lb?.x ?? null, lb?.y ?? null, lb?.width ?? null, lb?.height ?? null);
-        window.electronAPI.browserHide(ownerId);
-      }
-    };
-  }, [ownerId]);
-
+  }, [ownerId, paneId]);
   return { scheduleBoundsUpdate };
 }

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { handlers } = vi.hoisted(() => ({ handlers: new Map<string, (event: unknown, request: unknown) => unknown>() }));
 vi.mock('electron', () => ({ ipcMain: { handle: (channel: string, callback: (event: unknown, request: unknown) => unknown) => handlers.set(channel, callback), on: vi.fn() } }));
+vi.mock('../../../src/main/recipePreview', () => ({ probeRecipePreview: vi.fn() }));
+import { probeRecipePreview } from '../../../src/main/recipePreview';
 import { registerWorkspaceServiceIpc } from '../../../src/main/ipc/workspaceServiceIpc';
 import type { WorkspaceServiceManager } from '../../../src/main/services/workspaceServiceManager';
-import { WORKSPACE_SERVICE_SETTINGS_SAVE, WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET } from '../../../src/shared/ipcChannels';
+import { WORKSPACE_SERVICE_SETTINGS_SAVE, WORKSPACE_SERVICE_DISCOVER, WORKSPACE_SERVICE_START, WORKSPACE_SERVICE_STOP, WORKSPACE_SERVICE_GET, WORKSPACE_SERVICE_PREVIEW_PROBE } from '../../../src/shared/ipcChannels';
 
 describe('workspace service IPC boundary', () => {
   const manager = { saveSettings: vi.fn(), discover: vi.fn(), start: vi.fn(), stop: vi.fn(), snapshot: vi.fn() };
@@ -31,6 +33,33 @@ describe('workspace service IPC boundary', () => {
     }
     expect(handlers.get(WORKSPACE_SERVICE_SETTINGS_SAVE)!(null, { ...request, settingsRevision: undefined })).toMatchObject({ success: false });
     expect(manager.saveSettings).toHaveBeenCalledTimes(1);
+  });
+  it('probes only the live main-owned service URL, ignoring renderer URL overrides', async () => {
+    manager.snapshot.mockReturnValue({ services: [{ id: 'service', workspaceId: 'ws', status: 'running', previewUrl: 'http://127.0.0.1:5173/' }] });
+    vi.mocked(probeRecipePreview).mockResolvedValue({ status: 'ready', host: '127.0.0.1', port: 5173 });
+    const probe = handlers.get(WORKSPACE_SERVICE_PREVIEW_PROBE)!;
+    expect(await probe(null, { workspaceId: 'ws', serviceId: 'service', url: 'http://attacker.invalid/' })).toMatchObject({ status: 'ready' });
+    expect(probeRecipePreview).toHaveBeenCalledExactlyOnceWith('http://127.0.0.1:5173/', true);
+    vi.mocked(probeRecipePreview).mockClear();
+    expect(await probe(null, { workspaceId: 'other', serviceId: 'service' })).toEqual({ status: 'unavailable' });
+    expect(await probe(null, { workspaceId: 'ws', serviceId: 'unknown' })).toEqual({ status: 'unavailable' });
+    expect(await probe(null, null)).toEqual({ status: 'invalid' });
+    expect(probeRecipePreview).not.toHaveBeenCalled();
+  });
+  it('rejects a probe completion after the service stops or its authoritative URL changes', async () => {
+    const service = { id: 'service', workspaceId: 'ws', status: 'running', previewUrl: 'http://127.0.0.1:5173/' };
+    manager.snapshot.mockImplementation(() => ({ services: [service] }));
+    let finish!: (value: { status: 'ready'; host: string; port: number }) => void;
+    vi.mocked(probeRecipePreview).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const probe = handlers.get(WORKSPACE_SERVICE_PREVIEW_PROBE)!;
+    const pending = probe(null, { workspaceId: 'ws', serviceId: 'service' });
+    service.previewUrl = 'http://127.0.0.1:5174/';
+    finish({ status: 'ready', host: '127.0.0.1', port: 5173 });
+    expect(await pending).toEqual({ status: 'unavailable' });
+    service.status = 'stopped';
+    vi.mocked(probeRecipePreview).mockClear();
+    expect(await probe(null, { workspaceId: 'ws', serviceId: 'service' })).toEqual({ status: 'unavailable' });
+    expect(probeRecipePreview).not.toHaveBeenCalled();
   });
   it('requires workspace-scoped stop and returns main-owned runtime snapshots', () => {
     expect(handlers.get(WORKSPACE_SERVICE_STOP)!(null, { serviceId: 's' })).toMatchObject({ success: false });

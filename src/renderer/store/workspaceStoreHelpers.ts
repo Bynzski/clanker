@@ -2,7 +2,7 @@ import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
 } from './workspaceLayout';
-import { synchronizePages } from './workspacePages';
+import { projectPageBrowser, retainSelectedPage, selectPage, synchronizePages, updateBrowserOwner } from './workspacePages';
 import type { GitStatus } from '../components/git/types';
 import { backfillCheckoutContexts, bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
@@ -112,6 +112,7 @@ function sanitizeBrowserPane(
   return {
     id: pane.id,
     position: pane.position,
+    ...(pane.remotePreviewInitialized ? { remotePreviewInitialized: true } : {}),
     tabs: sanitizedTabs,
     activeTabId,
   };
@@ -258,6 +259,10 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
     browserOverlayCount: workspace.browserOverlayCount ?? 0,
     browserPane: sanitizeBrowserPane(workspace.browserPane, workspace.browserUrl),
+    pages: workspace.pages?.map((page) => {
+      const pane = page.browser && sanitizeBrowserPane(page.browser.pane, page.browser.url);
+      return { ...page, browser: page.browser ? { ...page.browser, pane: pane ?? null } : undefined };
+    }),
     explorerPane,
     editorTabs: [...workspace.editorTabs],
     showHiddenFiles: workspace.showHiddenFiles ?? true,
@@ -500,6 +505,32 @@ export function syncActiveWorkspace(
     ...getActiveWorkspaceSnapshot(activeWorkspace),
     workspaces: nextWorkspaces,
   };
+}
+
+/** Resolve a tab's owning Browser without changing the selected page. */
+export function resolveBrowserTabOwner(workspace: WorkspaceTab | null, tabId: string): WorkspaceTab | null {
+  if (!workspace) return null;
+  if (!workspace.pages) return workspace.browserPane?.tabs.some((tab) => tab.id === tabId) ? workspace : null;
+  const page = workspace.pages.find((entry) => entry.browser?.pane?.tabs.some((tab) => tab.id === tabId));
+  return page ? projectPageBrowser(workspace, page) : null;
+}
+
+export function patchBrowserTabById(state: WorkspaceState, workspaceId: string, tabId: string | null | undefined,
+  updater: (workspace: WorkspaceTab) => WorkspaceTab): Partial<WorkspaceState> {
+  return patchWorkspaceById(state, workspaceId, (workspace) => {
+    const target = tabId ?? workspace.browserPane?.activeTabId;
+    return target ? updateBrowserOwner(workspace, target, updater) : tabId == null ? updater(workspace) : workspace;
+  });
+}
+
+export function patchWorkspacePageById(state: WorkspaceState, workspaceId: string, pageId: string | undefined,
+  updater: (workspace: WorkspaceTab) => WorkspaceTab): Partial<WorkspaceState> {
+  return patchWorkspaceById(state, workspaceId, (workspace) => {
+    if (!pageId || pageId === workspace.activePageId) return updater(workspace);
+    if (!workspace.pages?.some((page) => page.id === pageId)) return workspace;
+    const target = selectPage(workspace, pageId);
+    return retainSelectedPage(workspace, synchronizePages(target, updater(target)));
+  });
 }
 
 export function patchWorkspaceById(
