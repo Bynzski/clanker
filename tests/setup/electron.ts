@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { FileListDirectoryResult } from '../../src/shared/types/fileExplorer';
-import { useUsageStore } from '../../src/renderer/store/usageStore';
+import { initUsageListeners, useUsageStore } from '../../src/renderer/store/usageStore';
 
 export type ElectronApiMock = {
   [K in keyof Window['electronAPI']]: ReturnType<typeof vi.fn>;
@@ -219,6 +219,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     removeHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     renameHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
     onHarnessAccountAuthState: vi.fn(() => () => undefined),
+    onHarnessAccountsChanged: vi.fn(() => () => undefined),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
     // Workspace Recipes
@@ -248,6 +249,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     sshCreateDirectory: createAsyncMock({ path: '/home/user/workspaces/new-folder' }),
     getEnvironmentHarnessOptions: createAsyncMock({}),
     getEnvironmentHarnessModels: createAsyncMock([]),
+    onSshEnvironmentInvalidated: vi.fn(() => () => undefined),
     ...overrides,
   };
 }
@@ -262,9 +264,10 @@ export function installElectronApiMock(overrides: Partial<ElectronApiMock> = {})
       configurable: true,
       writable: true,
     });
-    return electronApi;
+  } else {
+    vi.stubGlobal('window', { electronAPI: electronApi } as unknown as Window & typeof globalThis);
   }
 
-  vi.stubGlobal('window', { electronAPI: electronApi } as unknown as Window & typeof globalThis);
+  initUsageListeners();
   return electronApi;
 }

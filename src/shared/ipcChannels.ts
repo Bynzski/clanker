@@ -259,6 +259,7 @@ export const HARNESS_ACCOUNTS_REMOVE = 'harness-accounts:remove';
 export const HARNESS_ACCOUNTS_RENAME = 'harness-accounts:rename';
 /** Main -> renderer progress event, keyed by an opaque flow ID. */
 export const HARNESS_ACCOUNTS_AUTH_STATE = 'harness-accounts:auth-state';
+export const HARNESS_ACCOUNTS_CHANGED = 'harness-accounts:changed';
 
 /* ============================================================================
  * Workspace Recipes
@@ -275,6 +276,7 @@ export const RECIPE_DELETE = 'recipe:delete';
 export const SSH_ENVIRONMENT_LIST = 'ssh-environment:list';
 export const SSH_ENVIRONMENT_SAVE = 'ssh-environment:save';
 export const SSH_ENVIRONMENT_DELETE = 'ssh-environment:delete';
+export const SSH_ENVIRONMENT_INVALIDATED = 'ssh-environment:invalidated';
 export const SSH_ENVIRONMENT_TEST = 'ssh-environment:test';
 export const SSH_GET_HOME_DIRECTORY = 'ssh-environment:get-home-directory';
 export const SSH_LIST_DIRECTORIES = 'ssh-environment:list-directories';
@@ -505,6 +507,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   HARNESS_ACCOUNTS_REMOVE,
   HARNESS_ACCOUNTS_RENAME,
   HARNESS_ACCOUNTS_AUTH_STATE,
+  HARNESS_ACCOUNTS_CHANGED,
   // Workspace Recipes
   RECIPE_GET_ALL,
   RECIPE_SAVE,
@@ -513,6 +516,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SSH_ENVIRONMENT_LIST,
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
+  SSH_ENVIRONMENT_INVALIDATED,
   SSH_ENVIRONMENT_TEST,
   SSH_GET_HOME_DIRECTORY,
   SSH_LIST_DIRECTORIES,

@@ -54,5 +54,7 @@ export interface HarnessUsageRequest {
 
 export interface HarnessUsageResponse {
   workspaceId?: string;
+  environmentId?: string;
+  environmentGeneration?: number;
   entries: HarnessUsageEntry[];
 }

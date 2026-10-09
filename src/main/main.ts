@@ -80,7 +80,7 @@ import { HarnessAccountService } from './accounts/harnessAccountService';
 import { AccountHomeStore } from './accounts/accountHomes';
 import { createElectronAccountStorage } from './accounts/electronAccountStorage';
 import { clearSessionCache } from './sessionHistory';
-import { HARNESS_ACCOUNTS_AUTH_STATE } from '../shared/ipcChannels';
+import { HARNESS_ACCOUNTS_AUTH_STATE, HARNESS_ACCOUNTS_CHANGED } from '../shared/ipcChannels';
 import * as nodeOs from 'node:os';
 import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
@@ -262,7 +262,10 @@ const harnessAccountService = new HarnessAccountService({
   clientVersion: () => app.getVersion(),
 });
 // Cached discovery results carry account provenance, so any change to the account set drops them.
-harnessAccountService.onAccountsChanged(() => clearSessionCache());
+harnessAccountService.onAccountsChanged((change) => {
+  clearSessionCache();
+  if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(HARNESS_ACCOUNTS_CHANGED, change);
+});
 
 // Main-owned MCP endpoint for agents (loopback, launch-scoped credentials). Starts on first attached launch.
 const checkoutLifecyclePort = deferredLifecyclePort();
@@ -287,6 +290,7 @@ const harnessUsageService = new HarnessUsageService(workspaceRegistry, {
   clientVersion: () => app.getVersion(),
   accounts: harnessAccountService,
   localEnvironment: () => environmentManager.getLocalEnvironment(),
+  getEnvironmentGeneration: (envId) => environmentManager.getEnvironmentGeneration(envId),
 });
 let stopAiCommitGeneration: (() => Promise<void>) | undefined;
 
@@ -543,6 +547,7 @@ app.whenReady().then(() => {
     getStore: () => store,
     getEnvironmentManager: () => environmentManager,
     getWorkspaceRegistry: () => workspaceRegistry,
+    getMainWindow: () => mainWindow,
   });
   registerFileIpc({
     getFileWatcher: () => fileWatcher,

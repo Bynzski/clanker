@@ -46,7 +46,7 @@ export interface UsageWorkspaceLookup {
 export interface UsageAccountSource {
   listBindings(environmentId: string, harness: HarnessId): ResolvedHarnessAccountBinding[];
   reportStatus(accountId: string, status: Exclude<HarnessAccountStatus, 'unknown'>): void;
-  onAccountsChanged?(listener: (change: { accountId: string }) => void): () => void;
+  onAccountsChanged?(listener: (change: { accountId: string; type?: string }) => void): () => void;
 }
 
 export interface HarnessUsageServiceOptions {
@@ -59,6 +59,8 @@ export interface HarnessUsageServiceOptions {
   clientVersion?: () => string;
   /** Optional local environment; if omitted, falls back to new LocalEnvironment(). */
   localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
+  /** Optional environment generation provider for invalidation tracking. */
+  getEnvironmentGeneration?: (environmentId: string) => number;
 }
 
 /**
@@ -141,6 +143,7 @@ export class HarnessUsageService {
   private readonly accounts?: UsageAccountSource;
   private readonly localEnvironment?: WorkspaceEnvironment | (() => WorkspaceEnvironment);
   private defaultLocalEnvironment?: WorkspaceEnvironment;
+  private readonly getEnvironmentGeneration: (environmentId: string) => number;
 
   constructor(private readonly registry: UsageWorkspaceLookup, options: HarnessUsageServiceOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -148,8 +151,13 @@ export class HarnessUsageService {
     this.clientVersion = options.clientVersion ?? (() => 'unknown');
     this.accounts = options.accounts;
     this.localEnvironment = options.localEnvironment;
-    // A removed account's cached readings and backoff must not outlive it.
-    this.accounts?.onAccountsChanged?.((change) => this.forgetAccount(change.accountId));
+    this.getEnvironmentGeneration = options.getEnvironmentGeneration ?? (() => 0);
+    // A removed or reconnected account's cached readings and backoff must not outlive it.
+    this.accounts?.onAccountsChanged?.((change) => {
+      if (change.type === 'removed' || change.type === 'reconnected') {
+        this.forgetAccount(change.accountId);
+      }
+    });
   }
 
   private forgetAccount(accountId: string): void {
@@ -187,13 +195,22 @@ export class HarnessUsageService {
     // The workspace may have closed (or been replaced under the same ID)
     // while probes ran. Never hand its result to whatever workspace is there now.
     if (this.registry.getWorkspace(workspaceId) !== workspace) throw new Error('Workspace closed during usage request');
-    return { workspaceId, entries };
+    return {
+      workspaceId,
+      environmentId: environment.id,
+      environmentGeneration: this.getEnvironmentGeneration(environment.id),
+      entries,
+    };
   }
 
   public async getLocal(request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
     const environment = this.resolveLocalEnvironment();
     const entries = await this.resolveEntries(environment, request);
-    return { entries };
+    return {
+      environmentId: 'local',
+      environmentGeneration: 0,
+      entries,
+    };
   }
 
   /** Main-process access to the retained snapshots (including opaque account IDs). */

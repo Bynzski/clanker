@@ -53,3 +53,10 @@ export interface HarnessAccountAuthEvent {
 }
 
 export const HARNESS_ACCOUNT_LABEL_MAX = 40;
+
+export interface HarnessAccountChange {
+  type: 'added' | 'removed' | 'reconnected' | 'selected';
+  accountId: HarnessAccountId;
+  harness: string;
+  environmentId?: string;
+}

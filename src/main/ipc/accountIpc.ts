@@ -3,6 +3,7 @@ import {
   HARNESS_ACCOUNTS_ADD_START,
   HARNESS_ACCOUNTS_AUTH_CANCEL,
   HARNESS_ACCOUNTS_AUTH_STATE,
+  HARNESS_ACCOUNTS_CHANGED,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_RECONNECT,
   HARNESS_ACCOUNTS_REMOVE,
@@ -45,5 +46,6 @@ export function registerAccountIpc(deps: RegisterAccountIpcDeps): void {
   ipcMain.handle(HARNESS_ACCOUNTS_RENAME, (_event, environmentId: unknown, harness: unknown, accountId: unknown, label: unknown) =>
     safely(() => service().rename(environmentId, harness, accountId, label)));
   // Main -> renderer progress events; registered so channel completeness can be verified.
-  ipcMain.on(HARNESS_ACCOUNTS_AUTH_STATE, () => { });
+  ipcMain.on?.(HARNESS_ACCOUNTS_AUTH_STATE, () => { });
+  ipcMain.on?.(HARNESS_ACCOUNTS_CHANGED, () => { });
 }
