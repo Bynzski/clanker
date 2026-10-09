@@ -332,7 +332,7 @@ describe('AgentAttentionBroker diagnostics', () => {
     send('turn_started', { sessionId: 's'.repeat(128), turnId: 't'.repeat(100), nativeEvent: 'UserPromptSubmit' });
     expect(diagnostics[0]).toEqual({
       harness: 'codex', terminalId: 'term-a', nativeEvent: 'UserPromptSubmit', sessionId: 's'.repeat(64), turnId: 't'.repeat(64),
-      semantic: 'turn_started', decision: 'accepted', revision: 2, status: 'running',
+      semantic: 'turn_started', decision: 'accepted', verdict: 'accepted-changed', revision: 2, status: 'running',
     });
     expect(Object.keys(diagnostics[0])).not.toContain('token');
   });

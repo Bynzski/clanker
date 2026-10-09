@@ -1,3 +1,4 @@
+import { ATTENTION_ACK_PREFIX, type AttentionVerdict } from '../shared/attentionProtocol';
 import { randomBytes } from 'node:crypto';
 import * as net from 'node:net';
 import type {
@@ -43,6 +44,7 @@ export interface AttentionDiagnostic {
   decision: AttentionDecision | 'fallback-accepted' | `fallback-suppressed:${FallbackSuppression}`;
   /** Registration revision after the decision; unchanged when the event changed nothing. */
   revision?: number;
+  verdict?: AttentionVerdict;
   status?: AgentRuntimeStatus;
 }
 
@@ -173,8 +175,7 @@ export class AgentAttentionBroker {
           body += chunk.toString('utf8');
         });
         socket.on('end', () => {
-          this.receive(body);
-          socket.end('ok');
+          socket.end(ATTENTION_ACK_PREFIX + this.receive(body) + '\n');
         });
         socket.on('error', () => undefined);
       });
@@ -225,8 +226,8 @@ export class AgentAttentionBroker {
     return token;
   }
 
-  receiveRemote(terminalId: string, raw: string): void {
-    this.receiveEvent(raw, terminalId);
+  receiveRemote(terminalId: string, raw: string): AttentionVerdict {
+    return this.receiveEvent(raw, terminalId);
   }
 
   /** Unconditional final release: PTY exit/kill, failed launch, or retirement. A live agent is
@@ -393,34 +394,34 @@ export class AgentAttentionBroker {
     });
   }
 
-  receive(raw: string): void {
-    this.receiveEvent(raw);
+  receive(raw: string): AttentionVerdict {
+    return this.receiveEvent(raw);
   }
 
-  private parse(raw: string, remoteTerminalId?: string): { registration: Registration; parsed: ParsedEvent } | null {
-    if (Buffer.byteLength(raw) > MAX_MESSAGE_BYTES) return null;
+  private parse(raw: string, remoteTerminalId?: string): { registration: Registration; parsed: ParsedEvent } | AttentionVerdict {
+    if (Buffer.byteLength(raw) > MAX_MESSAGE_BYTES) return 'rejected-invalid';
     let value: unknown;
-    try { value = JSON.parse(raw); } catch { return null; }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    try { value = JSON.parse(raw); } catch { return 'rejected-invalid'; }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return 'rejected-invalid';
     const data = value as Record<string, unknown>;
-    if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return null;
-    if (data.version !== 1 || typeof data.token !== 'string') return null;
+    if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return 'rejected-invalid';
+    if (data.version !== 1 || typeof data.token !== 'string') return 'rejected-invalid';
     const registration = this.registrations.get(data.token);
-    if (!registration || data.harness !== registration.harness) return null;
+    if (!registration || data.harness !== registration.harness) return 'rejected-auth';
     if (remoteTerminalId === undefined ? registration.transport !== 'local'
-      : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return null;
-    if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return null;
+      : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return 'rejected-transport';
+    if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return 'rejected-invalid';
     for (const key of ['sessionId', 'turnId', 'inputId', 'continuesSessionId'] as const) {
-      if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return null;
+      if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return 'rejected-invalid';
     }
-    if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return null;
-    if (data.requestKind !== undefined && data.requestKind !== 'input' && data.requestKind !== 'approval') return null;
-    if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return null;
+    if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return 'rejected-invalid';
+    if (data.requestKind !== undefined && data.requestKind !== 'input' && data.requestKind !== 'approval') return 'rejected-invalid';
+    if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return 'rejected-invalid';
     let location: AgentLocation | null = null;
     if (data.cwd !== undefined) {
-      if (typeof data.cwd !== 'string') return null;
+      if (typeof data.cwd !== 'string') return 'rejected-invalid';
       location = this.resolveLocation(registration.terminalId, registration.transport, data.cwd);
-      if (!location) return null;
+      if (!location) return 'rejected-invalid';
     }
     return { registration, parsed: {
       event: data.event as WireEvent,
@@ -435,9 +436,12 @@ export class AgentAttentionBroker {
     } };
   }
 
-  private receiveEvent(raw: string, remoteTerminalId?: string): void {
+  private receiveEvent(raw: string, remoteTerminalId?: string): AttentionVerdict {
     const accepted = this.parse(raw, remoteTerminalId);
-    if (!accepted) return;
+    if (typeof accepted === 'string') {
+      if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted);
+      return accepted;
+    }
     const { registration, parsed } = accepted;
     // A location moves with whatever lifecycle change this event makes, in the same revision; only
     // when the lifecycle does not change does it get a revision of its own.
@@ -450,13 +454,17 @@ export class AgentAttentionBroker {
     const record = { semantic: parsed.event, ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}) };
     if (decision === 'accepted') registration.lastAccepted = { ...record, revision: registration.revision };
     else registration.lastRejected = { ...record, decision };
+    const verdict: AttentionVerdict = decision === 'accepted'
+      ? (registration.revision !== revision || this.current(registration.terminalId) !== registration ? 'accepted-changed' : 'accepted-idempotent')
+      : decision;
     this.onDiagnostic({
       harness: registration.harness, terminalId: registration.terminalId,
       ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}),
       ...(parsed.sessionId ? { sessionId: parsed.sessionId.slice(0, DIAGNOSTIC_ID_LENGTH) } : {}),
       ...(parsed.turnId ? { turnId: parsed.turnId.slice(0, DIAGNOSTIC_ID_LENGTH) } : {}),
-      semantic: parsed.event, decision, revision: registration.revision, status: registration.status,
+      semantic: parsed.event, decision, verdict, revision: registration.revision, status: registration.status,
     });
+    return verdict;
   }
 
   /** Records the reported location of the bound (or not yet bound) root agent; a child, another

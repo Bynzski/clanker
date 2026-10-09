@@ -36,7 +36,7 @@ export default (input, hook, store) => inner(input, hook, {
 });
 `);
   // Generic interpreter: reads state, then reports the canonical event named by the payload.
-  fs.writeFileSync(path.join(dir, 'echo.mjs'), `export default (input, hook, store) => { store.read(); return { event: { type: input.type, scope: 'root', sessionId: 's', turnId: 't1' } }; };\n`);
+  fs.writeFileSync(path.join(dir, 'echo.mjs'), `export default (input, hook, store) => { store.read(); return { event: { type: input.type, scope: 'root', sessionId: 's', turnId: input.turnId ?? 't1' } }; };\n`);
   for (const [name, content] of Object.entries(extraFiles)) fs.writeFileSync(path.join(dir, name), content);
   const recorder = attentionRecorder();
   const updates = recorder.labels;
@@ -143,6 +143,8 @@ describe('attention bridge state transactions', () => {
     // A failed transaction cannot clear the poison; a later healthy boundary does.
     fs.rmSync(`${stateBase}.json`);
     await run('echo.mjs', 'x', { type: 'turn_started' });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true); // retired t1 is ignored, never recovery
+    await run('echo.mjs', 'x', { type: 'turn_started', turnId: 't2' });
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
   });
 
@@ -158,8 +160,8 @@ describe('attention bridge state transactions', () => {
   });
 
   // A delivery that is slow for one event must not let the next transaction's event overtake it.
-  const slowFor = (event: string) => OBSERVER.replace('export async function emit(event, fields) {',
-    `export async function emit(event, fields) {\n  if (event === ${JSON.stringify(event)}) await new Promise((resolve) => setTimeout(resolve, 350));`);
+  const slowFor = (event: string) => OBSERVER.replace('export async function emit(event, fields, detailed = false) {',
+    `export async function emit(event, fields, detailed = false) {\n  if (event === ${JSON.stringify(event)}) await new Promise((resolve) => setTimeout(resolve, 350));`);
 
   it('delivers input_requested before the input_resolved derived from its state, even when delivery is slow', async () => {
     const { run, updates, broker, waitForState } = await bridge({}, slowFor('input_requested'));
@@ -188,8 +190,8 @@ describe('attention bridge state transactions', () => {
     ['returns false', 'return false;'],
     ['throws', "throw new Error('transport down');"],
   ])('treats a delivery that %s as a failed transaction: poison, no later resolution, no lock left', async (_name, failure) => {
-    const observer = OBSERVER.replace('export async function emit(event, fields) {',
-      `export async function emit(event, fields) {\n  if (event === 'input_requested') { ${failure} }`);
+    const observer = OBSERVER.replace('export async function emit(event, fields, detailed = false) {',
+      `export async function emit(event, fields, detailed = false) {\n  if (event === 'input_requested') { ${failure} }`);
     const { run, updates, broker, stateBase, dir } = await bridge({}, observer);
     await run('codex.mjs', 'UserPromptSubmit', turn);
     await run('codex.mjs', 'PreToolUse', { ...turn, tool_use_id: 'a', ...bash('x') });
@@ -204,10 +206,47 @@ describe('attention bridge state transactions', () => {
     expect(updates).toEqual(['turn_started', 'turn_completed']);
   });
 
+  it('keeps poison across rejected and ignored boundaries; only an accepted native boundary recovers', async () => {
+    const { run, broker, stateBase } = await bridge({
+      'wire.mjs': `export default (input, hook, store) => { store.read(); return { event: input }; };`,
+    });
+    const send = (type: string, fields: Record<string, unknown> = {}) => run('wire.mjs', 'x', {
+      type, scope: 'root', sessionId: 's', turnId: 't1', ...fields,
+    });
+    await send('turn_started');
+    await send('turn_started', { sessionId: 'wrong' });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    expect(broker.snapshot('term')?.sessionId).toBe('s');
+    await send('turn_completed', { scope: 'child' });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    await send('turn_completed', { turnId: 'old' });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    await send('turn_completed');
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+    await send('turn_started', { turnId: 't2' });
+    expect(broker.snapshot('term')?.runtime).toMatchObject({ status: 'running', turnId: 't2' });
+  });
+
+  it('does not poison healthy state for expected child/stale events or duplicate starts', async () => {
+    const { run, stateBase, broker } = await bridge({
+      'wire.mjs': `export default (input) => ({ event: input });`,
+    });
+    const send = (type: string, fields: Record<string, unknown> = {}) => run('wire.mjs', 'x', {
+      type, scope: 'root', sessionId: 's', turnId: 't1', ...fields,
+    });
+    await send('turn_started');
+    const revision = broker.snapshot('term')?.revision;
+    await send('turn_started');
+    await send('turn_completed', { scope: 'child' });
+    await send('turn_completed', { turnId: 'old' });
+    expect(broker.snapshot('term')?.revision).toBe(revision);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+  });
+
   it('does not poison the transaction when only a location report fails to deliver', async () => {
     // A location carries no bridge state, so losing one must never hold back a later resolution.
-    const observer = OBSERVER.replace('export async function emit(event, fields) {',
-      `export async function emit(event, fields) {\n  if (event === 'location_changed') return false;`);
+    const observer = OBSERVER.replace('export async function emit(event, fields, detailed = false) {',
+      `export async function emit(event, fields, detailed = false) {\n  if (event === 'location_changed') return false;`);
     const { run, stateBase } = await bridge({
       'move.mjs': `export default (input, hook, store) => { store.read(); return { event: { type: 'location_changed', scope: 'root', sessionId: 's', cwd: '/srv/repo' } }; };\n`,
     }, observer);

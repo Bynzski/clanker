@@ -1,3 +1,4 @@
+import { ATTENTION_ACK_PREFIX, ATTENTION_VERDICTS, MAX_ATTENTION_ACK_BYTES } from '../../shared/attentionProtocol';
 import { MAX_AGENT_LOCATION_BYTES } from '../agentLocation';
 
 /** Shared observer helpers. Providers own the meaning of native events; shared
@@ -17,22 +18,37 @@ function envelope(event, fields) {
 }
 `;
 
+/** emit keeps the provider-facing boolean API; the serialized command requests a detailed
+ * verdict so ignored events neither poison state nor count as an accepted recovery boundary.
+ * Old/unframed ACKs fail closed. TCP chunk boundaries have no protocol meaning. */
 export const OBSERVER = `import net from 'node:net';
 ${OBSERVER_FIELDS}
-export async function emit(event, fields) {
+export async function emit(event, fields, detailed = false) {
   const port = Number(process.env.CLANKER_ATTENTION_PORT);
   const token = process.env.CLANKER_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_ATTENTION_HARNESS;
-  if (!token || !harness || !Number.isInteger(port) || port < 1) return false;
+  if (!token || !harness || !Number.isInteger(port) || port < 1 || port > 65535) return false;
   const payload = JSON.stringify({ version: 1, token, harness, ...envelope(event, fields) });
-  return await new Promise((resolve) => {
+  const verdict = await new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
-    let acknowledged = false;
-    socket.on('data', (chunk) => { if (chunk.toString('utf8') === 'ok') acknowledged = true; });
-    socket.setTimeout(500, () => socket.destroy());
+    let response = '';
+    let ended = false;
+    let invalid = false;
+    const deadline = setTimeout(() => socket.destroy(), 500);
+    socket.on('data', (chunk) => {
+      if (Buffer.byteLength(response) + chunk.length > ${MAX_ATTENTION_ACK_BYTES}) { invalid = true; socket.destroy(); return; }
+      response += chunk.toString('utf8');
+    });
+    socket.on('end', () => { ended = true; });
     socket.on('error', () => resolve(false));
-    socket.on('close', () => resolve(acknowledged));
+    socket.on('close', () => {
+      clearTimeout(deadline);
+      const prefix = ${JSON.stringify(ATTENTION_ACK_PREFIX)};
+      const value = response.slice(prefix.length, -1);
+      resolve(!invalid && ended && response.startsWith(prefix) && response.endsWith('\\n') && ${JSON.stringify(ATTENTION_VERDICTS)}.includes(value) ? value : false);
+    });
   });
+  return detailed ? verdict : verdict === 'accepted-changed' || verdict === 'accepted-idempotent';
 }
 `;
 
@@ -178,11 +194,14 @@ if (interpreter) {
     if (event) {
       const { type, ...fields } = event;
       let delivered = false;
-      try { delivered = await emit(type, fields); } catch { /* counts as undelivered */ }
+      try { delivered = await emit(type, fields, true); } catch { /* counts as undelivered */ }
       // The broker may not have seen this transition: stay conservative until a boundary lands.
       // A location report carries no bridge state, so losing one is not a failed transaction.
-      if (!delivered && type !== 'location_changed') failed = true;
-      else if (boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
+      // Remote OSC has no ACK: true still means a successful local tty write only.
+      const accepted = delivered === true || delivered === 'accepted-changed' || delivered === 'accepted-idempotent';
+      const ignored = delivered === 'ignored-child' || delivered === 'ignored-stale';
+      if (!accepted && !ignored && type !== 'location_changed') failed = true;
+      else if (accepted && boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
     }
     if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
   } finally {
