@@ -69,6 +69,7 @@ export const WORKSPACE_SERVICE_DISCOVER = 'workspace-service:discover';
 export const WORKSPACE_SERVICE_START = 'workspace-service:start';
 export const WORKSPACE_SERVICE_STOP = 'workspace-service:stop';
 export const WORKSPACE_SERVICE_GET = 'workspace-service:get';
+export const WORKSPACE_SERVICE_PREVIEW_PROBE = 'workspace-service:preview-probe';
 export const WORKSPACE_SERVICE_CHANGED = 'workspace-service:changed';
 
 /* ============================================================================
@@ -351,6 +352,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   WORKSPACE_SERVICE_START,
   WORKSPACE_SERVICE_STOP,
   WORKSPACE_SERVICE_GET,
+  WORKSPACE_SERVICE_PREVIEW_PROBE,
   WORKSPACE_SERVICE_CHANGED,
   // Browser
   REMOTE_PREVIEW_WATCH,

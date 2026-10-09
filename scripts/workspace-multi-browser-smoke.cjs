@@ -1,5 +1,6 @@
 // Real native multi-Browser presentation leases. Run after build with Electron.
-// Renderer adoption and full-app visual acceptance are separate from this IPC smoke.
+// Runs native/session regressions, then the full built-app renderer lease smoke.
+// Manual live-harness/SSH acceptance remains separate.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -140,6 +141,10 @@ async function run() {
   controller.disposeAll(); assert.equal(views.size, 0);
   window.destroy();
   console.log('PASS: two native Browser panes retain independent JS/form/view state across 30 switches; stale activation/hide/bounds/switch/refresh rejected; background navigation/closed tabs safe; local/shared-SSH/isolated-SSH sessions and workspace cleanup verified');
+  clearTimeout(timeout);
+  const result = require('node:child_process').spawnSync('node', [path.join(__dirname, 'workspace-page-browser-renderer-smoke.cjs')], { stdio: 'inherit', env: process.env, timeout: 90000 });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, 'Full renderer Browser smoke failed');
   app.quit();
 }
 run().catch(error => { console.error(error); controller?.disposeAll(); window?.destroy(); app.exit(1); });

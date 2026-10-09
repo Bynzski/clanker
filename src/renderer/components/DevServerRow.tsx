@@ -71,7 +71,7 @@ export function DevServerControls({ workspace, command, service, terminalId, dis
         const originalBrowserId = initiating.pages?.find((page) => page.id === targetPageId)?.browser?.pane?.id;
         const originalBrowserSelection = browserPageSelection(initiating, targetPageId);
         const url = service.previewUrl!;
-        const probe = await window.electronAPI.probeRecipePreview(url, true);
+        const probe = await window.electronAPI.workspaceServiceProbePreview({ workspaceId: workspace.id, serviceId: service.id });
         if (probe.status !== 'ready') throw new Error('Dev server preview is not reachable yet');
         const state = useWorkspaceStore.getState();
         const current = useWorkspaceServiceStore.getState().services.find((entry) => entry.id === service.id);

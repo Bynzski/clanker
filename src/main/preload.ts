@@ -96,6 +96,7 @@ import {
   WORKSPACE_SERVICE_START,
   WORKSPACE_SERVICE_STOP,
   WORKSPACE_SERVICE_GET,
+  WORKSPACE_SERVICE_PREVIEW_PROBE,
   WORKSPACE_SERVICE_CHANGED,
   REMOTE_PREVIEW_WATCH,
   REMOTE_PREVIEW_GET,
@@ -314,6 +315,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   workspaceServiceStart: (request: DevServiceStartRequest) => ipcRenderer.invoke(WORKSPACE_SERVICE_START, request),
   workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => ipcRenderer.invoke(WORKSPACE_SERVICE_STOP, request),
   workspaceServiceGet: () => ipcRenderer.invoke(WORKSPACE_SERVICE_GET),
+  workspaceServiceProbePreview: (request: { workspaceId: string; serviceId: string }) => ipcRenderer.invoke(WORKSPACE_SERVICE_PREVIEW_PROBE, request),
   onWorkspaceServicesChanged: (callback: (update: WorkspaceServicesUpdate) => void) => {
     const listener = (_event: IpcRendererEvent, update: WorkspaceServicesUpdate) => callback(update);
     ipcRenderer.on(WORKSPACE_SERVICE_CHANGED, listener);

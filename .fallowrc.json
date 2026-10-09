@@ -11,6 +11,7 @@
     "scripts/terminal-geometry-smoke.cjs",
     "scripts/workspace-pages-smoke.cjs",
     "scripts/workspace-multi-browser-smoke.cjs",
+    "scripts/workspace-page-browser-renderer-smoke.cjs",
     "scripts/workspace-launch-race-smoke.cjs"
   ],
   "ignoreDependencies": ["@modelcontextprotocol/sdk", "node:sqlite"],

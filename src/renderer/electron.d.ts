@@ -100,6 +100,7 @@ export interface ElectronAPI {
   workspaceServiceStart: (request: import('../shared/types/workspaceServices').DevServiceStartRequest) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
   workspaceServiceStop: (request: { workspaceId: string; serviceId: string }) => Promise<import('../shared/types/workspaceServices').WorkspaceServiceResult>;
   workspaceServiceGet: () => Promise<import('../shared/types/workspaceServices').WorkspaceServicesUpdate>;
+  workspaceServiceProbePreview: (request: { workspaceId: string; serviceId: string }) => Promise<Pick<RecipePreviewProbeResult, 'status'>>;
   onWorkspaceServicesChanged: (callback: (update: import('../shared/types/workspaceServices').WorkspaceServicesUpdate) => void) => () => void;
   getAssistants: () => Promise<AssistantSnapshot>;
   configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;

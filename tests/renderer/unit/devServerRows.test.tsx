@@ -154,10 +154,12 @@ describe('checkout-aware sidebar service controls', () => {
   });
   it('opens the owning workspace Browser only after a fresh probe and never spawns a visible terminal', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     await waitFor(() => expect(window.electronAPI.browserTabNavigate).toHaveBeenCalledWith('ws', expect.any(String), service.previewUrl));
+    expect(window.electronAPI.workspaceServiceProbePreview).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'ws', serviceId: service.id });
+    expect(window.electronAPI.probeRecipePreview).not.toHaveBeenCalled();
     expect(useWorkspaceStore.getState().workspaces[0].browserVisible).toBe(true);
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
   });
@@ -174,7 +176,7 @@ describe('checkout-aware sidebar service controls', () => {
     store().toggleBrowser('ws');
     const b = store().workspaces[0].browserPane!;
     useWorkspaceServiceStore.setState({ services: [service] });
-    installElectronApiMock({ probeRecipePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
+    installElectronApiMock({ workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'ready' }), browserTabNavigate: vi.fn().mockResolvedValue(true) });
     const { unmount } = render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     await waitFor(() => expect(window.electronAPI.browserTabNavigate).toHaveBeenCalledWith('ws', expect.any(String), service.previewUrl));
@@ -185,7 +187,7 @@ describe('checkout-aware sidebar service controls', () => {
     unmount();
     let finish!: (value: { status: 'ready' }) => void;
     vi.mocked(window.electronAPI.browserTabNavigate).mockClear();
-    vi.mocked(window.electronAPI.probeRecipePreview).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    vi.mocked(window.electronAPI.workspaceServiceProbePreview).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     act(() => store().selectWorkspacePage('ws', second));
@@ -198,7 +200,7 @@ describe('checkout-aware sidebar service controls', () => {
     store().selectWorkspace('ws'); store().toggleBrowser('ws');
     useWorkspaceServiceStore.setState({ services: [service] });
     let finish!: (value: { status: 'ready' }) => void;
-    installElectronApiMock({ probeRecipePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
+    installElectronApiMock({ workspaceServiceProbePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
     render(<DevServerControls workspace={store().workspaces[0]} terminalId="agent" service={service} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     act(() => store().toggleBrowser('ws'));
@@ -209,7 +211,7 @@ describe('checkout-aware sidebar service controls', () => {
   });
   it('does not navigate on failed readiness', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockResolvedValue({ status: 'unavailable' }) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockResolvedValue({ status: 'unavailable' }) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('not reachable');
@@ -218,7 +220,7 @@ describe('checkout-aware sidebar service controls', () => {
   it('does not redirect Browser after the user switches workspace/Assistant during a readiness probe', async () => {
     useWorkspaceServiceStore.setState({ services: [service] });
     let finish!: (value: { status: 'ready' }) => void;
-    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), probeRecipePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
+    installElectronApiMock({ workspaceServiceDiscover: vi.fn().mockResolvedValue({ success: true, command }), workspaceServiceProbePreview: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) });
     render(<WorkspaceNavigatorSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Dev Server in Browser' }));
     act(() => useAssistantNavStore.getState().openAssistantSurface('assistant'));

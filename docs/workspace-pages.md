@@ -46,7 +46,7 @@ Workspace page controls/commands do not act on a parked workspace while an Assis
 
 ## Implementation
 
-### Independent Browser implementation checkpoint
+### Independent Browsers
 
 Browser state is now canonical on `WorkspacePage.browser`: a stable pane with its tabs,
 selected tab, URL, visibility and hidden-placement hint. Workspace-level Browser fields are
@@ -56,11 +56,21 @@ unknown/closed tab ids cannot create Browser state. Legacy singleton state backf
 page, and a page owning a hidden Browser cannot be removed. Moving a Browser transfers this
 association without replacing its pane or tabs; an occupied destination is refused.
 
-This is an incremental implementation checkpoint, **not yet the completed Browser-per-page
-feature**. Stages 1 (canonical state) and 2 (native protocol) are implemented. Renderer lease
-adoption, asynchronous preview routing, V2 persistence and occupied-drop feedback remain
-outstanding. Existing renderer calls still use the compatible legacy native protocol; the
-end-to-end multi-Browser race guarantees do **not** apply until Stage 3 adopts leases.
+Each page may own one Browser, with independent tabs and navigation. The existing toolbar
+creates it on the selected page, reveals a hidden Browser, restores a minimized Browser to its
+saved placement, or hides a visible Browser. It never visits another page to find a Browser.
+Minimize, toolbar visibility and maximize/restore size remain distinct and nondestructive.
+Switching pages reuses native WebContentsViews without navigation: JavaScript, forms, history,
+scroll position and loaded application state remain live. Moving to an empty page or `+` retains
+identity; occupied destinations (including hidden/minimized Browsers) show invalid-drop feedback
+and reject the move. No swapping, merging or Browser-management UI is introduced.
+
+`BrowserLifecycleCoordinator` is the sole renderer lease issuer, across Workspace and Assistant
+owners. Panes only consume captured leases. Asynchronous resource preparation rechecks the
+live destination, pane and tab before activation; existing native resources are never navigated
+again merely because a panel remounts. Old panel unmounts do not hide the replacement Browser.
+Legacy embeddings without canonical page state retain their single-Browser API, but main rejects
+legacy presentation/control calls for an owner that has opted into scoped leases.
 
 `browserPresentationAuthority.ts` owns one native viewport lease: workspace owner, pane id,
 selected tab and a monotonically increasing epoch across all owners. Scoped Activate only
@@ -76,20 +86,32 @@ Run `npx electron scripts/workspace-multi-browser-smoke.cjs` after build. This r
 smoke verifies two panes plus a background tab, 30 switches, JS/form/native identity retention,
 stale Activate/Hide/Bounds/Switch/Refresh rejection, closed-tab navigation, local shared sessions,
 shared SSH-workspace sessions, separate SSH-workspace isolation and private-session disposal.
-It is not a full-app multi-page visual acceptance test.
+It also runs `workspace-page-browser-renderer-smoke.cjs`: the full built app creates two Browsers
+through the toolbar, navigates local fixtures, switches pages repeatedly, verifies independent
+native/form/JS state and tabs, replays captured stale renderer bounds, exercises presentation
+controls and real pointer drops (occupied rejection and movement onto `+`), and checks V2 storage.
+Set `CLANKER_SMOKE_SCREENSHOT` for renderer and native-view captures (renderer-only screenshots
+exclude Electron's native child views, so both are captured separately). Manual interactive acceptance,
+real harness/SSH transport and live dev-service checks remain separate from these fixtures.
 
-Continuation order:
-1. Stage 3: make one renderer coordinator issue global epochs for the active destination's
-   presented pane/tab (including overlay suppression). Bounds/panel/tab actions must carry that
-   captured lease; components must not independently mint foreground authority. Ensure native
-   tabs are created with their pane id before scoped activation, and do not reload existing views.
-2. Stage 4: add invalid-drop feedback for occupied (including hidden/minimized) Browser pages;
-   capture terminal-to-page preview targets before probing, revalidate them afterwards, and never
-   reclaim focus after the user changes destination.
-3. Stage 5: replace singleton V1 utility keys with bounded V2 Browser identities/associations,
-   while retaining V1 migration and existing resource restoration semantics.
-4. Stage 6: extend full-app/race smokes to use the renderer lease path, finish documentation,
-   run full validation and perform interactive multi-page visual acceptance before a PR.
+Dev-server previews capture the requesting terminal's page, including minimized membership,
+before probing. The explicit click selects that page without restoring/moving the terminal.
+The completion rechecks page membership, Browser identity, service readiness and the current
+Workspace/Assistant destination; changing pages or destinations cancels rather than reclaiming
+focus. Preview actions with no originating terminal use the current page. Checkouts and service
+process ownership are unchanged.
+
+Local panes all use the existing persistent local Chromium session. SSH panes share only their
+workspace's private nonpersistent session, distinct from local and other SSH workspaces.
+Local service previews probe an opaque workspace/service identity through the service IPC path;
+main chooses and rechecks the live URL. This remains independent of disabled workspace recipes.
+SSH discovery auto-opens only an uninitialized default Browser; page remounts never navigate an
+existing preview or documentation tab. Its selected forward is re-associated from the pane's URL
+without reopening it. Automatic discovery does not stop a forward another page may still display;
+the existing per-workspace/global tunnel limits and explicit Stop/cleanup behavior remain in force.
+Hiding/moving/minimizing/closing a tab never clears that shared session; workspace disposal closes
+all of its views and performs the existing private-session cleanup. URL restrictions, permissions,
+registered workspace authority and external-link validation are unchanged.
 
 `store/workspacePages.ts` owns normalization/projection and membership operations;
 `workspacePageActions.ts` owns the small page action layer. Existing layout writers pass through
@@ -127,13 +149,22 @@ file/editor authority remains pinned to validated checkout contexts, not page id
 
 ## Persistence boundary
 
-`workspacePageStorage.ts` persists bounded V1 page preferences by environment + canonical path:
-page order, active page, semantic topology and minimized utility metadata. Runtime pane/PTY/node
-ids, focus, maximize and undo are not persisted. Existing runtime single layouts backfill Page 1.
+`workspacePageStorage.ts` writes bounded V2 page preferences by environment + canonical path:
+page order, active page, semantic topology, minimized destinations and Browser pane/tab identities
+with explicit page ownership and hidden visibility. V1 storage is still read when V2 is absent;
+its singleton Browser maps to its saved page only when that Browser already exists. V2 permits
+one Browser per page, rejects duplicate pane/tab identities, unknown/foreign page associations,
+hidden Browser leaves, malformed ratios, oversized records and excessive topology depth/nodes.
+Limits remain nine pages, 512 topology nodes and 512 minimized entries, depth 32 and 128 KiB; Browser metadata
+allows at most 128 tab identities per pane. Oversized/invalid snapshots do not overwrite valid
+previous preferences.
+PTY/node ids, focus, maximize and undo are not persisted. Existing single layouts backfill Page 1.
 Location-only reopen keeps pages but safely prunes absent resource leaves. Saved terminal slots
 **never** bind unrelated future chats, spawn new processes, or resume native conversations.
-Already-present utility panes can map by singleton identity. A live workspace is never overwritten
-by restored preferences. Invalid/duplicate/deep/oversized records fall back safely.
+Already-present Editor/Notes panes can map by singleton identity; V2 Browsers map only by exact
+pane and tab identities. Absent Browsers are not automatically recreated or navigated on location-only
+reopen (the existing restoration semantics); preference data cannot bind to a newly generated Browser.
+Restoration refuses to orphan live Browsers or replace a workspace with live terminal panes. Invalid/duplicate/deep/oversized records fall back safely.
 
 This is not saved working sessions or conversation resurrection. That feature, durable native
 conversation bindings, and automatic resume are deferred. Recipes are temporarily hidden and

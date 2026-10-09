@@ -3,7 +3,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 import { workspaceBrowserPresented } from '../store/workspacePages';
 import { assistantBrowserOwnerId } from '../../shared/browserOwner';
-import { currentBrowserPresentation, ensureBrowserResource, markBrowserPresentationReady, setBrowserPresentation } from '../lib/browserPresentation';
+import { browserResourceExists, currentBrowserPresentation, ensureBrowserResource, markBrowserPresentationReady, setBrowserPresentation } from '../lib/browserPresentation';
 
 interface BrowserLifecycleCoordinatorProps { activeOwnerId: string | null }
 
@@ -28,15 +28,18 @@ export default function BrowserLifecycleCoordinator({ activeOwnerId }: BrowserLi
     const presentation = setBrowserPresentation(visible ? activeOwnerId : null, paneId ?? undefined, tabId ?? undefined);
     if (!presentation || presentation.ready) return;
     let cancelled = false;
-    void ensureBrowserResource(presentation.ownerId, presentation.lease.paneId, presentation.tabId, url,
-      () => !cancelled && currentBrowserPresentation(presentation.ownerId) === presentation).then(async () => {
+    const valid = () => !cancelled && currentBrowserPresentation(presentation.ownerId) === presentation;
+    // Main enforces the last-tab rule per pane. Materialize the whole owning
+    // collection before presentation, including a preview's unselected default tab.
+    void Promise.all((tabs ?? []).map((tab) => ensureBrowserResource(presentation.ownerId, presentation.lease.paneId, tab.id, tab.url,
+      () => valid() && browserResourceExists(presentation.ownerId, presentation.lease.paneId, tab.id)))).then(async () => {
       if (cancelled || currentBrowserPresentation(presentation.ownerId) !== presentation) return;
       if (await window.electronAPI.browserActivate(presentation.ownerId, presentation.tabId, presentation.lease)) {
         if (!cancelled) markBrowserPresentationReady(presentation);
       }
     }).catch(() => { /* A closed owner or retired tab cannot claim visibility. */ });
     return () => { cancelled = true; };
-  }, [activeOwnerId, paneId, tabId, visible, url, workspaces]);
+  }, [activeOwnerId, paneId, tabId, visible, url, workspaces, tabs]);
   useLayoutEffect(() => () => { setBrowserPresentation(null); }, []);
   return null;
 }
