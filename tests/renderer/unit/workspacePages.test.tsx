@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useWorkspaceStore, validateWorkspaceConsistency } from '../../../src/renderer/store/workspaceStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
@@ -50,7 +50,7 @@ describe('workspace page ownership', () => {
     expect(workspace().terminals.map(({ id, pid }) => ({ id, pid }))).toEqual([{ id: 't1', pid: 1 }, { id: 't2', pid: 2 }]);
     expect(validateWorkspaceConsistency(store())).toEqual([]);
   });
-  it('renders compact page controls and keeps minimized panes reachable with an overlay lease', async () => {
+  it('renders compact page controls and disables removing pages with minimized panes', () => {
     open(); render(<PageSwitcherUI />);
     expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Add page' }));
@@ -58,12 +58,15 @@ describe('workspace page ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Page 1' }));
     expect(screen.getByRole('button', { name: 'Remove empty page' })).toBeDisabled();
     act(() => store().minimizeWorkspacePane('w', 'p1'));
-    const menu = document.querySelector('details')!;
-    act(() => { menu.open = true; fireEvent(menu, new Event('toggle')); });
-    expect(workspace().browserOverlayCount).toBe(1);
-    fireEvent.click(screen.getByTitle('Restore pane'));
+    // Minimized pane footer menu has been removed: no details element or overlay suppression lease.
+    expect(document.querySelector('details')).toBeNull();
+    expect(workspace().browserOverlayCount).toBe(0);
+    // Page with minimized pane cannot be removed
+    expect(screen.getByRole('button', { name: 'Remove empty page' })).toBeDisabled();
+    // Restoring via canonical workspace navigation restores the pane and sets active terminal
+    act(() => store().selectWorkspace('w', 't1'));
     expect(workspace().minimizedPanes).toEqual([]);
-    await waitFor(() => expect(workspace().browserOverlayCount).toBe(0));
+    expect(workspace().browserOverlayCount).toBe(0);
     expect(workspace().activeTerminalId).toBe('t1');
   });
   it('adds an empty active page and does not retile other-page agents on fit, reset, or selection', () => {
@@ -283,5 +286,121 @@ describe('page-aware Browser and asynchronous resource ownership', () => {
     expect(workspace().minimizedPanes).toEqual([]);
     expect(store().getWorkspaceById('other')!.terminals).toEqual(other.terminals);
     expect(store().activeWorkspaceId).toBe('other');
+  });
+
+  it('manages multiple minimized agents and restores them independently', () => {
+    open();
+    store().minimizeWorkspacePane('w', 'p1');
+    store().minimizeWorkspacePane('w', 'p2');
+    expect(workspace().minimizedPanes).toHaveLength(2);
+    expect(workspace().minimizedPanes?.map((e) => e.paneId)).toEqual(['p1', 'p2']);
+
+    // Restore t2 first
+    store().selectWorkspace('w', 't2');
+    expect(workspace().minimizedPanes?.map((e) => e.paneId)).toEqual(['p1']);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain('p2');
+    expect(workspace().activeTerminalId).toBe('t2');
+
+    // Restore t1 next
+    store().selectWorkspace('w', 't1');
+    expect(workspace().minimizedPanes).toEqual([]);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain('p1');
+    expect(workspace().activeTerminalId).toBe('t1');
+  });
+
+  it('restores minimized utility panes (Browser, Editor, Notes) via their toggle actions', () => {
+    open();
+    // Browser restoration
+    store().setBrowserVisible(true, 'w');
+    const browserId = workspace().browserPane!.id;
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    store().minimizeWorkspacePane('w', browserId);
+    expect(workspaceBrowserPresented(workspace())).toBe(false);
+    expect(workspace().browserVisible).toBe(true);
+    store().toggleBrowser('w');
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(workspace().minimizedPanes?.some((e) => e.paneId === browserId)).toBe(false);
+
+    // Notes restoration
+    store().toggleNotesPane();
+    const notesId = workspace().notesPane!.id;
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(notesId);
+    store().minimizeWorkspacePane('w', notesId);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).not.toContain(notesId);
+    expect(workspace().notesVisible).toBe(true);
+    store().toggleNotesPane();
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(notesId);
+    expect(workspace().minimizedPanes?.some((e) => e.paneId === notesId)).toBe(false);
+
+    // Editor restoration
+    const editorId = 'ed-test';
+    useWorkspaceStore.setState((state) => ({
+      ...state,
+      workspaces: state.workspaces.map((ws) => ws.id === 'w' ? {
+        ...ws,
+        editorVisible: true,
+        editorPane: { id: editorId },
+        editorTabs: [{ id: 'tab1', filePath: '/test.ts', fileName: 'test.ts', isDirty: false, content: '', originalContent: '' }],
+        layoutRoot: {
+          type: 'split',
+          nodeId: 'split-ed',
+          orientation: 'horizontal',
+          ratio: 0.5,
+          first: ws.layoutRoot!,
+          second: { type: 'leaf', nodeId: 'leaf-ed', paneId: editorId },
+        },
+      } : ws),
+    }));
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(editorId);
+    store().minimizeWorkspacePane('w', editorId);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).not.toContain(editorId);
+    expect(workspace().editorVisible).toBe(true);
+    store().toggleEditorPane();
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(editorId);
+    expect(workspace().minimizedPanes?.some((e) => e.paneId === editorId)).toBe(false);
+  });
+
+  it('keeps native Browser visible when another pane is minimized or restored', () => {
+    open();
+    store().setBrowserVisible(true, 'w');
+    const browserId = workspace().browserPane!.id;
+    render(<BrowserLifecycleCoordinator activeOwnerId="w" />);
+    vi.mocked(window.electronAPI.browserHide).mockClear();
+
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    // Minimize agent pane p1
+    act(() => store().minimizeWorkspacePane('w', 'p1'));
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    // browserHide must NOT be called for workspace 'w' because Browser is still presented
+    expect(vi.mocked(window.electronAPI.browserHide)).not.toHaveBeenCalledWith('w');
+
+    // Restore agent pane p1
+    act(() => store().selectWorkspace('w', 't1'));
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain('p1');
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain(browserId);
+    expect(vi.mocked(window.electronAPI.browserHide)).not.toHaveBeenCalledWith('w');
+  });
+
+  it('handles maximize and minimize transitions without stale presentation state', () => {
+    open();
+    store().setBrowserVisible(true, 'w');
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+
+    // Maximize agent pane p1 occludes browser
+    store().toggleMaximizedPane('w', 'p1');
+    expect(workspaceBrowserPresented(workspace())).toBe(false);
+
+    // Minimizing p1 while maximized clears maximize state and unhides browser
+    store().minimizeWorkspacePane('w', 'p1');
+    expect(activePage(workspace())?.maximizedPaneId).toBeUndefined();
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(collectLeafPaneIds(workspace().layoutRoot)).not.toContain('p1');
+
+    // Restoring p1 returns it to layout without maximizing it
+    store().selectWorkspace('w', 't1');
+    expect(workspaceBrowserPresented(workspace())).toBe(true);
+    expect(activePage(workspace())?.maximizedPaneId).toBeUndefined();
+    expect(collectLeafPaneIds(workspace().layoutRoot)).toContain('p1');
   });
 });

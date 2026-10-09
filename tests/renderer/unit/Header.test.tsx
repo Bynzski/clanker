@@ -424,6 +424,31 @@ describe('Header', () => {
         expect(screen.getByText('Terminal')).toBeTruthy();
       });
     });
+
+    it('renders and toggles editor panel button when editor tabs exist', () => {
+      renderHeader();
+      expect(screen.queryByRole('button', { name: 'Toggle editor panel' })).toBeNull();
+      cleanup();
+
+      const toggleEditorPane = vi.fn();
+      useWorkspaceStore.setState((state) => ({
+        toggleEditorPane,
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? {
+            ...workspace,
+            editorTabs: [{ id: 'tab-1', filePath: '/src/main.ts', fileName: 'main.ts', isDirty: false, content: '', originalContent: '' }],
+            editorVisible: true,
+            editorPane: { id: 'ed-pane' },
+            layoutRoot: { type: 'leaf', nodeId: 'ed-node', paneId: 'ed-pane' },
+          } : workspace
+        )),
+      }));
+      renderHeader();
+      const editorBtn = screen.getByRole('button', { name: 'Toggle editor panel' });
+      expect(editorBtn).toHaveClass('active');
+      fireEvent.click(editorBtn);
+      expect(toggleEditorPane).toHaveBeenCalledOnce();
+    });
   });
 
   // =========================================================================

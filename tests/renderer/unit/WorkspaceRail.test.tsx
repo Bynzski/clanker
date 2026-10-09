@@ -173,4 +173,26 @@ describe('WorkspaceRail', () => {
       useWorkspaceNavigationStore.setState({ mode: 'tabs', sidebarWidth: 280, lastExpandedWidth: 280 });
     }
   });
+
+  it('renders minimized indicator on rail agent and restores on click', () => {
+    const ws = useWorkspaceStore.getState().workspaces[0];
+    const pane = { id: 'p1', terminalId: 't1' };
+    useWorkspaceStore.setState({
+      workspaces: [
+        {
+          ...ws,
+          panes: [pane],
+          minimizedPanes: [{ paneId: 'p1', pageId: 'alpha::page-1', placement: null }],
+        },
+        ...useWorkspaceStore.getState().workspaces.slice(1),
+      ],
+    });
+    render(<WorkspaceRail onExpand={() => undefined} />);
+    const button = screen.getByRole('button', { name: /Samson.*minimized/ });
+    expect(button).toHaveClass('minimized');
+    expect(button.querySelector('.ws-rail-agent-minimized')).not.toBeNull();
+    expect(button.getAttribute('aria-label')).toContain('· minimized (click to restore)');
+    fireEvent.click(button);
+    expect(useWorkspaceStore.getState().workspaces[0].minimizedPanes).toEqual([]);
+  });
 });

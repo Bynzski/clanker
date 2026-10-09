@@ -194,4 +194,27 @@ describe('WorkspaceNavigatorSection', () => {
     }
     expect(fireEvent.dragStart(row.querySelector('.ws-nav-select')!, { dataTransfer: transfer })).toBe(true);
   });
+
+  it('renders compact subdued minimized icon and restores on click', () => {
+    const ws = useWorkspaceStore.getState().workspaces[0];
+    const pane = { id: 'p1', terminalId: 't1' };
+    useWorkspaceStore.setState({
+      workspaces: [
+        {
+          ...ws,
+          panes: [pane],
+          minimizedPanes: [{ paneId: 'p1', pageId: 'alpha::page-1', placement: null }],
+        },
+        ...useWorkspaceStore.getState().workspaces.slice(1),
+      ],
+    });
+    render(<WorkspaceNavigatorSection />);
+    const button = screen.getByText('Samson').closest('button')!;
+    expect(button.querySelector('.ws-agent-minimized-icon')).not.toBeNull();
+    expect(button.textContent).toContain('(minimized, click to restore)');
+    expect(button.getAttribute('title')).toContain('· minimized (click to restore)');
+    expect(screen.queryByLabelText('Close Samson')).toBeNull();
+    fireEvent.click(button);
+    expect(useWorkspaceStore.getState().workspaces[0].minimizedPanes).toEqual([]);
+  });
 });

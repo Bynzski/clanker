@@ -590,7 +590,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    if (visible && workspace.browserVisible && workspace.browserPane && workspace.pages) {
+    if (visible && workspace.browserVisible && workspace.browserPane && workspace.pages && !paneIsPresented(workspace, workspace.browserPane.id)) {
       return patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.browserPane!.id));
     }
     const browserLeafPresent = workspace.browserPane != null
@@ -639,7 +639,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (workspace == null) {
       return;
     }
-    get().setBrowserVisible(!workspace.browserVisible || Boolean(workspace.pages && workspace.browserPane && !paneIsPresented(workspace, workspace.browserPane.id)), workspace.id);
+    if (workspace.pages && workspace.browserVisible && workspace.browserPane && !paneIsPresented(workspace, workspace.browserPane.id)) {
+      set((state) => patchWorkspaceById(state, workspace.id, (current) => revealPane(current, workspace.browserPane!.id)));
+      return;
+    }
+    get().setBrowserVisible(!workspace.browserVisible, workspace.id);
   },
 
   toggleNotesPane: () => set((state) => {

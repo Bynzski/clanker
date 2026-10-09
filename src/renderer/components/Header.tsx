@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import { isExplorerShown, toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
-import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { Code, Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import GitButton from './GitButton';
 import IsolatedAgentButton from './IsolatedAgentButton';
@@ -36,6 +36,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
   const toggleBrowser = useWorkspaceStore((state) => state.toggleBrowser);
   const toggleNotesPane = useWorkspaceStore((state) => state.toggleNotesPane);
+  const toggleEditorPane = useWorkspaceStore((state) => state.toggleEditorPane);
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
   const undoLayout = useWorkspaceStore((state) => state.undoLayout);
@@ -50,6 +51,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
   const browserVisible = activeAssistantId ? assistantBrowserVisible : focusedWorkspace ? workspaceBrowserPresented(focusedWorkspace) : false;
   const notesVisible = Boolean(focusedWorkspace?.notesVisible && (!focusedWorkspace.pages || (focusedWorkspace.notesPane && paneIsPresented(focusedWorkspace, focusedWorkspace.notesPane.id))));
+  const editorVisible = Boolean(focusedWorkspace?.editorVisible && (!focusedWorkspace.pages || (focusedWorkspace.editorPane && paneIsPresented(focusedWorkspace, focusedWorkspace.editorPane.id))));
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   const explorerShown = useWorkspaceNavigationStore((state) => isExplorerShown(explorerVisible, state.mode, state.sidebarWidth));
@@ -255,6 +257,20 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
           title="Toggle notes panel"
         >
           <NotebookPen size={14} strokeWidth={2} />
+        </IconButton>
+      )}
+      {capabilities.explorer && (focusedWorkspace?.editorTabs?.length ?? 0) > 0 && (
+        <IconButton
+          type="button"
+          size="xs"
+          variant="ghost"
+          className={`header-btn header-btn-icon toolbar-btn ${editorVisible ? 'active' : ''}`}
+          onClick={() => toggleEditorPane()}
+          aria-pressed={editorVisible}
+          aria-label="Toggle editor panel"
+          title="Toggle editor panel"
+        >
+          <Code size={14} strokeWidth={2} />
         </IconButton>
       )}
     </div>

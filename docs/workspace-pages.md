@@ -21,10 +21,13 @@ notes and services. A page owns **presentation**, not processes or filesystem au
 - Pane headers offer Minimize and Maximize/Restore size. Maximize is temporary, per-page, and
   leaves the split tree, ratios, revision and undo history untouched. Layout edits are disabled
   until size is restored. Switching pages retains each page's maximize state.
-- Minimized chats stay in the workspace's existing left-hand agent list with attention and a
-  minimized label. Selecting one restores it and selects its original page. The status-bar
-  Minimized menu also provides access in tabs mode and with the sidebar collapsed, including
-  minimized Browser/editor/notes panes.
+- Minimized agents stay in the workspace's left-hand agent list and collapsed rail with a compact,
+  subdued minimized icon (`Minus`). Clicking the agent row or rail icon automatically restores it to its
+  previous layout position and selects its original page.
+- Minimized utility panes (Browser, Editor, Notes) are restored by clicking their existing toolbar
+  toggle buttons (or opening/focusing an open file in FileExplorer for the Editor), distinguishing a
+  minimized pane from a genuinely closed pane while preserving underlying state. The footer `Minimized · N`
+  dropdown mechanism has been removed.
 - Restore reuses the original sibling placement hint if its anchor still exists; otherwise it
   inserts safely into the original page. It never rebuilds the whole arrangement.
 - Close requests retirement of the captured terminal and removes its pane/membership/cache after
