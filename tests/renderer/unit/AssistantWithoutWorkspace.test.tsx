@@ -211,7 +211,7 @@ describe('zero-workspace Assistant shell', () => {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(await screen.findByText('Appearance')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
   });
 

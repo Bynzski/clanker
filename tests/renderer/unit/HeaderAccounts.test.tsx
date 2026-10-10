@@ -42,6 +42,7 @@ beforeEach(() => {
 async function openCodexSettings(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Settings' }));
   const settings = await screen.findByRole('dialog', { name: 'Settings' });
+  await user.click(within(settings).getByRole('button', { name: 'Legacy Settings' }));
   await user.click(await within(settings).findByRole('button', { name: /^Codex/ }));
 }
 const listCalls = () => vi.mocked(window.electronAPI.listHarnessAccounts).mock.calls;
@@ -212,6 +213,9 @@ describe('Usage → Settings account handoff', () => {
     expect(await screen.findByLabelText('Codex accounts')).toBeInTheDocument();
     expect(screen.queryByLabelText('Account label')).toBeNull(); // manage does not start adding
     expect(window.electronAPI.startHarnessAccountAdd).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Legacy Settings' })).toHaveAttribute('aria-current', 'page');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
   });
 
   it('Add account hands off straight into the existing inline add state (still no auth started until Sign in)', async () => {

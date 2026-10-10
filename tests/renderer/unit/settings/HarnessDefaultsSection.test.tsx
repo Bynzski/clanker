@@ -159,14 +159,14 @@ describe('searchable harness default settings', () => {
     const long = 'provider/' + 'long-model-identifier'.repeat(20);
     const { container } = renderSettings({ harness: 'opencode', model: long, options: [{ id: long, label: long }] });
     const style = document.createElement('style');
-    style.textContent = ['Header.css', 'ModelSearchPicker.css', 'ui/Popover.css', 'ui/SearchablePicker.css'].map((file) =>
+    style.textContent = ['Header.css', 'ModelSearchPicker.css', 'ui/Popover.css', 'ui/SearchablePicker.css', 'ui/ManagementShell.css'].map((file) =>
       readFileSync(resolve(__dirname, '../../../../src/renderer/components', file), 'utf8')).join('\n');
     document.head.append(style);
-    container.classList.add('settings-dropdown');
+    container.classList.add('management-shell');
     try {
-      expect(getComputedStyle(container).width).toBe('360px');
-      expect(getComputedStyle(container).maxWidth).toBe('calc(100vw - 16px)');
-      expect(getComputedStyle(container).minWidth).toBe('0px');
+      expect(getComputedStyle(container).width).toBe('880px');
+      expect(getComputedStyle(container).maxWidth).toBe('calc(100vw - var(--space-lg))');
+      expect(getComputedStyle(container).overflow).toBe('hidden');
       const trigger = screen.getByRole('button', { name: 'OpenCode default model' });
       expect(getComputedStyle(trigger).width).toBe('100%');
       expect(getComputedStyle(trigger).height).toBe('28px');

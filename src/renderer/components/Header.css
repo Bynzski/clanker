@@ -134,19 +134,6 @@
   }
 }
 
-.settings-dropdown {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  width: 360px;
-  max-width: calc(100vw - 16px);
-  min-width: 0;
-  overflow-y: auto;
-  z-index: 1000;
-  box-shadow: var(--shadow-popover);
-}
-
 .settings-option {
   display: flex;
   align-items: center;
@@ -211,15 +198,11 @@
 
 .settings-segmented { flex: 1; min-width: 0; }
 
-.settings-segmented .clanker-segmented-item {
-  gap: 5px;
-  height: calc(var(--control-height-sm) - 6px);
-  padding: 0 8px;
-}
+.settings-segmented .clanker-segmented-item { gap: var(--space-xs); }
 
 .settings-links { gap: 0; }
 
-.settings-dropdown .settings-dropdown-action {
+.settings-legacy .settings-dropdown-action {
   justify-content: flex-start;
   width: 100%;
   padding: 0 6px;
@@ -227,7 +210,7 @@
   font-size: var(--font-size-sm);
 }
 
-.settings-dropdown .settings-dropdown-action span { flex: 1; text-align: left; }
+.settings-legacy .settings-dropdown-action span { flex: 1; text-align: left; }
 .settings-dropdown-action-chevron { color: var(--text-muted); }
 
 /* Harness Defaults Section */
@@ -371,8 +354,8 @@
 /* Harness accounts (Settings → Harness Defaults): plain lines like the toggles above, no boxes. */
 .harness-accounts { gap: 2px; }
 .harness-accounts-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
-.settings-dropdown .harness-accounts-add-trigger { height: var(--control-height-xs); padding: 0 4px; color: var(--text-secondary); }
-.settings-dropdown .harness-accounts-add-trigger:hover:not(:disabled) { color: var(--text-primary); }
+.settings-legacy .harness-accounts-add-trigger { height: var(--control-height-xs); padding: 0 4px; color: var(--text-secondary); }
+.settings-legacy .harness-accounts-add-trigger:hover:not(:disabled) { color: var(--text-primary); }
 .harness-accounts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .harness-account { display: flex; align-items: center; gap: 6px; min-height: var(--control-height-sm); padding: 0 2px 0 8px; border-left: 2px solid transparent; }
 /* The in-use marker only matters when there is a choice. */
@@ -384,9 +367,9 @@
 .harness-account-selected { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
 .harness-account-warning { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--status-warning); }
 .harness-account-note { font-size: var(--font-size-xs); color: var(--text-muted); }
-.settings-dropdown .harness-account .clanker-button { height: var(--control-height-xs); padding: 0 6px; flex-shrink: 0; }
-.settings-dropdown .harness-account .harness-account-remove { width: var(--control-height-xs); padding: 0; color: var(--text-muted); }
-.settings-dropdown .harness-account .harness-account-remove:hover:not(:disabled) { color: var(--status-error); }
+.settings-legacy .harness-account .clanker-button { height: var(--control-height-xs); padding: 0 6px; flex-shrink: 0; }
+.settings-legacy .harness-account .harness-account-remove { width: var(--control-height-xs); padding: 0; color: var(--text-muted); }
+.settings-legacy .harness-account .harness-account-remove:hover:not(:disabled) { color: var(--status-error); }
 .harness-account-flow, .harness-account-add { display: flex; align-items: center; gap: 4px; font-size: var(--font-size-sm); color: var(--text-secondary); }
 .harness-account-flow span { flex: 1; min-width: 0; }
 .harness-account-add .clanker-input { flex: 1; min-width: 0; height: var(--control-height-sm); }

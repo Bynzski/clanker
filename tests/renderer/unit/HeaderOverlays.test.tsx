@@ -44,7 +44,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it.each(['Settings', 'Chat history', 'Usage'])('%s dismisses on outside interaction', async (name) => {
+    it.each(['Chat history', 'Usage'])('%s dismisses on outside interaction', async (name) => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name }));
@@ -101,10 +101,12 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(count()).toBe(1);
     });
 
-    it('makes sibling popovers mutually exclusive in both directions', async () => {
+    it('closes Chat history when Settings opens; Settings blocks background controls', async () => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(document.body).toHaveStyle({ pointerEvents: 'none' });
+      await user.keyboard('{Escape}');
       await user.click(screen.getByRole('button', { name: 'Chat history' }));
       expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(screen.getByRole('dialog', { name: 'Chat history' })).toBeInTheDocument();
@@ -115,14 +117,14 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(count()).toBe(1);
     });
 
-    it('makes Chat history, Usage and Settings mutually exclusive in every direction, keeping exactly one lease', async () => {
+    it('makes contextual Chat history and Usage popovers mutually exclusive, keeping exactly one lease', async () => {
       const user = userEvent.setup();
       renderHeader();
-      const names = ['Chat history', 'Usage', 'Settings'];
+      const names = ['Chat history', 'Usage'];
       const counts: number[] = [];
       const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
       try {
-        for (const [from, to] of [[0, 1], [1, 2], [2, 0], [0, 2], [2, 1], [1, 0]]) {
+        for (const [from, to] of [[0, 1], [1, 0]]) {
           await user.click(screen.getByRole('button', { name: names[from] }));
           expect(screen.getByRole('dialog', { name: names[from] })).toBeInTheDocument();
           await user.click(screen.getByRole('button', { name: names[to] }));
@@ -167,26 +169,26 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.length).toBeGreaterThan(0);
     });
 
-    it('opens the existing Settings popover from the keybinding dispatcher', async () => {
+    it('opens Settings from the keybinding dispatcher', async () => {
       renderHeader();
       expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       act(() => openSettings());
       expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: 'Settings', hidden: true })).toHaveAttribute('aria-expanded', 'true');
     });
 
-    it('hands Settings off to Keyboard Shortcuts and restores Settings trigger focus on close', async () => {
+    it('navigates to Keyboard Shortcuts without changing the lease and restores focus on close', async () => {
       const user = userEvent.setup();
       renderHeader();
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
       expect(count()).toBe(1);
-      await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
-      expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
-      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Keyboard Shortcuts' }));
+      expect(screen.getByRole('searchbox', { name: 'Search shortcuts' })).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
       expect(count()).toBe(1);
       await user.keyboard('{Escape}');
-      expect(screen.queryByRole('dialog', { name: 'Keyboard Shortcuts' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(count()).toBe(0);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
@@ -198,6 +200,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
       expect(count()).toBe(otherOwners + 1);
+      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
       const counts: number[] = [];
       const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
       const focusTargets: EventTarget[] = [];
@@ -228,6 +231,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
+      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
       await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
       const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
       expect(within(dialog).getByRole('heading', { name: 'VCS Credentials' })).toBeInTheDocument();
@@ -299,6 +303,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
       const panel = screen.getByRole('dialog', { name: 'Settings' });
+      await user.click(within(panel).getByRole('button', { name: 'Legacy Settings' }));
       await user.click(await within(panel).findByRole('button', { name: 'Codex' }));
       await user.click(within(panel).getByRole('checkbox', { name: 'Agent attention for Codex' }));
       expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ attentionEnabled: true }) }));

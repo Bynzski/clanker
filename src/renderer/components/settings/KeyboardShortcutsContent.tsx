@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { IconButton } from '../ui/IconButton';
-import { X } from 'lucide-react';
-import { Dialog, DialogContent, DialogTitle, DialogClose, DialogDescription } from '../ui/Dialog';
 import {
   KEYBINDING_COMMANDS,
   findConflicts,
@@ -23,14 +20,6 @@ import {
 import { KEYBINDING_PLATFORM, useKeybindingStore } from '../../store/keybindingStore';
 import './KeyboardShortcutsDialog.css';
 
-interface KeyboardShortcutsDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  /** Compose focus events for a feature-level Popover → Dialog handoff. */
-  onOpenAutoFocus?: (event: Event) => void;
-  onCloseAutoFocus?: (event: Event) => void;
-}
-
 interface PendingConflict {
   id: KeybindingCommandId;
   keystroke: Keystroke;
@@ -43,8 +32,8 @@ function bindingLabel(keystroke: Keystroke | null): string {
   return keystroke ? formatKeystroke(keystroke, KEYBINDING_PLATFORM) : 'Unbound';
 }
 
-/** Dialog body; Radix unmounts it on close, so search/capture/conflict state resets without effects. */
-function KeyboardShortcutsContent() {
+/** Shared editor; unmounting the page clears search/capture/conflict state. */
+export default function KeyboardShortcutsContent() {
   const overrides = useKeybindingStore((state) => state.overrides);
   const setOverrides = useKeybindingStore((state) => state.setOverrides);
   const setCapturing = useKeybindingStore((state) => state.setCapturing);
@@ -134,15 +123,9 @@ function KeyboardShortcutsContent() {
 
   return (
     <>
-        <div className="keyboard-shortcuts-header clanker-dialog-header">
-          <DialogTitle className="clanker-dialog-title">Keyboard Shortcuts</DialogTitle>
-          <DialogClose asChild>
-            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close Keyboard Shortcuts" title="Close"><X size={14} /></IconButton>
-          </DialogClose>
-        </div>
-        <DialogDescription className="keyboard-shortcuts-description">
+        <p className="keyboard-shortcuts-description">
           Terminal keys not listed here always go to the shell. Browser shortcuts apply while the browser has focus.
-        </DialogDescription>
+        </p>
 
         <div className="keyboard-shortcuts-toolbar">
           <Input
@@ -230,16 +213,5 @@ function KeyboardShortcutsContent() {
           <p className="keyboard-shortcuts-hint" role="status">Esc cancels · Delete clears the shortcut</p>
         )}
     </>
-  );
-}
-
-export default function KeyboardShortcutsDialog({ isOpen, onClose, onOpenAutoFocus, onCloseAutoFocus }: KeyboardShortcutsDialogProps) {
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="keyboard-shortcuts" overlayClassName="keyboard-shortcuts-overlay"
-        onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}>
-        <KeyboardShortcutsContent />
-      </DialogContent>
-    </Dialog>
   );
 }

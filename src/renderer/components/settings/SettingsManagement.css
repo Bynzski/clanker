@@ -1,0 +1,16 @@
+.settings-management-page { min-width: 0; }
+.settings-management-page > .settings-section { margin-top: 0; padding-top: 0; border-top: none; }
+.settings-management-page .keyboard-shortcuts-description { padding: 0; }
+.settings-management-page .keyboard-shortcuts-toolbar { padding: var(--space-sm) 0; flex-wrap: wrap; }
+.settings-management-page .keyboard-shortcuts-body { padding: 0; overflow: visible; }
+.settings-management-page .keyboard-shortcuts-row { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+.settings-management-page .keyboard-shortcuts-label { overflow-wrap: anywhere; }
+.settings-management-page .keyboard-shortcuts-error,
+.settings-management-page .keyboard-shortcuts-conflict { margin-inline: 0; }
+.settings-management-page .settings-row { flex-wrap: wrap; }
+
+@media (max-width: 700px) {
+  .settings-management-page .keyboard-shortcuts-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .settings-management-page .keyboard-shortcuts-label { grid-column: 1 / -1; }
+  .settings-management-page .keyboard-shortcuts-binding { min-width: 0; }
+}

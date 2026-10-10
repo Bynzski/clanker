@@ -3,7 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import KeyboardShortcutsDialog from '../../../../src/renderer/components/settings/KeyboardShortcutsDialog';
+import SettingsManagement from '../../../../src/renderer/components/settings/SettingsManagement';
+import { Dialog } from '../../../../src/renderer/components/ui/Dialog';
+
+function KeyboardShortcutsDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  return <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <SettingsManagement page="shortcuts" onPageChange={() => undefined} environmentId="local">{null}</SettingsManagement>
+  </Dialog>;
+}
 import { dispatchAppKeybinding } from '../../../../src/renderer/lib/keybindingDispatcher';
 import { useKeybindingStore } from '../../../../src/renderer/store/keybindingStore';
 import { installElectronApiMock } from '../../../setup/electron';
@@ -28,7 +35,7 @@ const pressWindow = (init: KeyboardEventInit) => {
   return event;
 };
 
-describe('KeyboardShortcutsDialog', () => {
+describe('Keyboard Shortcuts in Settings', () => {
   beforeEach(() => {
     persisted = {};
     setKeybindingOverrides = vi.fn(async (next: unknown) => {
@@ -45,7 +52,7 @@ describe('KeyboardShortcutsDialog', () => {
 
   it('lists commands by category with their current bindings', () => {
     renderDialog();
-    expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
     expect(within(row('Save File')).getByText('Ctrl+S')).toBeInTheDocument();
     expect(within(row('Fit All Panes')).getByText('Ctrl+Alt+F')).toBeInTheDocument();
     expect(within(row('Open Settings')).getByText('Ctrl+,')).toBeInTheDocument();
@@ -128,7 +135,7 @@ describe('KeyboardShortcutsDialog', () => {
     expect(screen.queryByText('Press desired shortcut…')).not.toBeInTheDocument();
     expect(setKeybindingOverrides).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
     expect(within(row('Save File')).getByText('Ctrl+S')).toBeInTheDocument();
   });
 
@@ -284,7 +291,7 @@ describe('KeyboardShortcutsDialog', () => {
   it('clicking Close calls onClose', async () => {
     const user = userEvent.setup();
     const { onClose } = renderDialog();
-    await user.click(screen.getByRole('button', { name: 'Close Keyboard Shortcuts' }));
+    await user.click(screen.getByRole('button', { name: 'Close Settings' }));
     expect(onClose).toHaveBeenCalled();
     fireEvent.keyDown(document.body, { key: 'x' });
   });

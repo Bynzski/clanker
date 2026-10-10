@@ -1,5 +1,5 @@
 import { Select } from './ui/Select';
-import { ChevronRight, Keyboard, KeyRound, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
+import { ChevronRight, KeyRound, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -9,7 +9,8 @@ import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
 import type { DestinationCapabilities } from '../lib/activeDestination';
 import AssistantsSettings from './settings/AssistantsSettings';
-import AppearanceSettings from './settings/AppearanceSettings';
+import SettingsManagement, { type SettingsPage } from './settings/SettingsManagement';
+import { Dialog, DialogTrigger } from './ui/Dialog';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
 interface HeaderRightControlsProps {
@@ -47,7 +48,8 @@ interface HeaderRightControlsProps {
   isLoadingAiCommitModels: boolean;
   onAiCommitModelChange: (model: string) => void;
   onOpenCredentialModal: () => void;
-  onOpenKeyboardShortcuts: () => void;
+  settingsPage: SettingsPage;
+  onSettingsPageChange: (page: SettingsPage) => void;
   harnessDefaults: HarnessDefaultsMap | null;
   availableHarnessIds: string[];
   expandedHarness: string | null;
@@ -96,7 +98,8 @@ export default function HeaderRightControls({
   isLoadingAiCommitModels,
   onAiCommitModelChange,
   onOpenCredentialModal,
-  onOpenKeyboardShortcuts,
+  settingsPage,
+  onSettingsPageChange,
   harnessDefaults,
   availableHarnessIds,
   expandedHarness,
@@ -184,15 +187,14 @@ export default function HeaderRightControls({
         </PopoverContent>
       </Popover>
       )}
-      <Popover open={showSettings} onOpenChange={onSettingsOpenChange}>
-        <PopoverTrigger asChild>
+      <Dialog open={showSettings} onOpenChange={onSettingsOpenChange}>
+        <DialogTrigger asChild>
           <IconButton ref={settingsTriggerRef} size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showSettings ? 'active' : ''}`} aria-label="Settings" title="Settings">
             <Settings size={14} strokeWidth={2} />
           </IconButton>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="settings-dropdown" aria-label="Settings"
-          workspaceId={workspaceId ?? undefined} onCloseAutoFocus={onSettingsCloseAutoFocus}>
-          <AppearanceSettings />
+        </DialogTrigger>
+        <SettingsManagement page={settingsPage} onPageChange={onSettingsPageChange} environmentId={environmentId ?? 'local'}
+          onCloseAutoFocus={onSettingsCloseAutoFocus}>
           <AssistantsSettings />
           <div className="settings-section">
             <div className="settings-section-title">Git</div>
@@ -259,11 +261,6 @@ export default function HeaderRightControls({
               <span>Manage VCS credentials</span>
               <ChevronRight className="settings-dropdown-action-chevron" size={13} strokeWidth={2} aria-hidden="true" />
             </Button>
-            <Button type="button" size="xs" variant="ghost" className="settings-dropdown-action" onClick={onOpenKeyboardShortcuts}>
-              <Keyboard size={13} strokeWidth={2} aria-hidden="true" />
-              <span>Keyboard shortcuts</span>
-              <ChevronRight className="settings-dropdown-action-chevron" size={13} strokeWidth={2} aria-hidden="true" />
-            </Button>
           </div>
 
           {harnessDefaults && (
@@ -287,8 +284,8 @@ export default function HeaderRightControls({
               onAccountIntentConsumed={onAccountIntentConsumed}
             />
           )}
-        </PopoverContent>
-      </Popover>
+        </SettingsManagement>
+      </Dialog>
     </div>
   );
 }

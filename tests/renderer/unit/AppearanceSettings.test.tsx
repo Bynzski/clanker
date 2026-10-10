@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AppearanceSettings from '../../../src/renderer/components/settings/AppearanceSettings';
+import WorkspaceLayoutSettings from '../../../src/renderer/components/settings/WorkspaceLayoutSettings';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { THEME_IDS, THEME_METADATA } from '../../../src/shared/types/theme';
 import { installElectronApiMock } from '../../setup/electron';
@@ -98,11 +99,11 @@ describe('Appearance settings integration', () => {
   });
 });
 
-describe('Appearance settings workspace navigation', () => {
+describe('Workspace layout settings', () => {
   it('shows and persists the navigation mode', async () => {
     installElectronApiMock({ setWorkspaceNavigationMode: vi.fn().mockResolvedValue(undefined) });
     useWorkspaceNavigationStore.setState({ mode: 'tabs', resolved: true });
-    render(<AppearanceSettings />);
+    render(<WorkspaceLayoutSettings />);
     const group = screen.getByRole('radiogroup', { name: 'Workspaces' });
     expect(within(group).getByRole('radio', { name: 'Tabs' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(within(group).getByRole('radio', { name: 'Sidebar' }));

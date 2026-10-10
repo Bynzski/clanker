@@ -14,7 +14,7 @@ export interface AppCommandActions {
 
 let openSettingsHandler: (() => void) | null = null;
 
-/** Header registers its existing Settings popover state here; there is no second Settings model. */
+/** Header registers its Settings destination here; there is no second Settings model. */
 export function registerOpenSettingsHandler(handler: () => void): () => void {
   openSettingsHandler = handler;
   return () => {

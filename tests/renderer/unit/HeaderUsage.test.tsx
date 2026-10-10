@@ -275,12 +275,14 @@ describe('Usage provider selection (Show in Usage)', () => {
     render(<><Header /><UsageWidget /></>);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
     await user.click(await within(screen.getByRole('dialog', { name: 'Settings' })).findByRole('button', { name: 'Codex' }));
     await user.click(screen.getByRole('checkbox', { name: 'Show Codex in Usage' }));
     expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ usageVisible: false }) }));
     // Launcher visibility is untouched by this toggle.
     const saved = vi.mocked(window.electronAPI.setHarnessDefaults).mock.calls;
     expect(saved[saved.length - 1][0].codex.visible).not.toBe(false);
+    await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     expect(requestedIds()).toEqual(['claude', 'omp', 'hermes', 'agy']);
     expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
