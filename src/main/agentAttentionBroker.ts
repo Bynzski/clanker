@@ -1,3 +1,4 @@
+import { HOOK_DIAGNOSTICS, type HookDiagnostic, type NativeAttentionCapability, type AttentionSignal, type AttentionSignalDiagnostics } from '../shared/types/attentionSignal';
 import { ATTENTION_ACK_PREFIX, type AttentionVerdict } from '../shared/attentionProtocol';
 import { randomBytes } from 'node:crypto';
 import * as net from 'node:net';
@@ -13,17 +14,17 @@ import {
  * `location_changed` only moves the agent's reported location; any root event may also carry `cwd`. */
 type WireEvent =
   | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
-  | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
+  | 'observer_diagnostic' | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
 const EVENTS = new Set<WireEvent>([
   'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
-  'session_started', 'session_ended', 'session_continued', 'agent_exited', 'location_changed',
+  'session_started', 'session_ended', 'session_continued', 'agent_exited', 'location_changed', 'observer_diagnostic',
 ]);
 const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
 const MAX_REMEMBERED_REVISIONS = 1024;
 const EVENT_FIELDS = new Set([
   'version', 'token', 'harness', 'event', 'sessionId', 'turnId', 'scope', 'inputId', 'requestKind', 'nativeEvent', 'continuesSessionId',
-  'cwd',
+  'cwd', 'diagnostic',
 ]);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
@@ -49,6 +50,7 @@ export interface AttentionDiagnostic {
 }
 
 export interface AttentionRegistrationOptions {
+  capability?: NativeAttentionCapability;
   /** Main-validated native session a non-fork resume continues. Never renderer-supplied. */
   rootSessionId?: string;
   /** How completely the provider's structured lifecycle covers a turn. Defaults to `full`,
@@ -72,6 +74,8 @@ export interface AttentionExplanation {
   lastFallback?: { evidence: FallbackEvidence; decision: string };
   /** Why the most recent weaker evidence did not change state, if it did not. */
   suppressedFallbackReason?: FallbackSuppression;
+  signal?: AttentionSignal;
+  delivery?: AttentionSignalDiagnostics;
 }
 
 interface PendingRequest {
@@ -84,6 +88,12 @@ interface PendingRequest {
 }
 
 interface Registration {
+  signal?: AttentionSignal;
+  received: number;
+  verdicts: Partial<Record<AttentionVerdict, number>>;
+  hooks: Partial<Record<HookDiagnostic, number>>;
+  lastVerdict?: AttentionVerdict;
+  lastNativeEvent?: string;
   terminalId: string;
   harness: string;
   transport: 'local' | 'remote';
@@ -110,6 +120,7 @@ interface Registration {
 }
 
 interface ParsedEvent {
+  diagnostic?: HookDiagnostic;
   event: WireEvent;
   continuesSessionId?: string;
   sessionId?: string;
@@ -132,7 +143,10 @@ const pendingEvidence = (registration: Registration): AgentAttentionEvidence | n
     : registration.pending.length > 0 ? 'fallback' : null;
 
 function defaultDiagnostics(diagnostic: AttentionDiagnostic): void {
-  if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention', JSON.stringify(diagnostic));
+  if (process.env.CLANKER_DEBUG_ATTENTION === '1') {
+    const { harness, terminalId, nativeEvent, semantic, decision, verdict, revision, status } = diagnostic;
+    console.debug('[clanker-grid] attention', JSON.stringify({ harness, terminalId, nativeEvent, semantic, decision, verdict, revision, status }));
+  }
 }
 
 const isActive = (registration: Registration): boolean => registration.status === 'starting' || registration.status === 'running';
@@ -142,7 +156,7 @@ const isActive = (registration: Registration): boolean => registration.status ==
  * change foreground state. Provider semantics live in the providers, not here.
  *
  * The broker publishes complete, revisioned snapshots. The revision advances only when an
- * authoritative fact changes: stale, rejected, child and duplicate events never move it. */
+ * authoritative fact changes: lifecycle duplicates do not move it; concrete changes to signal health do. */
 export class AgentAttentionBroker {
   private readonly registrations = new Map<string, Registration>();
   private readonly tokensByTerminal = new Map<string, string>();
@@ -216,6 +230,8 @@ export class AgentAttentionBroker {
     this.release(terminalId);
     const token = randomBytes(32).toString('hex');
     this.registrations.set(token, {
+      ...(options.capability ? { signal: { ...options.capability, health: 'unverified' as const } } : {}),
+      received: 0, verdicts: {}, hooks: {},
       terminalId, harness, transport, retiredTurns: [], status: 'unverified', startedAt: null, pending: [],
       authority: options.authority ?? 'full', quality: options.quality ?? 'hook',
       lastCompletion: null, lastOutcome: null, location: null,
@@ -238,7 +254,8 @@ export class AgentAttentionBroker {
     if (token) this.registrations.delete(token);
     this.tokensByTerminal.delete(terminalId);
     if (!registration) return;
-    this.onChange({ terminalId, revision: this.issueRevision(terminalId), snapshot: null });
+    registration.revision = this.issueRevision(terminalId);
+    this.onChange({ terminalId, revision: registration.revision, snapshot: null });
   }
 
   close(): void {
@@ -279,6 +296,7 @@ export class AgentAttentionBroker {
   private toSnapshot(r: Registration): AgentAttentionSnapshot {
     return {
       terminalId: r.terminalId,
+      ...(r.signal ? { signal: { ...r.signal } } : {}),
       revision: r.revision,
       sessionId: r.rootSessionId ?? null,
       runtime: { status: r.status, turnId: r.activeTurnId ?? null, startedAt: r.startedAt },
@@ -304,10 +322,31 @@ export class AgentAttentionBroker {
       terminalId: r.terminalId, harness: r.harness, transport: r.transport, effective,
       source: { quality: r.quality, authority: r.authority, effectiveEvidence: pendingEvidence(r) ?? 'structured' },
       snapshot: this.toSnapshot(r),
+      ...(r.signal ? { signal: { ...r.signal } } : {}),
+      delivery: this.signalDiagnostics(terminalId)!,
       ...(r.lastAccepted ? { lastAccepted: { ...r.lastAccepted } } : {}),
       ...(r.lastRejected ? { lastRejected: { ...r.lastRejected } } : {}),
       ...(r.lastFallback ? { lastFallback: { ...r.lastFallback } } : {}),
       ...(r.suppressedFallbackReason ? { suppressedFallbackReason: r.suppressedFallbackReason } : {}),
+    };
+  }
+
+  /** Acquisition updates use the same registration/revision stream as lifecycle facts. */
+  setCapability(terminalId: string, capability: NativeAttentionCapability): void {
+    const r = this.current(terminalId);
+    if (!r) return;
+    this.commit(r, () => { r.signal = { ...capability, health: 'unverified' }; });
+  }
+
+  signalDiagnostics(terminalId: string): AttentionSignalDiagnostics | null {
+    const r = this.current(terminalId);
+    if (!r) return null;
+    return {
+      terminalId, harness: r.harness, transport: r.transport, signal: r.signal ? { ...r.signal } : null,
+      revision: r.revision, status: r.status, received: r.received,
+      verdicts: { ...r.verdicts }, hooks: { ...r.hooks },
+      ...(r.lastVerdict ? { lastVerdict: r.lastVerdict } : {}),
+      ...(r.lastNativeEvent ? { lastNativeEvent: r.lastNativeEvent } : {}),
     };
   }
 
@@ -361,6 +400,7 @@ export class AgentAttentionBroker {
       registration.pending = [];
       registration.status = 'unverified';
       registration.startedAt = null;
+      if (registration.signal) registration.signal = { ...registration.signal, health: 'lost', reason: 'directory-removed' };
     });
     return true;
   }
@@ -398,33 +438,36 @@ export class AgentAttentionBroker {
     return this.receiveEvent(raw);
   }
 
-  private parse(raw: string, remoteTerminalId?: string): { registration: Registration; parsed: ParsedEvent } | AttentionVerdict {
+  private parse(raw: string, remoteTerminalId?: string): { registration: Registration; parsed: ParsedEvent } | { registration: Registration; rejection: AttentionVerdict } | AttentionVerdict {
     if (Buffer.byteLength(raw) > MAX_MESSAGE_BYTES) return 'rejected-invalid';
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return 'rejected-invalid'; }
     if (!value || typeof value !== 'object' || Array.isArray(value)) return 'rejected-invalid';
     const data = value as Record<string, unknown>;
-    if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return 'rejected-invalid';
     if (data.version !== 1 || typeof data.token !== 'string') return 'rejected-invalid';
     const registration = this.registrations.get(data.token);
     if (!registration || data.harness !== registration.harness) return 'rejected-auth';
     if (remoteTerminalId === undefined ? registration.transport !== 'local'
       : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return 'rejected-transport';
-    if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return 'rejected-invalid';
+    if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return { registration, rejection: 'rejected-invalid' };
+    if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return { registration, rejection: 'rejected-invalid' };
     for (const key of ['sessionId', 'turnId', 'inputId', 'continuesSessionId'] as const) {
-      if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return 'rejected-invalid';
+      if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return { registration, rejection: 'rejected-invalid' };
     }
-    if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return 'rejected-invalid';
-    if (data.requestKind !== undefined && data.requestKind !== 'input' && data.requestKind !== 'approval') return 'rejected-invalid';
-    if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return 'rejected-invalid';
+    if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return { registration, rejection: 'rejected-invalid' };
+    if (data.diagnostic !== undefined && !HOOK_DIAGNOSTICS.includes(data.diagnostic as HookDiagnostic)) return { registration, rejection: 'rejected-invalid' };
+    if (data.event === 'observer_diagnostic' && data.diagnostic === undefined) return { registration, rejection: 'rejected-invalid' };
+    if (data.requestKind !== undefined && data.requestKind !== 'input' && data.requestKind !== 'approval') return { registration, rejection: 'rejected-invalid' };
+    if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return { registration, rejection: 'rejected-invalid' };
     let location: AgentLocation | null = null;
     if (data.cwd !== undefined) {
-      if (typeof data.cwd !== 'string') return 'rejected-invalid';
+      if (typeof data.cwd !== 'string') return { registration, rejection: 'rejected-invalid' };
       location = this.resolveLocation(registration.terminalId, registration.transport, data.cwd);
-      if (!location) return 'rejected-invalid';
+      if (!location) return { registration, rejection: 'rejected-invalid' };
     }
     return { registration, parsed: {
       event: data.event as WireEvent,
+      ...(data.diagnostic ? { diagnostic: data.diagnostic as HookDiagnostic } : {}),
       ...(typeof data.sessionId === 'string' ? { sessionId: data.sessionId } : {}),
       ...(typeof data.turnId === 'string' ? { turnId: data.turnId } : {}),
       ...(data.scope ? { scope: data.scope } : {}),
@@ -442,13 +485,38 @@ export class AgentAttentionBroker {
       if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted);
       return accepted;
     }
+    // Only a bounded, authenticated envelope on the correct transport can be attributed to a terminal.
+    if ('rejection' in accepted) {
+      const { registration, rejection } = accepted;
+      registration.received = Math.min(Number.MAX_SAFE_INTEGER, registration.received + 1);
+      registration.lastVerdict = rejection;
+      registration.verdicts[rejection] = Math.min(Number.MAX_SAFE_INTEGER, (registration.verdicts[rejection] ?? 0) + 1);
+      if (registration.signal?.attachment === 'prepared' && registration.signal.reason !== 'envelope-invalid') {
+        this.commit(registration, () => { registration.signal = { ...registration.signal!, health: 'degraded', reason: 'envelope-invalid' }; });
+      }
+      if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', JSON.stringify({ terminalId: registration.terminalId, verdict: rejection, revision: registration.revision }));
+      return rejection;
+    }
     const { registration, parsed } = accepted;
+    registration.received = Math.min(Number.MAX_SAFE_INTEGER, registration.received + 1);
+    registration.lastNativeEvent = parsed.nativeEvent;
+    if (parsed.diagnostic) registration.hooks[parsed.diagnostic] = Math.min(Number.MAX_SAFE_INTEGER, (registration.hooks[parsed.diagnostic] ?? 0) + 1);
     // A location moves with whatever lifecycle change this event makes, in the same revision; only
     // when the lifecycle does not change does it get a revision of its own.
-    const moved = this.stageLocation(registration, parsed);
+    const moved = parsed.event !== 'observer_diagnostic' && this.stageLocation(registration, parsed);
+    const beforeSignal = JSON.stringify(registration.signal);
     const revision = registration.revision;
-    const decision = this.apply(registration, parsed);
-    if (moved && registration.revision === revision && this.current(registration.terminalId) === registration) {
+    const decision = parsed.event === 'observer_diagnostic' ? 'accepted' : this.apply(registration, parsed);
+    if (registration.signal?.attachment === 'prepared') {
+      const error = parsed.diagnostic && parsed.diagnostic !== 'no-event' ? parsed.diagnostic
+        : decision === 'rejected-mismatch' || decision === 'rejected-ambiguous' ? 'identity-rejected' : undefined;
+      if (error) registration.signal = { ...registration.signal, health: 'degraded', reason: error };
+      else if (decision === 'accepted' && parsed.event !== 'observer_diagnostic' &&
+          (registration.signal.health === 'unverified' || ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'].includes(parsed.event))) {
+        registration.signal = { requested: registration.signal.requested, attachment: 'prepared', health: 'observed' };
+      }
+    }
+    if (((moved && registration.revision === revision) || JSON.stringify(registration.signal) !== beforeSignal) && this.current(registration.terminalId) === registration) {
       this.commit(registration, () => undefined);
     }
     const record = { semantic: parsed.event, ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}) };
@@ -457,6 +525,8 @@ export class AgentAttentionBroker {
     const verdict: AttentionVerdict = decision === 'accepted'
       ? (registration.revision !== revision || this.current(registration.terminalId) !== registration ? 'accepted-changed' : 'accepted-idempotent')
       : decision;
+    registration.lastVerdict = verdict;
+    registration.verdicts[verdict] = Math.min(Number.MAX_SAFE_INTEGER, (registration.verdicts[verdict] ?? 0) + 1);
     this.onDiagnostic({
       harness: registration.harness, terminalId: registration.terminalId,
       ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}),

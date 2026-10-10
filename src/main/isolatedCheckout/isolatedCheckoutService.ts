@@ -574,7 +574,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       kind: 'terminal-replaced', workspaceId, previousTerminalId,
       terminal: {
         id: launched.id, pid: launched.pid, workingDir: launched.workingDir, checkoutContextId: launched.checkoutContextId ?? '',
-        environmentId: LOCAL_ENVIRONMENT_ID, harnessId: launched.harnessId, attentionEnabled: launched.attentionEnabled,
+        environmentId: LOCAL_ENVIRONMENT_ID, harnessId: launched.harnessId, attentionEnabled: launched.attentionEnabled, attention: launched.attention,
       },
     });
     // The conversation already moved; a failure retiring the old process must not turn that into an error.

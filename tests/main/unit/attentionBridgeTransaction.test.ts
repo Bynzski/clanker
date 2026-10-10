@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { attentionRecorder } from '../../_helpers/attentionChanges';
 import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
+import { MAX_NATIVE_HOOK_BYTES, type NativeAttentionCapability } from '../../../src/shared/types/attentionSignal';
 import { COMMAND, OBSERVER } from '../../../src/main/harnesses/attentionSources';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 
@@ -20,11 +21,12 @@ afterEach(() => {
 
 const SLEEP = `const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);`;
 
-async function bridge(extraFiles: Record<string, string> = {}, observer = OBSERVER) {
+async function bridge(extraFiles: Record<string, string> = {}, observer = OBSERVER, harness = 'codex', capability?: NativeAttentionCapability) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-bridge-'));
   dirs.push(dir);
   fs.writeFileSync(path.join(dir, 'observer.mjs'), observer);
   fs.writeFileSync(path.join(dir, 'command.mjs'), COMMAND);
+  fs.writeFileSync(path.join(dir, 'claude.mjs'), getHarnessProvider('claude').attention.interpreter!);
   fs.writeFileSync(path.join(dir, 'codex.mjs'), getHarnessProvider('codex').attention.interpreter!);
   // Holds every PermissionRequest transaction open after its read, so two processes overlap
   // between read and write unless the bridge serializes them.
@@ -43,13 +45,15 @@ export default (input, hook, store) => inner(input, hook, {
   const diagnostics: AttentionDiagnostic[] = [];
   const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => diagnostics.push(diagnostic));
   brokers.push(broker);
-  const env = await broker.register('term', 'codex');
+  const env = await broker.register('term', harness, { capability });
   const stateBase = path.join(dir, '.clanker-state-' + createHash('sha256').update(env.CLANKER_ATTENTION_TOKEN).digest('hex').slice(0, 16));
-  const run = (interpreter: string, hook: string, input: object) => new Promise<number | null>((resolve, reject) => {
+  const run = (interpreter: string, hook: string, input: object | string, end = true) => new Promise<number | null>((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(dir, 'command.mjs'), path.join(dir, interpreter), hook], {
       env: { ...process.env, ...env }, stdio: ['pipe', 'ignore', 'ignore'],
     });
-    child.stdin.end(JSON.stringify(input));
+    child.stdin.on('error', () => undefined); // Oversized intake closes its pipe deliberately.
+    const raw = typeof input === 'string' ? input : JSON.stringify(input);
+    if (end) child.stdin.end(raw); else child.stdin.write(raw);
     child.once('error', reject);
     child.once('close', resolve);
   });
@@ -125,7 +129,7 @@ describe('attention bridge state transactions', () => {
     fs.rmSync(`${stateBase}.json.lock`, { recursive: true });
     expect(await run('echo.mjs', 'x', { type: 'input_resolved' })).toBe(0);
     expect(updates).toEqual(['turn_started', 'input_requested']);
-    expect(diagnostics.map((diagnostic) => diagnostic.semantic)).toEqual(['turn_started', 'input_requested']);
+    expect(diagnostics.map((diagnostic) => diagnostic.semantic)).toEqual(['turn_started', 'input_requested', 'observer_diagnostic']);
     expect(await run('echo.mjs', 'x', { type: 'turn_completed' })).toBe(0);
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
     expect(updates).toEqual(['turn_started', 'input_requested', 'turn_completed']);
@@ -252,5 +256,72 @@ describe('attention bridge state transactions', () => {
     }, observer);
     await run('move.mjs', 'CwdChanged', {});
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+  });
+});
+
+
+describe('native hook intake reliability', () => {
+  const prepared = { requested: true, attachment: 'prepared' as const };
+  const common = { session_id: 's', prompt_id: 'p1', cwd: '/fixture' };
+  const batch = (response: string) => ({ ...common, hook_event_name: 'PostToolBatch',
+    tool_calls: [
+      { tool_name: 'Read', tool_use_id: 'read-1', tool_input: { file_path: '/private/accounts.py' }, tool_response: response },
+      { tool_name: 'mcp__fixture__report', tool_use_id: 'mcp-2', tool_input: { query: 'PRIVATE QUERY' }, tool_response: [{ type: 'text', text: response }] },
+    ],
+  });
+
+  it('processes a multi-megabyte Claude PostToolBatch and resolves its proven permission wait', async () => {
+    const { run, broker, diagnostics, stateBase } = await bridge({}, OBSERVER, 'claude', prepared);
+    await run('claude.mjs', 'UserPromptSubmit', common);
+    await run('claude.mjs', 'PermissionRequest', { ...common, tool_name: 'Bash', tool_input: { command: 'PRIVATE COMMAND' } });
+    expect(broker.handoffState('term')).toBe('needs_input');
+    const payload = batch('123\t PRIVATE MODEL RESPONSE with unicode αβγ\n'.repeat(30000));
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeGreaterThan(65536);
+    await run('claude.mjs', 'PostToolBatch', payload);
+    expect(broker.handoffState('term')).toBe('running');
+    expect(broker.snapshot('term')?.signal?.health).toBe('observed');
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+    expect(JSON.stringify(diagnostics) + JSON.stringify(broker.signalDiagnostics('term'))).not.toMatch(/PRIVATE|accounts.py|private/);
+  });
+
+  it.each([
+    ['input-oversized', () => JSON.stringify(batch('PRIVATE'.repeat(Math.ceil(MAX_NATIVE_HOOK_BYTES / 7))))],
+    ['input-malformed', () => '{"session_id":"s","prompt_id":"p1",'],
+    ['input-malformed', () => '[]'],
+    // A syntactically valid lifecycle-looking prefix followed by excessive data is never interpreted.
+    ['input-oversized', () => JSON.stringify(common) + ' '.repeat(MAX_NATIVE_HOOK_BYTES)],
+  ])('reports %s without settling a wait or interpreting truncated input', async (reason, payload) => {
+    const { run, broker, stateBase } = await bridge({}, OBSERVER, 'claude', prepared);
+    await run('claude.mjs', 'UserPromptSubmit', common);
+    await run('claude.mjs', 'PermissionRequest', { ...common, tool_name: 'Bash' });
+    await run('claude.mjs', 'PostToolBatch', payload());
+    expect(broker.handoffState('term')).toBe('needs_input');
+    expect(broker.snapshot('term')?.signal).toMatchObject({ health: 'degraded', reason });
+    expect(broker.signalDiagnostics('term')?.hooks[reason as 'input-oversized' | 'input-malformed']).toBe(1);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    // Even a valid batch cannot falsely resolve the lost transaction; a fresh proven turn recovers.
+    await run('claude.mjs', 'PostToolBatch', batch('ok'));
+    expect(broker.handoffState('term')).toBe('needs_input');
+    await run('claude.mjs', 'UserPromptSubmit', { ...common, prompt_id: 'p2' });
+    expect(broker.snapshot('term')?.signal?.health).toBe('observed');
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+  });
+
+  it('distinguishes an executed native hook with no lifecycle mapping from no event receipt', async () => {
+    const { run, broker } = await bridge({}, OBSERVER, 'claude', prepared);
+    expect(broker.signalDiagnostics('term')?.received).toBe(0);
+    await run('claude.mjs', 'PostToolBatch', batch('no pending wait'));
+    expect(broker.signalDiagnostics('term')).toMatchObject({ received: 1, hooks: { 'no-event': 1 }, signal: { health: 'unverified' } });
+    expect(broker.snapshot('term')?.runtime.status).toBe('unverified');
+    expect(broker.snapshot('term')?.sessionId).toBeNull();
+  });
+
+  it('bounds incomplete stdin intake and reports timeout without running the interpreter', async () => {
+    const { run, broker } = await bridge({}, OBSERVER, 'claude', prepared);
+    const started = Date.now();
+    await run('claude.mjs', 'UserPromptSubmit', JSON.stringify(common), false);
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(broker.signalDiagnostics('term')?.hooks['input-timeout']).toBe(1);
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: null, runtime: { status: 'unverified' }, signal: { health: 'degraded' } });
   });
 });

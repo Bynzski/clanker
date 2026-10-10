@@ -1,14 +1,16 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import { CircleAlert, CircleCheck, CircleX, LoaderCircle } from 'lucide-react';
 import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { AttentionSeen } from '../store/agentAttentionStore';
 
 /** What an agent's attention indicator shows; `null` view means nothing is shown. */
-export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete';
+export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
 
 export interface AttentionView {
   display: AttentionDisplay;
   /** Needs-input or completion the user has not acknowledged yet. */
   unseen: boolean;
+  description?: string;
 }
 
 /**
@@ -22,7 +24,14 @@ export interface AttentionView {
 export function deriveAttention(
   snapshot: AgentAttentionSnapshot | undefined,
   seen: AttentionSeen | undefined,
+  capability?: NativeAttentionCapability,
 ): AttentionView | null {
+  const signal = snapshot?.signal ?? capability;
+  if (signal && !signal.requested) return null;
+  if (signal?.attachment === 'unavailable') return { display: 'signal_unavailable', unseen: false, description: `Native attention unavailable: ${signal.reason ?? 'preparation-failed'}` };
+  if (snapshot?.signal?.health === 'degraded' || snapshot?.signal?.health === 'lost') return {
+    display: 'signal_degraded', unseen: false, description: `Native attention ${snapshot.signal.health}: ${snapshot.signal.reason ?? 'unknown'}`,
+  };
   if (!snapshot) return null;
   const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
   if (pendingRequest) return { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
@@ -38,6 +47,8 @@ export function deriveAttention(
 /** Shared label/icon semantics for a displayed attention state. */
 export function getAttentionPresentation(display: AttentionDisplay) {
   switch (display) {
+    case 'signal_unavailable': return { label: 'Native attention unavailable', Icon: CircleAlert };
+    case 'signal_degraded': return { label: 'Native attention degraded', Icon: CircleAlert };
     case 'needs_input': return { label: 'Needs input', Icon: CircleAlert };
     case 'turn_complete': return { label: 'Turn complete', Icon: CircleCheck };
     case 'failed': return { label: 'Failed', Icon: CircleX };

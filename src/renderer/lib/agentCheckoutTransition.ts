@@ -27,7 +27,7 @@ export function applyAgentCheckoutTransition(event: AgentCheckoutTransitionEvent
         checkoutContextId: event.terminal.checkoutContextId,
         environmentId: event.terminal.environmentId,
         harnessId: event.terminal.harnessId,
-        attentionEnabled: event.terminal.attentionEnabled,
+        attention: event.terminal.attention, attentionEnabled: event.terminal.attentionEnabled,
       };
       // Dispose the old terminal's xterm first (as every close does) so the pane builds the new one.
       if (previous) markTerminalDisposed(event.previousTerminalId);

@@ -19,7 +19,7 @@ function fixture(harness: HarnessSession['harness'] = 'codex') {
   };
   const workspace = { workspaceId: 'remote-ws', location: { environmentId: 'ssh-a', path: '/ws' }, environment } as unknown as RegisteredWorkspace;
   const registry = withCheckoutContexts({ getWorkspace: vi.fn().mockReturnValue(workspace), isRemotePathReserved: vi.fn().mockReturnValue(false) });
-  const broker = { registerRemote: vi.fn().mockReturnValue('a'.repeat(64)), release: vi.fn(), receiveRemote: vi.fn() };
+  const broker = { registerRemote: vi.fn().mockReturnValue('a'.repeat(64)), release: vi.fn(), receiveRemote: vi.fn(), setCapability: vi.fn() };
   const defaults: { flags?: string; attentionEnabled?: boolean } = { flags: '--verbose', attentionEnabled: true };
   const deps = {
     getWorkspaceRegistry: () => registry, getIsShuttingDown: vi.fn().mockReturnValue(false),
@@ -40,6 +40,16 @@ describe('remote session invocation', () => {
     initialGeometry.cols = 20;
     await pending;
     expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ initialGeometry: { cols: 135, rows: 44 } }));
+  });
+
+  it('carries remote preparation failure into the public resume result and disables filtering', async () => {
+    const f = fixture();
+    f.environment.resolveTerminalSpawn.mockResolvedValueOnce({ spawnCmd: 'ssh', spawnArgs: [], env: {}, attentionEnabled: false,
+      attention: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } } as never);
+    const result = await invokeRemoteSession(f.deps, f.workspace, f.session);
+    expect(result).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
+    if (!('attention' in result)) throw new Error('Expected a launched terminal');
+    expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ filterData: undefined, attention: result.attention }));
   });
 
   it('rejects invalid geometry before host discovery or attention preparation', async () => {
@@ -78,7 +88,8 @@ describe('remote session invocation', () => {
     expect(f.environment.discoverSessions).toHaveBeenCalledWith('/ws');
     expect(f.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ workingDir: '/ws/sub', harness, attentionToken: 'a'.repeat(64), attentionRootSessionId: harness === 'claude' ? undefined : f.session.id, resumeSession: { session: f.session, fork: false, workspaceRoot: '/ws' } }));
     expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ spawnCmd: 'ssh', workspaceId: 'remote-ws', environmentId: 'ssh-a', remoteWorkingDir: '/ws/sub', filterData: expect.any(Function) }));
-    expect(result).toMatchObject({ workingDir: '/ws/sub', attentionEnabled: true });
+    expect(result).toMatchObject({ workingDir: '/ws/sub', attentionEnabled: true, attention: { requested: true, attachment: 'prepared' } });
+    expect(f.broker.setCapability).toHaveBeenCalledWith(result.id, { requested: true, attachment: 'prepared' });
     vi.mocked(spawnPtyProcess).mock.calls[0][0].onExit?.(result.id);
     expect(f.broker.release).toHaveBeenCalledWith(result.id);
     expect(f.release).toHaveBeenCalled();
@@ -86,15 +97,15 @@ describe('remote session invocation', () => {
   it('seeds the rediscovered host session as the expected root for resume, never for fork or untrusted providers', async () => {
     const resumed = fixture('codex');
     await invokeRemoteSession(resumed.deps, resumed.workspace, resumed.session);
-    expect(resumed.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: 'native-id', authority: 'full', quality: 'hook' });
+    expect(resumed.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: 'native-id', authority: 'full', quality: 'hook', capability: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
     expect(resumed.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ attentionRootSessionId: 'native-id' }));
     const forked = fixture('codex');
     await invokeRemoteSession(forked.deps, forked.workspace, forked.session, true);
-    expect(forked.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined, authority: 'full', quality: 'hook' });
+    expect(forked.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined, authority: 'full', quality: 'hook', capability: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
     expect(forked.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ attentionRootSessionId: undefined }));
     const claude = fixture('claude');
     await invokeRemoteSession(claude.deps, claude.workspace, claude.session);
-    expect(claude.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'claude', { rootSessionId: undefined, authority: 'partial', quality: 'hook' });
+    expect(claude.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'claude', { rootSessionId: undefined, authority: 'partial', quality: 'hook', capability: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
   });
   it('refuses unsupported, missing, unavailable, invalid and escaping sessions before spawning', async () => {
     const f = fixture();

@@ -11,7 +11,7 @@ export function AgentAttentionState({ attention, name }: { attention: AttentionV
       className={`agent-attention-state state-${display}${attention.unseen ? ' unseen' : ''}`}
       role="img"
       aria-label={`${name}: ${label}`}
-      title={label}
+      title={attention.description ?? label}
     >
       <Icon size={14} strokeWidth={2} aria-hidden="true" />
     </span>

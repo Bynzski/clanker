@@ -1,3 +1,4 @@
+import { HOOK_DIAGNOSTICS, MAX_NATIVE_HOOK_BYTES } from '../../shared/types/attentionSignal';
 import { ATTENTION_ACK_PREFIX, ATTENTION_VERDICTS, MAX_ATTENTION_ACK_BYTES } from '../../shared/attentionProtocol';
 import { MAX_AGENT_LOCATION_BYTES } from '../agentLocation';
 
@@ -10,6 +11,7 @@ function envelope(event, fields) {
   for (const key of IDENTIFIERS) {
     if (typeof fields?.[key] === 'string' && fields[key]) extra[key] = fields[key].slice(0, 128);
   }
+  if (${JSON.stringify(HOOK_DIAGNOSTICS)}.includes(fields?.diagnostic)) extra.diagnostic = fields.diagnostic;
   if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
   if (fields?.requestKind === 'input' || fields?.requestKind === 'approval') extra.requestKind = fields.requestKind;
   if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
@@ -80,17 +82,43 @@ import { emit } from './observer.mjs';
 if (process.argv[2] === '--ended') {
   process.exit(await emit('agent_exited') ? 0 : 1);
 }
-let input = {};
-try {
-  const chunks = [];
+// Read a complete bounded JSON object. Never interpret a prefix, even if it is valid JSON.
+// Total intake deadline + lock wait + one delivery remain below the configured 3 s timeout.
+let intakeFailure;
+const input = await new Promise((resolve) => {
+  let chunks = [];
   let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > 65536) break;
-    chunks.push(chunk);
+  let finished = false;
+  const deadline = setTimeout(() => finish('input-timeout'), 500);
+  function finish(failure) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(deadline);
+    process.stdin.removeAllListeners('data');
+    process.stdin.removeAllListeners('end');
+    process.stdin.removeAllListeners('error');
+    if (failure) {
+      intakeFailure = failure;
+      chunks = [];
+      process.stdin.destroy();
+      resolve(null);
+      return;
+    }
+    try {
+      const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      chunks = [];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
+      resolve(value);
+    } catch { intakeFailure = 'input-malformed'; chunks = []; resolve(null); }
   }
-  input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-} catch { /* malformed hook input is ignored */ }
+  process.stdin.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > ${MAX_NATIVE_HOOK_BYTES}) { finish('input-oversized'); return; }
+    chunks.push(chunk);
+  });
+  process.stdin.on('end', () => finish());
+  process.stdin.on('error', () => finish('input-malformed'));
+});
 
 const STATE_LIMIT = 32768;
 const LOCK_WAIT_MS = 1200;
@@ -139,7 +167,7 @@ function release() {
   try { fs.rmdirSync(lockPath); } catch { /* already gone */ }
 }
 
-let failed = false;
+let failed = Boolean(intakeFailure);
 const store = {
   read() {
     try {
@@ -149,7 +177,7 @@ const store = {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
       return value;
     } catch (error) {
-      if (error.code !== 'ENOENT') failed = true;
+      if (error.code !== 'ENOENT') { failed = true; diagnostic = 'state-unreadable'; }
       return {};
     }
   },
@@ -169,6 +197,7 @@ const store = {
       return true;
     } catch {
       failed = true;
+      diagnostic = 'state-unwritable';
       try { fs.unlinkSync(temporary); } catch { /* not created */ }
       return false;
     }
@@ -178,21 +207,28 @@ const degraded = { read: () => ({}), write: () => false };
 
 let result = null;
 let interpreter = null;
-try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
+let diagnostic = intakeFailure;
+if (!diagnostic) {
+  try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { diagnostic = 'interpreter-unavailable'; failed = true; }
+}
 const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'];
-if (interpreter) {
+if (interpreter || diagnostic) {
   const locked = await acquire();
-  if (!locked) failed = true;
+  if (!locked) { failed = true; diagnostic ??= 'lock-unavailable'; }
   try {
     // One critical path per terminal: the state transition AND delivery of its event happen
     // under the lock, so an event derived from state this hook produced can never overtake it.
     // Delivery is bounded (loopback ack timeout / non-blocking tty write).
-    try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { /* an interpreter error emits nothing */ }
+    if (interpreter) {
+      try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { diagnostic = 'interpreter-failed'; failed = true; }
+    }
     const poisoned = fs.existsSync(poisonPath);
     let event = result?.event;
-    if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
+    if (event?.type === 'input_resolved' && (failed || poisoned)) { event = undefined; diagnostic = 'resolution-suppressed'; }
+    if (!event) event = { type: 'observer_diagnostic', diagnostic: diagnostic ?? 'no-event', nativeEvent: process.argv[3] };
     if (event) {
       const { type, ...fields } = event;
+      if (diagnostic) fields.diagnostic = diagnostic;
       let delivered = false;
       try { delivered = await emit(type, fields, true); } catch { /* counts as undelivered */ }
       // The broker may not have seen this transition: stay conservative until a boundary lands.

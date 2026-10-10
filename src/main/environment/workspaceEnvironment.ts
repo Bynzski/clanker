@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type {
   FileListDirectoryRequest,
   FileListDirectoryResult,
@@ -72,6 +73,7 @@ export interface TerminalSpawnResolved {
   initialCommand?: string;
   harnessId?: string;
   attentionEnabled?: boolean;
+  attention?: NativeAttentionCapability;
   releaseAttention?: () => Promise<void>;
 }
 

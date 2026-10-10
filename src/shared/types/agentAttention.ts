@@ -1,3 +1,4 @@
+import type { AttentionSignal } from './attentionSignal';
 /** Authoritative agent attention state. `AgentAttentionBroker` in main is the only lifecycle
  * authority: it correlates provider evidence into these semantic facts and publishes them as
  * revisioned snapshots. The renderer caches snapshots and projects presentation from them; it
@@ -29,7 +30,9 @@ export interface AgentLocation {
 
 export interface AgentAttentionSnapshot {
   terminalId: string;
-  /** Monotonic per terminal, across registration replacement. Advances only on a semantic change. */
+  /** Main-owned acquisition/health facts; absent on legacy snapshots. */
+  signal?: AttentionSignal;
+  /** Monotonic per terminal, across registration replacement. Advances only when an authoritative lifecycle or signal-health fact changes. */
   revision: number;
   /** Bound native root session. */
   sessionId: string | null;

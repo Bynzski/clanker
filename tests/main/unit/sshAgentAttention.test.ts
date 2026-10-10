@@ -550,7 +550,8 @@ describe.skipIf(process.platform === 'win32')('remote permission lifecycle throu
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
     expect(stdout).not.toContain('SECRET');
     await prepared.release();
-    return events;
+    expect(events.filter((event) => event.event === 'observer_diagnostic').every((event) => !('turnId' in event))).toBe(true);
+    return events.filter((event) => event.event !== 'observer_diagnostic');
   }
   it('Claude: PermissionRequest (no tool_use_id) waits until PostToolBatch', async () => {
     const common = { session_id: 's', prompt_id: 'p1' };

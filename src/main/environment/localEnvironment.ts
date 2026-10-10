@@ -160,7 +160,7 @@ export class LocalEnvironment implements WorkspaceEnvironment {
       launchLabel,
       initialCommand: params.initialCommand,
       harnessId: harnessConfig ? params.harness : undefined,
-      attentionEnabled: true,
+      attentionEnabled: false, // This environment primitive does not acquire native launch attachments.
     };
   }
 }

@@ -36,10 +36,10 @@ export function AgentRow({
   onSelect?: () => void;
 }) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
-  const attention = useTerminalAttention(terminal.id);
+  const attention = useTerminalAttention(terminal.id, terminal.attention, terminal.attentionEnabled === true);
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
-  const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
+  const showAttention = Boolean(terminal.harnessId && attention);
   const name = terminal.displayName ?? harness.label;
   const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
   const branch = worktree ? worktreeBranchLabel(worktree) : null;

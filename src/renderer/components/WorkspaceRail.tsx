@@ -35,11 +35,11 @@ interface RailAgentProps {
 
 function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAgentProps) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
-  const attentionView = useTerminalAttention(terminal.id);
+  const attentionView = useTerminalAttention(terminal.id, terminal.attention, terminal.attentionEnabled === true);
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
   const name = terminal.displayName ?? harness.label;
-  const attentionOn = Boolean(terminal.harnessId && terminal.attentionEnabled);
+  const attentionOn = Boolean(terminal.harnessId && attentionView);
   const attention = attentionOn ? attentionView : null;
   const display = attention?.display ?? null;
   const suffix = getAttentionSuffix(attention);
@@ -58,7 +58,7 @@ function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAge
       className={`ws-rail-agent${isCurrent ? ' current' : ''}${minimized ? ' minimized' : ''}${worktree ? ' worktree' : ''}`}
       aria-current={isCurrent ? 'true' : undefined}
       aria-label={description}
-      title={worktree ? `${description}\n${worktree.path}` : description}
+      title={[description, attention?.description, worktree?.path].filter(Boolean).join('\n')}
       onClick={() => { if (!suppressClickRef.current) selectWorkspace(workspace.id, terminal.id); }}
     >
       <HarnessIcon size={14} strokeWidth={2} />

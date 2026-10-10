@@ -1,3 +1,4 @@
+import { installAttentionDiagnostics } from './attentionDiagnostics';
 import { writeCachedTerminalData, writeCachedTerminalExit } from './terminalRuntimeCache';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -13,7 +14,7 @@ import { applyAgentCheckoutTransition } from './agentCheckoutTransition';
  * hidden workspaces still receive data and exit notifications.
  */
 export function startTerminalSessionBridge(): () => void {
-  const disposers: Array<() => void> = [];
+  const disposers: Array<() => void> = [installAttentionDiagnostics()];
 
   if (typeof window.electronAPI?.onTerminalData === 'function') {
     disposers.push(window.electronAPI.onTerminalData(({ id, data }) => {

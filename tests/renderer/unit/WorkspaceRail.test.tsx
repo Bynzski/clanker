@@ -64,6 +64,22 @@ describe('WorkspaceRail', () => {
       .not.toHaveAttribute('aria-current');
   });
 
+  it('uses hydrated broker capability over a legacy terminal preference and explains unavailable sources', () => {
+    const live = snapshot('t1', 'running', 8);
+    live.signal = { requested: true, attachment: 'prepared', health: 'observed' };
+    const unavailable = snapshot('t2', 'running', 9);
+    unavailable.signal = { requested: true, attachment: 'unavailable', health: 'unverified', reason: 'configuration-conflict' };
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((workspace) => ({ ...workspace,
+      terminals: workspace.terminals.map((terminal) => ({ ...terminal, attentionEnabled: false })),
+    })) }));
+    useAgentAttentionStore.getState().hydrate([live, unavailable], () => false);
+    render(<WorkspaceRail onExpand={() => undefined} />);
+    expect(screen.getByRole('button', { name: 'Samson · Codex · Running' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delilah · Claude · Native attention unavailable' }).getAttribute('title')).toContain('configuration-conflict');
+    act(() => useAgentAttentionStore.getState().applyChange({ terminalId: 't1', revision: 10, snapshot: { ...live, revision: 10, signal: { requested: false, attachment: 'disabled', health: 'unverified' } } }, false));
+    expect(screen.queryByRole('button', { name: 'Samson · Codex · Running' })).not.toBeInTheDocument();
+  });
+
   it('selects a workspace or a specific agent without touching terminals', () => {
     const select = vi.spyOn(useWorkspaceStore.getState(), 'selectWorkspace');
     useWorkspaceStore.setState({ selectWorkspace: select });

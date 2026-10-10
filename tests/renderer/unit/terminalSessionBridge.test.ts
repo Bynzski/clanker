@@ -149,6 +149,39 @@ describe('terminal session bridge', () => {
       return deriveAttention(state.byTerminalId[id], state.seenByTerminalId[id]);
     };
 
+    it('preserves live attention through four-workspace selection, cold residency, page/minimize and shell hydration', async () => {
+      const previous = useWorkspaceStore.getState();
+      const workspaces = ['a', 'b', 'c', 'd'].map((id) => createWorkspaceFixture({ id,
+        workspacePath: '/' + id, terminals: [{ id, pid: 1, workingDir: '/' + id }],
+        panes: [{ id: 'pane-' + id, terminalId: id }], activeTerminalId: id,
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-' + id, paneId: 'pane-' + id },
+      }));
+      useWorkspaceStore.setState({ workspaces, activeWorkspaceId: 'a' });
+      const live = snapshot('a', 'running', 4);
+      live.signal = { requested: true, attachment: 'prepared', health: 'observed' };
+      const { listener } = attentionApi(async () => [live]);
+      const stop = startTerminalSessionBridge();
+      await flush();
+      try {
+        for (const id of ['b', 'c', 'd', 'a']) useWorkspaceStore.getState().selectWorkspace(id);
+        useWorkspaceStore.getState().setWorkspaceResidency('a', 'cold');
+        useWorkspaceStore.getState().setWorkspaceResidency('a', 'warm');
+        useWorkspaceStore.getState().minimizeWorkspacePane('a', 'pane-a');
+        useWorkspaceStore.getState().restoreWorkspacePane('a', 'pane-a');
+        useWorkspaceStore.getState().addWorkspacePage('a');
+        const originalPage = useWorkspaceStore.getState().getWorkspaceById('a')!.pages![0].id;
+        useWorkspaceStore.getState().selectWorkspacePage('a', originalPage);
+        // A persisted shell for the same root cannot replace a live workspace's terminal collection.
+        useWorkspaceStore.getState().hydrateWorkspaceShells([createWorkspaceFixture({ id: 'restored-a', workspacePath: '/a', terminals: [] })], 'a');
+        expect(useWorkspaceStore.getState().getWorkspaceById('a')!.terminals.map((terminal) => terminal.id)).toContain('a');
+        expect(useAgentAttentionStore.getState().byTerminalId.a).toEqual(live);
+        useAgentAttentionStore.getState().hydrate([live], () => false);
+        expect(view('a')?.display).toBe('running');
+        listener.current?.(change({ ...live, revision: 5, runtime: { ...live.runtime, turnId: 'next' } }));
+        expect(useAgentAttentionStore.getState().byTerminalId.a.revision).toBe(5);
+      } finally { stop(); useWorkspaceStore.setState(previous); }
+    });
+
     it('subscribes before it hydrates, and hydration restores running and waiting agents', async () => {
       const { order } = attentionApi(async () => [snapshot('a', 'running', 4), snapshot('b', 'needs_input', 5)]);
       const stop = startTerminalSessionBridge();

@@ -36,3 +36,6 @@
   background: color-mix(in srgb, var(--status-warning-emphasis) 18%, transparent);
   color: var(--status-warning-emphasis);
 }
+
+.agent-attention-state.state-signal_unavailable,
+.agent-attention-state.state-signal_degraded { color: var(--status-warning-emphasis); }

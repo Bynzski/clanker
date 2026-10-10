@@ -574,7 +574,8 @@ describe('lifecycle grants follow what native attention actually did for THIS la
     it('terminal launch: attention declined by user config -> the harness still launches, the bridge attaches, only clanker_context is granted', async () => {
       const controller = arrange();
       defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: true, flags };
-      await spawn(harness);
+      const result = await spawn(harness);
+      expect(result).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'configuration-conflict' } });
       expect(mockSpawnPty).toHaveBeenCalledTimes(1); // it launched
       expect(argvOfLast()).toContain(flags.split(' ')[0]); // with the user's own flag, untouched
       expect(last().env.CLANKER_ATTENTION_COMMAND).toBeDefined(); // the broker registration is separate and still exists
@@ -585,7 +586,8 @@ describe('lifecycle grants follow what native attention actually did for THIS la
     it('terminal launch: attention attached -> the lifecycle tools are granted as before', async () => {
       arrange();
       defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: true };
-      await spawn(harness);
+      const result = await spawn(harness);
+      expect(result).toMatchObject({ attentionEnabled: true, attention: { requested: true, attachment: 'prepared' } });
       expect(toolsOfLast()).toEqual(['clanker_context', ...lifecycleNames]);
     });
 
@@ -602,12 +604,14 @@ describe('lifecycle grants follow what native attention actually did for THIS la
       const session = { id: 's1', harness, title: 't', cwd: WORKSPACE, timestamp: 1 } as HarnessSession;
 
       mockBuildArgs.mockReturnValue({ command: harness, args: resumeArgs });
-      await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      const declined = await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      expect(declined).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'configuration-conflict' } });
       expect(toolsOfLast()).toEqual(['clanker_context']);
 
       const attached = harness === 'claude' ? ['--resume', 's1'] : harness === 'codex' ? ['resume', 's1'] : ['--session', 's1'];
       mockBuildArgs.mockReturnValue({ command: harness, args: attached });
-      await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      const accepted = await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      expect(accepted).toMatchObject({ attentionEnabled: true, attention: { requested: true, attachment: 'prepared' } });
       expect(toolsOfLast()).toEqual(['clanker_context', ...lifecycleNames]);
     });
   });
@@ -642,5 +646,21 @@ describe('lifecycle grants follow what native attention actually did for THIS la
       expect(mockSpawnPty).toHaveBeenCalledTimes(1);
       expect(toolsOfLast()).toEqual(['clanker_context']);
     } finally { delete options.opencode.env; }
+  });
+});
+
+
+describe('public attention launch capability', () => {
+  it('reports disabled, optional preparation failure and unsupported local sources truthfully', async () => {
+    registerTerminal({ agentAttentionBroker: broker as never });
+    expect(await spawn('claude')).toMatchObject({ attentionEnabled: false, attention: { requested: false, attachment: 'disabled' } });
+    defaults.claude.attentionEnabled = true;
+    broker.register.mockRejectedValueOnce(new Error('PRIVATE preparation failure'));
+    expect(await spawn('claude')).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
+    options.hermes = { name: 'Hermes', command: 'hermes', args: [], icon: 'x' };
+    defaults.hermes = { attentionEnabled: true };
+    try {
+      expect(await spawn('hermes')).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'unsupported' } });
+    } finally { delete options.hermes; }
   });
 });
