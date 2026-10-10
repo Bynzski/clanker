@@ -1,5 +1,57 @@
 # Issue #154 — Inventory and Phase 0–3D decisions
 
+## Phase 3D correctness follow-up / Phase 4 owner review
+
+Based on reviewed `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
+Phase 4 proposals are in [the focused UX assessment](issue-154-phase-4-ux-assessment.md).
+No UX implementation, PR or merge in this assignment.
+
+- Summary fetches immediately clear the previous result, show loading, and keep
+  the existing monotonic generation and scope checks. Only successful responses
+  can show an empty-state message; failures show unavailable/error, never old output.
+  General refresh errors no longer overwrite independently selected summary state.
+- Refresh retains the explicit full commit hash even outside the bounded list;
+  the authorized summary backend resolves that exact object or reports failure.
+  Off-list selections show their SHA without unrelated list metadata. Returning
+  to a window containing that hash restores its selected row.
+- Load More uses the last successful limit without changing the open-management
+  refresh callback identity. One action makes one history request, not a full
+  branch/stash/remote refresh. Failed attempts retain the old limit/list and can
+  be retried; synchronous loading protection and request generations reject
+  duplicates/late results. The 50-entry bound is unchanged.
+- Regressions cover delayed/rapid mode and commit selections, rejection/failure
+  and recovery, selection outside a refreshed ten-entry window, exact SHA,
+  request counts, Load More recovery, stable selection and the fifty-entry cap.
+
+### Verification
+
+- `env PATH=/usr/bin:/bin npm run validate`: branding, lint, typecheck, Fallow,
+  security-check (existing documented dev-only exception), build and full tests
+  pass: **378 files / 7,786 tests**.
+- Focused `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/git/
+  tests/renderer/unit/SourceControl.test.tsx tests/renderer/unit/GitButton.test.tsx`:
+  **17 files / 323 tests passed**.
+- `env PATH=/usr/bin:/bin npm run smoke:source-control`: **PASS**, three themes,
+  two sizes, all seven permanent destinations, real CommitDialog, native Browser
+  suppression/restoration and focus. Screenshots:
+  `/tmp/clanker-source-control-visual-7bJgMy`.
+- `npm run smoke:settings`: **PASS** with inherited PATH (screenshots:
+  `/tmp/clanker-settings-visual-x08tnn`). A system-only PATH attempt timed out
+  locating `Clanker bridge for Codex`; this unchanged fixture needs installed
+  harness discovery. Clean PATH remains required for validation/focused Git tests
+  to exclude installed harness shims from process-resolution fixtures.
+- `env PATH=/usr/bin:/bin node scripts/workspace-page-browser-renderer-smoke.cjs`:
+  **PASS**; 24 page transitions, renderer leases, native forms/JS, delayed creation,
+  geometry, overlay cleanup, window lifecycle, persistence and disposal.
+- Separate `env PATH=/usr/bin:/bin node_modules/.bin/electron
+  --ozone-platform=headless scripts/workspace-multi-browser-smoke.cjs`:
+  **FAIL**, Electron **SIGSEGV**, exit 1; same independent failure recorded in
+  Phase 3D, not counted as a passing smoke and no unrelated Browser changes.
+- Logs: `/tmp/154-corrections-validate.log`, `/tmp/154-history-focused.log`,
+  `/tmp/154-corrections-source-smoke.log`, `/tmp/154-corrections-settings-smoke.log`,
+  `/tmp/154-corrections-browser-smoke.log`, `/tmp/154-corrections-multi-browser.log`.
+  Live SSH/account, high zoom and assistive-technology checks remain owner review.
+
 ## Phase 3D — permanent History and Diffs
 
 Starts from reviewed `c61a6c6825c553905e9aab7b015749f2e3f2c608` on

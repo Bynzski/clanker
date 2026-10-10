@@ -146,12 +146,14 @@ export function GitHistorySection({
         {management && (
           <p className="git-diff-description">{summaryDescription}</p>
         )}
-        {management && selectedCommit && selectedDiffMode === 'commit' && (
+        {management && selectedDiffRef && selectedDiffMode === 'commit' && (
           <div className="git-commit-details">
-            <span className="git-commit-detail-item">Author: <strong>{selectedCommit.author}</strong></span>
-            <span className="git-commit-detail-item">Date: <strong>{selectedCommit.date}</strong></span>
-            <span className="git-commit-detail-item git-commit-hash-full" title={selectedCommit.hash}>
-              SHA: <code>{selectedCommit.hash}</code>
+            {selectedCommit && <>
+              <span className="git-commit-detail-item">Author: <strong>{selectedCommit.author}</strong></span>
+              <span className="git-commit-detail-item">Date: <strong>{selectedCommit.date}</strong></span>
+            </>}
+            <span className="git-commit-detail-item git-commit-hash-full" title={selectedDiffRef}>
+              SHA: <code>{selectedDiffRef}</code>
             </span>
           </div>
         )}
@@ -162,7 +164,13 @@ export function GitHistorySection({
           </div>
         ) : null}
         <pre className="git-diff-output">
-          {diffResult?.output || emptyText}
+          {isLoadingDiff
+            ? 'Loading summary…'
+            : diffError || (diffResult && !diffResult.success)
+              ? 'Summary unavailable'
+              : diffResult?.success
+                ? diffResult.output || emptyText
+                : 'Select a summary to view'}
         </pre>
       </div>
     </div>

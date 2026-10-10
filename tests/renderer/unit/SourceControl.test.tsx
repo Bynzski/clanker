@@ -697,6 +697,92 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Load more commits' })).toBeNull());
     });
 
+    it('invalidates displayed content immediately and rejects late responses across rapid selections', async () => {
+      api.gitGetDiff.mockResolvedValue({ success: true, output: 'initial working output' });
+      const { user, dialog } = await historyPage();
+      await within(dialog).findByText('initial working output');
+      let finishA!: (value: unknown) => void;
+      let finishB!: (value: unknown) => void;
+      api.gitGetDiff.mockImplementationOnce(() => new Promise((resolve) => { finishA = resolve; }))
+        .mockImplementationOnce(() => new Promise((resolve) => { finishB = resolve; }));
+      await user.click(within(dialog).getByRole('button', { name: /feat: add first feature/ }));
+      expect(within(dialog).queryByText('initial working output')).toBeNull();
+      expect(within(dialog).getByText('Loading summary…')).toBeVisible();
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
+      await act(async () => finishB({ success: true, output: 'B output' }));
+      await act(async () => finishA({ success: true, output: 'A output' }));
+      expect(within(dialog).getByText('B output')).toBeVisible();
+      expect(within(dialog).queryByText('A output')).toBeNull();
+      let finishStaged!: (value: unknown) => void;
+      api.gitGetDiff.mockImplementationOnce(() => new Promise((resolve) => { finishStaged = resolve; }));
+      await user.click(within(dialog).getByRole('button', { name: 'Staged' }));
+      expect(within(dialog).queryByText('B output')).toBeNull();
+      expect(within(dialog).getByText('Loading summary…')).toBeVisible();
+      await act(async () => finishStaged({ success: false, error: 'Summary denied', output: 'invalid output' }));
+      expect(within(dialog).getByText('Summary unavailable')).toBeVisible();
+      expect(within(dialog).queryByText('No staged changes')).toBeNull();
+      expect(within(dialog).queryByText('invalid output')).toBeNull();
+      api.gitGetDiff.mockRejectedValueOnce(new Error('Transport failed'));
+      await user.click(within(dialog).getByRole('button', { name: 'Working Tree' }));
+      expect((await within(dialog).findAllByText('Transport failed'))[0]).toBeVisible();
+      expect(within(dialog).queryByText('No uncommitted working tree changes')).toBeNull();
+      api.gitGetDiff.mockResolvedValueOnce({ success: true, output: '' });
+      await user.click(within(dialog).getByRole('button', { name: 'Working Tree' }));
+      expect(await within(dialog).findByText('No uncommitted working tree changes')).toBeVisible();
+    });
+
+    it('retains the exact selected hash outside a refreshed ten-commit window, including unavailable objects', async () => {
+      const { user, dialog } = await historyPage();
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
+      const replacement = Array.from({ length: 10 }, (_, i) => ({ ...mockCommits[0], hash: `${i}`.repeat(40), shortHash: `${i}`.repeat(7), author: 'New author', subject: `new ${i}` }));
+      api.gitGetHistory.mockResolvedValue(replacement);
+      api.gitGetDiff.mockResolvedValue({ success: true, output: 'selected object summary' });
+      await user.click(within(dialog).getByRole('button', { name: 'Refresh history' }));
+      expect(await within(dialog).findByText('selected object summary')).toBeVisible();
+      expect(api.gitGetDiff).toHaveBeenLastCalledWith('/repo', 'commit', mockCommits[1].hash, 'ws');
+      expect(within(dialog).getByText('Commit Summary · c222222')).toBeVisible();
+      expect(within(dialog).getByText(mockCommits[1].hash)).toBeVisible();
+      expect(dialog.querySelector('.git-commit-details')).not.toHaveTextContent('New author');
+      api.gitGetDiff.mockResolvedValue({ success: false, error: 'Commit object unavailable' });
+      await user.click(within(dialog).getByRole('button', { name: 'Refresh history' }));
+      expect((await within(dialog).findAllByText('Commit object unavailable'))[0]).toBeVisible();
+      expect(within(dialog).queryByText('selected object summary')).toBeNull();
+      expect(within(dialog).queryByText('No file changes recorded in this commit')).toBeNull();
+      api.gitGetHistory.mockResolvedValue(mockCommits);
+      api.gitGetDiff.mockResolvedValue({ success: true, output: 'recovered summary' });
+      await user.click(within(dialog).getByRole('button', { name: 'Refresh history' }));
+      await within(dialog).findByText('recovered summary');
+      expect(within(dialog).getByRole('button', { name: /fix: resolve edge case/ })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('loads history once per attempt without refreshing unrelated data, retries failure and stops at fifty', async () => {
+      const commits = (count: number) => Array.from({ length: count }, (_, i) => ({ ...mockCommits[0], hash: i.toString(16).padStart(40, '0'), shortHash: `short${i}`, subject: `entry ${i}` }));
+      const { user, dialog } = await historyPage(commits(10));
+      await user.click(within(dialog).getByRole('button', { name: /entry 1$/ }));
+      const selectedHash = commits(10)[1].hash;
+      const historyCount = api.gitGetHistory.mock.calls.length;
+      const branchCount = api.gitGetBranchState.mock.calls.length;
+      const stashCount = api.gitGetStashes.mock.calls.length;
+      const remoteCount = api.gitGetRemotes.mock.calls.length;
+      api.gitGetHistory.mockRejectedValueOnce(new Error('History request failed'));
+      await user.click(within(dialog).getByRole('button', { name: 'Load more commits' }));
+      expect(await within(dialog).findByText('History request failed')).toBeVisible();
+      expect(within(dialog).getByRole('button', { name: 'Load more commits' })).toBeEnabled();
+      for (const limit of [25, 40, 50]) {
+        api.gitGetHistory.mockResolvedValueOnce(commits(limit));
+        await user.click(within(dialog).getByRole('button', { name: 'Load more commits' }));
+        await waitFor(() => expect(within(dialog).getAllByRole('button', { name: /View summary for commit/ })).toHaveLength(limit));
+        expect(api.gitGetHistory).toHaveBeenLastCalledWith('/repo', limit, 'ws');
+        expect(within(dialog).getByRole('button', { name: /entry 1$/ })).toHaveAttribute('aria-pressed', 'true');
+      }
+      expect(api.gitGetHistory).toHaveBeenCalledTimes(historyCount + 4);
+      expect(api.gitGetBranchState).toHaveBeenCalledTimes(branchCount);
+      expect(api.gitGetStashes).toHaveBeenCalledTimes(stashCount);
+      expect(api.gitGetRemotes).toHaveBeenCalledTimes(remoteCount);
+      expect(within(dialog).queryByRole('button', { name: 'Load more commits' })).toBeNull();
+      expect(api.gitGetDiff).toHaveBeenLastCalledWith('/repo', 'commit', selectedHash, 'ws');
+    });
+
     it('does not display Load more when history is exhausted on initial load', async () => {
       const { dialog } = await historyPage(mockCommits); // only 2 commits, less than initial limit 10
       expect(within(dialog).queryByRole('button', { name: 'Load more commits' })).toBeNull();

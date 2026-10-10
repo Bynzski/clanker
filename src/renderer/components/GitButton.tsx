@@ -77,6 +77,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [isLoadingStashes, setIsLoadingStashes] = useState(false);
   const [history, setHistory] = useState<GitHistoryEntry[]>([]);
   const [historyLimit, setHistoryLimit] = useState(10);
+  const historyLimitRef = useRef(10);
+  const historyRequest = useRef(0);
+  const historyLoadingRef = useRef(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedDiffMode, setSelectedDiffMode] = useState<DiffMode>('working');
@@ -314,6 +317,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     const generation = ++diffGeneration.current;
     const fresh = () => isCurrent() && generation === diffGeneration.current;
 
+    setDiffResult(null);
     setIsLoadingDiff(true);
     setDiffError(null);
 
@@ -321,7 +325,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       const commitRef = mode === 'commit' ? ref ?? undefined : undefined;
       const result = await window.electronAPI.gitGetDiff(workspacePath, mode, commitRef, workspaceId);
       if (!fresh()) return;
-      setDiffResult(result);
+      setDiffResult(result.success ? result : null);
       if (!result.success) {
         setDiffError(result.error || 'Unable to load summary');
       } else {
@@ -356,26 +360,31 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   }, [isCurrent, fetchDiff]);
 
   const handleLoadMoreHistory = useCallback(async () => {
-    if (!isCurrent() || isLoadingHistory || !hasMoreHistory) return;
-    const nextLimit = Math.min(50, historyLimit + 15);
-    setHistoryLimit(nextLimit);
+    if (!isCurrent() || historyLoadingRef.current || !hasMoreHistory) return;
+    const request = ++historyRequest.current;
+    const fresh = () => isCurrent() && request === historyRequest.current;
+    const nextLimit = Math.min(50, historyLimitRef.current + 15);
+    historyLoadingRef.current = true;
     setIsLoadingHistory(true);
     setHistoryError(null);
 
     try {
       const items = await window.electronAPI.gitGetHistory(workspacePath, nextLimit, workspaceId);
-      if (!isCurrent()) return;
+      if (!fresh()) return;
+      historyLimitRef.current = nextLimit;
+      setHistoryLimit(nextLimit);
       setHistory(items);
     } catch (error: unknown) {
-      if (isCurrent()) {
+      if (fresh()) {
         setHistoryError(error instanceof Error ? error.message : 'Unable to load history');
       }
     } finally {
-      if (isCurrent()) {
+      if (fresh()) {
+        historyLoadingRef.current = false;
         setIsLoadingHistory(false);
       }
     }
-  }, [isCurrent, isLoadingHistory, hasMoreHistory, historyLimit, workspacePath, workspaceId]);
+  }, [isCurrent, hasMoreHistory, workspacePath, workspaceId]);
 
   const dataRequest = useRef(0);
   const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
@@ -386,6 +395,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       return;
     }
 
+    const historyGeneration = ++historyRequest.current;
+    historyLoadingRef.current = true;
     if (reloadWorktrees) setMenuRefreshCount((count) => count + 1);
 
     setIsLoadingBranches(true);
@@ -402,7 +413,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         window.electronAPI.gitGetBranchState(workspacePath, workspaceId),
         window.electronAPI.gitGetOperationState(workspacePath, workspaceId),
         window.electronAPI.gitGetStashes(workspacePath, workspaceId),
-        window.electronAPI.gitGetHistory(workspacePath, historyLimit, workspaceId),
+        window.electronAPI.gitGetHistory(workspacePath, historyLimitRef.current, workspaceId),
       ]);
 
       if (!fresh()) return;
@@ -459,13 +470,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       if (diffGeneration.current === startDiffGen) {
         const { mode, ref } = diffSelectionRef.current;
         if (mode === 'commit') {
-          const targetRef = ref && historyItems.some((c: GitHistoryEntry) => c.hash === ref)
-            ? ref
-            : historyItems[0]?.hash ?? null;
-          if (targetRef && targetRef !== ref) {
-            setSelectedDiffRef(targetRef);
-          }
-          void fetchDiff('commit', targetRef);
+          // The bounded list is not evidence that an explicitly selected object is gone.
+          // Resolve that exact hash through the authorized summary backend instead.
+          if (ref) void fetchDiff('commit', ref);
         } else {
           void fetchDiff(mode, null);
         }
@@ -497,16 +504,18 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setMergeError(message);
       setStashError(message);
       setHistoryError(message);
-      setDiffError(message);
     } finally {
       if (fresh()) {
         setIsLoadingBranches(false);
         setIsLoadingOperation(false);
         setIsLoadingStashes(false);
-        setIsLoadingHistory(false);
+        if (historyGeneration === historyRequest.current) {
+          historyLoadingRef.current = false;
+          setIsLoadingHistory(false);
+        }
       }
     }
-  }, [historyLimit, workspacePath, workspaceId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
+  }, [workspacePath, workspaceId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
