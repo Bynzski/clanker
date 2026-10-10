@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention, hookNodeExecutable, interpreterPath } from '../localAttention';
 
-export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged'] as const;
+export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged'] as const;
 
 /** Provider-owned meaning of Claude hooks (fields per the Claude Code hooks reference):
  * - root identity `session_id`; turn identity `prompt_id` (Claude Code >= 2.1.196); child scope:
@@ -17,16 +17,16 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'Pos
  *   resolved. A per-tool `PostToolUse` is not subscribed, so an unrelated parallel tool finishing
  *   can never clear a wait. Cost: after an approval the pane stays Needs Input until the batch
  *   ends, and a denied call resolves with its batch.
- * - Settled: root `Stop` is a completion. `StopFailure` (the turn ended on an API error) is explicit
- *   failure evidence and becomes `turn_failed`, never a completion; the error is never forwarded. `Stop` means Claude has
- *   handed control back to the user, so `background_tasks`/`session_crons` are deliberately not
- *   consulted: a long-lived dev server or cron would otherwise keep the turn Running forever. Claude has no user-interrupt hook, so an interrupted turn stays
- *   Running until the next prompt.
+ * - Settlement: root `Stop` is only a candidate; another Stop hook may continue the turn.
+ *   No documented post-decision hook proves settlement. Report that limitation, never Done.
+ *   `StopFailure` is explicit failure evidence and becomes `turn_failed`, never a completion;
+ *   the error is never forwarded. Neither background task counts nor crons prove settlement.
+ *   Claude has no user-interrupt hook, so an interrupted turn stays Running until the next prompt.
  * `Notification` is unused: no turn or request identity.
  * - Location: every hook carries `cwd`, Claude's tracked working directory, which a Bash `cd` moves
  *   while the process itself never changes directory (an agent can leave, and even remove, the
  *   worktree it was launched in). `CwdChanged` (`old_cwd`/`new_cwd`) reports each move as
- *   `location_changed`; the turn boundaries (`UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd`)
+ *   `location_changed`; the turn boundaries (`UserPromptSubmit`, `StopFailure`, `SessionEnd`)
  *   carry `cwd` too, so a reordered move is corrected at the latest when the turn ends. Mid-turn tool
  *   hooks never carry it, and a subagent (`agent_id`) never moves the root agent's location. */
 export const INTERPRETER = `const text = (value) => typeof value === 'string' && value ? value : undefined;
@@ -46,26 +46,38 @@ export default function interpret(input, hook, store) {
     return moved ? event('location_changed', { cwd: moved }) : null;
   }
   const state = store.read();
-  const current = turnId !== undefined && state.turn === turnId;
-  const settle = (type) => { store.write({ turn: turnId, pending: false }); return event(type, { turnId, cwd }); };
+  const sameSession = !state.session || state.session === sessionId;
+  const current = sameSession && turnId !== undefined && state.turn === turnId;
+  const settle = (type) => { if (current) store.write({ session: sessionId, turn: turnId, pending: false }); return event(type, { turnId, cwd }); };
   switch (hook) {
     case 'UserPromptSubmit':
-      store.write({ turn: turnId, pending: false });
+      store.write({ session: sessionId, turn: turnId, pending: false });
       return event('turn_started', { turnId, cwd });
+    case 'PreToolUse':
+      if (input.tool_name !== 'AskUserQuestion') return null;
+      // AskUserQuestion is intrinsically interactive and may need no permission approval.
+      // Its enclosing batch is the native resolution boundary, just like an approval wait.
+      if (!current || !turnId) return null;
+      if (state.pending) return null;
+      store.write({ session: sessionId, turn: turnId, pending: true });
+      return event('input_requested', { turnId, inputId: 'permission', requestKind: 'input' });
     case 'PermissionRequest':
       if (!current) return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
       if (state.pending) return null;
-      store.write({ turn: turnId, pending: true });
+      store.write({ session: sessionId, turn: turnId, pending: true });
       return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
     case 'PostToolBatch':
       if (!current || !state.pending) return null;
-      store.write({ turn: turnId, pending: false });
+      store.write({ session: sessionId, turn: turnId, pending: false });
       return event('input_resolved', { turnId, inputId: 'permission' });
     case 'Stop':
-      return settle('turn_completed');
+      // Every Stop hook sees a candidate stop BEFORE other hooks may block/continue it.
+      // stop_hook_active describes prior continuation, not the final aggregate decision.
+      return current ? { event: { type: 'observer_diagnostic', diagnostic: 'settlement-unverified', nativeEvent: hook } } : null;
     case 'StopFailure':
       return settle('turn_failed');
     case 'SessionEnd':
+      if (!sameSession) return null;
       store.write({});
       return event('session_ended', { cwd });
     default: return null;

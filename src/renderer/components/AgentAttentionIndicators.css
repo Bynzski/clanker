@@ -39,3 +39,5 @@
 
 .agent-attention-state.state-signal_unavailable,
 .agent-attention-state.state-signal_degraded { color: var(--status-warning-emphasis); }
+
+.agent-signal-warning { color: var(--status-warning-emphasis); }

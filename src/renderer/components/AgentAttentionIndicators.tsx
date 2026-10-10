@@ -1,3 +1,4 @@
+import { CircleAlert } from 'lucide-react';
 import { getAttentionPresentation, type AttentionView } from '../lib/agentAttentionPresentation';
 import './AgentAttentionIndicators.css';
 
@@ -10,10 +11,11 @@ export function AgentAttentionState({ attention, name }: { attention: AttentionV
     <span
       className={`agent-attention-state state-${display}${attention.unseen ? ' unseen' : ''}`}
       role="img"
-      aria-label={`${name}: ${label}`}
+      aria-label={`${name}: ${label}${attention.signalWarning ? ` · ${attention.signalWarning}` : ''}`}
       title={attention.description ?? label}
     >
       <Icon size={14} strokeWidth={2} aria-hidden="true" />
+      {attention.signalWarning && <CircleAlert size={10} className="agent-signal-warning" aria-hidden="true" />}
     </span>
   );
 }

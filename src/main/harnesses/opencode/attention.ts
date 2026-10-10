@@ -62,7 +62,21 @@ export const ClankerAttention = async ({ client, directory }) => {
       }
       return;
     }
-    const [kind, sessionId, inputId, requestKind] = classify(event.type, props) ?? [];
+    // Errors can precede automatic compaction/recovery; retain only a candidate outcome
+    // for this open epoch. Native idle settles it; a resumed busy/successful message clears it.
+    if (event.type === 'session.error' || event.type === 'message.updated') {
+      const info = event.type === 'message.updated' ? props.info : undefined;
+      if (info && info.role !== 'assistant') return;
+      const id = info?.sessionID ?? props.sessionID;
+      if (typeof id !== 'string' || await isRoot(id) !== true) return;
+      const turn = turns.get(id);
+      if (!turn?.open) return;
+      const error = info?.error ?? props.error;
+      if (error) turn.outcome = error.name === 'MessageAbortedError' ? 'turn_interrupted' : 'turn_failed';
+      else if (info?.time?.completed) turn.outcome = undefined;
+      return;
+    }
+    let [kind, sessionId, inputId, requestKind] = classify(event.type, props) ?? [];
     if (!kind || typeof sessionId !== 'string') return;
     const root = await isRoot(sessionId);
     if (root === undefined) return;
@@ -73,8 +87,9 @@ export const ClankerAttention = async ({ client, directory }) => {
     if (kind === 'session_ended') { turns.delete(sessionId); directories.delete(sessionId); return emit(kind, fields); }
     if (kind === 'turn_started') {
       if (!turn.open) { turn.epoch += 1; turn.open = true; }
+      turn.outcome = undefined;
     } else if (!turn.open) return;
-    if (kind === 'turn_completed') turn.open = false;
+    if (kind === 'turn_completed') { turn.open = false; kind = turn.outcome ?? kind; }
     const cwd = kind === 'turn_started' || kind === 'turn_completed' ? located(sessionId) : undefined;
     await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
   };

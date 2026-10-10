@@ -500,7 +500,7 @@ if (${JSON.stringify(harness)} === 'pi') {
   await callbacks.agent_settled({aborted:true}, ctx);
   await callbacks.session_shutdown({}, ctx);
 } else {
-  for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop', 'session_shutdown']) if (callbacks[name]) await callbacks[name]({}, ctx);
+  for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop', 'session_shutdown']) if (callbacks[name]) await callbacks[name]({messages:[{role:'assistant',stopReason:'stop'}]}, ctx);
 }
 `);
       args = [runner];
@@ -508,7 +508,7 @@ if (${JSON.stringify(harness)} === 'pi') {
       // Hook payloads arrive on stdin; the pty stays the controlling terminal for the frame.
       const run = (hook: string, input: object) => `printf '%s' '${JSON.stringify(input)}' | "${process.execPath}" "${join(root, 'command.mjs')}" "${join(root, 'interpreter.mjs')}" ${hook}`;
       const hooks = harness === 'agy'
-        ? [run('PreInvocation', { conversationId: 'session-a', invocationNum: 0 }), run('Stop', { conversationId: 'session-a', fullyIdle: true })]
+        ? [run('PreInvocation', { conversationId: 'session-a', invocationNum: 0 }), run('Stop', { conversationId: 'session-a', fullyIdle: true, terminationReason: 'model_stop' })]
         : harness === 'claude'
           ? [run('UserPromptSubmit', { session_id: 'session-a', prompt_id: 'p1' }), run('Stop', { session_id: 'session-a', prompt_id: 'p1' })]
           : [run('UserPromptSubmit', { session_id: 'session-a', turn_id: 'turn-a' }), run('Stop', { session_id: 'session-a', turn_id: 'turn-a' })];
@@ -521,14 +521,14 @@ if (${JSON.stringify(harness)} === 'pi') {
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
     expect(events.map((event) => event.event)).toEqual(harness === 'pi'
       ? ['turn_started', 'input_requested', 'input_resolved', 'turn_failed', 'turn_started', 'turn_interrupted', 'session_ended']
-      : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'turn_completed']);
+      : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'observer_diagnostic']);
     expect(JSON.stringify(events)).not.toContain('private');
     if (harness === 'pi') {
       expect(events[2]).toMatchObject({ inputId: (events[1] as { inputId?: string }).inputId, turnId: '1' });
     }
-    expect(events.every((event) => event.scope === 'root' && event.sessionId === 'session-a')).toBe(true);
+    expect(events.filter(event => event.event !== 'observer_diagnostic').every((event) => event.scope === 'root' && event.sessionId === 'session-a')).toBe(true);
     // Both ends of a turn carry the same turn identity (native, or a provider-owned epoch).
-    expect(new Set(events.filter((event) => event.event !== 'session_ended').map((event) => (event as { turnId?: string }).turnId)).size).toBe(harness === 'pi' ? 2 : 1);
+    expect(new Set(events.filter((event) => event.event !== 'session_ended' && event.event !== 'observer_diagnostic').map((event) => (event as { turnId?: string }).turnId)).size).toBe(harness === 'pi' ? 2 : 1);
     await prepared.release();
   });
 });

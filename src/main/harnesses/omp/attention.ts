@@ -3,18 +3,16 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
-/** Completion is the main session's `session_stop`, which OMP defers until agent-owned
- * background jobs are idle and never emits for task/subagent sessions. `agent_end` is
- * not a terminal completion. Hooks are rebound to subagent sessions, so the subject
- * comes from `ctx.agent.kind`; an unknown kind is never reported as root.
- * Location: `ctx.cwd` follows the session manager's directory, which a session switch or an explicit
- * working-directory change moves (never a command). The main session reports it on its turn events
- * and on `session_start`/`session_switch` (`location_changed`); subagents never do. */
+/** OMP 18.4.10 awaits all session_stop control hooks before notifying agent_end extensions.
+ * agent_end.willContinue includes stop-hook continuation and pending agent-owned background work.
+ * Only the terminal notification settles our foreground epoch; session_stop itself proves nothing.
+ * Unknown agent kinds and unrelated sessions never close the main epoch. */
 export const SOURCE = `import { emit } from './observer.mjs';
 // OMP exposes no turn ID. The extension owns one epoch per main-session foreground turn:
-// agent_start opens it and only the main session_stop closes it.
+// agent_start opens it and only the terminal main agent_end closes it.
 let epoch = 0;
 let open = false;
+let root;
 const sessionId = (ctx) => ctx.sessionManager?.getSessionId?.();
 const kind = (ctx) => ctx.agent?.kind === 'main' ? 'root' : ctx.agent?.kind === 'sub' ? 'child' : undefined;
 const cwd = (ctx) => kind(ctx) === 'root' && typeof ctx.cwd === 'string' ? ctx.cwd : undefined;
@@ -23,20 +21,35 @@ export default function (omp) {
   omp.on('agent_start', (_event, ctx) => {
     const scope = kind(ctx);
     if (scope !== 'root') return emit('turn_started', { scope, sessionId: sessionId(ctx), nativeEvent: 'agent_start' });
-    if (!open) { epoch += 1; open = true; }
+    if (root && sessionId(ctx) !== root) return; // require explicit native switch/shutdown
+    if (!open) { epoch += 1; open = true; root = sessionId(ctx); }
+    if (sessionId(ctx) !== root) return;
     return emit('turn_started', { scope, sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
   });
-  omp.on('session_stop', (_event, ctx) => {
-    if (ctx.agent?.kind === 'sub') return emit('turn_completed', { scope: 'child', sessionId: sessionId(ctx), nativeEvent: 'session_stop' });
-    if (!open) return;
+  omp.on('agent_end', (event, ctx) => {
+    const scope = kind(ctx);
+    if (scope !== 'root' || !open || sessionId(ctx) !== root || event.willContinue === true) return;
     open = false;
-    return emit('turn_completed', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'session_stop', cwd: cwd(ctx) });
+    const last = [...(event.messages ?? [])].reverse().find(message => message.role === 'assistant');
+    if (!last) return emit('observer_diagnostic', { diagnostic: 'settlement-unverified', nativeEvent: 'agent_end' });
+    const outcome = last.stopReason === 'aborted' ? 'turn_interrupted'
+      : last.stopReason === 'error' ? 'turn_failed' : 'turn_completed';
+    return emit(outcome, { scope, sessionId: root, turnId: String(epoch), nativeEvent: 'agent_end', cwd: cwd(ctx) });
   });
   omp.on('session_start', (_event, ctx) => located(ctx, 'session_start'));
-  omp.on('session_switch', (_event, ctx) => located(ctx, 'session_switch'));
+  omp.on('session_switch', async (_event, ctx) => {
+    if (kind(ctx) !== 'root') return;
+    const next = sessionId(ctx);
+    if (root && next && next !== root) {
+      await emit('session_ended', { scope: 'root', sessionId: root, nativeEvent: 'session_switch' });
+      open = false;
+      root = undefined;
+    }
+    return located(ctx, 'session_switch');
+  });
   omp.on('session_shutdown', (_event, ctx) => {
     const scope = kind(ctx);
-    if (scope === 'root') open = false;
+    if (scope === 'root' && (!root || sessionId(ctx) === root)) { open = false; root = undefined; }
     return emit('session_ended', { scope, sessionId: sessionId(ctx), nativeEvent: 'session_shutdown' });
   });
 }

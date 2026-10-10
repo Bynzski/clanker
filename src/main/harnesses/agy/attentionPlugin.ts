@@ -16,8 +16,8 @@ const LEGACY_COMMAND_PATTERN = /^node "([^"]*clanker-attention-[A-Za-z0-9]+[/\\]
 /** The conversation is the subject: the first conversation to start binds as root and every
  * other one is reported with its own ID, so the broker rejects it. Antigravity exposes no turn
  * ID, so the interpreter keeps an epoch in the bridge store: `PreInvocation` #0 opens epoch N
- * for the root conversation and only that epoch can be answered or settled. `Stop` settles only
- * when Antigravity reports it fully idle (no background command or async task remains).
+ * for the root conversation and only that epoch can be answered or failed. Even fully-idle
+ * `Stop` is provisional: another Stop handler can request continuation.
  * Location: hooks carry no cwd; every payload carries the conversation's `workspacePaths`, and a
  * command's Cwd never persists. A single workspace root is the root conversation's location
  * (reported on its turn start and settle); several roots are ambiguous and report nothing. */
@@ -36,7 +36,7 @@ export default function interpret(input, hook, store) {
     case 'PreInvocation': {
       if (input.invocationNum !== 0) return null;
       if (!root) return event('turn_started');
-      const epoch = live ? state.epoch : (Number.isInteger(state.epoch) ? state.epoch : 0) + 1;
+      const epoch = live && !state.provisional ? state.epoch : (Number.isInteger(state.epoch) ? state.epoch : 0) + 1;
       store.write({ session: sessionId, epoch, open: true });
       return event('turn_started', { turnId: String(epoch), cwd });
     }
@@ -44,8 +44,9 @@ export default function interpret(input, hook, store) {
     case 'PostToolUse': return asks && live ? event('input_resolved', { turnId: live, inputId: toolName }) : null;
     case 'Stop':
       if (input.fullyIdle !== true || !live) return null;
-      store.write({ ...state, open: false });
-      return event('turn_completed', { turnId: live, cwd });
+      if (input.terminationReason === 'error' || input.terminationReason === 'max_steps_exceeded') { store.write({ ...state, open: false }); return event('turn_failed', { turnId: live, cwd }); }
+      store.write({ ...state, provisional: true });
+      return { event: { type: 'observer_diagnostic', diagnostic: 'settlement-unverified', nativeEvent: hook } };
     default: return null;
   }
 }
@@ -64,6 +65,7 @@ const finish = (text) => {
   if (settled) return;
   settled = true;
   clearTimeout(timer);
+  process.stdin.destroy();
   process.stdout.write(text + '\\n', () => process.exit(0));
 };
 const neutral = () => finish('{}');
@@ -76,17 +78,14 @@ async function forward() {
   if (!env.CLANKER_ATTENTION_TOKEN || env.CLANKER_ATTENTION_HARNESS !== 'agy' || !command || !interpreter || !hook) return neutral();
   fs.accessSync(command, fs.constants.R_OK);
   fs.accessSync(interpreter, fs.constants.R_OK);
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > LIMIT) break;
-    chunks.push(chunk);
-  }
   const child = spawn(process.execPath, [command, interpreter, hook], { stdio: ['pipe', 'pipe', 'ignore'], env });
   const out = [];
   let outSize = 0;
-  child.stdout.on('data', (chunk) => { if (outSize < LIMIT) { out.push(chunk); outSize += chunk.length; } });
+  child.stdout.on('data', (chunk) => {
+    outSize += chunk.length;
+    if (outSize > LIMIT) { neutral(); child.kill(); return; }
+    out.push(chunk);
+  });
   child.stdin.on('error', () => {});
   child.on('error', neutral);
   child.on('close', (code) => {
@@ -99,7 +98,10 @@ async function forward() {
   });
   const limit = Number(env.CLANKER_ATTENTION_GUARD_TIMEOUT_MS);
   timer = setTimeout(() => { neutral(); try { child.kill(); } catch { /* already gone */ } }, limit > 0 && limit < 8000 ? limit : 8000);
-  child.stdin.end(Buffer.concat(chunks));
+  // Backpressure bounds shim memory. The shared command owns the complete 8 MiB JSON
+  // intake and its diagnostics; never turn an oversized payload into a valid prefix.
+  // Start the total guard deadline before waiting for stdin, including a pipe that never ends.
+  process.stdin.pipe(child.stdin);
 }
 try { await forward(); } catch { neutral(); }
 `;

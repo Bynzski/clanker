@@ -26,7 +26,7 @@ async function remoteConflicts(args: string[]): Promise<boolean> {
     await prepared.release();
     return false;
   } catch (error) {
-    if (/Codex (profile|hook)/.test(String(error))) return true;
+    if (/Codex (profile|hook|app-server)/.test(String(error))) return true;
     throw error;
   }
 }
@@ -40,6 +40,7 @@ const CONFLICTS: string[][] = [
   ['-c', 'profiles.work.hooks.Stop=[]'], ['--config=profiles.work.hooks.PostToolUse=[]'],
   ['-p', 'work'], ['-pwork'], ['--profile', 'work'], ['--profile=work'],
   ['--model', 'gpt-x', '-c', 'hooks.SessionEnd=[]'],
+  ['--remote', 'unix:///fixture'], ['--remote=unix:///fixture'], ['--remote-auth-token-env', 'FIXTURE_TOKEN'], ['--remote-auth-token-env=FIXTURE_TOKEN'],
 ];
 const UNRELATED: string[][] = [
   [], ['-c', 'sandbox_mode="read-only"'], ['--config', 'model_reasoning_effort="high"'], ['-csandbox_mode="read-only"'],

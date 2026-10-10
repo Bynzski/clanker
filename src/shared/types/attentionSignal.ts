@@ -14,7 +14,7 @@ export interface AttentionSignal extends Omit<NativeAttentionCapability, 'reason
 }
 export const HOOK_DIAGNOSTICS = [
   'input-oversized', 'input-malformed', 'input-timeout', 'interpreter-unavailable', 'interpreter-failed',
-  'no-event', 'resolution-suppressed', 'state-unreadable', 'state-unwritable', 'lock-unavailable',
+  'settlement-unverified', 'no-event', 'resolution-suppressed', 'state-unreadable', 'state-unwritable', 'lock-unavailable',
 ] as const;
 export type HookDiagnostic = typeof HOOK_DIAGNOSTICS[number];
 

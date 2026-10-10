@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { deriveAttention } from '../../../src/renderer/lib/agentAttentionPresentation';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import type { AgentAttentionChange } from '../../../src/shared/types/agentAttention';
 
@@ -56,6 +57,23 @@ describe('broker native signal health (no lifecycle inference)', () => {
     expect(JSON.stringify(broker.signalDiagnostics('t'))).not.toContain('PRIVATE');
     expect(broker.receiveRemote('t', '{invalid')).toBe('rejected-invalid');
     expect(broker.signalDiagnostics('t')!.received).toBe(3);
+  });
+
+  it('keeps confirmed human waits and active work visible alongside degraded health and recovers on a fresh native boundary', () => {
+    const { broker, send } = fixture();
+    send('turn_started');
+    send('input_requested', { inputId: 'approval', requestKind: 'approval' });
+    send('turn_completed', { sessionId: 'unrelated' });
+    expect(deriveAttention(broker.snapshot('t')!, undefined)).toMatchObject({ display: 'needs_input', signalWarning: 'Native attention degraded: identity-rejected' });
+    send('input_resolved', { inputId: 'approval' });
+    expect(deriveAttention(broker.snapshot('t')!, undefined)).toMatchObject({ display: 'running', signalWarning: 'Native attention degraded: identity-rejected' });
+    send('turn_started', { turnId: 'two' });
+    expect(deriveAttention(broker.snapshot('t')!, undefined)).toEqual({ display: 'running', unseen: false });
+    send('turn_completed', { turnId: 'two' });
+    const snapshot = broker.snapshot('t')!;
+    expect(deriveAttention(snapshot, undefined)?.display).toBe('turn_complete');
+    expect(deriveAttention(snapshot, { completion: snapshot.lastCompletion!.revision, request: 0 })).toBeNull();
+    expect(deriveAttention(undefined, undefined, { requested: true, attachment: 'unavailable', reason: 'unsupported' })?.display).toBe('signal_unavailable');
   });
 
   it('only concrete directory loss marks health lost, and a later native turn recovers', () => {

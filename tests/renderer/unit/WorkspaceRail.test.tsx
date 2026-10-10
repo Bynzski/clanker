@@ -67,7 +67,7 @@ describe('WorkspaceRail', () => {
   it('uses hydrated broker capability over a legacy terminal preference and explains unavailable sources', () => {
     const live = snapshot('t1', 'running', 8);
     live.signal = { requested: true, attachment: 'prepared', health: 'observed' };
-    const unavailable = snapshot('t2', 'running', 9);
+    const unavailable = snapshot('t2', 'idle', 9);
     unavailable.signal = { requested: true, attachment: 'unavailable', health: 'unverified', reason: 'configuration-conflict' };
     useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((workspace) => ({ ...workspace,
       terminals: workspace.terminals.map((terminal) => ({ ...terminal, attentionEnabled: false })),

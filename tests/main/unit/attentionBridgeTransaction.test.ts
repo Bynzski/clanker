@@ -180,14 +180,25 @@ describe('attention bridge state transactions', () => {
     expect(broker.handoffState('term')).toBe('running');
   });
 
-  it('delivers turn_started before the turn_completed that follows it', async () => {
+  it('keeps permission correlation after an unrelated SessionEnd through the serialized bridge', async () => {
+    const { run, updates, broker } = await bridge();
+    await run('codex.mjs', 'UserPromptSubmit', turn);
+    await run('codex.mjs', 'PreToolUse', { ...turn, tool_use_id: 'a', ...bash('fixture') });
+    await run('codex.mjs', 'PermissionRequest', { ...turn, ...bash('fixture') });
+    await run('codex.mjs', 'SessionEnd', { ...turn, session_id: 'unrelated' });
+    await run('codex.mjs', 'PostToolUse', { ...turn, tool_use_id: 'a' });
+    expect(updates).toEqual(['turn_started', 'input_requested', 'input_resolved']);
+    expect(broker.handoffState('term')).toBe('running');
+  });
+
+  it('delivers turn_started before the native interruption that follows it', async () => {
     const { run, updates, broker, waitForState } = await bridge({}, slowFor('turn_started'));
     const start = run('codex.mjs', 'UserPromptSubmit', turn);
     await waitForState(() => true);
-    const stop = run('codex.mjs', 'Stop', turn);
+    const stop = run('codex.mjs', 'Interrupt', turn);
     expect(await Promise.all([start, stop])).toEqual([0, 0]);
-    expect(updates).toEqual(['turn_started', 'turn_completed']);
-    expect(broker.handoffState('term')).toBe('ready');
+    expect(updates).toEqual(['turn_started', 'turn_interrupted']);
+    expect(broker.handoffState('term')).toBe('unverified');
   });
 
   it.each([
@@ -206,8 +217,10 @@ describe('attention bridge state transactions', () => {
     expect(updates).toEqual(['turn_started']); // the broker never saw the wait, and nothing resolved later
     expect(broker.handoffState('term')).toBe('running');
     await run('codex.mjs', 'Stop', turn);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true); // provisional boundary cannot recover lifecycle
+    await run('codex.mjs', 'Interrupt', turn);
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
-    expect(updates).toEqual(['turn_started', 'turn_completed']);
+    expect(updates).toEqual(['turn_started', 'turn_interrupted']);
   });
 
   it('keeps poison across rejected and ignored boundaries; only an accepted native boundary recovers', async () => {

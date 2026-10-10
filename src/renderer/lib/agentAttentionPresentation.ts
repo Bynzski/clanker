@@ -11,6 +11,7 @@ export interface AttentionView {
   /** Needs-input or completion the user has not acknowledged yet. */
   unseen: boolean;
   description?: string;
+  signalWarning?: string;
 }
 
 /**
@@ -28,19 +29,23 @@ export function deriveAttention(
 ): AttentionView | null {
   const signal = snapshot?.signal ?? capability;
   if (signal && !signal.requested) return null;
-  if (signal?.attachment === 'unavailable') return { display: 'signal_unavailable', unseen: false, description: `Native attention unavailable: ${signal.reason ?? 'preparation-failed'}` };
-  if (snapshot?.signal?.health === 'degraded' || snapshot?.signal?.health === 'lost') return {
-    display: 'signal_degraded', unseen: false, description: `Native attention ${snapshot.signal.health}: ${snapshot.signal.reason ?? 'unknown'}`,
-  };
-  if (!snapshot) return null;
-  const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
-  if (pendingRequest) return { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
-  if (runtime.status === 'starting' || runtime.status === 'running') return { display: 'running', unseen: false };
-  if (runtime.status === 'failed') return { display: 'failed', unseen: false };
-  if (runtime.status === 'idle' && lastCompletion && lastOutcome?.kind === 'completed'
-    && lastOutcome.revision === lastCompletion.revision && lastCompletion.revision > (seen?.completion ?? 0)) {
-    return { display: 'turn_complete', unseen: true };
+  const warning = signal?.attachment === 'unavailable'
+    ? `Native attention unavailable: ${signal.reason ?? 'preparation-failed'}`
+    : snapshot?.signal?.health === 'degraded' || snapshot?.signal?.health === 'lost'
+      ? `Native attention ${snapshot.signal.health}: ${snapshot.signal.reason ?? 'unknown'}` : undefined;
+  let view: AttentionView | null = null;
+  if (snapshot) {
+    const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
+    if (pendingRequest) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
+    else if (runtime.status === 'starting' || runtime.status === 'running') view = { display: 'running', unseen: false };
+    else if (runtime.status === 'failed') view = { display: 'failed', unseen: false };
+    else if (runtime.status === 'idle' && lastCompletion && lastOutcome?.kind === 'completed'
+      && lastOutcome.revision === lastCompletion.revision && lastCompletion.revision > (seen?.completion ?? 0)) {
+      view = { display: 'turn_complete', unseen: true };
+    }
   }
+  if (view) return warning ? { ...view, signalWarning: warning, description: `${getAttentionPresentation(view.display).label} · ${warning}` } : view;
+  if (warning) return { display: signal?.attachment === 'unavailable' ? 'signal_unavailable' : 'signal_degraded', unseen: false, description: warning };
   return null;
 }
 

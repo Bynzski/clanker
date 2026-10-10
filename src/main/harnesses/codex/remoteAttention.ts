@@ -17,6 +17,8 @@ for index, arg in enumerate(args):
         overrides.append(arg[len('--config='):])
     elif arg.startswith('-c') and not arg.startswith('--') and arg != '-c':
         overrides.append(arg[2:])
+if any(a == '--remote' or a.startswith('--remote=') or a == '--remote-auth-token-env' or a.startswith('--remote-auth-token-env=') for a in args):
+    sys.exit('Remote attention cannot attach through a Codex app-server client')
 if any(a in ('-p', '--profile') or a.startswith('--profile=') or (a.startswith('-p') and not a.startswith('--')) for a in args) or any(re.search(${OWNED_KEY}, value) for value in overrides):
     sys.exit('Remote attention cannot replace a Codex profile or hook configuration')
 codex_events = '|'.join(${EVENTS})

@@ -29,13 +29,13 @@ describe('agent attention launch adapters', () => {
     expect(attentionLaunchOptions('omp', ['--model', 'x'], {}, files)?.args)
       .toEqual(['--model', 'x', '--extension', path.join(ensureProviderAttentionResources('omp', files).resourceRoot!, 'omp.ts')]);
     const omp = fs.readFileSync(path.join(ensureProviderAttentionResources('omp', files).resourceRoot!, 'omp.ts'), 'utf8');
-    expect(omp).toContain("omp.on('session_stop'");
-    expect(omp).not.toContain("omp.on('agent_end'");
+    expect(omp).not.toContain("omp.on('session_stop'");
+    expect(omp).toContain("omp.on('agent_end'");
     expect(attentionLaunchOptions('claude', ['--model', 'x'], {}, files)?.args)
       .toEqual(['--model', 'x', '--settings', path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged']);
+    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged']);
     expect(JSON.stringify(settings)).toContain(JSON.stringify(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs')).slice(1, -1));
   });
 
@@ -142,7 +142,8 @@ describe('agent attention launch adapters', () => {
     const child = spawn(process.execPath, [files.command, interpreterFor(harness), hook], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     child.stdout.on('data', (data) => { stdout += data.toString(); });
-    child.stdin.end(JSON.stringify(payload));
+    child.stdin.on('error', () => undefined);
+      child.stdin.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
     child.once('error', reject);
     child.once('close', (code) => resolve({ code: code ?? 0, stdout }));
   });
@@ -206,10 +207,10 @@ describe('agent attention launch adapters', () => {
 
       // Background work still active: Stop is not completion. Another conversation cannot settle either.
       await run('Stop', { conversationId: 'c1', fullyIdle: false });
-      await run('Stop', { conversationId: 'c2', fullyIdle: true });
+      await run('Stop', { conversationId: 'c2', fullyIdle: true, terminationReason: 'model_stop' });
       expect(received).toEqual([]);
-      await run('Stop', { conversationId: 'c1', fullyIdle: true });
-      expect(received).toEqual(['turn_completed']);
+      await run('Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' });
+      expect(received).toEqual([]); // Stop diagnostic is not a lifecycle transition
     } finally {
       broker.close();
     }
@@ -322,12 +323,13 @@ describe('Antigravity attention plugin resilience', () => {
     }
   });
 
-  const runGuard = (guard: string, hook: string, payload: Record<string, unknown>, env: Record<string, string>) =>
+  const runGuard = (guard: string, hook: string, payload: Record<string, unknown> | string, env: Record<string, string>) =>
     new Promise<{ code: number | null; stdout: string }>((resolve, reject) => {
       const child = spawn(process.execPath, [guard, hook], { env: { PATH: process.env.PATH ?? '', ...env }, stdio: ['pipe', 'pipe', 'ignore'] });
       let stdout = '';
       child.stdout.on('data', (data) => { stdout += data.toString(); });
-      child.stdin.end(JSON.stringify(payload));
+      child.stdin.on('error', () => undefined);
+      child.stdin.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
       child.once('error', reject);
       child.once('close', (code) => resolve({ code, stdout }));
     });
@@ -360,7 +362,7 @@ describe('Antigravity attention plugin resilience', () => {
       // The plugin survives (Clanker never released it) and must not block PreToolUse.
       expect(fs.existsSync(guard)).toBe(true);
       expect(await runGuard(guard, 'PreToolUse', askPayload, env)).toEqual({ code: 0, stdout: '{}\n' });
-      expect(await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true }, env)).toEqual({ code: 0, stdout: '{}\n' });
+      expect(await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' }, env)).toEqual({ code: 0, stdout: '{}\n' });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
       fs.rmSync(stale, { recursive: true, force: true });
@@ -423,12 +425,67 @@ describe('Antigravity attention plugin resilience', () => {
       expect(received).toEqual(['input_requested']);
       received.length = 0;
       await runGuard(guard, 'PostToolUse', askPayload, env);
-      await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true }, env);
-      expect(received).toEqual(['input_resolved', 'turn_completed']);
+      await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' }, env);
+      expect(received).toEqual(['input_resolved']);
+      expect(broker.snapshot('term-live')?.lastCompletion).toBeNull();
     } finally {
       broker.close();
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it('forwards large complete payloads and never interprets an oversized valid prefix', async () => {
+    const home = tempHome();
+    const broker = new AgentAttentionBroker(() => undefined, () => undefined);
+    try {
+      const guard = install(home);
+      const env = { ...(await broker.register('guard-large', 'agy', { capability: { requested: true, attachment: 'prepared' } })),
+        CLANKER_ATTENTION_COMMAND: files.command, CLANKER_ATTENTION_INTERPRETER: interpreter };
+      await runGuard(guard, 'PreInvocation', { conversationId: 'c1', invocationNum: 0, history: 'large response '.repeat(100000) }, env);
+      expect(broker.snapshot('guard-large')?.runtime.status).toBe('running');
+      const prefix = JSON.stringify({ conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' });
+      await runGuard(guard, 'Stop', prefix + ' '.repeat(8 * 1024 * 1024), env);
+      expect(broker.snapshot('guard-large')).toMatchObject({ runtime: { status: 'running' }, lastCompletion: null, signal: { reason: 'input-oversized' } });
+      await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' }, env);
+      expect(broker.snapshot('guard-large')).toMatchObject({ runtime: { status: 'running' }, signal: { reason: 'settlement-unverified' } });
+      await runGuard(guard, 'PreInvocation', { conversationId: 'c1', invocationNum: 0 }, env);
+      expect(broker.snapshot('guard-large')?.runtime.status).toBe('running');
+    } finally { broker.close(); fs.rmSync(home, { recursive: true, force: true }); }
+  });
+
+  it('fails open rather than accepting a valid prefix of oversized bridge stdout', async () => {
+    const home = tempHome();
+    const output = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-output-'));
+    try {
+      const guard = install(home);
+      fs.writeFileSync(path.join(output, 'command.mjs'), "process.stdout.write('{}' + ' '.repeat(65536));");
+      fs.writeFileSync(path.join(output, 'interpreter.mjs'), '');
+      expect(await runGuard(guard, 'Stop', {}, {
+        CLANKER_ATTENTION_TOKEN: 't', CLANKER_ATTENTION_HARNESS: 'agy',
+        CLANKER_ATTENTION_COMMAND: path.join(output, 'command.mjs'), CLANKER_ATTENTION_INTERPRETER: path.join(output, 'interpreter.mjs'),
+      })).toEqual({ code: 0, stdout: '{}\n' });
+    } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(output, { recursive: true, force: true }); }
+  });
+
+  it('bounds the entire guard lifetime when stdin never closes', async () => {
+    const home = tempHome();
+    const slow = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-open-input-'));
+    try {
+      const guard = install(home);
+      fs.writeFileSync(path.join(slow, 'command.mjs'), 'process.stdin.resume();setTimeout(() => {}, 60000)');
+      fs.writeFileSync(path.join(slow, 'interpreter.mjs'), '');
+      const result = await new Promise<string>((resolve, reject) => {
+        const child = spawn(process.execPath, [guard, 'Stop'], { env: { PATH: process.env.PATH ?? '',
+          CLANKER_ATTENTION_TOKEN: 't', CLANKER_ATTENTION_HARNESS: 'agy',
+          CLANKER_ATTENTION_COMMAND: path.join(slow, 'command.mjs'), CLANKER_ATTENTION_INTERPRETER: path.join(slow, 'interpreter.mjs'),
+          CLANKER_ATTENTION_GUARD_TIMEOUT_MS: '200' }, stdio: ['pipe', 'pipe', 'ignore'] });
+        let output = '';
+        child.stdout.on('data', chunk => { output += chunk; });
+        child.once('close', () => resolve(output)); child.once('error', reject);
+        child.stdin.on('error', () => undefined); child.stdin.write('{');
+      });
+      expect(result).toBe('{}\n');
+    } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(slow, { recursive: true, force: true }); }
   });
 
   it('keeps the shared plugin installed across installs, migrations and launches', () => {
