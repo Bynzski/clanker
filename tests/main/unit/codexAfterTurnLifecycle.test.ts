@@ -285,6 +285,12 @@ describe('create (after-turn)', () => {
     expect(JSON.stringify(events)).toContain('without proving completion');
     const retry = await call(spawn, 'clanker_create_isolated_checkout', { branch: 'another' });
     expect(JSON.stringify(retry)).toContain('without a verified final outcome');
+    // Continued same-turn work cannot revive the cancelled checkout transition.
+    await frame(spawn, 'turn_activity', { turnId: 't1' });
+    await frame(spawn, 'turn_provisional', { turnId: 't1' });
+    await settle();
+    expect(live()).toEqual([id]);
+    expect(spawns).toHaveLength(1);
     expect(kinds()).not.toContain('terminal-replaced');
   });
 

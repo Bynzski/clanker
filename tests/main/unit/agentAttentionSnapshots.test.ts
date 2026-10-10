@@ -468,6 +468,31 @@ describe('multiple correlated pending requests', () => {
 
 
 describe('provisional native settlement', () => {
+  it('activity resumes only the bound live turn and preserves request history and start time', () => {
+    const { send, snap, broker } = rig();
+    expect(send('turn_activity', { turnId: 'T' })).toBe('rejected-ambiguous');
+    expect(snap().sessionId).toBeNull();
+    send('turn_started', { turnId: 'T' });
+    const startedAt = snap().runtime.startedAt;
+    send('input_requested', { turnId: 'T', inputId: 'old' });
+    send('turn_provisional', { turnId: 'T' });
+    expect(send('turn_activity', { turnId: 'T', scope: 'child' })).toBe('ignored-child');
+    expect(send('turn_activity', { turnId: 'other' })).toBe('ignored-stale');
+    expect(send('turn_activity', { turnId: 'T', sessionId: 'foreign' })).toBe('rejected-mismatch');
+    expect(snap().runtime.status).toBe('provisional');
+    expect(send('turn_activity', { turnId: 'T' })).toBe('accepted');
+    expect(snap()).toMatchObject({ runtime: { status: 'running', turnId: 'T', startedAt }, pendingRequest: { id: 'old', resolutionUnknown: true }, lastCompletion: null, lastOutcome: null });
+    expect(broker.canHandoff('t')).toBe(false);
+    send('input_requested', { turnId: 'T', inputId: 'current' });
+    send('turn_activity', { turnId: 'T' });
+    expect(broker.handoffState('t')).toBe('needs_input');
+    send('turn_provisional', { turnId: 'T' });
+    send('turn_started', { turnId: 'next' });
+    expect(send('turn_activity', { turnId: 'T' })).toBe('ignored-stale');
+    send('turn_interrupted', { turnId: 'next' });
+    expect(send('turn_activity', { turnId: 'next' })).toBe('ignored-stale');
+    expect(snap().lastCompletion).toBeNull();
+  });
   it.each([false, true])('preserves correlation without claiming work, input or completion (wait=%s)', (wait) => {
     const { broker, send, snap } = rig();
     send('turn_started', { turnId: 'T' });

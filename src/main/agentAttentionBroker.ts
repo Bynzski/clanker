@@ -13,10 +13,10 @@ import {
 /** Wire events. `session_continued` is an identity transition; `agent_exited` retires the registration.
  * `location_changed` only moves the agent's reported location; any root event may also carry `cwd`. */
 type WireEvent =
-  | 'turn_provisional' | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
+  | 'turn_provisional' | 'turn_activity' | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
   | 'observer_diagnostic' | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'session_replaced' | 'agent_exited' | 'location_changed';
 const EVENTS = new Set<WireEvent>([
-  'turn_provisional', 'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
+  'turn_provisional', 'turn_activity', 'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
   'session_started', 'session_ended', 'session_continued', 'session_replaced', 'agent_exited', 'location_changed', 'observer_diagnostic',
 ]);
 const MAX_RETIRED_TURNS = 32;
@@ -518,7 +518,7 @@ export class AgentAttentionBroker {
         : decision === 'rejected-mismatch' || decision === 'rejected-ambiguous' ? 'identity-rejected' : undefined;
       if (error) registration.signal = { ...registration.signal, health: 'degraded', reason: error };
       else if (decision === 'accepted' && parsed.event !== 'observer_diagnostic' &&
-          (registration.signal.health === 'unverified' || ['turn_provisional', 'turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended', 'session_replaced'].includes(parsed.event))) {
+          (registration.signal.health === 'unverified' || ['turn_provisional', 'turn_activity', 'turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended', 'session_replaced'].includes(parsed.event))) {
         registration.signal = { requested: registration.signal.requested, attachment: 'prepared', health: 'observed' };
       }
     }
@@ -668,6 +668,13 @@ export class AgentAttentionBroker {
     if (!open || registration.activeTurnId !== turnId) return 'ignored-stale';
 
     switch (event.event) {
+      case 'turn_activity':
+        // Activity can only resume this already-bound foreground turn. It cannot establish
+        // identity, open a new turn, settle it, or resolve historical human requests.
+        if (registration.status === 'provisional') this.commit(registration, () => {
+          registration.status = 'running';
+        });
+        return 'accepted';
       case 'turn_provisional':
         // Keep correlation and historical waits for a later native outcome. This is neither
         // active execution nor success, and cannot authorize a handoff or checkout move.

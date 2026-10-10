@@ -79,10 +79,12 @@ export default function interpret(input, hook, store) {
       save();
       return event('turn_started', { turnId, cwd });
     case 'PreToolUse':
-      if (!current || !text(input.tool_use_id)) return null;
+      // Only root, same-turn tool starts prove continuation; a delayed PostToolUse
+      // alone cannot distinguish work performed before the candidate Stop.
+      if (!current || !text(input.tool_use_id) || !text(input.tool_name)) return null;
       state.calls = keep([...state.calls, { id: input.tool_use_id, fp: fingerprint(input) }], 32);
       save();
-      return null;
+      return state.provisional === true ? event('turn_activity', { turnId }) : null;
     case 'PermissionRequest': {
       if (!current) return event('input_requested', { turnId, inputId: 'w0', requestKind: 'approval' });
       const fp = fingerprint(input);
@@ -112,7 +114,7 @@ export default function interpret(input, hook, store) {
       if (!current) return null;
       // The broker retains unresolved request history. Retire this candidate batch's
       // correlation cache so continuation requests cannot inherit denied/overflowed calls.
-      store.write({ ...state, calls: [], done: [], waits: [], overflow: false, input: undefined });
+      store.write({ ...state, calls: [], done: [], waits: [], overflow: false, input: undefined, provisional: true });
       return event('turn_provisional', { turnId });
     case 'Interrupt':
       if (current) reset();

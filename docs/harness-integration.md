@@ -181,7 +181,7 @@ revisioned tombstone (`snapshot: null`); hydration only lists live registrations
 renderer subscribes first, then hydrates, and keeps the newest revision per terminal
 (tombstones included). Whether the user has seen a completion or request is a renderer
 watermark over those revisions; it never changes lifecycle. `deriveAttention` projects
-Stopped · outcome unverified for provisional settlement, otherwise actionable Needs Input, then Working, then Failed, then an unseen completion that is also the latest
+Stop observed · outcome unknown for provisional settlement, otherwise actionable Needs Input, then Working, then Failed, then an unseen completion that is also the latest
 outcome. A user-facing `Failed` shows no badge or navigation target; only Needs Input and
 unseen Done are counted and jumped to.
 
@@ -407,7 +407,25 @@ batch. `AskUserQuestion` intrinsically requests input at `PreToolUse`, even with
 (`agent_id`) permission and batch events are ignored. `StopFailure` (turn ended on an API
 error) is explicit failure evidence: it is reported as `turn_failed` (Failed), never as a
 completion, and the error text is never forwarded. Claude has no user-interrupt hook,
-so interruption without a native Stop or failure boundary stays Running until the next prompt or explicit session end. A native Stop instead shows provisional settlement. `Stop` is not final settlement: another hook can block it. It reports `turn_provisional`: the identified turn is retained, but execution and any old request resolution are unknown. Neither Working nor actionable Needs Input is claimed.
+so interruption without a native Stop or failure boundary stays Running until the next prompt or explicit session end. A native Stop instead shows provisional settlement. `Stop` is not final settlement: another hook can block it. It reports `turn_provisional`: the identified turn is retained, but execution and any old request resolution are unknown. Neither Working nor actionable Needs Input is claimed until fresh correlated evidence arrives.
+
+Continuation after candidate Stop. Claude and Codex root `PreToolUse` with the already-bound
+`session_id` and current `prompt_id`/`turn_id` emits `turn_activity`. Unlike `turn_started`,
+this event cannot bind a root or open/replace a turn: the broker requires the live matching
+turn, restores Running, retains its original start time and unresolved request history,
+and still refuses handoff. Child activity and earlier-turn IDs cannot resume it. A later
+candidate Stop is provisional again. `PostToolBatch`/`PostToolUse` alone can be delayed
+results from before Stop, so only resolve matching requests; they do not resume execution.
+The tooltip explicitly says execution may continue and the final outcome is unknown.
+
+Antigravity has no native foreground turn ID. Its documented invocation sequence and
+trajectory step counters do not prove which foreground turn a delayed event belongs to.
+Clanker retains the existing initial-invocation (#0) boundary and ask-tool subscriptions;
+noninitial invocations and ordinary tool callbacks do **not** restore Running after Stop.
+It stays visibly provisional, without claiming execution ended or granting handoff. The
+counter behavior across Stop-hook continuation versus fresh user input still needs installed
+native verification; do not treat deterministic fixtures as proof of that behavior. The
+ordinary-tool matcher remains excluded to preserve native permission policy.
 
 Codex permission correlation. `PermissionRequest` has `turn_id`, `tool_name` and
 `tool_input` but no `tool_use_id`; `PreToolUse` and `PostToolUse` carry `tool_use_id`.
@@ -456,7 +474,7 @@ review persists. Until reviewed no events arrive and the pane stays unknown. Rem
   stays bound to the old root, rejects the unrelated identity, and displays degraded health until a fresh Clanker launch. Codex source `clear` is an explicit native replacement contract: the adapter names the prior stored root, and the broker replaces it only if that id exactly matches its binding. This is covered by source inspection and deterministic fixtures; the installed 0.162.0 TUI `/new` did **not** emit `clear`, so it remains unsupported. Ordinary startup/resume/fork never grants rebinding. Pi, OMP, Claude, OpenCode and Hermes report one.
 - An interrupted turn with no settle event stays Running rather than Ready.
 - Claude, Codex and Agy `Stop` callbacks run before other hooks can request continuation.
-  They cannot prove success; Clanker publishes correlated `turn_provisional`, retains turn identity and request history (`resolutionUnknown`), and displays Stopped · outcome unverified. No timer or output heuristic announces Done. Claude events need `prompt_id`
+  They cannot prove success; Clanker publishes correlated `turn_provisional`, retains turn identity and request history (`resolutionUnknown`), and displays Stop observed · outcome unknown. No timer or output heuristic announces Done. Claude events need `prompt_id`
   (Claude Code 2.1.196 or newer); without it nothing is reported.
 - Codex hooks, OMP `ctx.agent`, OpenCode `client.session.get` and Hermes hook
   kwargs follow upstream documentation; they have not been verified against live

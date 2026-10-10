@@ -17,7 +17,9 @@ const LEGACY_COMMAND_PATTERN = /^node "([^"]*clanker-attention-[A-Za-z0-9]+[/\\]
  * other one is reported with its own ID, so the broker rejects it. Antigravity exposes no turn
  * ID, so the interpreter keeps an epoch in the bridge store: `PreInvocation` #0 opens epoch N
  * for the root conversation and only that epoch can be answered or failed. Even fully-idle
- * `Stop` is provisional: another Stop handler can request continuation.
+ * `Stop` is provisional: another Stop handler can request continuation. Noninitial
+ * invocations and ordinary tools lack a foreground-turn identity; they do not restore
+ * Running after Stop. Do not treat the invocation counter as a native turn ID.
  * Location: hooks carry no cwd; every payload carries the conversation's `workspacePaths`, and a
  * command's Cwd never persists. A single workspace root is the root conversation's location
  * (reported on its turn start and settle); several roots are ambiguous and report nothing. */

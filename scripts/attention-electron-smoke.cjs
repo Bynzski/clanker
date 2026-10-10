@@ -15,7 +15,7 @@ if(process.argv.includes('--version')) {console.log('1.1.0');process.exit(0)}
  let epoch=0,queue=Promise.resolve();const lines=require('node:readline').createInterface({input:process.stdin});
  lines.on('line',line=>{queue=queue.then(async()=>{
   if(line==='exit')process.exit(0);
-  const event=line==='start'?'turn_started':line==='stop'?'turn_provisional':line==='done'?'turn_completed':line==='ask'?'input_requested':line==='resolve'?'input_resolved':null;
+  const event=line==='start'?'turn_started':line==='stop'?'turn_provisional':line==='activity'?'turn_activity':line==='done'?'turn_completed':line==='ask'?'input_requested':line==='resolve'?'input_resolved':null;
   if(!event)return;if(line==='start')epoch++;
   await emit(event,{scope:'root',sessionId:'fixture',turnId:String(epoch),inputId:'wait',nativeEvent:'electron_fixture'});
   console.log('fixture-processed');
@@ -74,7 +74,12 @@ let app;
     await page.getByRole('img', { name: /Needs input/ }).first().waitFor();
     await send(a, 'stop'); await state(a, 'provisional');
     assert.equal((await explain(a)).renderer.indicator, 'provisional');
-    await page.getByRole('img', { name: /Stopped · outcome unverified/ }).first().waitFor();
+    await page.getByRole('img', { name: /Stop observed · outcome unknown/ }).first().waitFor();
+    const nativeTurn = () => page.evaluate(async id => (await window.electronAPI.getAgentAttentionSnapshots()).find(s => s.terminalId === id).runtime.turnId, a);
+    const provisionalTurn = await nativeTurn();
+    await send(a, 'activity'); await state(a, 'running');
+    assert.equal(await nativeTurn(), provisionalTurn, 'Activity must not create a foreground turn');
+    await send(a, 'stop'); await state(a, 'provisional');
     await send(a, 'start'); await state(a, 'running');
     await page.getByRole('button', { name: 'Minimize pane', exact: true }).first().click();
     await until(async () => !(await explain(a)).renderer.terminalPanePresented, 'Minimized pane still presented');
@@ -108,7 +113,7 @@ let app;
     const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
     await send(restored, 'stop'); await state(restored, 'provisional');
     await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', provisionalStop: 'passed in cold and mounted panes', provisionalApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', provisionalStop: 'passed in cold and mounted panes; same-turn activity restores Running', provisionalApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);

@@ -218,9 +218,12 @@ describe('attention bridge state transactions', () => {
     expect(broker.handoffState('term')).toBe('running');
     await run('codex.mjs', 'Stop', turn);
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(true); // provisional boundary cannot recover lifecycle
+    await run('codex.mjs', 'PreToolUse', { ...turn, tool_use_id: 'continued', ...bash('x') });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true); // same-turn activity is not a recovery boundary
+    expect(broker.explain('term')?.lastAccepted?.semantic).toBe('turn_activity');
     await run('codex.mjs', 'Interrupt', turn);
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
-    expect(updates).toEqual(['turn_started', 'turn_provisional', 'turn_interrupted']);
+    expect(updates).toEqual(['turn_started', 'turn_provisional', 'turn_started', 'turn_interrupted']);
   });
 
   it('keeps poison across rejected and ignored boundaries; only an accepted native boundary recovers', async () => {

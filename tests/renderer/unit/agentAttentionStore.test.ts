@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { attentionCounts, useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
-import { deriveAttention } from '../../../src/renderer/lib/agentAttentionPresentation';
+import { deriveAttention, getAttentionPresentation } from '../../../src/renderer/lib/agentAttentionPresentation';
 import { nextAttentionTarget } from '../../../src/renderer/lib/agentAttentionNavigation';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { change, EMPTY_ATTENTION, snapshot, tombstone } from '../../_helpers/attentionSnapshots';
@@ -234,6 +234,8 @@ describe('provisional settlement hydration and background presentation', () => {
     const pendingRequest = { ...snapshot('t', 'approval', 2).pendingRequest!, resolutionUnknown: true as const };
     store().hydrate([snapshot('t', 'provisional', 3, { pendingRequest })], () => false);
     expect(view('t')).toMatchObject({ display: 'provisional', unseen: false });
+    expect(getAttentionPresentation('provisional').label).toBe('Stop observed · outcome unknown');
+    expect(view('t')?.description).toContain('execution may continue');
     expect(view('t')?.description).toContain('request resolution');
     const workspace = { id: 'w', terminals: [{ id: 't' }], panes: [{ id: 'p', terminalId: 't' }] } as WorkspaceTab;
     expect(nextAttentionTarget([workspace], store().byTerminalId, store().seenByTerminalId, null)).toBeNull();

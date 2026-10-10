@@ -38,8 +38,8 @@ export function deriveAttention(
   if (snapshot) {
     const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
     if (runtime.status === 'provisional') view = { display: 'provisional', unseen: false, description: pendingRequest
-      ? 'Provider stopped provisionally; request resolution and final outcome are unverified. Answer in the agent terminal if needed.'
-      : 'Provider stopped provisionally; final outcome is unverified. Continue in the agent terminal.' };
+      ? 'A candidate Stop was observed; execution may continue; request resolution and final outcome are unknown. Check the agent terminal.'
+      : 'A candidate Stop was observed; execution may continue. Final outcome is unknown. Check the agent terminal.' };
     else if (pendingRequest && !pendingRequest.resolutionUnknown) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
     else if (runtime.status === 'starting' || runtime.status === 'running') view = { display: 'running', unseen: false };
     else if (runtime.status === 'failed') view = { display: 'failed', unseen: false };
@@ -56,7 +56,7 @@ export function deriveAttention(
 /** Shared label/icon semantics for a displayed attention state. */
 export function getAttentionPresentation(display: AttentionDisplay) {
   switch (display) {
-    case 'provisional': return { label: 'Stopped · outcome unverified', Icon: CircleAlert };
+    case 'provisional': return { label: 'Stop observed · outcome unknown', Icon: CircleAlert };
     case 'signal_unavailable': return { label: 'Native attention unavailable', Icon: CircleAlert };
     case 'signal_degraded': return { label: 'Native attention degraded', Icon: CircleAlert };
     case 'needs_input': return { label: 'Needs input', Icon: CircleAlert };

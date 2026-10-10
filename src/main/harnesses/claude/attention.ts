@@ -18,6 +18,8 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'Permission
  *   can never clear a wait. Cost: after an approval the pane stays Needs Input until the batch
  *   ends, and a denied call resolves with its batch.
  * - Settlement: root `Stop` is only a candidate; another Stop hook may continue the turn.
+ *   A later root PreToolUse with the same prompt_id proves resumed activity (not a new turn).
+ *   PostToolBatch alone may resolve an old batch, so does not restore Running.
  *   No documented post-decision hook proves settlement. Report that limitation, never Done.
  *   `StopFailure` is explicit failure evidence and becomes `turn_failed`, never a completion;
  *   the error is never forwarded. Neither background task counts nor crons prove settlement.
@@ -54,10 +56,15 @@ export default function interpret(input, hook, store) {
       store.write({ session: sessionId, turn: turnId, pending: false });
       return event('turn_started', { turnId, cwd });
     case 'PreToolUse':
-      if (input.tool_name !== 'AskUserQuestion') return null;
+      if (!current || !turnId || !text(input.tool_name)) return null;
+      if (input.tool_name !== 'AskUserQuestion') {
+        // Root prompt identity proves activity in the SAME turn after a candidate Stop.
+        // Keep the superseded wait marker until a batch/request boundary resolves it.
+        if (!state.provisional) return null;
+        return event('turn_activity', { turnId });
+      }
       // AskUserQuestion is intrinsically interactive and may need no permission approval.
       // Its enclosing batch is the native resolution boundary, just like an approval wait.
-      if (!current || !turnId) return null;
       if (state.pending && !state.provisional) return null;
       store.write({ session: sessionId, turn: turnId, pending: true });
       return event('input_requested', { turnId, inputId: 'permission', requestKind: 'input' });
@@ -68,7 +75,7 @@ export default function interpret(input, hook, store) {
       return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
     case 'PostToolBatch':
       if (!current || !state.pending) return null;
-      store.write({ session: sessionId, turn: turnId, pending: false });
+      store.write({ ...state, pending: false });
       return event('input_resolved', { turnId, inputId: 'permission' });
     case 'Stop':
       // Every Stop hook sees a candidate BEFORE other hooks may block/continue it.

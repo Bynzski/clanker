@@ -1250,3 +1250,76 @@ sys.modules['tools.terminal_tool_lifecycle'] = lifecycle
     expect(broker.snapshot('term')?.location?.path).toBe('/w/repo');
   });
 });
+
+
+describe('native tool activity after candidate Stop', () => {
+  it.each(['claude', 'codex'] as const)('%s preserves unresolved approval history when root tools resume', async harness => {
+    const hook = await interpreter(harness); const { feed, broker, state } = rig(harness);
+    const identity = { session_id: 'root', prompt_id: 't1', turn_id: 't1' };
+    const tool = { ...identity, tool_name: 'Bash', tool_use_id: 'old', tool_input: { command: 'true' } };
+    feed(hook('UserPromptSubmit', identity));
+    feed(hook('PreToolUse', tool));
+    feed(hook('PermissionRequest', tool));
+    feed(hook('Stop', identity));
+    const historical = broker.snapshot('term')!.pendingRequest;
+    feed(hook('PreToolUse', { ...tool, tool_use_id: 'continued' }));
+    expect(state()).toBe('running');
+    expect(broker.snapshot('term')!.pendingRequest).toEqual(historical);
+    expect(historical?.resolutionUnknown).toBe(true);
+    // Every fresh tool start after the candidate can carry activity, even if a prior
+    // delivery was lost. This never resets the canonical turn or request history.
+    expect(hook('PreToolUse', { ...tool, tool_use_id: 'next' })).toMatchObject({ event: 'turn_activity', turnId: 't1' });
+    expect(broker.canHandoff('term')).toBe(false);
+  });
+  it.each(['claude', 'codex'] as const)('%s resumes the existing root turn, never a child or stale turn', async harness => {
+    const hook = await interpreter(harness); const { feed, broker, state } = rig(harness);
+    const identity = { session_id: 'root', ...(harness === 'claude' ? { prompt_id: 't1' } : { turn_id: 't1' }) };
+    const tool = { ...identity, tool_name: 'Bash', tool_use_id: 'call', tool_input: { command: 'true' } };
+    feed(hook('UserPromptSubmit', identity));
+    if (harness === 'codex') feed(hook('PreToolUse', tool));
+    feed(hook('PermissionRequest', tool));
+    feed(hook('Stop', identity));
+    const stopped = broker.snapshot('term')!;
+    expect(state()).toBe('provisional');
+    // A batch/post-tool callback alone may be delayed from before the Stop.
+    feed(hook(harness === 'claude' ? 'PostToolBatch' : 'PostToolUse', tool));
+    expect(state()).toBe('provisional');
+    expect(hook('PreToolUse', identity)).toBeNull();
+    expect(hook('PreToolUse', { ...tool, agent_id: 'child' })).toBeNull();
+    expect(hook('PreToolUse', { ...tool, session_id: 'other' })).toBeNull();
+    expect(hook('PreToolUse', { ...tool, prompt_id: 'old', turn_id: 'old' })).toBeNull();
+    feed(hook('PreToolUse', { ...tool, tool_use_id: 'continued' }));
+    expect(state()).toBe('running');
+    expect(broker.snapshot('term')!.runtime).toEqual({ ...stopped.runtime, status: 'running' });
+    expect(broker.snapshot('term')!.lastCompletion).toBeNull();
+    expect(broker.canHandoff('term')).toBe(false);
+    // A continuation approval remains actionable even after ordinary resumed activity.
+    feed(hook('PermissionRequest', tool));
+    expect(state()).toBe('needs_input');
+    feed(hook(harness === 'claude' ? 'PostToolBatch' : 'PostToolUse', { ...tool, tool_use_id: 'continued' }));
+    expect(state()).toBe('running');
+    feed(hook('Stop', identity));
+    expect(state()).toBe('provisional');
+    feed(hook('UserPromptSubmit', { ...identity, prompt_id: 't2', turn_id: 't2' }));
+    expect(state()).toBe('running');
+    feed(hook('Stop', identity));
+    expect(state()).toBe('running');
+    expect(broker.snapshot('term')!.lastCompletion).toBeNull();
+  });
+
+  it('Antigravity does not infer a correlated continuation from unnumbered tools or noninitial invocations', async () => {
+    const hook = await interpreter('agy'); const { feed, broker, state } = rig('agy');
+    feed(hook('PreInvocation', { conversationId: 'root', invocationNum: 0 }));
+    feed(hook('Stop', { conversationId: 'root', fullyIdle: true, terminationReason: 'model_stop' }));
+    const turn = broker.snapshot('term')!.runtime.turnId;
+    for (const conversationId of ['root', 'child']) {
+      feed(hook('PreInvocation', { conversationId, invocationNum: 1 }));
+      feed(hook('PreToolUse', { conversationId, toolCall: { name: 'run_command' } }));
+      feed(hook('PostToolUse', { conversationId, toolCall: { name: 'run_command' } }));
+    }
+    expect(state()).toBe('provisional');
+    expect(broker.snapshot('term')!.runtime.turnId).toBe(turn);
+    expect(broker.canHandoff('term')).toBe(false);
+    expect(broker.snapshot('term')!.lastCompletion).toBeNull();
+  });
+});
