@@ -18,6 +18,11 @@ const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: '
 git('init', '-b', 'main'); git('config', 'user.name', 'Smoke'); git('config', 'user.email', 'smoke@example.invalid');
 fs.writeFileSync(path.join(project, 'README.md'), 'fixture\n'); git('add', '.'); git('commit', '-m', 'fixture');
 git('worktree', 'add', '-b', 'linked-task', path.join(root, 'linked-task'));
+git('branch', 'cancel-delete'); git('branch', `feature/${'long-branch-name-'.repeat(8)}`);
+git('worktree', 'add', '-b', 'locked', path.join(root, 'locked'));
+git('worktree', 'lock', '--reason', 'Intentional lock — review before cleanup', path.join(root, 'locked'));
+git('worktree', 'add', '-b', 'missing', path.join(root, 'missing'));
+fs.rmSync(path.join(root, 'missing'), { recursive: true, force: true });
 fs.appendFileSync(path.join(project, 'README.md'), 'uncommitted\n');
 fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ workspaceNavigationMode: 'tabs', harnessDefaults: Object.fromEntries(['codex', 'claude', 'pi', 'opencode', 'omp', 'hermes', 'agy'].map(id => [id, { model: '', favorites: [], flags: '', visible: false, usageVisible: false }])) }));
 const server = http.createServer((_request, response) => response.end('<title>Source Control fixture</title><h1>Native Browser</h1>'));
@@ -51,7 +56,24 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         const geometry = await dialog.evaluate(element => { const bounds = element.getBoundingClientRect(); const content = element.querySelector('.management-content'); return { within: bounds.left >= 0 && bounds.top >= 0 && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight, overflow: content.scrollWidth > content.clientWidth }; });
         assert(geometry.within && !geometry.overflow, `Overview geometry ${theme}/${width}`);
         await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-overview.png`) });
-        await dialog.getByRole('button', { name: 'Existing Git Tools' }).click(); await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
+        for (const section of ['Branches', 'Worktrees', 'Existing Git Tools']) {
+          await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
+          await dialog.getByRole('heading', { name: section, exact: true }).waitFor();
+          if (section === 'Branches') await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).waitFor();
+          if (section === 'Worktrees') {
+            await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
+            await dialog.getByRole('button', { name: 'Unlock checkout for branch locked' }).waitFor();
+            await dialog.getByRole('button', { name: 'Prune missing worktrees…' }).waitFor();
+          }
+          assert(await dialog.evaluate(element => { const content = element.querySelector('.management-content'); return content.scrollWidth <= content.clientWidth; }), `${section} horizontal overflow ${theme}/${width}`);
+          await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${section.toLowerCase().replaceAll(' ', '-')}.png`) });
+          if (section === 'Branches') {
+            await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).click(); await page.getByRole('alertdialog').waitFor();
+            assert((await views()).every(view => !view.visible), 'Branch confirmation exposed Browser');
+            await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+          }
+        }
+        await dialog.getByRole('navigation').getByRole('button', { name: 'Worktrees', exact: true }).click(); await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
         await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).click(); await page.getByRole('alertdialog').waitFor();
         assert((await views()).every(view => !view.visible), 'Worktree confirmation exposed Browser'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
         assert(await dialog.isVisible()); await dialog.getByRole('button', { name: 'Overview', exact: true }).click();
@@ -63,6 +85,6 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     }
     assert.equal(git('status', '--porcelain').toString().trim(), 'M README.md', 'Smoke changed fixture worktree contents');
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; themes/responsive Overview, transitional tools, cancel-only worktree confirmation, real CommitDialog, native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Overview/Branches/Worktrees/transitional tools, cancel-only branch/worktree confirmations, real CommitDialog, native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

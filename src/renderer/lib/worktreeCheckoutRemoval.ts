@@ -1,6 +1,7 @@
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
+import { isWorktreeRemovalWorkspaceCurrent } from './worktreeRemovalScope';
 import { getCheckoutContext } from './checkoutContexts';
 
 /**
@@ -58,7 +59,7 @@ export async function removeWorktreeCheckout(
   const liveContext = live ? getCheckoutContext(live, checkoutContext.id) : null;
   if (checkoutContext.workspaceId !== workspace.id || checkoutContext.kind !== 'worktree'
     || checkoutContext.environmentId !== environmentId
-    || !live || (live.environmentId || 'local') !== environmentId
+    || !live || !isWorktreeRemovalWorkspaceCurrent(workspace)
     || !liveContext || liveContext.path !== checkoutContext.path) {
     return fail('validate', 'This is not a worktree checkout of this workspace', false);
   }
@@ -69,6 +70,7 @@ export async function removeWorktreeCheckout(
   } catch (cause) {
     return fail('release', messageOf(cause, 'Could not release the checkout'), false);
   }
+  if (!isWorktreeRemovalWorkspaceCurrent(workspace)) return fail('release', 'Workspace identity changed during removal; checkout kept', true);
   // Only now that main has released it does the renderer stop treating the root as active.
   useWorkspaceStore.getState().removeCheckoutContext(workspace.id, checkoutContext.id);
 
@@ -80,6 +82,7 @@ export async function removeWorktreeCheckout(
   let stage: 'inspect' | 'remove' = 'inspect';
   try {
     const inspection = await window.electronAPI.gitInspectWorktree(workspace.workspacePath, checkoutContext.path, openPaths, workspace.id);
+    if (!isWorktreeRemovalWorkspaceCurrent(workspace)) return fail('inspect', 'Workspace identity changed during inspection; checkout kept', true);
     if (!inspection.success || !inspection.worktree || typeof inspection.hasChanges !== 'boolean') {
       return fail('inspect', inspection.error || 'Could not inspect worktree', true);
     }

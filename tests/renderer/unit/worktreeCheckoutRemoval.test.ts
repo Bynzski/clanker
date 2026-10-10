@@ -57,6 +57,21 @@ describe('removeWorktreeCheckout', () => {
     expect(api.gitRemoveWorktree).toHaveBeenCalledWith(ROOT, context.path, 'task', [ROOT, '/projects/other'], 'ws');
   });
 
+  it.each(['environmentId', 'workspacePath'])('does not dispatch inspection into a replacement %s after release', async (field) => {
+    const workspace = open(); let finish!: (value: unknown) => void;
+    api.releaseCheckoutContext.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = removeWorktreeCheckout(workspace, wtContext('ws', 'task'));
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => entry.id === 'ws' ? { ...entry, [field]: field === 'environmentId' ? 'ssh-other' : '/other-repo' } : entry) }));
+    finish({ success: true }); const result = await pending;
+    expect(result.success).toBe(false); expect(api.gitInspectWorktree).not.toHaveBeenCalled(); expect(api.gitRemoveWorktree).not.toHaveBeenCalled(); expect(contextIds()).toContain('ws::ckt-task');
+  });
+  it('does not remove after inspection if the workspace root changed during the request', async () => {
+    const workspace = open(); let finish!: (value: unknown) => void;
+    api.gitInspectWorktree.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = removeWorktreeCheckout(workspace, wtContext('ws', 'task')); await vi.waitFor(() => expect(api.gitInspectWorktree).toHaveBeenCalled());
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => entry.id === 'ws' ? { ...entry, workspacePath: '/other-repo' } : entry) }));
+    finish({ success: true, hasChanges: false, worktree: listing(wtContext('ws', 'task').path, 'task') }); expect((await pending).success).toBe(false); expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+  });
   it('forgets the context only after main confirms the release', async () => {
     const workspace = open();
     let confirm!: () => void;

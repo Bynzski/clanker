@@ -57,7 +57,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       if (!button) throw new Error('no git button');
       return button as HTMLElement;
     }));
-    await user.click(await screen.findByRole('button', { name: 'Existing Git Tools' }));
+    await user.click(await screen.findByRole('button', { name: 'Worktrees' }));
     await screen.findByText(expectedBranch);
   };
   const clickRemove = async () => {

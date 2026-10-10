@@ -206,7 +206,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     void loadRemotes();
   }, [workspacePath, loadRemotes]);
 
-  const refreshMenuDataRef = useRef<() => Promise<void>>(async () => {});
+  const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean) => Promise<void>>(async () => {});
   const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
   const refreshAfterAction = useCallback(async () => {
@@ -226,6 +226,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     setBranchError,
     setNewBranchName,
   } = useGitBranchActions({
+    isCurrent,
     activeAction,
     currentBranch,
     onSetActiveAction: setActiveAction,
@@ -271,14 +272,14 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   });
 
   const dataRequest = useRef(0);
-  const refreshMenuData = useCallback(async () => {
+  const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
     const request = ++dataRequest.current;
     const fresh = () => isCurrent() && request === dataRequest.current;
     if (!workspacePath || !fresh()) {
       return;
     }
 
-    setMenuRefreshCount((count) => count + 1);
+    if (reloadWorktrees) setMenuRefreshCount((count) => count + 1);
 
     setIsLoadingBranches(true);
     setIsLoadingOperation(true);
@@ -672,6 +673,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         {isRepo ? <GitRepoMenu
             scope={scope}
             statusKnown={statusKnown}
+            branchConfirmationOpen={deleteDialog !== null}
+            isScopeCurrent={isCurrent}
+            onWorktreesChanged={() => { if (isCurrent()) void Promise.all([refreshMenuDataRef.current(false), window.electronAPI.gitRefresh(workspaceId)]).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             activeAction={activeAction}
             ahead={ahead}
             availableMergeTargets={availableMergeTargets}
@@ -767,6 +771,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       {deleteDialog && (
         <GitDeleteBranchDialog
           currentBranch={currentBranch}
+          workspaceId={workspaceId}
           deleteDialog={deleteDialog}
           isBusy={deleteDialogBusy}
           onCancel={closeDeleteDialog}

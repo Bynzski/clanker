@@ -1,8 +1,139 @@
-# Issue #154 — Inventory and Phase 0–3A decisions
+# Issue #154 — Inventory and Phase 0–3B decisions
 
-Current scope: application Settings through Phase 2B and Source Control foundation / Overview through Phase 3A. Phase 3A starts from reviewed
+## Phase 3B — permanent Branches and Worktrees
+
+Starts from reviewed `a93b5e376d0e096603af61462a2856ed2838eccd` on
+`feat/154-management-settings`. No Phase 3C/3D, PR, merge or unrelated Browser work.
+
+### Navigation and ownership
+
+Repository now contains **Overview / Branches / Worktrees**. **Advanced —
+Transitional → Existing Git Tools** contains **only Stashes, Remotes, Merge and
+History**, using their unchanged implementations. Branches and Worktrees have no
+copies in that destination. Later Phase 3C/3D work must migrate those remaining
+sections and perform final cleanup/polish, not create another Git controller.
+
+`GitButton` still owns polling, branch/status lists, action hooks, errors, busy
+state and scoped VCS metadata. `GitRepoMenu` owns page selection only. Branches
+reuses `GitBranchesSection` and `useGitBranchActions`; Worktrees mounts one
+`GitWorktreesSection`, only on that page. Navigation dispatches no mutation, adds
+no polling or reconciliation subscription, and retains the app's one existing
+reconciliation owner. Loading/empty/error states are explicit. Lists use the
+shell's content scroll, not a tiny dropdown-height list; long names and paths wrap.
+
+### Branch guards
+
+- The page identifies the native current branch / detached HEAD, shows all local
+  branches and contextual Switch/Delete controls, and explains the current-branch
+  and other-worktree restrictions. Create retains main's branch-name validation;
+  failed drafts and Git errors remain available. Pending actions never manufacture
+  a current branch: successful operations refresh native status and branch state.
+- The existing `GitDeleteBranchDialog` still separates ordinary deletion from
+  explicit force escalation. Only `blockedByUnmergedCommits` offers force; Cancel
+  never mutates, and a worktree-protected branch cannot be forced by the UI. Both
+  entry and confirmation refuse the current branch, including one that became
+  current while confirmation was open. Git remains the authoritative last check.
+- The hook prevents overlapping dispatches, checks scope after awaited calls and
+  never refreshes or publishes a late old-scope acknowledgement. Provider badges,
+  validated deep links and provider refresh stay on Branches; unknown/loading or
+  authorization failures do not offer a guessed Create PR action.
+
+### Worktree guards and reconciliation
+
+- The permanent page includes Git's **main checkout** as a protected inspection
+  row, plus linked managed/unmanaged/in-use/locked/missing checkouts. The compact
+  isolated-agent repair consumer still excludes main. No creation UI was added;
+  creation remains New isolated agent. Renderer usage is advisory: main rechecks
+  terminals, agents, dev services, open roots and equivalent SSH hosts.
+- Managed removal remains `removeWorktreeCheckout`: release acknowledged by main,
+  remove the renderer context, inspect, then remove with native branch identity.
+  A failure after release leaves files/branch intact and the checkout unmanaged;
+  no automatic adoption or rollback. Unmanaged removal remains
+  `removeUnmanagedWorktree`, which refuses attached contexts and main. Dirty,
+  untracked/ignored files, reservations/journals/recovery and backend ownership
+  restrictions remain intact. No force removal or permission widening.
+- Unlock is separately confirmed, with the lock reason and intentional-lock
+  warning. It never automatically removes anything. Prune removes Git's stale
+  repository records, not branches/files; Forget re-runs main reconciliation and
+  only forgets unused, still-gone Clanker registrations. The confirmations keep
+  their existing exact semantics and default Cancel focus.
+- Each local worktree operation re-lists once and requests the existing coalesced
+  reconciliation. Its parent refreshes authoritative Git data **without** bumping
+  the worktree reload key again. Explicit Refresh worktrees uses that same section
+  loader. No unattended SSH poll was introduced. Unmounted/superseded list results
+  cannot publish data or launch a follow-up reconciliation.
+- Sequential removal helpers now recheck the workspace environment/root between
+  release, inspection and removal so an old acknowledgement cannot dispatch the
+  next step into a replacement root. Central reconciliation similarly rejects
+  results for a replaced environment/root. Main authorization is unchanged.
+
+### Scope distinctions and remaining restriction
+
+| Operation / location | Authoritative scope and Phase 3B behavior |
+| --- | --- |
+| Repository-level worktree inspection | Git lists the repository relationship via a registered workspace ID and scoped Git executor; listed paths select entries, never grant filesystem authority. Main checkout is inspection-only. |
+| Workspace checkout branch/commit/switch operations | Existing Git IPC resolves the registered workspace's own root/environment. The displayed path is descriptive only. |
+| Selected isolated checkout | `gitManagementScope` continues explicit fail-closed restriction, including Worktrees navigation. This intentionally does not substitute parent-repository inspection or mutations. Open the checkout as a workspace to use the existing authorized path. |
+| Agent-specific directory | Main-reported registered checkout identity influences selection, not execution binding. Arbitrary reported cwd, launcher choice, `mainCheckoutPath` or branch name never authorizes Git or removal. |
+
+Direct selected-checkout operations require a separately reviewed IPC contract:
+resolve `workspaceId + checkoutContextId` in main to the exact registered context,
+validate its own canonical root/environment and reservations, preserve that identity
+across async execution/status/polling, and distinguish repository inspection from
+checkout mutations. Agent location must not silently rebind the transaction. This
+phase adds no such contract, broadens no IPC permissions, and installs no remote
+helper/daemon. Scope changes retain Phase 3A's close/reset policy.
+
+### Management lifecycle and verification
+
+The shared Dialog/AlertDialog still owns focus, topmost Escape and Browser leases.
+Navigation/close/outside dismissal is blocked while a branch confirmation or
+worktree confirmation/operation is active; scope changes still close/reset and
+never retarget requests. Nested confirmations keep the parent mounted/suppressed,
+Cancel returns to its page, and normal close restores the live toolbar trigger.
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **372 files / 7,708 tests
+  passed**; branding, lint, typecheck, Fallow, security and build passed
+  (`/tmp/154-3b-validate-final.log`). Existing audit exception and bundle warning
+  remain unchanged. The normal inherited-PATH run passed all checks except three
+  real session-history test timeouts: its globally installed OpenCode CLI invokes
+  bounded native history discovery under an isolated HOME. A diagnostic 60-second
+  timeout run passed in 97 seconds; the same tests at their **unchanged default
+  timeout** passed with system-only PATH in under one second. No unrelated test,
+  timeout, session-discovery code or installed CLI was modified to conceal this.
+  Final validation excludes optional global harness CLIs, as ordinary CI does.
+- Focused Git/VCS/checkout/Source Control/CommitDialog/Header/Settings regressions:
+  **60 files / 1,382 tests passed** with the same isolated PATH
+  (`/tmp/154-3b-focused-final.log`). New tests cover navigation/single polling,
+  branch validation/current/detached/switch acknowledgement, delete/cancel/force
+  escalation/errors/late scope changes, PR deep links, protected main/managed/
+  unmanaged/in-use rows, one unlock reload, stale lists, cross-root sequential
+  removal and reconciliation. Existing dirty/untracked/ignored, release/refusal,
+  unlock/prune/forget and SSH ownership tests retain their destructive assertions.
+  Isolated **real Git** fixtures additionally check normal-vs-force deletion,
+  current/other-worktree protection, validation and switching failures.
+- Source Control Electron smoke passes all four destinations, long names/paths,
+  main/unmanaged/locked/missing rows, nested branch/worktree Cancel, real
+  CommitDialog, native Browser suppression/restoration and trigger focus in
+  Dark/Light/Slate at 1100×760 and 640×480. Reviewed screenshots in
+  `/tmp/clanker-source-control-visual-hzN6iY`; content scrolls independently and
+  controls remain reachable without horizontal overflow. Log:
+  `/tmp/154-3b-source-smoke-final.log`. Native fixture mutations are confined to
+  its temporary repository; UI destructive confirmations are cancel-only.
+- Unchanged Settings Electron smoke and full-renderer Browser smoke pass
+  (`/tmp/154-3b-settings-smoke.log`, `/tmp/154-3b-browser.log`).
+- Separate native multi-Browser runner still exits **SIGSEGV**
+  (`/tmp/154-3b-multi.log`); it is not counted as a passing smoke.
+
+Real authenticated provider PR/CI, live SSH mutations/recovery, Windows/macOS
+desktop focus, high zoom/OS scaling and screen readers remain owner smoke. No
+unrelated Browser internals were changed. No Phase 3C/3D, PR or merge is included.
+
+## Reviewed Phase 3A
+
+Scope: application Settings through Phase 2B and Source Control foundation / Overview through Phase 3A. Phase 3A starts from reviewed
 `18348cabfebd6bb4aa11d7973a35348ad1205e1c` on `feat/154-management-settings`.
-No Phase 3B, PR or merge is included.
+No Phase 3B, PR or merge was included in that reviewed commit.
 
 ## Phase 3A — Source Control foundation
 

@@ -1,3 +1,4 @@
+import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
@@ -22,8 +23,13 @@ const hasWorktreeContexts = (workspaceId: string): boolean => {
 };
 
 async function reconcileOnce(workspaceId: string): Promise<void> {
+  const workspace = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
+  if (!workspace) return;
+  const identity = { environmentId: workspace.environmentId || 'local', path: workspace.workspacePath };
   try {
     const result = await window.electronAPI.reconcileCheckoutContexts(workspaceId);
+    const live = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
+    if (!live || !isSameWorkspaceIdentity(identity, { environmentId: live.environmentId || 'local', path: live.workspacePath })) return;
     useWorkspaceStore.getState().applyCheckoutContextReconciliation(workspaceId, result);
   } catch {
     // Best effort: a closed workspace or an unreachable host changes nothing; the next trigger retries.

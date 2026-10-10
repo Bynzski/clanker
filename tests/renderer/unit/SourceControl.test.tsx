@@ -118,3 +118,116 @@ describe('Source Control foundation', () => {
     expect(screen.queryByRole('button', { name: 'Commit Changes' })).toBeNull(); expect(api.gitFetch).not.toHaveBeenCalled();
   });
 });
+
+describe('Permanent Branches and Worktrees', () => {
+  beforeEach(() => {
+    api.gitGetBranchState.mockImplementation(async () => ({ success: true, isRepo: true, currentBranch: status.currentBranch, isDetached: status.isDetached,
+      branches: ['main', 'feature'].map((name) => ({ name, isCurrent: name === status.currentBranch && !status.isDetached })) }));
+    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false }, { path: '/repo-worktrees/feature', branch: 'feature', isMain: false, isLocked: false, isPrunable: false }] });
+  });
+  async function branchesPage() {
+    const result = await open();
+    await result.user.click(within(result.dialog).getByRole('button', { name: 'Branches' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Switch to branch feature' })).toBeEnabled()); return result;
+  }
+  it('navigates without mutations, duplicate polling or branch/worktree interfaces in the transitional page', async () => {
+    const { user, dialog } = await branchesPage(); expect(screen.getByRole('button', { name: 'Delete branch main' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Worktrees' })); await screen.findByText('Main checkout');
+    expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull(); expect(api.gitListWorktrees).toHaveBeenCalledTimes(1);
+    await user.click(within(dialog).getByRole('button', { name: 'Existing Git Tools' })); expect(screen.queryByRole('button', { name: 'Delete branch feature' })).toBeNull();
+    expect(screen.queryByText('Listed checkouts')).toBeNull(); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
+    expect(api.gitCreateBranch).not.toHaveBeenCalled(); expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+  });
+  it('protects main and in-use checkouts and distinguishes managed from unmanaged on the permanent page', async () => {
+    const managed = { id: 'managed', workspaceId: 'ws', environmentId: 'local', path: '/repo-worktrees/managed', kind: 'worktree' as const, branch: 'managed' };
+    const used = { ...managed, id: 'used', path: '/repo-worktrees/used', branch: 'used' };
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, checkoutContexts: [managed, used], terminals: [createTerminalFixture({ id: 'other-agent', checkoutContextId: used.id })], activeTerminalId: null })) }));
+    api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [managed, used], dropped: [] });
+    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true }, ...[managed, used].map((entry) => ({ path: entry.path, branch: entry.branch, isMain: false })), { path: '/repo-worktrees/external', branch: 'external', isMain: false }] });
+    const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Worktrees' }));
+    expect(await screen.findByText('Managed', { exact: true })).toBeVisible(); expect(screen.getByText('Unmanaged', { exact: true })).toBeVisible(); expect(screen.getByText('In use', { exact: true })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Remove checkout for branch used' })).toBeNull(); expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Remove checkout for branch managed' })).toBeEnabled(); expect(api.reconcileCheckoutContexts).toHaveBeenCalledTimes(1);
+  });
+  it('discards worktree list results after navigation without extra reconciliation', async () => {
+    let finish!: (value: unknown) => void; api.gitListWorktrees.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Worktrees' })); await screen.findByText('Loading worktrees…'); await user.click(screen.getByRole('button', { name: 'Branches' }));
+    await act(async () => finish({ success: true, worktrees: [{ path: '/old', branch: 'late-worktree', isMain: false }] })); expect(screen.queryByText('late-worktree')).toBeNull(); expect(api.reconcileCheckoutContexts).not.toHaveBeenCalled(); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
+  });
+  it('refreshes worktrees exactly once after unlocking and keeps navigation locked during the request', async () => {
+    let finish!: (value: unknown) => void; api.gitUnlockWorktree.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo-worktrees/locked', branch: 'locked', isMain: false, isLocked: true, lockReason: 'Intentional' }] });
+    const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Worktrees' })); await user.click(await screen.findByRole('button', { name: 'Unlock checkout for branch locked' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Locks may be intentional'); await user.click(screen.getByRole('button', { name: 'Unlock worktree' })); expect(screen.getByRole('button', { name: 'Branches' })).toBeDisabled();
+    await act(async () => finish({ success: true })); await waitFor(() => expect(api.gitListWorktrees).toHaveBeenCalledTimes(2));
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled(); expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(1);
+  });
+  it('creates through existing branch validation and keeps failed drafts', async () => {
+    api.gitCreateBranch.mockResolvedValue({ success: false, error: 'Invalid branch name' }); const { user } = await branchesPage();
+    await user.type(screen.getByLabelText('Create Branch'), 'bad name'); await user.click(screen.getByRole('button', { name: 'Create' }));
+    expect(api.gitCreateBranch).toHaveBeenCalledWith('/repo', 'bad name', 'main', 'ws'); expect(await screen.findByText('Invalid branch name')).toBeVisible(); expect(screen.getByLabelText('Create Branch')).toHaveValue('bad name');
+  });
+  it('creates successfully and refreshes authoritative branch state without switching optimistically', async () => {
+    const { user } = await branchesPage(); const before = api.gitGetBranchState.mock.calls.length;
+    await user.type(screen.getByLabelText('Create Branch'), 'new-task'); await user.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(before)); expect(screen.getByLabelText('Create Branch')).toHaveValue(''); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+  });
+  it('switches only on native acknowledgement and refreshes the shared controller', async () => {
+    let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Worktrees' })).toBeDisabled();
+    await act(async () => { status = { ...status, currentBranch: 'feature' }; listeners[0](status); finish({ success: true }); });
+    await waitFor(() => expect(screen.getByText(/Current checkout: feature/)).toBeVisible()); expect(api.gitSwitchBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws');
+    expect(screen.getByRole('button', { name: 'Delete branch feature' })).toBeDisabled();
+  });
+  it('shows switch failure without fabricating the new branch', async () => {
+    api.gitSwitchBranch.mockResolvedValue({ success: false, error: 'Branch is checked out in another worktree' }); const { user } = await branchesPage();
+    await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(await screen.findByText('Branch is checked out in another worktree')).toBeVisible(); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+  });
+  it('shows detached HEAD on Branches without marking a local branch current', async () => {
+    status = { ...status, currentBranch: null, isDetached: true }; await branchesPage(); expect(screen.getByText(/Current checkout: Detached HEAD/)).toBeVisible(); expect(screen.queryByText('Current', { exact: true })).toBeNull();
+  });
+  it('cancels normal deletion and holds navigation and the Browser lease while the dialog is open', async () => {
+    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await screen.findByRole('alertdialog');
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(2); expect(screen.getByRole('button', { name: 'Worktrees', hidden: true })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cancel' })); expect(api.gitDeleteBranch).not.toHaveBeenCalled(); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled(); expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(1);
+  });
+  it('deletes normally through the scoped API and refreshes', async () => {
+    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' }));
+    expect(api.gitDeleteBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws'); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled(); await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+  it('requires a distinct force-delete decision only for an unmerged-commits result', async () => {
+    api.gitDeleteBranch.mockResolvedValue({ success: false, blockedByUnmergedCommits: true, error: 'Unmerged work' }); const { user } = await branchesPage();
+    await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' }));
+    await screen.findByText('Unmerged work'); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled(); await user.click(screen.getByRole('button', { name: 'Force Delete' })); expect(api.gitForceDeleteBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws');
+  });
+  it('retains a failed force-delete error and never retries it silently', async () => {
+    api.gitDeleteBranch.mockResolvedValue({ success: false, blockedByUnmergedCommits: true, error: 'Unmerged work' }); api.gitForceDeleteBranch.mockResolvedValue({ success: false, error: 'Branch became attached to a worktree' }); const { user } = await branchesPage();
+    await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' })); await user.click(await screen.findByRole('button', { name: 'Force Delete' }));
+    expect(await screen.findByText('Branch became attached to a worktree')).toBeVisible(); expect(api.gitForceDeleteBranch).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a branch that became current while its confirmation was open', async () => {
+    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Delete branch feature' }));
+    act(() => { status = { ...status, currentBranch: 'feature' }; listeners[0](status); });
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' })); expect(api.gitDeleteBranch).not.toHaveBeenCalled(); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled(); expect(await screen.findByText('The current branch cannot be deleted')).toBeVisible();
+  });
+  it('cancels force escalation without deleting anything further', async () => {
+    api.gitDeleteBranch.mockResolvedValue({ success: false, blockedByUnmergedCommits: true, error: 'Unmerged work' }); const { user } = await branchesPage();
+    await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' })); await screen.findByRole('button', { name: 'Force Delete' });
+    await user.click(screen.getByRole('button', { name: 'Cancel' })); expect(api.gitDeleteBranch).toHaveBeenCalledTimes(1); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled();
+  });
+  it('retains worktree-protected deletion errors without offering force', async () => {
+    api.gitDeleteBranch.mockResolvedValue({ success: false, error: 'Branch used by another worktree' }); const { user } = await branchesPage();
+    await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete branch' }));
+    expect(await screen.findByText('Branch used by another worktree')).toBeVisible(); expect(screen.queryByRole('button', { name: 'Force Delete' })).toBeNull(); expect(api.gitForceDeleteBranch).not.toHaveBeenCalled();
+  });
+  it('preserves branch provider PR links with the canonical scoped deep-link path', async () => {
+    api.vcsGetContext.mockResolvedValue({ success: true, provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: false, outcome: 'none' }, deepLinks: [] });
+    const { user } = await branchesPage(); await user.click(await screen.findByRole('button', { name: 'Create PR' })); expect(api.vcsOpenDeepLink).toHaveBeenCalledWith('/repo', 'create-pr', 'ws');
+  });
+  it.each(['workspace', 'checkout', 'environment'])('discards a pending branch result after a %s change', async (change) => {
+    let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; })); const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' }));
+    const before = api.gitGetBranchState.mock.calls.length; act(() => { useWorkspaceStore.setState((state) => change === 'workspace' ? { activeWorkspaceId: null } : { workspaces: state.workspaces.map((entry) => change === 'environment' ? { ...entry, environmentId: 'ssh-other' } : { ...entry, fileSurfaceContextId: 'unregistered' }) }); });
+    expect(screen.queryByRole('dialog')).toBeNull(); await act(async () => finish({ success: true })); expect(api.gitGetBranchState).toHaveBeenCalledTimes(before); expect(screen.queryByText(/Current checkout: feature/)).toBeNull();
+  });
+});

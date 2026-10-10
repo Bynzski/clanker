@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button';
+import { FormMessage } from '../ui/Field';
 import { GitBranchesSection } from './GitBranchesSection';
 import { GitHistorySection } from './GitHistorySection';
 import { useState } from 'react';
@@ -23,6 +25,9 @@ import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/
 export interface GitRepoMenuProps {
   scope: ReturnType<typeof gitManagementScope>;
   statusKnown: boolean;
+  branchConfirmationOpen: boolean;
+  isScopeCurrent: () => boolean;
+  onWorktreesChanged: () => void;
   activeAction: string | null;
   ahead: number;
   availableMergeTargets: string[];
@@ -101,6 +106,8 @@ export interface GitRepoMenuProps {
 
 export function GitRepoMenu(props: GitRepoMenuProps) {
   const [page, setPage] = useState('overview');
+  const [worktreeBusy, setWorktreeBusy] = useState(false);
+  const busy = props.isBusy || props.branchConfirmationOpen || worktreeBusy;
   const {
   activeAction,
   availableMergeTargets,
@@ -172,22 +179,25 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
   ].filter((error): error is string => Boolean(error));
 
   return (
-    <ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }, { id: 'tools', label: 'Existing Git Tools', group: 'Advanced (transitional)' }]} selectedId={page} onSelect={setPage}>
+    <ManagementShell busy={busy} onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }} onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
+      onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control"
+      items={[{ id: 'overview', label: 'Overview', group: 'Repository' }, { id: 'branches', label: 'Branches', group: 'Repository' }, { id: 'worktrees', label: 'Worktrees', group: 'Repository' }, { id: 'tools', label: 'Existing Git Tools', group: 'Advanced — Transitional' }]}
+      selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
       {page !== 'overview' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
-      {page === 'overview' ? <GitOverview {...props} /> : <div className="git-tools-content">
-      <h2 className="clanker-dialog-title">Existing Git Tools</h2>
-      <p>Branches, Worktrees, Stashes, Remotes, Merge and History use their existing implementations during migration.</p>
-      {errors.map((error) => (
-        <div key={error} className="git-menu-error">{error}</div>
-      ))}
-
+      {page === 'overview' ? <GitOverview {...props} /> : page === 'branches' ? <div className="source-control-page">
+      <h2 className="clanker-dialog-title">Branches</h2>
+      <p>Local branches of this repository. Switch changes the workspace checkout, not an agent's working directory. Git checks worktree ownership before deletion.</p>
+      <p>Current checkout: {props.statusKnown ? props.currentBranchLabel : 'Unknown'}. The current branch cannot be deleted or switched to again.</p>
+      <Button disabled={busy || isLoadingBranches} onClick={props.onRefresh}>Refresh branches</Button>
+      {branchError && <FormMessage variant="error">{branchError}</FormMessage>}
       <GitBranchesSection
         activeAction={activeAction}
         branches={branches}
         createBranchInputRef={createBranchInputRef}
         currentBranch={currentBranch}
-        isBusy={isBusy}
+        isBusy={isBusy || isLoadingBranches || !props.statusKnown}
         isLoadingBranches={isLoadingBranches}
+        management
         newBranchName={newBranchName}
         onCreateBranch={onCreateBranch}
         onDeleteBranch={onDeleteBranch}
@@ -203,8 +213,16 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         workspaceId={workspaceId}
       />
 
-      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} />
-
+      </div> : page === 'worktrees' ? <div className="source-control-page">
+        <h2 className="clanker-dialog-title">Worktrees</h2>
+        <p>Repository-level inspection and cleanup. Main and in-use checkouts are protected; main rechecks agents, terminals and dev servers. Create isolated checkouts through New isolated agent.</p>
+        {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
+        <GitWorktreesSection management workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey}
+          isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />
+      </div> : <div className="git-tools-content">
+      <h2 className="clanker-dialog-title">Existing Git Tools</h2>
+      <p>Stashes, Remotes, Merge and History retain their existing implementations pending later migration.</p>
+      {errors.map((error) => (<div key={error} className="git-menu-error">{error}</div>))}
       <GitStashSection
         activeAction={activeAction}
         includeUntracked={includeUntracked}

@@ -270,9 +270,10 @@ describe('GitButton', () => {
   };
 
   const openTools = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Existing Git Tools' })); }); };
+  const openBranches = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Branches' })); }); };
 
   it('ignores older provider replies after a newer explicit refresh', async () => {
-    await openRepoMenu(); await openTools();
+    await openRepoMenu(); await openBranches();
     let resolveOld!: (value: unknown) => void;
     mockVcsGetContext.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
     await act(async () => { fireEvent.click(screen.getByText('refresh-context')); });
@@ -576,7 +577,7 @@ describe('GitButton', () => {
   describe('menu sections', () => {
     it('renders all existing git sections in the transitional destination', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]); await openTools();
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      expect(screen.queryByTestId('git-branches-section')).toBeNull();
       expect(screen.getByTestId('git-stash-section')).toBeTruthy();
       expect(screen.getByTestId('git-merge-section')).toBeTruthy();
       expect(screen.getByTestId('git-history-section')).toBeTruthy();
@@ -1162,7 +1163,7 @@ describe('GitButton', () => {
       });
 
       render(<GitButton workspacePath="/repo" />);
-      await act(async () => { fireEvent.click(document.querySelector('.git-btn')!); }); await openTools();
+      await act(async () => { fireEvent.click(document.querySelector('.git-btn')!); }); await openBranches();
 
       await act(async () => {
         fireEvent.click(screen.getByText('refresh-context'));

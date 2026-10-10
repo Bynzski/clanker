@@ -1,6 +1,7 @@
 import { Button } from '../ui/Button';
 import { currentVcsCheckoutId } from '../../lib/vcsCheckout';
 import { Input } from '../ui/Input';
+import { FieldLabel, FormMessage } from '../ui/Field';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import type { GitBranch } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
@@ -9,6 +10,7 @@ import ProviderMenu from './ProviderMenu';
 import './GitBranchesSection.css';
 
 interface GitBranchesSectionProps {
+  management?: boolean;
   activeAction: string | null;
   branches: GitBranch[];
   createBranchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -32,6 +34,7 @@ interface GitBranchesSectionProps {
 }
 
 export function GitBranchesSection({
+  management = false,
   activeAction,
   branches,
   createBranchInputRef,
@@ -86,7 +89,7 @@ export function GitBranchesSection({
               {provider.owner}/{provider.repo}
             </span>
             <ProviderBadge
-              pullRequest={pullRequest}
+              pullRequest={contextError || isLoadingContext ? null : pullRequest}
               providerName={providerName}
               onViewPr={handleViewPr}
               onCreatePr={handleCreatePr}
@@ -104,8 +107,9 @@ export function GitBranchesSection({
         </div>
       )}
 
+      {!provider && contextError && <FormMessage variant="error">{contextError}</FormMessage>}
       <div className="git-menu-section">
-        <div className="git-menu-section-header">Create Branch</div>
+        <FieldLabel htmlFor="source-control-branch-name">Create Branch</FieldLabel>
         <form
           className="git-create-branch-form"
           onSubmit={(event) => {
@@ -113,7 +117,7 @@ export function GitBranchesSection({
             onCreateBranch(event);
           }}
         >
-          <Input variant="mono"
+          <Input variant="mono" id="source-control-branch-name"
             ref={createBranchInputRef}
             className="git-create-branch-input"
             value={newBranchName}
@@ -135,7 +139,7 @@ export function GitBranchesSection({
 
       <div className="git-menu-section">
         <div className="git-menu-section-header">
-          Branches
+          {management ? 'Local branches' : 'Branches'}
           <span className="git-menu-count">{branches.length}</span>
         </div>
 
@@ -144,13 +148,15 @@ export function GitBranchesSection({
         ) : branches.length === 0 ? (
           <div className="git-menu-empty">No local branches found</div>
         ) : (
-          <div className="git-branch-list">
-            {branches.map((branch) => (
+          <div className={`git-branch-list${management ? ' source-control-branch-list' : ''}`}>
+            {branches.map((listedBranch) => {
+              const branch = management ? { ...listedBranch, isCurrent: listedBranch.name === currentBranch } : listedBranch;
+              return (
               <div
                 key={branch.name}
                 className={`git-branch-item ${branch.isCurrent ? 'current' : ''}`}
               >
-                <div className="git-branch-name">
+                <div className="git-branch-name" title={branch.name}>
                   <span>{branch.name}</span>
                   {branch.isCurrent && <span className="git-branch-current">Current</span>}
                 </div>
@@ -160,6 +166,8 @@ export function GitBranchesSection({
                     variant="ghost"
                     type="button"
                     className="git-branch-action"
+                    title={branch.isCurrent ? 'Already checked out here' : `Switch workspace checkout to ${branch.name}; Git may refuse a branch used by another worktree`}
+                    aria-label={management ? `Switch to branch ${branch.name}` : undefined}
                     onClick={() => onSwitchBranch(branch.name)}
                     disabled={branch.isCurrent || isBusy}
                   >
@@ -173,7 +181,8 @@ export function GitBranchesSection({
                     variant="ghost"
                     type="button"
                     className="git-branch-action danger"
-                    title={`Delete ${branch.name}`}
+                    title={branch.isCurrent ? 'The current branch cannot be deleted' : `Delete ${branch.name}; Git checks other worktrees and unmerged commits`}
+                    aria-label={management ? `Delete branch ${branch.name}` : undefined}
                     onClick={() => onDeleteBranch(branch.name)}
                     disabled={branch.isCurrent || isBusy}
                   >
@@ -186,7 +195,8 @@ export function GitBranchesSection({
                   </Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

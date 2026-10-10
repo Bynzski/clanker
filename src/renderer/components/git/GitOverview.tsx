@@ -34,6 +34,6 @@ export function GitOverview(props: GitRepoMenuProps) {
     </dl>
     {[statusErrorMessage, branchError, remoteError, vcsContextError, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
-    <p>Branches, worktrees, stashes, remotes, merge and history remain available in Existing Git Tools during migration.</p>
+    <p>Branches and Worktrees have dedicated pages. Stashes, Remotes, Merge and History remain in Existing Git Tools during migration.</p>
   </div>;
 }

@@ -4,4 +4,18 @@
 .source-control-identity dd { margin: 0; overflow-wrap: anywhere; }
 .source-control-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .git-tools-content { min-width: 0; }
+.source-control-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.source-control-page > h2, .source-control-page > p { margin: 0; }
+.source-control-page > p { overflow-wrap: anywhere; }
+.source-control-page > button { align-self: flex-start; }
+.source-control-branch-list { display: flex; flex-direction: column; gap: 8px; }
+.source-control-branch-list .git-branch-item { align-items: flex-start; flex-wrap: wrap; }
+.source-control-branch-list .git-branch-name { flex: 1; }
+.source-control-branch-list .git-branch-name span:first-child { white-space: normal; overflow-wrap: anywhere; }
+.source-control-branch-list .git-branch-item.current .git-branch-action { visibility: visible; }
+.source-control-worktrees .git-worktree-list { max-height: none; overflow: visible; }
+.source-control-worktrees .git-worktree-item { flex-wrap: wrap; padding-block: 8px; }
+.source-control-worktrees .git-worktree-path, .source-control-worktrees .git-worktree-branch { white-space: normal; overflow-wrap: anywhere; }
+.source-control-worktrees .git-worktree-meta { flex-basis: 240px; }
+.source-control-page .provider-context-header, .source-control-page .provider-context-info { flex-wrap: wrap; }
 @media (max-width: 500px) { .source-control-identity { grid-template-columns: 1fr; gap: 4px; } }
