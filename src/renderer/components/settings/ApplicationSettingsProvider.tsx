@@ -7,6 +7,10 @@ import { Dialog } from '../ui/Dialog';
 import SettingsManagement, { type SettingsPage } from './SettingsManagement';
 import CredentialSettings from './CredentialSettings';
 import LegacySettingsContent from './LegacySettingsContent';
+import HarnessDefaultsSection from './HarnessDefaultsSection';
+import AccountsSettings from './AccountsSettings';
+import GitPreferencesSettings from './GitPreferencesSettings';
+import { useAssistantsStore } from '../../store/assistantsStore';
 
 interface SettingsEntryPoint {
   visibleHarnessIds: string[];
@@ -32,10 +36,15 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
   const [showSettings, setShowSettings] = useState(false);
   const [page, setPage] = useState<SettingsPage>('appearance');
   const [showCredentials, setShowCredentials] = useState(false);
+  const [accountHarness, setAccountHarness] = useState<string | null>(null);
+  const assistantsAvailable = useAssistantsStore((state) => state.snapshot?.available === true);
+  const ensureAssistants = useAssistantsStore((state) => state.ensureSubscribed);
+  useEffect(() => { ensureAssistants(); }, [ensureAssistants]);
+  if (page === 'assistants' && !assistantsAvailable) setPage('appearance');
   const [accountIntent, setAccountIntent] = useState<{ harness: string; intent: 'manage' | 'add' } | null>(null);
-  const [intentOwner, setIntentOwner] = useState(workspace?.id);
-  if (intentOwner !== workspace?.id) {
-    setIntentOwner(workspace?.id);
+  const [intentOwner, setIntentOwner] = useState({ workspaceId: workspace?.id, environmentId });
+  if (intentOwner.workspaceId !== workspace?.id || intentOwner.environmentId !== environmentId) {
+    setIntentOwner({ workspaceId: workspace?.id, environmentId });
     setAccountIntent(null);
   }
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -46,10 +55,9 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
   };
   useEffect(() => registerOpenSettingsHandler(openSettings));
   useEffect(() => registerManageAccountsHandler((harness, intent) => {
-    setPage('legacy');
+    setPage('accounts');
+    setAccountHarness(harness);
     setAccountIntent({ harness, intent });
-    settings.setExpandedHarness(harness);
-    void settings.loadHarnessModels(harness);
     setShowSettings(true);
   }));
 
@@ -65,16 +73,33 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
     openSettings, closeSettings: () => setShowSettings(false), settingsTriggerRef }}>
     {children}
     <Dialog open={showSettings} onOpenChange={setShowSettings}>
-      <SettingsManagement page={page} onPageChange={setPage} environmentId={environmentId}
+      <SettingsManagement page={page} onPageChange={(next) => { setAccountIntent(null); setPage(next); }} environmentId={environmentId}
+        assistantsAvailable={assistantsAvailable}
         onCloseAutoFocus={(event) => {
           if (credentialHandoff.current) event.preventDefault();
           else restoreToolbarFocus(event);
         }}>
-        <LegacySettingsContent settings={settings} environmentId={environmentId} accountIntent={accountIntent}
-          onAccountIntentConsumed={() => setAccountIntent(null)} onOpenCredentials={() => {
-            credentialHandoff.current = true;
-            setShowCredentials(true);
-          }} />
+        {page === 'harnesses' && <>
+          {settings.harnessDiscoveryStatus !== 'ready' && <p role="status">{settings.harnessDiscoveryStatus === 'failed' ? 'Harness discovery failed.' : 'Discovering harnesses…'}</p>}
+          {settings.harnessDefaultsStatus !== 'ready' ? <p role="status">{settings.harnessDefaultsStatus === 'failed' ? 'Could not load harness preferences.' : 'Loading preferences…'}</p> : settings.harnessDefaults &&
+            <HarnessDefaultsSection {...settings} harnessDefaults={settings.harnessDefaults} environmentId={environmentId}
+              onManageAccounts={(harness) => {
+                setAccountHarness(harness);
+                setAccountIntent({ harness, intent: 'manage' });
+                setPage('accounts');
+              }} />}
+          {settings.settingsError && <p role="alert">{settings.settingsError}</p>}
+        </>}
+        {page === 'accounts' && <AccountsSettings environmentId={environmentId} harnessId={accountHarness}
+          onSelect={(id) => { setAccountIntent(null); setAccountHarness(id); }}
+          availableHarnessIds={settings.availableHarnessIds} discoveryStatus={settings.harnessDiscoveryStatus}
+          intent={accountIntent?.harness === accountHarness ? accountIntent.intent : undefined}
+          onIntentConsumed={() => setAccountIntent(null)} />}
+        {page === 'git-preferences' && <><GitPreferencesSettings settings={settings} />{settings.settingsError && <p role="alert">{settings.settingsError}</p>}</>}
+        {page === 'legacy' && <LegacySettingsContent onOpenCredentials={() => {
+          credentialHandoff.current = true;
+          setShowCredentials(true);
+        }} />}
       </SettingsManagement>
     </Dialog>
     <CredentialSettings isOpen={showCredentials} onClose={() => setShowCredentials(false)}

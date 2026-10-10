@@ -43,8 +43,9 @@ beforeEach(() => {
 async function openCodexSettings(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Settings' }));
   const settings = await screen.findByRole('dialog', { name: 'Settings' });
-  await user.click(within(settings).getByRole('button', { name: 'Legacy Settings' }));
-  await user.click(await within(settings).findByRole('button', { name: /^Codex/ }));
+  await user.click(within(settings).getByRole('button', { name: 'Accounts' }));
+  await waitFor(() => expect(within(settings).getByRole('option', { name: 'Codex' })).toBeEnabled());
+  await user.selectOptions(within(settings).getByRole('combobox', { name: 'Harness' }), 'codex');
 }
 const listCalls = () => vi.mocked(window.electronAPI.listHarnessAccounts).mock.calls;
 
@@ -175,6 +176,21 @@ describe('auth flow scope changes', () => {
     expect(window.electronAPI.cancelHarnessAccountAuth).toHaveBeenCalledExactlyOnceWith('flow_open');
   });
 
+  it('ignores the original local account list after an A → B → A scope cycle', async () => {
+    const { default: HarnessAccountsRow } = await import('../../../src/renderer/components/settings/HarnessAccountsRow');
+    let finish!: (list: HarnessAccountList) => void;
+    vi.mocked(window.electronAPI.listHarnessAccounts).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const view = render(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" environmentId="local" />);
+    view.rerender(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" environmentId="ssh-1" />);
+    await screen.findByText(SSH_REASON);
+    vi.mocked(window.electronAPI.listHarnessAccounts).mockResolvedValueOnce(localList('codex', [def(), work]));
+    view.rerender(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" environmentId="local" />);
+    await screen.findByText('Work');
+    await act(async () => finish(localList('codex', [def(), { ...work, label: 'Stale account' }])));
+    expect(screen.getByText('Work')).toBeVisible();
+    expect(screen.queryByText('Stale account')).toBeNull();
+  });
+
   it('cancels a flow whose start request resolves only after the scope already changed', async () => {
     const { default: HarnessAccountsRow } = await import('../../../src/renderer/components/settings/HarnessAccountsRow');
     let finish!: (value: { flowId: string; state: { status: 'starting' } }) => void;
@@ -214,7 +230,7 @@ describe('Usage → Settings account handoff', () => {
     expect(await screen.findByLabelText('Codex accounts')).toBeInTheDocument();
     expect(screen.queryByLabelText('Account label')).toBeNull(); // manage does not start adding
     expect(window.electronAPI.startHarnessAccountAdd).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Legacy Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Accounts' })).toHaveAttribute('aria-current', 'page');
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
   });
@@ -245,7 +261,7 @@ describe('Usage → Settings account handoff', () => {
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     await user.click(await screen.findByRole('button', { name: intent === 'manage' ? 'Manage Codex accounts' : 'Add Codex account' }));
     expect(screen.queryByRole('dialog', { name: 'Usage' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Legacy Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Accounts' })).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByLabelText('Codex accounts')).toBeVisible();
     if (intent === 'add') expect(await screen.findByLabelText('Account label')).toBeVisible();
     expect(listCalls()).toContainEqual(['local', 'codex']);

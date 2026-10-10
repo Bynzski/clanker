@@ -41,6 +41,12 @@ async function until(check, message) {
     });
     await until(async () => (await views()).some(view => view.visible && view.url === url), 'Fixture Browser did not become visible');
     const browserId = (await views()).find(view => view.url === url).id;
+    // Presentation-only Assistants snapshot: no Hermes process is launched by this fixture.
+    await app.evaluate(({ BrowserWindow }, channelsPath) => {
+      const { ASSISTANTS_CHANGED } = process.getBuiltinModule('module').createRequire(channelsPath)(channelsPath);
+      BrowserWindow.getAllWindows()[0].webContents.send(ASSISTANTS_CHANGED, { available: true,
+        settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] });
+    }, path.join(repo, 'dist/main/shared/ipcChannels.js'));
     for (const [width, height] of [[1100, 760], [640, 480]]) {
       await app.evaluate(({ BrowserWindow }, size) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); }, [width, height]);
       for (const theme of ['Dark', 'Light', 'Slate']) {
@@ -48,8 +54,15 @@ async function until(check, message) {
         const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
         await dialog.getByRole('radio', { name: theme, exact: true }).click();
         await until(async () => (await views()).every(view => !view.visible), 'Settings did not suppress native Browser');
-        for (const section of ['Appearance', 'Workspaces & Layout', 'Keyboard Shortcuts', 'Legacy Settings']) {
+        for (const section of ['Appearance', 'Workspaces & Layout', 'Keyboard Shortcuts', 'Harnesses', 'Accounts', 'Assistants', 'Git Preferences', 'Legacy Settings']) {
           await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
+          if (section === 'Harnesses' && await dialog.locator('.settings-harness-selector button').count()) {
+            await dialog.locator('.settings-harness-selector button').first().click();
+          }
+          if (section === 'Accounts') {
+            const harness = await dialog.locator('#account-harness').evaluate(element => Array.from(element.options).find(option => option.value && !option.disabled)?.value);
+            if (harness) await dialog.locator('#account-harness').selectOption(harness);
+          }
           const geometry = await dialog.evaluate(element => {
             const content = element.querySelector('.management-content');
             const nav = element.querySelector('nav');

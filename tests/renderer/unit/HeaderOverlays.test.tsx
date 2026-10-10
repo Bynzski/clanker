@@ -303,7 +303,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
       const panel = screen.getByRole('dialog', { name: 'Settings' });
-      await user.click(within(panel).getByRole('button', { name: 'Legacy Settings' }));
+      await user.click(within(panel).getByRole('button', { name: 'Harnesses' }));
       await user.click(await within(panel).findByRole('button', { name: 'Codex' }));
       await user.click(within(panel).getByRole('checkbox', { name: 'Agent attention for Codex' }));
       expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ attentionEnabled: true }) }));

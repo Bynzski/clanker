@@ -222,107 +222,6 @@
   letter-spacing: 0.06em;
 }
 
-.harness-defaults-row {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  margin-top: 4px;
-}
-
-.harness-defaults-header-row {
-  display: flex;
-  align-items: stretch;
-  background: var(--surface-control);
-}
-
-.harness-defaults-visible-toggle {
-  width: 28px;
-  flex: 0 0 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid var(--border-default);
-  cursor: pointer;
-}
-
-.harness-defaults-visible-toggle input {
-  width: 13px;
-  height: 13px;
-  margin: 0;
-}
-
-.harness-defaults-header {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  background: var(--surface-control);
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  transition: background var(--transition);
-}
-
-.harness-defaults-header:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
-}
-
-.harness-defaults-header.expanded {
-  background: var(--surface-control-hover);
-}
-
-.harness-defaults-label {
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.harness-defaults-current {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 4px;
-}
-
-.harness-defaults-current.unresolved {
-  color: var(--status-warning);
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.harness-defaults-current .unresolved-icon {
-  color: var(--status-warning);
-  flex-shrink: 0;
-}
-
-.harness-defaults-chevron {
-  flex-shrink: 0;
-  margin-left: auto;
-  transition: transform var(--transition);
-}
-
-.harness-defaults-header.expanded .harness-defaults-chevron {
-  transform: rotate(90deg);
-}
-
-.harness-defaults-panel {
-  padding: 8px;
-  background: var(--surface-raised);
-  border-top: 1px solid var(--border-default);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .harness-defaults-field {
   display: flex;
   flex-direction: column;
@@ -335,27 +234,11 @@
   font-weight: 500;
 }
 
-.harness-defaults-attention-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 20px;
-  cursor: pointer;
-}
-
-.harness-defaults-attention-toggle input {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
 .header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
 
-/* Harness accounts (Settings → Harness Defaults): plain lines like the toggles above, no boxes. */
+/* Canonical Settings → Accounts: compact account lines, no accordion or cards. */
 .harness-accounts { gap: 2px; }
 .harness-accounts-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
-.settings-legacy .harness-accounts-add-trigger { height: var(--control-height-xs); padding: 0 4px; color: var(--text-secondary); }
-.settings-legacy .harness-accounts-add-trigger:hover:not(:disabled) { color: var(--text-primary); }
 .harness-accounts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .harness-account { display: flex; align-items: center; gap: 6px; min-height: var(--control-height-sm); padding: 0 2px 0 8px; border-left: 2px solid transparent; }
 /* The in-use marker only matters when there is a choice. */
@@ -367,9 +250,6 @@
 .harness-account-selected { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
 .harness-account-warning { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--status-warning); }
 .harness-account-note { font-size: var(--font-size-xs); color: var(--text-muted); }
-.settings-legacy .harness-account .clanker-button { height: var(--control-height-xs); padding: 0 6px; flex-shrink: 0; }
-.settings-legacy .harness-account .harness-account-remove { width: var(--control-height-xs); padding: 0; color: var(--text-muted); }
-.settings-legacy .harness-account .harness-account-remove:hover:not(:disabled) { color: var(--status-error); }
 .harness-account-flow, .harness-account-add { display: flex; align-items: center; gap: 4px; font-size: var(--font-size-sm); color: var(--text-secondary); }
 .harness-account-flow span { flex: 1; min-width: 0; }
 .harness-account-add .clanker-input { flex: 1; min-width: 0; height: var(--control-height-sm); }

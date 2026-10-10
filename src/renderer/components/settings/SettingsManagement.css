@@ -1,4 +1,11 @@
 .settings-management-page { min-width: 0; }
+.settings-harness-selector { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-bottom: var(--space-md); }
+.settings-harness-detail, .settings-account-page, .settings-git-preferences { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.settings-harness-detail > .clanker-button { align-self: flex-start; }
+.settings-harness-detail .management-page-description, .settings-account-page .management-page-description { margin-bottom: 0; }
+.settings-account-page .harness-account, .settings-account-page .harness-account-add, .settings-account-page .harness-account-flow { flex-wrap: wrap; }
+.settings-account-page .harness-account-warning { overflow-wrap: anywhere; flex-shrink: 1; }
+.settings-account-page .harness-account-remove { flex-shrink: 0; }
 .settings-management-page > .settings-section { margin-top: 0; padding-top: 0; border-top: none; }
 .settings-management-page .keyboard-shortcuts-description { padding: 0; }
 .settings-management-page .keyboard-shortcuts-toolbar { padding: var(--space-sm) 0; flex-wrap: wrap; }

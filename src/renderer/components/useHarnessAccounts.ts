@@ -29,6 +29,7 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
   const states = useRef(new Map<string, AccountAuthState>());
   const cancelled = useRef(new Set<string>());
   const flowRef = useRef<ActiveAccountFlow | null>(null);
+  const lifetime = useRef<object | null>(null);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
 
@@ -40,12 +41,15 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
   }, []);
 
   const refresh = useCallback(async () => {
-    const owner = scopeRef.current;
+    const owner = lifetime.current;
+    const ownerScope = scopeRef.current;
+    if (!owner) return;
+    setError(null);
     try {
       const next = await window.electronAPI.listHarnessAccounts(environmentId, harness);
-      if (scopeRef.current === owner) setList(next);
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setList(next);
     } catch (reason) {
-      if (scopeRef.current === owner) setError(accountErrorMessage(reason));
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setError(accountErrorMessage(reason));
     }
   }, [environmentId, harness]);
 
@@ -53,12 +57,16 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
   // cancel the old scope's pending flow here, before the new scope's list is requested.
   useEffect(() => {
     if (!enabled) return;
+    const owner = {};
+    lifetime.current = owner;
     setList(null);
     setFlow(null);
     setError(null);
+    setBusy(false);
     flowRef.current = null;
     void refresh();
     return () => {
+      if (lifetime.current === owner) lifetime.current = null;
       cancelFlow(flowRef.current);
       flowRef.current = null;
     };
@@ -82,35 +90,39 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
   }, [enabled, environmentId, harness, settle]);
 
   const run = useCallback(async (action: () => Promise<HarnessAccountList | void>) => {
-    const owner = scopeRef.current;
+    const owner = lifetime.current;
+    const ownerScope = scopeRef.current;
+    if (!owner) return;
     setBusy(true);
     setError(null);
     try {
       const next = await action();
-      if (next && scopeRef.current === owner) setList(next);
+      if (next && lifetime.current === owner && scopeRef.current === ownerScope) setList(next);
     } catch (reason) {
-      if (scopeRef.current === owner) setError(accountErrorMessage(reason));
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setError(accountErrorMessage(reason));
     } finally {
-      setBusy(false);
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setBusy(false);
     }
   }, []);
 
   const begin = useCallback(async (start: () => Promise<{ flowId: string; state: AccountAuthState }>, accountId?: string) => {
-    const owner = scopeRef.current;
+    const owner = lifetime.current;
+    const ownerScope = scopeRef.current;
+    if (!owner) return;
     setBusy(true);
     setError(null);
     try {
       const started = await start();
       const state = states.current.get(started.flowId) ?? started.state;
-      const next: ActiveAccountFlow = { flowId: started.flowId, accountId, state, scope: owner };
-      if (scopeRef.current !== owner) { cancelFlow(next); return; } // the scope changed while starting
+      const next: ActiveAccountFlow = { flowId: started.flowId, accountId, state, scope: ownerScope };
+      if (lifetime.current !== owner || scopeRef.current !== ownerScope) { cancelFlow(next); return; } // the scope changed while starting
       flowRef.current = next;
       setFlow(next);
       if (isTerminal(state)) void refresh();
     } catch (reason) {
-      if (scopeRef.current === owner) setError(accountErrorMessage(reason));
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setError(accountErrorMessage(reason));
     } finally {
-      setBusy(false);
+      if (lifetime.current === owner && scopeRef.current === ownerScope) setBusy(false);
     }
   }, [refresh, cancelFlow]);
 
@@ -119,7 +131,7 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
   const visibleFlow = flow && flow.scope === scope ? flow : null;
 
   return {
-    list: visibleList, flow: visibleFlow, error, busy,
+    list: visibleList, flow: visibleFlow, error, busy, refresh,
     select: (accountId: string) => run(() => window.electronAPI.selectHarnessAccount(environmentId, harness, accountId)),
     remove: (accountId: string) => run(() => window.electronAPI.removeHarnessAccount(environmentId, harness, accountId)),
     rename: (accountId: string, label: string) => run(() => window.electronAPI.renameHarnessAccount(environmentId, harness, accountId, label)),

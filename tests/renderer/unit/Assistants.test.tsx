@@ -227,7 +227,7 @@ function hermesIconMarkup(): string {
 
 // ── Settings presentation ────────────────────────────────────────────────────
 
-it('Settings, connected: toggles and an info control only — no status line, Retry or explanatory paragraph', async () => {
+it('Settings, connected: shows service ownership and toggles without a Retry action', async () => {
   mockMain(snap({ service: { state: 'connected', ownership: 'clanker' } }));
   render(<AssistantsSettings />);
   const info = await screen.findByRole('button', { name: 'Hermes Assistants information' });
@@ -237,8 +237,8 @@ it('Settings, connected: toggles and an info control only — no status line, Re
   expect(screen.getByRole('checkbox', { name: 'Enable Hermes Assistants' })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: 'Start Hermes service when needed' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-  expect(screen.queryByText(/Status: Connected/)).toBeNull();
-  expect(screen.queryByText(/Uses a local Hermes service/)).toBeNull();
+  expect(screen.getByText(/Status: Connected · Clanker-managed/)).toBeVisible();
+  expect(screen.getByText(/Uses a local Hermes service/)).toBeVisible();
   expect(screen.queryByRole('alert')).toBeNull();
 });
 

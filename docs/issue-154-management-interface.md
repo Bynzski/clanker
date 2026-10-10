@@ -1,8 +1,8 @@
-# Issue #154 — Phase 0 inventory / Phase 1 decisions
+# Issue #154 — Inventory and Phase 0–2A decisions
 
-Scope: application Settings foundation only. Started from `origin/main` at
+Scope: application Settings foundation and Phase 2A destinations only. Started from `origin/main` at
 `c85bec0`; the full issue was read. Source Control migration, settings-wide search
-and remaining canonical settings pages belong to later phases. No Git operation,
+and Authentication / SSH Targets belong to later phases. No Git operation,
 IPC, credential storage or provider semantics change here.
 
 ## Source → destination and ownership
@@ -12,10 +12,10 @@ IPC, credential storage or provider semantics change here.
 | Appearance theme swatches | Application; `theme/themeStore.ts` → preload `setTheme` → main store. `themeRuntime.ts`, `terminalTheme.ts`, `editorTheme.ts` propagate the same identity. `global.css` supplies Dark/Light/Slate semantic roles, including scoped swatch previews. | Appearance reuses `ThemePicker`; no new theme state. |
 | Appearance workspace Sidebar/Tabs | Application; `store/workspaceNavigationStore.ts` → `setWorkspaceNavigationMode`, main store. App chooses the toolbar placement. | Workspaces & Layout; extract `WorkspaceLayoutSettings`, keep the same SegmentedControl/store. |
 | Keyboard Shortcuts dialog | Application; `store/keybindingStore.ts` → `setKeybindingOverrides`; shared keybindings own effective bindings, safety, formatting and conflict detection. Search/capture/pending conflict are ephemeral editor state. | Keyboard Shortcuts; extract the complete editor into `KeyboardShortcutsContent`, remove the obsolete dialog wrapper. Unmount clears capture listeners/state. |
-| Harness Defaults (visibility, default model/favorites, flags, attention, MCP, Usage visibility) | App preferences in main `harnessDefaults`; `useHeaderSettings` loads/saves and discovers environment capabilities/models. `HarnessDefaultsSection` composes per-harness details; existing model picker owns search/favorite interaction. | Legacy Settings for now; directly reuse, later Harnesses. No new probe on opening a page or changing theme. |
-| Harness Accounts (default/managed, select/add/reconnect/remove) | Environment + harness; `HarnessAccountsRow`, main `accounts/harnessAccountService.ts` and account IPC own metadata, account homes/auth and selection. SSH managed accounts remain unsupported. | Legacy Settings inside existing harness details; later Accounts. Usage Manage/Add retains exact harness and intent. Existing account controller resets on environment/harness change, cancels old auth and ignores stale results/events. |
-| Hermes Assistants enable/autostart/status | Local app service; `assistantsStore` snapshot/configure/refresh and main `assistants/`. Feature availability is still owned by existing component/service. | Reuse `AssistantsSettings` in Legacy Settings; later Assistants. |
-| Git AI commit enable/provider/model | App preferences; `useHeaderSettings` → settings IPC/main store; `aiCommit.ts` generation is local-only. | Existing controls in Legacy Settings; later Git Preferences. Not a Git operation redesign. |
+| Harness Defaults (visibility, default model/favorites, flags, attention, MCP, Usage visibility) | App preferences in main `harnessDefaults`; `useHeaderSettings` loads/saves and discovers environment capabilities/models. `HarnessDefaultsSection` composes per-harness details; existing model picker owns search/favorite interaction. | Canonical Harnesses selector/detail view. `HarnessDefaultsSection` retains the existing model picker and saves; no account controller or accordion. No remote catalog probe on opening a page or changing theme. |
+| Harness Accounts (default/managed, select/add/reconnect/remove) | Environment + harness; `HarnessAccountsRow`, main `accounts/harnessAccountService.ts` and account IPC own metadata, account homes/auth and selection. SSH managed accounts remain unsupported. | Canonical Accounts page only. Harnesses and Usage navigate there with exact harness/intent. No account controller remains in Harnesses or Legacy Settings. Existing account controller resets on environment/harness change, cancels old auth and ignores stale results/events. |
+| Hermes Assistants enable/autostart/status | Local app service; `assistantsStore` snapshot/configure/refresh and main `assistants/`. Feature availability is still owned by existing component/service. | Reuse `AssistantsSettings` on the availability-gated Assistants page. |
+| Git AI commit enable/provider/model | App preferences; `useHeaderSettings` → settings IPC/main store; `aiCommit.ts` generation is local-only. | Existing controls extracted into canonical Git Preferences. Not a Git operation redesign. |
 | VCS SSH keys / provider PATs | Local credentials, main `credentialService`/`sshKeyService`, credential IPC; `CredentialSettings` and `vcsStore` compose status/action feedback. Secrets never move into renderer persistence. | Existing Credentials dialog reached from Legacy Settings; later Authentication content extraction. |
 | SSH target add/edit/test/remove/default root | Saved environment IDs in main; `SshEnvironmentManager` → SSH environment IPC/service. `OpenWorkspaceDialog` owns chooser selection and saved-list refresh, not the target's authoritative configuration. | Original Open Workspace target settings / Add server route retained and explicitly signposted in Legacy Settings; later SSH Targets. No duplicate manager/controller. |
 
@@ -58,11 +58,12 @@ in the Git phase, **not** changes during Phase 1.
   Credentials handoff. It invokes the existing `useHeaderSettings` preference /
   discovery controller exactly once; Header reads launcher visibility and invokes
   the same entry point through a small React context. The hook no longer owns
-  dialog presentation state. `LegacySettingsContent` only extracts the existing
-  composition; no remaining setting is migrated to a new page in this correction.
+  dialog presentation state. Phase 2A page selection and account-harness intent live
+  in that same provider. `LegacySettingsContent` now contains only the Credentials
+  entry point; the SSH-manager instructions remain beside it.
 - Toolbar and `app.openSettings` (Ctrl/Cmd+,) invoke this stable app-owned state path.
   A fresh opening starts at Appearance; an already-open Settings keeps its page.
-  Usage opens Legacy Settings and expands its harness.
+  Usage opens Accounts and selects its harness and requested Manage/Add intent.
   Settings is now modal: background toolbar controls cannot be activated until it
   closes. Navigation uses native buttons in `nav`, `aria-current="page"` and
   `aria-controls`; Tab/Shift+Tab and Enter/Space work without a new keyboard handler.
@@ -77,7 +78,7 @@ in the Git phase, **not** changes during Phase 1.
   disconnected trigger from a previous Header placement. Shared Dialog primitives
   still own focus traps, autofocus and dismissal. Header closes its contextual Chat
   History when application Settings opens; recipes/history remain Header-owned.
-- Global pages stay open across workspace switches. Legacy accounts explicitly
+- Global pages stay open across workspace switches. Canonical accounts explicitly
   display their environment and reuse the controller's existing safe scope reset /
   rebind policy; workspace change clears Usage intent. No old authentication result
   is accepted into the new environment. Phase 2 must retain these safeguards.
@@ -172,6 +173,62 @@ Correction verification:
   was retried and still exits with SIGSEGV in this environment; owner desktop rerun
   remains required. No real account authentication or SSH connection was performed.
 
-Phase 2 must eliminate Legacy Settings, replace SSH-manager instructions with its
-canonical page/deep-link, consolidate remaining pages and add lightweight control-
-level search. No Settings-wide search or Git destination was implemented here.
+## Phase 2A — permanent agent and Git preference pages
+
+- **Harnesses:** compact, wrapping selector with one detail panel. Visibility,
+  model/favorites, flags, attention, supported MCP and Usage preferences use the
+  existing `useHeaderSettings` owner. Missing/unavailable selection shows an inert
+  fallback, not a substituted harness. Local/SSH scope is explicit. Remote catalogs
+  are not probed here; saved selections/favorites and existing provider-native
+  text/custom model entry remain available.
+- **Accounts:** `AccountsSettings` mounts only the selected, available capability's
+  existing `HarnessAccountsRow` / `useHarnessAccounts` workflow. Harness details
+  contain only a Manage Accounts navigation action. Usage goes directly to Accounts;
+  Add enters the existing form without starting auth, Manage focuses account info.
+  A page/environment/harness change unmounts the old workflow and cancels its auth.
+  Lifetime tokens also cancel an auth-start response arriving after unmount and
+  reject stale list/mutation acknowledgements (including an A → B → A scope cycle).
+  Loading failures are visible and expose an explicit Retry.
+- **Assistants:** appears only for an available snapshot from the existing shared
+  Assistants store; disappearance falls back to Appearance. Configuration, retry,
+  status and lifecycle stay store/main-owned. Navigating the page configures or
+  starts nothing. Ordinary Hermes harness configuration remains independent.
+- **Git Preferences:** existing AI-commit enable/provider/model persistence only;
+  saved unavailable models remain visible, and failures are reported. Generation
+  stays local-only; no Git operation, repository, VCS credential or provider API
+  implementation was changed.
+- Serialisable harness descriptors now describe existing model presentation and
+  attention transports, with registry parity tests against provider implementations.
+  The renderer gates capabilities through descriptors, not a local harness-ID policy.
+  The existing model loader ignores responses from old environment epochs and
+  reports catalog/save failures; favorites return save rejections to the picker
+  without rolling back a newer acknowledged preference snapshot.
+- A minimal shared native `Checkbox` replaces repeated boolean-control styling in
+  Harnesses, Assistants and Git Preferences; geometry/colors/focus remain centrally
+  token-owned. Feature CSS adds layout/wrapping only. Obsolete accordion CSS removed.
+- Legacy Settings now offers **Authentication (existing Credentials dialog)** and
+  **SSH Targets (original Open Workspace manager route)** only. Phase 2B must move
+  those to canonical pages/deep-links, eliminate Legacy Settings, and complete
+  the lightweight control-level search specified by the issue. Neither Phase 2B
+  nor the Source Control redesign was begun.
+
+Phase 2A verification:
+- `npm run validate`: **369 files / 7,623 tests passed** (branding, lint, typecheck,
+  Fallow, security, build, full tests; existing dev-only audit exception unchanged).
+- Focused regression suite: **19 files / 398 tests passed**, including permanent
+  pages, account ownership/stale auth, remote saved favorites, descriptor parity,
+  dialogs/focus, Usage routing, relocation and isolated-agent integration.
+- `npm run smoke:settings`: all eight pages across Dark/Light/Slate at 1100×760 and
+  640×480; native Browser hide/restore, viewport/overflow, independent scrolling,
+  Sidebar/Tabs relocation, focus, Credentials and Ctrl+, route. Assistants uses an
+  explicitly synthetic availability snapshot for presentation; no service launch
+  or real auth is claimed. Accounts reads the isolated fixture profile's default.
+- Screenshot review covered new destinations at both sizes and all three themes.
+  The reduced-height navigation scrolls independently; controls remain reachable.
+- `node scripts/workspace-page-browser-renderer-smoke.cjs`: passed again.
+- Separate native multi-Browser runner still exits with SIGSEGV on this environment;
+  owner desktop rerun is required. Real SSH and account auth/reconnect/removal,
+  real Hermes startup, high zoom, platform focus and screen-reader smoke remain
+  owner checks. Automated auth/account tests use safe mocked IPC projections.
+
+No Settings-wide search or Git destination was implemented here.

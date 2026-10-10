@@ -97,7 +97,11 @@ this directory. Common controls centrally own:
 - Error state (`aria-invalid="true"`, `var(--status-error)`)
 
 Use `Field` to group a `FieldLabel`, control (`Input`, `Textarea`, `Select`), and
-optional `FormMessage`. Use `InputGroup` for input controls that contain leading
+optional `FormMessage`. Use `Checkbox` for a labelled native boolean control;
+it owns token-based form spacing, disabled text and focus treatment while the
+browser owns checkbox interaction. It was added for the permanent Harnesses,
+Assistants and Git Preferences pages to replace repeated feature-owned checkbox
+styling, not to introduce a new switch/configuration system. Use `InputGroup` for input controls that contain leading
 or trailing icons or inline action buttons.
 
 ## Popover

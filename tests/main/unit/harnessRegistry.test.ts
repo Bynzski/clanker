@@ -53,6 +53,15 @@ it('keeps descriptor usage metadata and provider implementations in lockstep', a
   defineHarness({ descriptor: HARNESS_DESCRIPTORS.pi, launch, usage: { get: async () => ({ observedAt: 0, measurements: [] }) } });
 });
 
+it('keeps Settings attention transports and model presentation aligned with provider capabilities', () => {
+  for (const provider of getHarnessProviders()) {
+    expect(provider.descriptor.attention.local, provider.descriptor.id).toBe(!!provider.attention?.local);
+    expect(provider.descriptor.attention.remote, provider.descriptor.id).toBe(!!provider.attention?.remote);
+    expect(provider.descriptor.modelSelection === 'text', provider.descriptor.id).toBe(!provider.models);
+    expect(provider.descriptor.modelSelection === 'catalog-or-custom', provider.descriptor.id).toBe(provider.models?.explicitRefresh === true);
+  }
+});
+
 it('implements usage only for the providers with a verified structured interface', () => {
   const withUsage = getHarnessProviders().filter((provider) => provider.usage).map((provider) => provider.descriptor.id);
   expect(withUsage).toEqual(['codex', 'omp', 'claude', 'hermes', 'agy']);
