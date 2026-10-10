@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import Header from '../../../src/renderer/components/Header';
+import Header, { RelocatingToolbar } from '../../setup/HeaderWithSettings';
 import { dispatchAppKeybinding, openSettings } from '../../../src/renderer/lib/keybindingDispatcher';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
@@ -26,6 +26,46 @@ beforeEach(() => {
 const count = (id: string) => useWorkspaceStore.getState().getWorkspaceById(id)?.browserOverlayCount;
 
 describe('Settings management destination', () => {
+  it.each([false, true])('retains its dialog, page, preferences and lease across real toolbar relocation (Browser: %s)', async (browserVisible) => {
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((workspace) => ({ ...workspace, browserVisible })) }));
+    const user = userEvent.setup();
+    render(<RelocatingToolbar />);
+    const originalTrigger = screen.getByRole('button', { name: 'Settings' });
+    await user.click(originalTrigger);
+    await user.click(screen.getByRole('button', { name: 'Workspaces & Layout' }));
+    const dialog = screen.getByRole('dialog', { name: 'Settings' });
+    const preferenceLoads = vi.mocked(window.electronAPI.getHarnessDefaults).mock.calls.length;
+    const counts: number[] = [];
+    const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count('one') ?? 0));
+    try {
+      for (const [label, mode, placement] of [['Sidebar', 'sidebar', 'titlebar'], ['Tabs', 'tabs', 'bar']]) {
+        await user.click(screen.getByRole('radio', { name: label }));
+        expect(useWorkspaceNavigationStore.getState().mode).toBe(mode);
+        expect(document.querySelector('.header')).toHaveAttribute('data-placement', placement);
+        expect(document.querySelector('.titlebar-center')).toHaveAttribute('data-navigation-mode', mode);
+        expect(screen.getAllByRole('dialog', { name: 'Settings' })).toEqual([dialog]);
+        expect(screen.getByRole('button', { name: 'Workspaces & Layout' })).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByRole('radio', { name: label })).toHaveAttribute('aria-checked', 'true');
+        expect(window.electronAPI.setWorkspaceNavigationMode).toHaveBeenLastCalledWith(mode);
+        expect(count('one')).toBe(1);
+        expect(vi.mocked(window.electronAPI.getHarnessDefaults).mock.calls.length).toBe(preferenceLoads);
+      }
+      expect(originalTrigger.isConnected).toBe(false);
+      expect(counts.every((value) => value === 1)).toBe(true);
+      await user.click(screen.getByRole('button', { name: 'Close Settings' }));
+      expect(count('one')).toBe(0);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
+      await user.click(screen.getByRole('button', { name: 'Settings' }));
+      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
+      await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
+      expect(screen.getByRole('dialog', { name: 'VCS Credentials' })).toBeVisible();
+      expect(count('one')).toBe(1);
+      await user.keyboard('{Escape}');
+      expect(count('one')).toBe(0);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
+    } finally { unsubscribe(); }
+  });
+
   it('opens through the existing Ctrl+, dispatcher and closes via the shared backdrop', async () => {
     const user = userEvent.setup();
     render(<Header />);

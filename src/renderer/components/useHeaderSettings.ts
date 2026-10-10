@@ -35,8 +35,6 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     () => (currentDiscovery?.status === 'ready' ? currentDiscovery.ids : ['']),
     [currentDiscovery],
   );
-  const [showSettings, setShowSettings] = useState(false);
-  const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
   const [aiCommitProvider, setAiCommitProvider] = useState<string>('');
   const [aiCommitModel, setAiCommitModel] = useState('');
@@ -339,10 +337,6 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     harnessDiscoveryStatus,
     availableHarnessIds,
     visibleHarnessIds,
-    showSettings,
-    setShowSettings,
-    showCredentialModal,
-    setShowCredentialModal,
     aiCommitEnabled,
     aiCommitProvider,
     aiCommitModel,

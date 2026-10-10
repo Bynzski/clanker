@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
+import { ApplicationSettingsProvider } from './components/settings/ApplicationSettingsProvider';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import WorkspacePaneDragProvider from './components/WorkspacePaneDragProvider';
@@ -157,7 +158,7 @@ function App() {
   }, []);
 
   return (
-    <WorkspacePaneDragProvider><div className="app">
+    <WorkspacePaneDragProvider><ApplicationSettingsProvider><div className="app">
       <TitleBar
         onOpenWorkspace={() => setShowOpenWorkspace(true)}
         toolbar={sidebarMode ? <Header placement="titlebar" /> : undefined}
@@ -186,7 +187,7 @@ function App() {
       
       <OpenWorkspaceDialog isOpen={showOpenWorkspace} onClose={() => setShowOpenWorkspace(false)}
         onOpen={openWorkspace} />
-    </div></WorkspacePaneDragProvider>
+    </div></ApplicationSettingsProvider></WorkspacePaneDragProvider>
   );
 }
 

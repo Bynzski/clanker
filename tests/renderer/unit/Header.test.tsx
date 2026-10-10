@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { installElectronApiMock } from '../../setup/electron';

@@ -3,7 +3,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
-import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindingDispatcher';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import App from '../../../src/renderer/App';
 import { useNotificationStore } from '../../../src/renderer/store/notificationStore';
@@ -370,18 +369,16 @@ describe('App', () => {
       expect(mockFitAllPanes).toHaveBeenCalledTimes(1);
     });
 
-    it('opens Settings through the registered Settings state path on Ctrl/Cmd+,', async () => {
-      const openSettings = vi.fn();
-      const dispose = registerOpenSettingsHandler(openSettings);
+    it('opens the app-owned canonical Settings instance on Ctrl/Cmd+,', async () => {
       render(<App />);
-
       await act(async () => {
         fireEvent.keyDown(document, { key: ',', code: 'Comma', ctrlKey: true });
+      });
+      const dialog = screen.getByRole('dialog', { name: 'Settings' });
+      await act(async () => {
         fireEvent.keyDown(document, { key: ',', code: 'Comma', metaKey: true });
       });
-      dispose();
-
-      expect(openSettings).toHaveBeenCalledTimes(2);
+      expect(screen.getAllByRole('dialog', { name: 'Settings' })).toEqual([dialog]);
     });
 
     it('toggles Explorer for the active workspace only', async () => {

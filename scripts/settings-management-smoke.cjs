@@ -78,17 +78,32 @@ async function until(check, message) {
         assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Settings trigger focus not restored');
       }
     }
-    // Existing App toolbar relocation applies navigation immediately and remounts Header.
-    for (const mode of ['Sidebar', 'Tabs']) {
-      await page.getByRole('button', { name: 'Settings', exact: true }).click();
-      await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).click();
+    // Settings retains its DOM identity and native suppression while Header relocates.
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Settings', exact: true }).evaluate(element => {
+      window.settingsSmokeDialog = element;
+    });
+    for (const [mode, placement] of [['Sidebar', 'titlebar'], ['Tabs', 'bar']]) {
       await page.getByRole('radio', { name: mode, exact: true }).click();
-      await until(() => page.getByRole('dialog', { name: 'Settings', exact: true }).count().then(count => count === 0), 'Toolbar relocation did not close Settings');
-      await page.getByRole('button', { name: 'Settings', exact: true }).click();
-      await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).click();
+      assert.equal(await page.locator('.header').getAttribute('data-placement'), placement);
+      assert.equal(await page.getByRole('dialog', { name: 'Settings', exact: true }).count(), 1);
+      assert(await page.getByRole('dialog', { name: 'Settings', exact: true }).evaluate(element => window.settingsSmokeDialog === element), 'Settings remounted');
+      assert.equal(await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).getAttribute('aria-current'), 'page');
       assert.equal(await page.getByRole('radio', { name: mode, exact: true }).getAttribute('aria-checked'), 'true');
-      await page.getByRole('button', { name: 'Close Settings' }).click();
+      assert((await views()).every(view => !view.visible), 'Relocation exposed native Browser');
     }
+    await page.getByRole('button', { name: 'Close Settings' }).click();
+    await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Relocation close lost native Browser');
+    assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Relocated trigger focus not restored');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Legacy Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Manage VCS credentials', exact: true }).click();
+    await page.getByRole('dialog', { name: 'VCS Credentials', exact: true }).waitFor();
+    assert((await views()).every(view => !view.visible), 'Credentials handoff exposed native Browser');
+    await page.keyboard.press('Escape');
+    await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Credentials close lost native Browser');
+    assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Credentials did not restore relocated trigger focus');
     // Real registered keyboard route, not an IPC or DOM-state shortcut.
     await page.getByRole('button', { name: 'Settings', exact: true }).focus();
     await page.keyboard.press('Control+,');

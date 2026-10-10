@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { openSettings } from '../../../src/renderer/lib/keybindingDispatcher';
 import UsageWidget from '../../../src/renderer/components/UsageWidget';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';

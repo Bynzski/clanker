@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import UsageWidget from '../../../src/renderer/components/UsageWidget';
 import { USAGE_POLL_INTERVAL_MS } from '../../../src/renderer/components/useHarnessUsage';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';

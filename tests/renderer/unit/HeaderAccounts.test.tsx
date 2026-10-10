@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import UsageWidget from '../../../src/renderer/components/UsageWidget';
-import Header from '../../../src/renderer/components/Header';
+import Header, { RelocatingToolbar } from '../../setup/HeaderWithSettings';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -228,6 +229,29 @@ describe('Usage → Settings account handoff', () => {
     await user.type(screen.getByLabelText('Account label'), 'Third');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(window.electronAPI.startHarnessAccountAdd).toHaveBeenCalledExactlyOnceWith('local', 'codex', 'Third');
+  });
+
+  it.each(['manage', 'add'] as const)('preserves Usage %s intent and focus after Sidebar/Tabs relocation', async (intent) => {
+    useWorkspaceNavigationStore.setState({ mode: 'tabs', resolved: true });
+    const user = userEvent.setup();
+    render(<RelocatingToolbar><UsageWidget /></RelocatingToolbar>);
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Workspaces & Layout' }));
+    for (const mode of ['Sidebar', 'Tabs']) {
+      await user.click(screen.getByRole('radio', { name: mode }));
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    }
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Usage' }));
+    await user.click(await screen.findByRole('button', { name: intent === 'manage' ? 'Manage Codex accounts' : 'Add Codex account' }));
+    expect(screen.queryByRole('dialog', { name: 'Usage' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Legacy Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByLabelText('Codex accounts')).toBeVisible();
+    if (intent === 'add') expect(await screen.findByLabelText('Account label')).toBeVisible();
+    expect(listCalls()).toContainEqual(['local', 'codex']);
+    expect(window.electronAPI.startHarnessAccountAdd).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
   });
 
   it('default-only Usage shows no account actions', async () => {

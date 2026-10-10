@@ -53,8 +53,16 @@ in the Git phase, **not** changes during Phase 1.
   an explicit workspace ID so its one lease follows the current workspace; closing
   or unmounting releases only that lease. Assistant-native views are also covered
   by the existing primitive. No force-mounted hidden content.
-- Toolbar and `app.openSettings` (Ctrl/Cmd+,) invoke the existing Header state path.
-  New Settings opens Appearance; Usage opens Legacy Settings and expands its harness.
+- `ApplicationSettingsProvider`, mounted once beneath App's stable
+  WorkspacePaneDragProvider, owns the Settings dialog, page, Usage intent and
+  Credentials handoff. It invokes the existing `useHeaderSettings` preference /
+  discovery controller exactly once; Header reads launcher visibility and invokes
+  the same entry point through a small React context. The hook no longer owns
+  dialog presentation state. `LegacySettingsContent` only extracts the existing
+  composition; no remaining setting is migrated to a new page in this correction.
+- Toolbar and `app.openSettings` (Ctrl/Cmd+,) invoke this stable app-owned state path.
+  A fresh opening starts at Appearance; an already-open Settings keeps its page.
+  Usage opens Legacy Settings and expands its harness.
   Settings is now modal: background toolbar controls cannot be activated until it
   closes. Navigation uses native buttons in `nav`, `aria-current="page"` and
   `aria-controls`; Tab/Shift+Tab and Enter/Space work without a new keyboard handler.
@@ -64,16 +72,21 @@ in the Git phase, **not** changes during Phase 1.
   discovery, action controller or source-control identity logic lives there.
 - Credentials still uses the existing acquire-before-close handoff. The outgoing
   Settings lease remains until Credentials autofocus, and outgoing focus return is
-  suppressed. Credentials returns to the surviving Settings toolbar trigger.
-  Shared Dialog focus restoration also covers triggerless shortcut/account opens.
+  suppressed. Both Settings and Credentials resolve the current toolbar button
+  through the provider's shared ref when closing; they never try to restore the
+  disconnected trigger from a previous Header placement. Shared Dialog primitives
+  still own focus traps, autofocus and dismissal. Header closes its contextual Chat
+  History when application Settings opens; recipes/history remain Header-owned.
 - Global pages stay open across workspace switches. Legacy accounts explicitly
   display their environment and reuse the controller's existing safe scope reset /
   rebind policy; workspace change clears Usage intent. No old authentication result
   is accepted into the new environment. Phase 2 must retain these safeguards.
-- Sidebar/Tabs takes effect immediately through the existing App layout. Switching
-  navigation mode repositions/remounts Header and consequently closes Settings,
-  as with the old dropdown; reopening shows the saved choice. No durable or duplicate
-  settings-open state was introduced to override this existing behavior.
+- Sidebar/Tabs takes effect immediately through the existing App layout. Header
+  still remounts in its new location, but Settings and its navigation remain mounted
+  under their independent app owner. Workspaces & Layout stays selected with the
+  saved choice reflected immediately; the same Browser lease remains held until
+  actual dismissal. No extra mounted dialog, persistent open-state storage, generic
+  routing framework, second preference controller or new keyboard handler exists.
 
 ## Contextual surfaces remain contextual
 
@@ -108,7 +121,7 @@ sign-in/reconnect/cancel, Usage handoff with live readings, Windows/macOS key an
 focus behavior, OS/display scaling and high zoom, screen reader use, and Assistant
 native Browser with real Hermes. These are not claimed by fixture tests.
 
-### Recorded results
+### Original Phase 0–1 results (reviewed commit `48ac61b`)
 
 - `npm run validate`: passed (branding, lint, typecheck, Fallow, security, build,
   **368 test files / 7,605 tests**). Security retains only the project's existing
@@ -131,6 +144,33 @@ native Browser with real Hermes. These are not claimed by fixture tests.
   EGL initialization errors. No edits were made to that runner. Owner must rerun
   it on a supported desktop. The full built-app native Browser runner above and
   the new Settings-native fixture both passed.
+
+### Focused ownership correction
+
+Regression tests mirror App's conditional Header locations beneath one stable
+provider and assert the actual TitleBar navigation mode/Header placement, the same
+single dialog DOM node/page, selected radio, unchanged preference loading and
+balanced suppression. They cover Tabs → Sidebar → Tabs with and without Browser,
+close-time focus to the replacement trigger, Credentials handoff and Usage
+Manage/Add after relocation. Existing local/SSH account tests remain in place.
+The real Electron Settings smoke now verifies that relocation retains the same
+dialog/page and hides the same native Browser, then restores that Browser and the
+new toolbar trigger on close. It also tests Credentials after relocation and the
+existing Ctrl+, route.
+
+Correction verification:
+- `npm run validate`: **368 files / 7,609 tests passed**, including lint,
+  typecheck, build, Fallow, branding and the existing security policy.
+- Focused component/integration run: **15 files / 306 tests passed** (App,
+  SettingsManagement, Header/Accounts/Overlays/Usage/LaunchOwnership, Assistants,
+  Appearance, Dialog, preference controller, shortcuts and isolated-agent integration).
+- `npm run smoke:settings`: passed, including real native Browser suppression,
+  same-dialog identity across both toolbar relocations, close-time focus and
+  Credentials after relocation.
+- `node scripts/workspace-page-browser-renderer-smoke.cjs`: passed again.
+- The separate `electron --ozone-platform=headless scripts/workspace-multi-browser-smoke.cjs`
+  was retried and still exits with SIGSEGV in this environment; owner desktop rerun
+  remains required. No real account authentication or SSH connection was performed.
 
 Phase 2 must eliminate Legacy Settings, replace SSH-manager instructions with its
 canonical page/deep-link, consolidate remaining pages and add lightweight control-

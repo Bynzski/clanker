@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';

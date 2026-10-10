@@ -14,7 +14,7 @@ export interface AppCommandActions {
 
 let openSettingsHandler: (() => void) | null = null;
 
-/** Header registers its Settings destination here; there is no second Settings model. */
+/** The stable application Settings owner registers here; entry points share one destination. */
 export function registerOpenSettingsHandler(handler: () => void): () => void {
   openSettingsHandler = handler;
   return () => {

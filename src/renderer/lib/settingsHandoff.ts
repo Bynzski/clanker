@@ -1,4 +1,4 @@
-/** The Usage widget (status bar) hands account management to Header's Settings popover; there is no second Settings model. */
+/** Usage hands account management to the app-owned Settings destination; there is no second Settings model. */
 type ManageAccounts = (harnessId: string, intent: 'manage' | 'add') => void;
 
 let handler: ManageAccounts | null = null;
