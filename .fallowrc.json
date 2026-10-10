@@ -14,10 +14,15 @@
     "scripts/workspace-page-browser-renderer-smoke.cjs",
     "scripts/workspace-launch-race-smoke.cjs"
   ],
-  "ignoreDependencies": ["@modelcontextprotocol/sdk", "node:sqlite"],
+  "ignoreDependencies": [
+    "@modelcontextprotocol/sdk",
+    "node:sqlite"
+  ],
   "overrides": [
     {
-      "files": ["src/renderer/electron.d.ts"],
+      "files": [
+        "src/renderer/electron.d.ts"
+      ],
       "rules": {
         "unresolved-imports": "off"
       }
@@ -25,16 +30,27 @@
     {
       "files": [
         "scripts/app-close-guard-smoke.cjs",
+        "scripts/claude-attention-smoke.cjs",
+        "scripts/codex-attention-smoke.cjs",
+        "scripts/codex-attention-tui-smoke.cjs",
+        "scripts/native-attention-smoke.cjs",
+        "scripts/opencode-attention-smoke.cjs",
         "scripts/pi-bridge-smoke.cjs",
         "scripts/ssh-preview-session-smoke.cjs",
-        "scripts/workspace-pages-smoke.cjs",
-        "scripts/workspace-multi-browser-smoke.cjs"
+        "scripts/workspace-multi-browser-smoke.cjs",
+        "scripts/workspace-pages-smoke.cjs"
       ],
-      "rules": { "unresolved-imports": "off" }
+      "rules": {
+        "unresolved-imports": "off"
+      }
     },
     {
-      "files": ["src/main/agentBridge/server.ts"],
-      "rules": { "unresolved-imports": "off" }
+      "files": [
+        "src/main/agentBridge/server.ts"
+      ],
+      "rules": {
+        "unresolved-imports": "off"
+      }
     }
   ]
 }
