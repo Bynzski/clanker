@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { GitOperationState } from './types';
 
 interface UseGitMergeActionsParams {
   isCurrent?: () => boolean;
@@ -7,6 +8,7 @@ interface UseGitMergeActionsParams {
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
+  operationState?: GitOperationState | null;
 }
 
 export function useGitMergeActions({
@@ -16,6 +18,7 @@ export function useGitMergeActions({
   refreshAfterAction,
   workspacePath,
   workspaceId,
+  operationState = null,
 }: UseGitMergeActionsParams) {
   const pending = useRef(false);
   const canAct = () => isCurrent() && !pending.current && !activeAction;
@@ -25,6 +28,18 @@ export function useGitMergeActions({
 
   const handleMergeBranch = async () => {
     if (!canAct()) return;
+    if (!operationState) {
+      setMergeError('Cannot merge: repository operation state is unknown. Refresh to inspect.');
+      return;
+    }
+    if (!operationState.success) {
+      setMergeError(operationState.message || operationState.error || 'Cannot merge: operation state discovery failed.');
+      return;
+    }
+    if (operationState.inProgress) {
+      setMergeError(`Cannot merge: a ${operationState.mode === 'rebase' ? 'rebase' : 'merge'} is already in progress.`);
+      return;
+    }
     if (!mergeTargetBranch) {
       setMergeError('Select a branch to merge');
       return;
@@ -53,6 +68,14 @@ export function useGitMergeActions({
 
   const handleRequestAbort = (mode: 'merge' | 'rebase' = 'merge', conflicts: string[] = []) => {
     if (!canAct()) return;
+    if (!operationState) {
+      setMergeError('Cannot abort: repository operation state is unknown. Refresh to inspect.');
+      return;
+    }
+    if (!operationState.success || !operationState.inProgress) {
+      setMergeError('Cannot abort: no merge or rebase operation is confirmed in progress.');
+      return;
+    }
     setMergeError(null);
     setAbortDialog({ mode, conflicts });
   };
@@ -64,6 +87,11 @@ export function useGitMergeActions({
 
   const performAbortOperation = async () => {
     if (!canAct() || !abortDialog) return;
+    if (!operationState || !operationState.success || !operationState.inProgress) {
+      setMergeError('Cannot abort: no merge or rebase operation is confirmed in progress.');
+      closeAbortDialog();
+      return;
+    }
     pending.current = true;
     onSetActiveAction('abort-operation');
     setMergeError(null);

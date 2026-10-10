@@ -4,9 +4,28 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGitMergeActions } from '../../../../src/renderer/components/git/useGitMergeActions';
 import { installElectronApiMock } from '../../../setup/electron';
+import type { GitOperationState } from '../../../../src/renderer/components/git/types';
 
 describe('useGitMergeActions', () => {
   let api: ReturnType<typeof installElectronApiMock>;
+
+  const cleanOperationState: GitOperationState = {
+    success: true,
+    isRepo: true,
+    inProgress: false,
+    mode: 'none',
+    conflicts: [],
+    message: 'No merge in progress',
+  };
+
+  const inProgressState: GitOperationState = {
+    success: true,
+    isRepo: true,
+    inProgress: true,
+    mode: 'merge',
+    conflicts: ['file.ts'],
+    message: 'Merge has 1 conflict',
+  };
 
   beforeEach(() => {
     api = installElectronApiMock({
@@ -15,7 +34,10 @@ describe('useGitMergeActions', () => {
     });
   });
 
-  function setup(options: { isCurrent?: () => boolean } = {}) {
+  function setup(options: {
+    isCurrent?: () => boolean;
+    operationState?: GitOperationState | null;
+  } = {}) {
     const onSetActiveAction = vi.fn();
     const refreshAfterAction = vi.fn().mockResolvedValue(undefined);
     const hook = renderHook(() =>
@@ -26,12 +48,92 @@ describe('useGitMergeActions', () => {
         refreshAfterAction,
         workspacePath: '/repo',
         workspaceId: 'ws',
+        operationState: 'operationState' in options ? options.operationState : cleanOperationState,
       })
     );
     return { ...hook, onSetActiveAction, refreshAfterAction };
   }
 
-  it('merges selected target branch and refreshes on success', async () => {
+  it('fails closed when operationState is null (unknown state)', async () => {
+    const { result } = setup({ operationState: null });
+
+    act(() => {
+      result.current.setMergeTargetBranch('feature');
+    });
+
+    await act(async () => {
+      await result.current.handleMergeBranch();
+    });
+
+    expect(api.gitMergeBranch).not.toHaveBeenCalled();
+    expect(result.current.mergeError).toContain('operation state is unknown');
+
+    act(() => {
+      result.current.handleRequestAbort('merge', []);
+    });
+
+    expect(result.current.abortDialog).toBeNull();
+    expect(result.current.mergeError).toContain('operation state is unknown');
+  });
+
+  it('fails closed when operationState.success is false (unavailable discovery)', async () => {
+    const { result } = setup({
+      operationState: {
+        success: false,
+        isRepo: false,
+        inProgress: false,
+        mode: 'none',
+        conflicts: [],
+        message: 'Could not read operation state',
+        error: 'git error',
+      },
+    });
+
+    act(() => {
+      result.current.setMergeTargetBranch('feature');
+    });
+
+    await act(async () => {
+      await result.current.handleMergeBranch();
+    });
+
+    expect(api.gitMergeBranch).not.toHaveBeenCalled();
+    expect(result.current.mergeError).toContain('Could not read operation state');
+
+    act(() => {
+      result.current.handleRequestAbort('merge', []);
+    });
+
+    expect(result.current.abortDialog).toBeNull();
+  });
+
+  it('fails closed and refuses merge when operation is already in progress', async () => {
+    const { result } = setup({ operationState: inProgressState });
+
+    act(() => {
+      result.current.setMergeTargetBranch('feature');
+    });
+
+    await act(async () => {
+      await result.current.handleMergeBranch();
+    });
+
+    expect(api.gitMergeBranch).not.toHaveBeenCalled();
+    expect(result.current.mergeError).toContain('already in progress');
+  });
+
+  it('refuses to abort when no operation is confirmed in progress', () => {
+    const { result } = setup({ operationState: cleanOperationState });
+
+    act(() => {
+      result.current.handleRequestAbort('merge', []);
+    });
+
+    expect(result.current.abortDialog).toBeNull();
+    expect(result.current.mergeError).toContain('no merge or rebase operation is confirmed in progress');
+  });
+
+  it('merges selected target branch when clean and refreshes on success', async () => {
     const { result, refreshAfterAction, onSetActiveAction } = setup();
 
     act(() => {
@@ -76,8 +178,8 @@ describe('useGitMergeActions', () => {
     expect(refreshAfterAction).not.toHaveBeenCalled();
   });
 
-  it('opens abort dialog and aborts on confirmation', async () => {
-    const { result, refreshAfterAction } = setup();
+  it('opens abort dialog and aborts on confirmation when in progress', async () => {
+    const { result, refreshAfterAction } = setup({ operationState: inProgressState });
 
     act(() => {
       result.current.handleRequestAbort('merge', ['file.ts']);
@@ -95,7 +197,7 @@ describe('useGitMergeActions', () => {
 
     // Reopen and confirm
     act(() => {
-      result.current.handleRequestAbort('rebase', []);
+      result.current.handleRequestAbort('merge', ['file.ts']);
     });
 
     await act(async () => {

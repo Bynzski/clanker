@@ -26,7 +26,7 @@ export function useGitStashActions({
   const [stashError, setStashError] = useState<string | null>(null);
   const [stashMessage, setStashMessage] = useState('');
   const [dropDialog, setDropDialog] = useState<GitStash | null>(null);
-  const [clearDialog, setClearDialog] = useState(false);
+  const [clearDialog, setClearDialog] = useState<{ count: number; hashes: string[] } | null>(null);
 
   const handleStash = async () => {
     if (!canAct()) return;
@@ -52,14 +52,18 @@ export function useGitStashActions({
     }
   };
 
-  const handleApplyStash = async (stashRef: string) => {
+  const handleApplyStash = async (stash: GitStash) => {
     if (!canAct()) return;
+    if (!stash || !stash.hash || typeof stash.hash !== 'string' || !stash.hash.trim()) {
+      setStashError('Cannot apply stash without verified commit identity');
+      return;
+    }
     pending.current = true;
-    onSetActiveAction(`apply:${stashRef}`);
+    onSetActiveAction(`apply:${stash.ref}`);
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitApplyStash(workspacePath, stashRef, workspaceId);
+      const result = await window.electronAPI.gitApplyStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId);
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -75,14 +79,18 @@ export function useGitStashActions({
     }
   };
 
-  const handlePopStash = async (stashRef: string) => {
+  const handlePopStash = async (stash: GitStash) => {
     if (!canAct()) return;
+    if (!stash || !stash.hash || typeof stash.hash !== 'string' || !stash.hash.trim()) {
+      setStashError('Cannot pop stash without verified commit identity');
+      return;
+    }
     pending.current = true;
-    onSetActiveAction(`pop:${stashRef}`);
+    onSetActiveAction(`pop:${stash.ref}`);
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitPopStash(workspacePath, stashRef, workspaceId);
+      const result = await window.electronAPI.gitPopStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId);
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -98,13 +106,14 @@ export function useGitStashActions({
     }
   };
 
-  const handleDropStash = (stashOrRef: GitStash | string) => {
+  const handleDropStash = (stash: GitStash) => {
     if (!canAct()) return;
-    const target = typeof stashOrRef === 'string'
-      ? stashes.find((s) => s.ref === stashOrRef) ?? { ref: stashOrRef, hash: '', message: '' }
-      : stashOrRef;
+    if (!stash || !stash.hash || typeof stash.hash !== 'string' || !stash.hash.trim()) {
+      setStashError('Cannot drop stash without verified commit identity');
+      return;
+    }
     setStashError(null);
-    setDropDialog(target);
+    setDropDialog(stash);
   };
 
   const closeDropDialog = () => {
@@ -115,23 +124,17 @@ export function useGitStashActions({
   const performDropStash = async () => {
     if (!canAct() || !dropDialog) return;
     const target = dropDialog;
+    if (!target.hash || !target.hash.trim()) {
+      setStashError('Cannot drop stash without verified commit identity');
+      setDropDialog(null);
+      return;
+    }
     pending.current = true;
     onSetActiveAction(`drop:${target.ref}`);
     setStashError(null);
 
     try {
-      // Re-verify stash identity: avoid dropping the wrong stash if positional references shifted!
-      const latestStashes = await window.electronAPI.gitGetStashes(workspacePath, workspaceId);
-      if (!isCurrent()) return;
-
-      const matching = latestStashes.find((s) => s.ref === target.ref);
-      if (!matching || (target.hash && matching.hash !== target.hash)) {
-        setStashError('Stash reference changed. The operation was cancelled to avoid dropping a different stash.');
-        setDropDialog(null);
-        return;
-      }
-
-      const result = await window.electronAPI.gitDropStash(workspacePath, target.ref, workspaceId);
+      const result = await window.electronAPI.gitDropStash(workspacePath, target.ref, target.hash.trim(), workspaceId);
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -150,27 +153,32 @@ export function useGitStashActions({
 
   const handleClearStashes = () => {
     if (!canAct()) return;
+    if (stashes.length === 0) return;
     setStashError(null);
-    setClearDialog(true);
+    setClearDialog({
+      count: stashes.length,
+      hashes: stashes.map((s) => s.hash).filter(Boolean),
+    });
   };
 
   const closeClearDialog = () => {
     if (pending.current) return;
-    setClearDialog(false);
+    setClearDialog(null);
   };
 
   const performClearStashes = async () => {
-    if (!canAct()) return;
+    if (!canAct() || !clearDialog) return;
+    const expectedHashes = clearDialog.hashes;
     pending.current = true;
     onSetActiveAction('clear-stashes');
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitClearStashes(workspacePath, workspaceId);
+      const result = await window.electronAPI.gitClearStashes(workspacePath, expectedHashes, workspaceId);
       if (!isCurrent()) return;
 
       if (result.success) {
-        setClearDialog(false);
+        setClearDialog(null);
         await refreshAfterAction();
       } else {
         setStashError(result.error || 'Failed to clear stashes');

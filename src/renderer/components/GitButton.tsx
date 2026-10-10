@@ -299,6 +299,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     refreshAfterAction,
     workspacePath,
     workspaceId,
+    operationState,
   });
 
   const dataRequest = useRef(0);
@@ -407,7 +408,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     } catch (error: unknown) {
       if (!fresh()) return;
       const message = error instanceof Error ? error.message : 'Unable to load git data';
-      setOperationState(null);
+      setOperationState({
+        success: false,
+        isRepo: false,
+        inProgress: false,
+        mode: 'none',
+        conflicts: [],
+        message,
+        error: message,
+      });
       setBranchError(message);
       setMergeError(message);
       setStashError(message);
@@ -626,7 +635,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   };
 
   const isBusy = activeAction !== null || remoteAction !== null;
-  const stashConfirmationOpen = dropDialog !== null || clearDialog;
+  const stashConfirmationOpen = dropDialog !== null || clearDialog !== null;
   const mergeConfirmationOpen = abortDialog !== null;
   const selectedCommit = selectedDiffMode === 'commit'
     ? history.find((entry) => entry.hash === selectedDiffRef) ?? null
@@ -700,7 +709,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             mergeTargetBranch={mergeTargetBranch}
             newBranchName={newBranchName}
             onAbortOperation={() => { if (isCurrent()) handleRequestAbort(operationState?.mode === 'rebase' ? 'rebase' : 'merge', operationState?.conflicts ?? []); }}
-            onApplyStash={(stashRef) => { if (isCurrent()) void handleApplyStash(stashRef); }}
+            onApplyStash={(stash) => { if (isCurrent()) void handleApplyStash(stash); }}
             onClearStashes={() => { if (isCurrent()) handleClearStashes(); }}
             onRestoreFocus={() => trigger.current?.focus()}
             onCreateBranch={(event) => { if (isCurrent()) void handleCreateBranch(event); }}
@@ -709,7 +718,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onFetch={() => { if (isCurrent()) void handleFetch(); }}
             onMergeBranch={() => { if (isCurrent()) void handleMergeBranch(); }}
             onOpenCommitDialog={() => void handleOpenCommitDialog()}
-            onPopStash={(stashRef) => { if (isCurrent()) void handlePopStash(stashRef); }}
+            onPopStash={(stash) => { if (isCurrent()) void handlePopStash(stash); }}
             onPublish={() => { if (isCurrent()) void handlePublish(); }}
             onPull={() => { if (isCurrent()) void handlePull(); }}
             onPush={() => { if (isCurrent()) void handlePush(); }}
@@ -787,7 +796,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
       {clearDialog && (
         <GitClearStashesDialog
-          stashCount={stashes.length}
+          stashCount={clearDialog.count}
           workspaceId={workspaceId}
           isBusy={clearDialogBusy}
           onCancel={closeClearDialog}

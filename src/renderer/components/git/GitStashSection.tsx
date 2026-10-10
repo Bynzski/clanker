@@ -9,10 +9,10 @@ interface GitStashSectionProps {
   includeUntracked: boolean;
   isBusy: boolean;
   isLoadingStashes: boolean;
-  onApplyStash: (stashRef: string) => void;
+  onApplyStash: (stash: GitStash) => void;
   onClearStashes: () => void;
-  onDropStash: (stash: GitStash | string) => void;
-  onPopStash: (stashRef: string) => void;
+  onDropStash: (stash: GitStash) => void;
+  onPopStash: (stash: GitStash) => void;
   onSetIncludeUntracked: (value: boolean) => void;
   onSetStashMessage: (value: string) => void;
   onStash: () => void;
@@ -111,7 +111,7 @@ export function GitStashSection({
                   className="git-branch-action"
                   title="Restore changes without deleting the stash entry"
                   aria-label={`Apply ${stash.ref}`}
-                  onClick={() => onApplyStash(stash.ref)}
+                  onClick={() => onApplyStash(stash)}
                   disabled={isBusy}
                 >
                   Apply
@@ -123,7 +123,7 @@ export function GitStashSection({
                   className="git-branch-action"
                   title="Apply changes and delete stash entry if applied cleanly without conflict"
                   aria-label={`Pop ${stash.ref}`}
-                  onClick={() => onPopStash(stash.ref)}
+                  onClick={() => onPopStash(stash)}
                   disabled={isBusy}
                 >
                   Pop
@@ -135,7 +135,7 @@ export function GitStashSection({
                   className="git-branch-action danger"
                   title="Permanently delete this stash entry"
                   aria-label={`Drop ${stash.ref}`}
-                  onClick={() => onDropStash(stash.ref)}
+                  onClick={() => onDropStash(stash)}
                   disabled={isBusy}
                 >
                   Drop

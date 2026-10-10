@@ -144,7 +144,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_LIST_WORKTREES]: 1,
     [GIT_GET_OPERATION_STATE]: 1,
     [GIT_GET_STASHES]: 1,
-    [GIT_CLEAR_STASHES]: 1,
+    [GIT_CLEAR_STASHES]: 2,
     [GIT_ABORT_OPERATION]: 1,
     [GIT_GET_REMOTES]: 1,
     [GIT_GET_HISTORY]: 2,
@@ -155,9 +155,9 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_DELETE_BRANCH]: 2,
     [GIT_FORCE_DELETE_BRANCH]: 2,
     [GIT_MERGE_BRANCH]: 2,
-    [GIT_APPLY_STASH]: 2,
-    [GIT_POP_STASH]: 2,
-    [GIT_DROP_STASH]: 2,
+    [GIT_APPLY_STASH]: 3,
+    [GIT_POP_STASH]: 3,
+    [GIT_DROP_STASH]: 3,
     [GIT_FETCH]: 2,
     [GIT_PULL]: 2,
     [GIT_REMOVE_REMOTE]: 2,
@@ -185,7 +185,18 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return;
     }
     ipcMain.handle(channel, async (event, ...args) => {
-      const workspaceId: unknown = args[idPosition];
+      let workspaceId: unknown = args[idPosition];
+      if (workspaceId === undefined) {
+        if (channel === GIT_CLEAR_STASHES && typeof args[1] === 'string') {
+          workspaceId = args[1];
+        } else if (
+          (channel === GIT_DROP_STASH || channel === GIT_POP_STASH || channel === GIT_APPLY_STASH) &&
+          typeof args[2] === 'string' &&
+          !/^[0-9a-f]{7,64}$/i.test(args[2])
+        ) {
+          workspaceId = args[2];
+        }
+      }
       if (workspaceId === undefined) return handler(event, ...args);
       if (typeof workspaceId !== 'string' || !workspaceId.trim()) {
         throw new Error('Invalid workspace identity');
@@ -635,48 +646,61 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     return result;
   });
 
-  registerGitHandler(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.applyStash(safeWorkspacePath, stashRef);
+    const result = await gitService.applyStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.popStash(safeWorkspacePath, stashRef);
+    const result = await gitService.popStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.dropStash(safeWorkspacePath, stashRef);
+    const result = await gitService.dropStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_CLEAR_STASHES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_CLEAR_STASHES, async (_, workspacePath: string, expectedHashes?: string[] | string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.clearStashes(safeWorkspacePath);
+    const hashes = Array.isArray(expectedHashes) ? expectedHashes : undefined;
+    const result = await gitService.clearStashes(safeWorkspacePath, hashes);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }

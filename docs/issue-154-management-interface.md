@@ -27,15 +27,31 @@ scroll. Migrated sections are not duplicated inside Existing Git Tools.
   permanently deletes one stash entry; Clear All deletes the repository's stash collection.
   The UI does not imply that Pop always deletes if conflicts occur, and never reports success
   until Git confirms it.
+- Full `GitStash` object identity (`{ ref, hash, message }`) is passed directly from the
+  visible row into `onApplyStash`, `onPopStash`, and `onDropStash`. The previous empty-hash
+  fallback was eliminated: an actual verified commit identity is strictly required before
+  presenting or executing any operation.
 - Replaced JavaScript `window.confirm()` with dedicated `GitDropStashDialog` and
   `GitClearStashesDialog` built on Clanker's shared `AlertDialog` primitive. Confirmations
   identify exact stash reference, commit hash, and message; Cancel leaves stashes intact;
   Escape is guarded while busy; Browser overlay leases are held continuously.
-- **Stash reference identity guard**: Positional Git references (e.g. `stash@{0}`) can shift
-  if background stashes are created or dropped. Before executing drop, the controller
-  re-verifies the stash reference against authoritative `gitGetStashes` to confirm the commit
-  hash still matches. If the reference shifted, the operation fails closed with an explicit
-  error without silently dropping the wrong stash or retargeting.
+- **Main-process stash identity verification**: Positional Git references (e.g. `stash@{0}`)
+  can shift if background operations alter the reflog. The main process now executes an
+  immediate `git rev-parse --verify <stashRef>^{commit}` check against `expectedHash` before
+  dispatching `git stash drop`, `git stash pop`, or `git stash apply`. If the reference shifted
+  or the stash no longer exists, the operation fails closed with an actionable error and does
+  not silently retarget or mutate an unexpected stash.
+- **External concurrency limitations**: Native Git does not provide compare-and-swap primitives
+  on stash reflog modifications. While pre-dispatch reference verification intercepts shifts
+  before the Git CLI invocation, concurrent external Git mutations occurring in the sub-millisecond
+  OS process dispatch gap between `rev-parse` and Git command execution cannot be locked by
+  Git's CLI architecture. The implementation guarantees strict pre-dispatch CAS rejection and
+  avoids silent retargeting.
+- **Guarded Clear All**: When opening Clear All confirmation, the controller snapshots the
+  visible stash collection's commit hashes. `gitClearStashes` validates the current repository
+  reflog against those `expectedHashes`. If new stashes were created or existing stashes changed
+  while confirmation was open, `clearStashes` rejects the request with an explicit requirement
+  to re-confirm, preventing silent loss of newly created stashes.
 
 ### Remotes page and lifecycle
 
@@ -49,16 +65,22 @@ scroll. Migrated sections are not duplicated inside Existing Git Tools.
   or reloaded; and `onBusyChange` coordinates with the management shell to disable navigation
   during submissions or open dialogs.
 
-### Merge page and abort safety
+### Merge page and fail-closed state guards
 
 - The permanent Merge page shows current checkout identity, available merge targets,
   merge-in-progress state, conflict details, rebase/merge operation status, and abort.
 - Merge direction is unambiguous: explicitly displays `Merge branch <target> into <current>`
   and configures action labels accordingly.
 - Detached HEAD disables merge with a clear explanation to prevent unreferenced commits.
-- Accurately distinguishes clean state, in-progress merge, in-progress rebase, conflicted
-  files, and failed or unknown operation state discovery. If operation state discovery
-  fails, abort is never offered based on guessed state.
+- **Fail-closed operation discovery**:
+  - Initial unknown state (`operationState === null`) and discovery failures (`operationState.success === false`)
+    fail closed: merge controls and abort controls are not rendered, count badge displays `—`,
+    and an actionable failure/retry notice is displayed.
+  - Merge controls are rendered only when authoritative state confirms clean state (`success && !inProgress`).
+  - Abort controls are rendered only when authoritative state confirms an active operation (`success && inProgress`).
+  - `useGitMergeActions` reinforces these guards at the controller boundary: direct invocations
+    from unknown or non-clean states refuse execution with an explicit error.
+  - Refresh remains available at all times.
 - Aborting an in-progress merge or rebase discards unresolved conflict work. Replaced inline
   abort with `GitAbortOperationDialog` (`AlertDialog`), detailing mode and conflicted files,
   requiring explicit confirmation, and cancelling cleanly with zero mutation.
@@ -72,9 +94,13 @@ All confirmation dialogs (`GitDeleteBranchDialog`, `GitDropStashDialog`, `GitCle
 with continuous `BrowserOverlayLease` acquisition, topmost Escape trapping, and default Cancel focus.
 `ManagementShell busy={busy}` locks navigation during active operations and open confirmations.
 
-- Validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,749 tests passed**;
+- Validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,772 tests passed**;
   branding check, lint, typecheck, Fallow dead-code check, security check, and build all clean.
-- Focused Git/VCS/Source Control regressions: **34 files / 749 tests passed**.
+- Focused Git/VCS/Source Control regressions: real Git fixtures in `stashOperations.test.ts`
+  verify pre-dispatch identity checks for drop, apply, pop, and collection guards for clear;
+  unit tests in `useGitStashActions.test.ts` and `useGitMergeActions.test.ts` cover fail-closed
+  behavior, empty-hash refusal, collection mismatch, and unknown operation states;
+  `SourceControl.test.tsx` and `GitMergeSection.test.tsx` verify UI and lifecycle boundaries.
 - Source Control Electron smoke: passed across Dark, Light, Slate at 1100×760 and 640×480 with
   Overview, Branches, Worktrees, Stashes, Remotes, Merge, and Existing Git Tools, verifying
   cancel-only confirmations, real CommitDialog handoff, Browser suppression/restoration, and focus.

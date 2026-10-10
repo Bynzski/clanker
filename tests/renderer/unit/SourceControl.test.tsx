@@ -319,12 +319,30 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
 
       // Apply stash
       await user.click(screen.getByRole('button', { name: 'Apply stash@{0}' }));
-      expect(api.gitApplyStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+      expect(api.gitApplyStash).toHaveBeenCalledWith('/repo', 'stash@{0}', sampleStashes[0].hash, 'ws');
       expect(api.gitDropStash).not.toHaveBeenCalled();
 
       // Pop stash
       await user.click(screen.getByRole('button', { name: 'Pop stash@{0}' }));
-      expect(api.gitPopStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+      expect(api.gitPopStash).toHaveBeenCalledWith('/repo', 'stash@{0}', sampleStashes[0].hash, 'ws');
+    });
+
+    it('refuses to apply, pop, or drop a stash entry with empty or missing commit identity', async () => {
+      api.gitGetStashes.mockResolvedValueOnce([
+        { ref: 'stash@{0}', hash: '', message: 'corrupted' },
+      ]);
+      const { user } = await stashesPage();
+
+      await user.click(screen.getByRole('button', { name: 'Apply stash@{0}' }));
+      expect(api.gitApplyStash).not.toHaveBeenCalled();
+      expect(await screen.findByText(/without verified commit identity/)).toBeVisible();
+
+      await user.click(screen.getByRole('button', { name: 'Pop stash@{0}' }));
+      expect(api.gitPopStash).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
+      expect(api.gitDropStash).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 
     it('confirms and cancels single stash drop via AlertDialog with lease tracking', async () => {
@@ -346,7 +364,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
       const reopenAlert = await screen.findByRole('alertdialog');
       await user.click(within(reopenAlert).getByRole('button', { name: 'Drop stash' }));
-      expect(api.gitDropStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+      expect(api.gitDropStash).toHaveBeenCalledWith('/repo', 'stash@{0}', sampleStashes[0].hash, 'ws');
     });
 
     it('refuses to drop if positional stash reference shifted while confirmation was open', async () => {
@@ -354,15 +372,15 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
       const alert = await screen.findByRole('alertdialog');
 
-      // Before drop confirms, background stash shift occurs: stash@{0} now points to a new hash
-      api.gitGetStashes.mockResolvedValueOnce([
-        { ref: 'stash@{0}', hash: 'shiftedHash', message: 'New background stash' },
-        { ref: 'stash@{1}', hash: 'hash000', message: 'WIP on feature' },
-      ]);
+      // Before drop confirms, backend drop returns shift error
+      api.gitDropStash.mockResolvedValueOnce({
+        success: false,
+        error: "Stash reference 'stash@{0}' changed. The operation was cancelled to avoid acting on the wrong stash.",
+      });
 
       await user.click(within(alert).getByRole('button', { name: 'Drop stash' }));
-      expect(api.gitDropStash).not.toHaveBeenCalled();
-      expect(await screen.findByText(/Stash reference changed/)).toBeVisible();
+      expect(api.gitDropStash).toHaveBeenCalledWith('/repo', 'stash@{0}', sampleStashes[0].hash, 'ws');
+      expect(await screen.findByText(/Stash reference/)).toBeVisible();
     });
 
     it('confirms and clears all stashes via distinct AlertDialog', async () => {
@@ -381,7 +399,25 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       await user.click(screen.getByRole('button', { name: 'Clear All' }));
       const reopen = await screen.findByRole('alertdialog');
       await user.click(within(reopen).getByRole('button', { name: 'Clear all stashes' }));
-      expect(api.gitClearStashes).toHaveBeenCalledWith('/repo', 'ws');
+      expect(api.gitClearStashes).toHaveBeenCalledWith(
+        '/repo',
+        [sampleStashes[0].hash, sampleStashes[1].hash],
+        'ws'
+      );
+    });
+
+    it('reports clear stashes failure if collection changed while confirmation was open', async () => {
+      const { user } = await stashesPage();
+      await user.click(screen.getByRole('button', { name: 'Clear All' }));
+      const alert = await screen.findByRole('alertdialog');
+
+      api.gitClearStashes.mockResolvedValueOnce({
+        success: false,
+        error: 'Stash collection changed since confirmation was opened. Re-confirm to clear all stashes.',
+      });
+
+      await user.click(within(alert).getByRole('button', { name: 'Clear all stashes' }));
+      expect(await screen.findByText(/Stash collection changed/)).toBeVisible();
     });
   });
 
@@ -527,7 +563,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       expect(api.gitAbortOperation).toHaveBeenCalledWith('/repo', 'ws');
     });
 
-    it('does not offer abort when operation state discovery fails', async () => {
+    it('does not offer abort or merge when operation state discovery fails', async () => {
       api.gitGetOperationState.mockResolvedValue({
         success: false,
         isRepo: false,
@@ -537,9 +573,21 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
         message: 'Failed to inspect merge state',
       });
 
-      await mergePage();
+      const { dialog } = await mergePage();
       expect(await screen.findByText('Failed to inspect merge state')).toBeVisible();
       expect(screen.queryByRole('button', { name: /Abort/ })).toBeNull();
+      expect(within(dialog).queryByRole('button', { name: 'Merge branch' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Refresh merge state' })).toBeEnabled();
+    });
+
+    it('fails closed and displays unknown state without executable controls when refresh throws', async () => {
+      api.gitGetOperationState.mockRejectedValue(new Error('Git CLI crashed'));
+
+      const { dialog } = await mergePage();
+      await waitFor(() => expect(screen.getAllByText('Git CLI crashed').length).toBeGreaterThan(0));
+      expect(screen.queryByRole('button', { name: /Abort/ })).toBeNull();
+      expect(within(dialog).queryByRole('button', { name: 'Merge branch' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Refresh merge state' })).toBeEnabled();
     });
 
     it.each(['workspace', 'checkout', 'environment'])('discards a pending merge result after a %s change', async (change) => {

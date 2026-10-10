@@ -938,7 +938,35 @@ export class GitService {
     }
   }
 
-  async applyStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async verifyStashIdentity(workspacePath: string, stashRef: string, expectedHash: string): Promise<{ success: boolean; error?: string }> {
+    const trimmedHash = expectedHash.trim();
+    if (!trimmedHash) {
+      return { success: false, error: 'Expected stash commit identity is required' };
+    }
+    try {
+      const { stdout } = await this.execGit(workspacePath, ['rev-parse', '--verify', `${stashRef}^{commit}`]);
+      const currentHash = stdout.trim();
+      if (currentHash.toLowerCase() !== trimmedHash.toLowerCase()) {
+        return {
+          success: false,
+          error: `Stash reference '${stashRef}' changed (expected commit ${trimmedHash.slice(0, 7)}, found ${currentHash.slice(0, 7)}). The operation was cancelled to avoid acting on the wrong stash.`,
+        };
+      }
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error: `Stash reference '${stashRef}' no longer exists in this repository.`,
+      };
+    }
+  }
+
+  async applyStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'apply', stashRef]);
       return { success: true };
@@ -950,7 +978,12 @@ export class GitService {
     }
   }
 
-  async popStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async popStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'pop', stashRef]);
       return { success: true };
@@ -962,7 +995,12 @@ export class GitService {
     }
   }
 
-  async dropStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async dropStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'drop', stashRef]);
       return { success: true };
@@ -974,7 +1012,19 @@ export class GitService {
     }
   }
 
-  async clearStashes(workspacePath: string): Promise<{ success: boolean; error?: string }> {
+  async clearStashes(workspacePath: string, expectedHashes?: string[]): Promise<{ success: boolean; error?: string }> {
+    if (Array.isArray(expectedHashes)) {
+      const currentStashes = await this.listStashes(workspacePath);
+      const currentHashes = currentStashes.map((s) => s.hash);
+      const isMatch = currentHashes.length === expectedHashes.length && currentHashes.every((h, i) => h.toLowerCase() === expectedHashes[i]?.toLowerCase());
+      if (!isMatch) {
+        return {
+          success: false,
+          error: 'Stash collection changed since confirmation was opened. Re-confirm to clear all stashes.',
+        };
+      }
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'clear']);
       return { success: true };

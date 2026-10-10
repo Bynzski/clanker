@@ -343,6 +343,74 @@ describe('registerGitIpc', () => {
     const result = await stageHandler(null, '/nonexistent/path');
     expect(result).toEqual({ success: false, error: 'Workspace path is invalid or not a directory' });
   });
+
+  test('git-drop-stash passes expectedHash to gitService.dropStash', async () => {
+    mockIpcMain.handle.mockClear();
+    const mockGitService = createMockGitService();
+
+    registerGitIpc({
+      getGitService: () => mockGitService as never,
+      getMainWindow: () => mockMainWindow as never,
+    });
+
+    const dropHandler = mockIpcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'git-drop-stash'
+    )?.[1] as (...args: unknown[]) => unknown;
+
+    await dropHandler(null, process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+    expect(mockGitService.dropStash).toHaveBeenCalledWith(process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+  });
+
+  test('git-apply-stash passes expectedHash to gitService.applyStash', async () => {
+    mockIpcMain.handle.mockClear();
+    const mockGitService = createMockGitService();
+
+    registerGitIpc({
+      getGitService: () => mockGitService as never,
+      getMainWindow: () => mockMainWindow as never,
+    });
+
+    const applyHandler = mockIpcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'git-apply-stash'
+    )?.[1] as (...args: unknown[]) => unknown;
+
+    await applyHandler(null, process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+    expect(mockGitService.applyStash).toHaveBeenCalledWith(process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+  });
+
+  test('git-pop-stash passes expectedHash to gitService.popStash', async () => {
+    mockIpcMain.handle.mockClear();
+    const mockGitService = createMockGitService();
+
+    registerGitIpc({
+      getGitService: () => mockGitService as never,
+      getMainWindow: () => mockMainWindow as never,
+    });
+
+    const popHandler = mockIpcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'git-pop-stash'
+    )?.[1] as (...args: unknown[]) => unknown;
+
+    await popHandler(null, process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+    expect(mockGitService.popStash).toHaveBeenCalledWith(process.cwd(), 'stash@{0}', 'abc1234567890123456789012345678901234567');
+  });
+
+  test('git-clear-stashes passes expectedHashes array to gitService.clearStashes', async () => {
+    mockIpcMain.handle.mockClear();
+    const mockGitService = createMockGitService();
+
+    registerGitIpc({
+      getGitService: () => mockGitService as never,
+      getMainWindow: () => mockMainWindow as never,
+    });
+
+    const clearHandler = mockIpcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'git-clear-stashes'
+    )?.[1] as (...args: unknown[]) => unknown;
+
+    await clearHandler(null, process.cwd(), ['hash1', 'hash2']);
+    expect(mockGitService.clearStashes).toHaveBeenCalledWith(process.cwd(), ['hash1', 'hash2']);
+  });
 });
 
 /**

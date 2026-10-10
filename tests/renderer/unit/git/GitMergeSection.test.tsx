@@ -11,6 +11,15 @@ describe('GitMergeSection', () => {
   const mockOnMergeBranch = vi.fn();
   const mockOnSetMergeTargetBranch = vi.fn();
   
+  const cleanOperationState: GitOperationState = {
+    success: true,
+    isRepo: true,
+    inProgress: false,
+    mode: 'none',
+    conflicts: [],
+    message: 'No merge in progress',
+  };
+
   const defaultProps = {
     activeAction: null as string | null,
     availableMergeTargets: [] as string[],
@@ -20,7 +29,7 @@ describe('GitMergeSection', () => {
     onAbortOperation: mockOnAbortOperation,
     onMergeBranch: mockOnMergeBranch,
     onSetMergeTargetBranch: mockOnSetMergeTargetBranch,
-    operationState: null as GitOperationState | null,
+    operationState: cleanOperationState as GitOperationState | null,
   };
 
   beforeEach(() => {
@@ -55,6 +64,38 @@ describe('GitMergeSection', () => {
       }} />);
       
       expect(screen.getByText('Active')).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // Unknown and Failed States
+  // =========================================================================
+  describe('unknown and failed states', () => {
+    it('shows unknown message and no executable controls when operationState is null', () => {
+      render(<GitMergeSection {...defaultProps} operationState={null} availableMergeTargets={['feature-a']} />);
+
+      expect(screen.getByText(/Merge state is unknown/)).toBeTruthy();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByRole('button', { name: /merge/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /abort/i })).toBeNull();
+      expect(screen.getByText('—')).toBeTruthy();
+    });
+
+    it('shows failure message and no executable controls when operationState.success is false', () => {
+      render(<GitMergeSection {...defaultProps} operationState={{
+        success: false,
+        isRepo: false,
+        inProgress: false,
+        mode: 'none',
+        conflicts: [],
+        message: 'Failed to inspect merge state',
+      }} availableMergeTargets={['feature-a']} />);
+
+      expect(screen.getByText('Failed to inspect merge state')).toBeTruthy();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByRole('button', { name: /merge/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /abort/i })).toBeNull();
+      expect(screen.getByText('—')).toBeTruthy();
     });
   });
 

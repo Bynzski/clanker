@@ -281,10 +281,10 @@ export interface ElectronAPI {
   gitMergeBranch: (workspacePath: string, branchName: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitAbortOperation: (workspacePath: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitApplyStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitPopStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitDropStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitClearStashes: (workspacePath: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitApplyStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPopStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: (workspaceId?: string) => Promise<GitStatusResult | null>;
   gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) => Promise<GitInitResult>;
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => Promise<GitRemotesResult>;

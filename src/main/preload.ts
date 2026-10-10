@@ -507,10 +507,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitAbortOperation: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_ABORT_OPERATION, workspacePath, workspaceId),
   gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string) =>
     ipcRenderer.invoke(GIT_STASH, workspacePath, message, includeUntracked, workspaceId),
-  gitApplyStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_APPLY_STASH, workspacePath, stashRef, workspaceId),
-  gitPopStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_POP_STASH, workspacePath, stashRef, workspaceId),
-  gitDropStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_DROP_STASH, workspacePath, stashRef, workspaceId),
-  gitClearStashes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath, workspaceId),
+  gitApplyStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_APPLY_STASH, workspacePath, stashRef, expectedHash, workspaceId),
+  gitPopStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_POP_STASH, workspacePath, stashRef, expectedHash, workspaceId),
+  gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_DROP_STASH, workspacePath, stashRef, expectedHash, workspaceId),
+  gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath, expectedHashes, workspaceId),
   gitRefresh: (workspaceId?: string) => ipcRenderer.invoke(GIT_REFRESH, workspaceId),
   gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) =>
     ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId),

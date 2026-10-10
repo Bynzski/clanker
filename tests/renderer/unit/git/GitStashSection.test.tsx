@@ -225,25 +225,25 @@ describe('GitStashSection', () => {
       expect(screen.getByRole('button', { name: /drop/i })).toBeDisabled();
     });
 
-    it('calls onApplyStash with stash ref when Apply is clicked', () => {
+    it('calls onApplyStash with stash entry when Apply is clicked', () => {
       render(<GitStashSection {...defaultProps} stashes={[mockStash]} />);
       
       fireEvent.click(screen.getByRole('button', { name: /apply/i }));
-      expect(mockOnApplyStash).toHaveBeenCalledWith('stash@{0}');
+      expect(mockOnApplyStash).toHaveBeenCalledWith(mockStash);
     });
 
-    it('calls onPopStash with stash ref when Pop is clicked', () => {
+    it('calls onPopStash with stash entry when Pop is clicked', () => {
       render(<GitStashSection {...defaultProps} stashes={[mockStash]} />);
       
       fireEvent.click(screen.getByRole('button', { name: /pop/i }));
-      expect(mockOnPopStash).toHaveBeenCalledWith('stash@{0}');
+      expect(mockOnPopStash).toHaveBeenCalledWith(mockStash);
     });
 
-    it('calls onDropStash with stash ref when Drop is clicked', () => {
+    it('calls onDropStash with stash entry when Drop is clicked', () => {
       render(<GitStashSection {...defaultProps} stashes={[mockStash]} />);
       
       fireEvent.click(screen.getByRole('button', { name: /drop/i }));
-      expect(mockOnDropStash).toHaveBeenCalledWith('stash@{0}');
+      expect(mockOnDropStash).toHaveBeenCalledWith(mockStash);
     });
 
     it('renders multiple stash entries', () => {
