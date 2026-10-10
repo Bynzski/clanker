@@ -107,23 +107,20 @@ describe('Changes-first workflow', () => {
   it('commits only staged files, keeps unstaged files and restores Changes and focus without dropping its Browser lease', async () => {
     const user = await open();
     const counts: number[] = []; const off = useWorkspaceStore.subscribe(() => counts.push(leaseCount() ?? 0));
+    await user.type(screen.getByRole('textbox', { name: 'Commit Message' }), 'reviewed staged work');
     await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
-    const commit = await screen.findByRole('dialog', { name: 'Create Commit' });
-    expect(leaseCount()).toBe(2);
-    await user.type(within(commit).getByRole('textbox', { name: 'Commit Message' }), 'reviewed staged work');
-    await user.click(within(commit).getByRole('button', { name: 'Commit Staged' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create Commit' })).toBeNull());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveValue(''));
+    expect(screen.queryByRole('dialog', { name: 'Create Commit' })).toBeNull();
+    expect(leaseCount()).toBe(1);
     expect(api.gitStage).not.toHaveBeenCalled(); expect(api.gitCommit).toHaveBeenCalledWith('/repo', 'reviewed staged work', 'ws');
     expect(screen.getByRole('heading', { name: 'Unstaged changes (2)' })).toBeVisible();
-    expect(Math.min(...counts)).toBe(1); off();
-    // The initiating button remains the focus target, even when its label changes.
-    expect(screen.getByRole('button', { name: 'Stage All & Commit' })).toHaveFocus();
+    expect(counts.every((count) => count === 1)).toBe(true); off();
+    expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveFocus();
   });
 
   it('stage-all convenience is explicit, respects staging failure and commits only after successful staging', async () => {
     const user = await open();
-    await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
-    const commit = screen.getByRole('dialog', { name: 'Create Commit' });
+    const commit = screen.getByRole('form', { name: 'Commit changes' });
     await user.type(within(commit).getByRole('textbox'), 'all work');
     api.gitStage.mockResolvedValueOnce({ success: false, error: 'Staging denied' });
     await user.click(within(commit).getByRole('button', { name: 'Stage All & Commit' }));
@@ -134,24 +131,138 @@ describe('Changes-first workflow', () => {
     expect(api.gitStage).toHaveBeenLastCalledWith('/repo', undefined, 'ws');
     await waitFor(() => expect(screen.getByText('Working directory is clean')).toBeVisible());
     expect(screen.getByRole('button', { name: 'Stage All & Commit' })).toBeDisabled();
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Changes' })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveFocus());
   });
 
   it('keeps failed commits recoverable and allows refresh recovery after a status failure', async () => {
     const user = await open();
-    await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
-    const commit = screen.getByRole('dialog', { name: 'Create Commit' });
+    const commit = screen.getByRole('form', { name: 'Commit changes' });
     api.gitCommit.mockResolvedValueOnce({ success: false, error: 'Hook rejected commit' });
     await user.type(within(commit).getByRole('textbox'), 'retry work');
     await user.click(within(commit).getByRole('button', { name: 'Commit Staged' }));
     expect(within(commit).getByText('Hook rejected commit')).toBeVisible();
     expect(within(commit).getByRole('textbox')).toHaveValue('retry work');
-    await user.keyboard('{Escape}');
     api.gitRefresh.mockRejectedValueOnce(new Error('Connection unavailable'));
     await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
     expect(screen.getByText('Connection unavailable')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
     expect(screen.queryByText('Connection unavailable')).toBeNull();
+  });
+
+  it('retains one scope-local draft across History, Overview, Review Changes, staging and close/reopen', async () => {
+    const user = await open();
+    await user.type(screen.getByRole('textbox', { name: 'Commit Message' }), 'unfinished work');
+    await user.click(screen.getByRole('button', { name: 'History' }));
+    await user.click(screen.getByRole('button', { name: 'Overview' }));
+    await user.click(screen.getByRole('button', { name: 'Review Changes' }));
+    expect(screen.getAllByRole('textbox', { name: 'Commit Message' })).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveValue('unfinished work');
+    await user.click(screen.getByRole('button', { name: 'Stage new.ts' }));
+    expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveValue('unfinished work');
+    await user.keyboard('{Escape}'); await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveValue('unfinished work');
+    act(() => useWorkspaceStore.setState({ activeWorkspaceId: null }));
+    act(() => useWorkspaceStore.setState({ activeWorkspaceId: 'ws' }));
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(screen.getByRole('textbox', { name: 'Commit Message' })).toHaveValue('');
+  });
+
+  it('keeps inference alive across page navigation without stealing focus and protects drafts on edits/status changes', async () => {
+    api.getAiCommitSettings.mockResolvedValue({ enabled: true, provider: 'codex', model: 'configured' });
+    let finish!: (value: unknown) => void;
+    api.generateCommitMessage.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const user = await open();
+    await user.click(await screen.findByRole('button', { name: 'Generate' }));
+    await user.click(screen.getByRole('button', { name: 'History' }));
+    expect(screen.getByRole('button', { name: 'History' })).toHaveFocus();
+    await act(async () => finish({ success: true, message: 'feat: agent review' }));
+    expect(screen.getByRole('button', { name: 'History' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.getByRole('textbox')).toHaveValue('feat: agent review');
+    await user.click(screen.getByRole('button', { name: 'Generate' }));
+    await user.type(screen.getByRole('textbox'), ' edited');
+    await act(async () => finish({ success: true, message: 'old result' }));
+    expect(screen.getByRole('textbox')).toHaveValue('feat: agent review edited');
+    await user.click(screen.getByRole('button', { name: 'Generate' }));
+    await user.click(screen.getByRole('button', { name: 'Unstage partial.ts' }));
+    await act(async () => finish({ success: true, message: 'old change snapshot' }));
+    expect(screen.getByText('Changes updated during generation. Generate the message again.')).toBeVisible();
+    expect(screen.getByRole('textbox')).toHaveValue('feat: agent review edited');
+  });
+
+  it('does not advertise known counts or allow submission after a status failure, and retains the draft for recovery', async () => {
+    const user = await open(); await user.type(screen.getByRole('textbox'), 'keep me');
+    api.gitRefresh.mockRejectedValue(new Error('Status unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
+    expect(await screen.findByText('Change counts unavailable')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stage All & Commit' })).toBeDisabled();
+    api.gitRefresh.mockImplementation(async () => structuredClone(status));
+    await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
+    expect(screen.getByRole('textbox')).toHaveValue('keep me');
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeEnabled();
+  });
+
+  it('preserves unstage failures, status badges and explicit diff affordances', async () => {
+    status.changes = [{ path: 'a.ts', status: 'added', staged: true }, { path: 'd.ts', status: 'deleted', staged: false },
+      { path: 'r.ts', status: 'renamed', staged: true }, { path: 'new.ts', status: 'untracked', staged: false }];
+    api.gitUnstage.mockResolvedValueOnce({ success: false, error: 'Unstage denied' });
+    const user = await open();
+    for (const badge of ['A', 'D', 'R', '??']) expect(screen.getByText(badge)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'View staged diff for a.ts' })).toHaveAttribute('title', 'View Diff · HEAD to index');
+    expect(screen.getByRole('button', { name: 'Review working changes for d.ts' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Unstage a.ts' }));
+    expect(screen.getByText('Unstage denied')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Unstage a.ts' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Unstage All' }));
+    expect(screen.getByRole('heading', { name: 'Staged changes (0)' })).toBeVisible();
+  });
+
+  it('serializes the complete stage-all/commit sequence and guards dismissal/submission throughout native hooks', async () => {
+    let finishStage!: (value: unknown) => void; let finishCommit!: (value: unknown) => void;
+    api.gitStage.mockReturnValueOnce(new Promise((resolve) => { finishStage = resolve; }));
+    api.gitCommit.mockReturnValueOnce(new Promise((resolve) => { finishCommit = resolve; }));
+    const user = await open();
+    await user.type(screen.getByRole('textbox'), 'explicit all');
+    await user.click(screen.getByRole('button', { name: 'Stage All & Commit' }));
+    expect(screen.getByText('Staging changes…')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'History' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close Source Control' })).toBeDisabled();
+    await user.keyboard('{Escape}'); expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
+    await act(async () => finishStage({ success: true }));
+    expect(screen.getByText('Running git hooks…')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'View working diff for partial.ts' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stage All' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
+    expect(api.gitCommit).toHaveBeenCalledTimes(1);
+    await act(async () => finishCommit({ success: false, error: 'Hooks rejected' }));
+    expect(screen.getByText('Hooks rejected')).toBeVisible();
+    expect(screen.getByRole('textbox')).toHaveValue('explicit all');
+    expect(screen.getByRole('button', { name: 'History' })).toBeEnabled();
+  });
+
+  it.each(['workspace', 'checkout', 'environment'])('never dispatches commit after stage-all completes in an old %s scope', async (change) => {
+    let finish!: (value: unknown) => void;
+    api.gitStage.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const user = await open(); await user.type(screen.getByRole('textbox'), 'scope bound');
+    await user.click(screen.getByRole('button', { name: 'Stage All & Commit' }));
+    act(() => useWorkspaceStore.setState((state) => change === 'workspace' ? { activeWorkspaceId: null } : { workspaces: state.workspaces.map((entry) => change === 'environment' ? { ...entry, environmentId: 'ssh-other' } : { ...entry, fileSurfaceContextId: 'unregistered' }) }));
+    await act(async () => finish({ success: true }));
+    expect(api.gitCommit).not.toHaveBeenCalled(); expect(api.gitRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each(['workspace', 'checkout', 'environment'])('discards a pending native commit after a %s change without refreshing another repository', async (change) => {
+    let finish!: (value: unknown) => void;
+    api.gitCommit.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const user = await open(); await user.type(screen.getByRole('textbox'), 'staged only');
+    await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
+    act(() => useWorkspaceStore.setState((state) => change === 'workspace' ? { activeWorkspaceId: null } : { workspaces: state.workspaces.map((entry) => change === 'environment' ? { ...entry, environmentId: 'ssh-other' } : { ...entry, fileSurfaceContextId: 'unregistered' }) }));
+    await act(async () => finish({ success: true }));
+    expect(api.gitCommit).toHaveBeenCalledTimes(1);
+    expect(api.gitCommit).toHaveBeenCalledWith('/repo', 'staged only', 'ws');
+    expect(api.gitStage).not.toHaveBeenCalled(); expect(api.gitRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it.each(['workspace', 'checkout', 'environment'])('does not refresh or retarget a pending staging mutation after a %s change', async (change) => {

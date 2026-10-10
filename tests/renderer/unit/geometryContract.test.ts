@@ -54,7 +54,6 @@ const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
   'components/EditorTabBar.css': ['.editor-tab-bar::-webkit-scrollbar-thumb'],
   // Intentional pill counters / status chips with fixed compact height
   'components/ChatHistoryDropdown.css': ['.chat-history-harness-count', '.chat-history-count'],
-  'components/CommitDialog.css': ['.commit-file-status'],
   'components/GitButton.css': ['.git-ahead-badge', '.git-badge'],
   'components/git/GitRemotesSection.css': [
     '.git-remotes-count',

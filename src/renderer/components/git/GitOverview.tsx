@@ -5,7 +5,7 @@ import { GitRemoteActionsSection } from './GitRemoteActionsSection';
 import type { GitRepoMenuProps } from './GitRepoMenu';
 import './SourceControl.css';
 
-export function GitOverview(props: GitRepoMenuProps) {
+export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => void }) {
   const { currentBranchLabel, upstream, ahead, behind, changeCount, operationState, isLoadingOperation,
     isLoadingBranches, isBusy, remoteAction, providerContext, pullRequest, vcsContextError, isLoadingContext,
     statusErrorMessage, branchError, remoteError, scope, statusKnown } = props;
@@ -14,7 +14,7 @@ export function GitOverview(props: GitRepoMenuProps) {
   return <div className="source-control-overview">
     <h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
     <div className="source-control-actions">
-      <Button variant="primary" disabled={isBusy || !statusKnown} onClick={props.onOpenCommitDialog}>Commit Changes</Button>
+      <Button disabled={isBusy} onClick={props.onReviewChanges}>Review Changes</Button>
       <Button disabled={isBusy || isLoadingBranches || isLoadingOperation} onClick={props.onRefresh}>Refresh</Button>
     </div>
     {!props.isDetached && <GitRemoteActionsSection currentBranch={props.currentBranch} hasRemotes={props.remotes.length > 0}

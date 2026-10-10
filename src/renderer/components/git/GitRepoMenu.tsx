@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ManagementShell } from '../ui/ManagementShell';
 import { GitOverview } from './GitOverview';
 import { GitChanges } from './GitChanges';
+import type { useCommitComposer } from './useCommitComposer';
 import type { gitManagementScope } from './gitManagementScope';
 import { GitMergeSection } from './GitMergeSection';
 import GitRemotesSection from './GitRemotesSection';
@@ -79,7 +80,8 @@ export interface GitRepoMenuProps {
   onDropStash: (stash: GitStash) => void;
   onFetch: () => void;
   onMergeBranch: () => void;
-  onOpenCommitDialog: () => void;
+  commitComposer: ReturnType<typeof useCommitComposer>;
+  commitProgress: string | null;
   onPopStash: (stash: GitStash) => void;
   onPublish: () => void;
   onPull: () => void;
@@ -200,7 +202,7 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
       ]}
       selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
       {page !== 'overview' && page !== 'changes' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
-      {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} /> : page === 'branches' ? <div className="source-control-page">
+      {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} onReviewChanges={() => { if (!busy) setPage('changes'); }} /> : page === 'branches' ? <div className="source-control-page">
       <h2 className="clanker-dialog-title">Branches</h2>
       <p>Local branches of this repository. Switch changes the workspace checkout, not an agent's working directory. Git checks worktree ownership before deletion.</p>
       <p>Current checkout: {props.statusKnown ? props.currentBranchLabel : 'Unknown'}. The current branch cannot be deleted or switched to again.</p>

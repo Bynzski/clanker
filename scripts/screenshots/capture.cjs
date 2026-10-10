@@ -169,21 +169,19 @@ function index(error) {
       });
       await button('Close terminal').last().click(); await pause(500);
       await shot(theme, 'inactive-checkout', 'Created checkout stays managed after its last agent closes');
-      await clip(theme, 'git-menu-tour', 'Git changes, branches, worktree management and commit history', async () => {
+      await clip(theme, 'git-menu-tour', 'Source Control changes and commit history', async () => {
         await page.locator('button.git-btn').click();
-        await page.getByRole('menu', { name: 'Git actions' }).waitFor(); await pause(1200);
-        await shot(theme, 'git-menu', 'Git menu with dirty files, branches and linked worktree');
-        const menu = page.getByRole('menu', { name: 'Git actions' });
-        await menu.getByRole('button', { name: 'Working Tree', exact: true }).scrollIntoViewIfNeeded();
-        await menu.getByRole('button', { name: 'Working Tree', exact: true }).click(); await pause(1200);
-        await shot(theme, 'git-history', 'Git commit history and actual working-copy diff');
+        const source = page.getByRole('dialog', { name: 'Source Control', exact: true });
+        await source.waitFor(); await pause(1200);
+        await shot(theme, 'git-menu', 'Source Control with real changed files and inline commit composer');
+        await source.getByRole('navigation').getByRole('button', { name: 'History', exact: true }).click();
+        await pause(1200); await shot(theme, 'git-history', 'Repository commit history and summaries');
+        await source.getByRole('navigation').getByRole('button', { name: 'Changes', exact: true }).click();
         await page.keyboard.press('Escape');
-        // Git menu uses outside-click dismissal, rather than a Radix popover.
-        if (await menu.isVisible()) await page.locator('button.git-btn').click();
       });
-      await page.locator('button.git-btn').click(); await click('Commit Changes');
-      await page.getByRole('dialog').waitFor(); await pause(600);
-      await shot(theme, 'commit-dialog', 'Commit dialog with real modified and untracked files; no commit submitted');
+      await page.locator('button.git-btn').click();
+      await page.getByRole('dialog', { name: 'Source Control', exact: true }).waitFor(); await pause(600);
+      await shot(theme, 'commit-composer', 'Inline Changes composer with real files; no commit submitted');
       await page.keyboard.press('Escape');
       await menu(theme, 'Usage', 'usage-status', 'Usage menu: actual signed-out/unavailable statuses; no fabricated quota');
       await menu(theme, 'Settings', 'settings', 'Settings and appearance controls');

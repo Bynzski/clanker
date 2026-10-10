@@ -1,7 +1,21 @@
-.source-control-change-identity { overflow-wrap: anywhere; margin-block: var(--space-sm); }
-.source-control-changes .source-control-actions { flex-wrap: wrap; }
-.source-control-change-help { color: var(--text-secondary); font-size: var(--font-size-sm); margin-block: var(--space-sm); }
-.source-control-changes h3 { font-size: var(--font-size-md); margin-top: var(--space-md); }
-.source-control-file-list { list-style: none; padding: 0; margin: var(--space-sm) 0; }
-.source-control-file-list li { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; border-bottom: 1px solid var(--border-default); padding-block: var(--space-xs); }
+.source-control-page.source-control-changes { gap: var(--space-sm); }
+.source-control-change-heading, .source-control-file-heading, .source-control-commit-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
+}
+.source-control-change-heading h2, .source-control-file-heading h3 { margin: 0; }
+.source-control-change-identity { overflow-wrap: anywhere; font-size: var(--font-size-sm); margin-block: var(--space-sm); }
+.source-control-change-empty, .source-control-commit-counts { color: var(--text-secondary); font-size: var(--font-size-sm); margin-block: var(--space-xs); }
+.source-control-file-heading h3 { font-size: var(--font-size-md); }
+.source-control-file-list { list-style: none; padding: 0; margin: var(--space-xs) 0; }
+.source-control-file-list li { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; border-bottom: 1px solid var(--border-default); padding-block: var(--space-xs); }
 .source-control-file-path { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.source-control-file-status { font-size: var(--font-size-xs); font-weight: 700; padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-sm); min-width: var(--space-md); text-align: center; }
+.source-control-file-status.modified { background: color-mix(in srgb, var(--git-modified) 20%, transparent); color: var(--git-modified); }
+.source-control-file-status.added { background: color-mix(in srgb, var(--git-added) 20%, transparent); color: var(--git-added); }
+.source-control-file-status.deleted { background: color-mix(in srgb, var(--status-error) 20%, transparent); color: var(--git-deleted); }
+.source-control-file-status.untracked { background: color-mix(in srgb, var(--git-untracked) 20%, transparent); color: var(--git-untracked); }
+.source-control-file-status.renamed { background: color-mix(in srgb, var(--git-renamed) 20%, transparent); color: var(--git-renamed); }
+.source-control-commit { border-top: 1px solid var(--border-default); margin-top: var(--space-sm); padding-top: var(--space-sm); }
+.source-control-commit textarea { resize: vertical; }
+.source-control-commit-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-block: var(--space-sm); }
+.source-control-commit-progress { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-size-sm); color: var(--text-secondary); }

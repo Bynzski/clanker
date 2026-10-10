@@ -1,6 +1,97 @@
-# Issue #154 — Inventory and Phase 0–4A decisions
+# Issue #154 — Inventory and Phase 0–4B decisions
 
-## Phase 4A — Changes-first review, staging and commit
+## Phase 4B — one Changes review and commit workspace
+
+Starts from reviewed `34b24caa75ed8ccb18298efd22c333ab671032f6` on
+`feat/154-management-settings`. This supersedes Phase 4A's nested commit composer;
+prior phase descriptions/results below are historical. No PR, merge, Settings or
+Browser redesign, Git authorization change, new diff engine or release cleanup.
+
+### Workflow, cleanup and ownership
+
+- **Changes is the sole commit workspace:** compact environment/root/branch/count
+  identity and refresh, separate staged/unstaged sections, then a permanently
+  visible labeled multiline message field and commit actions. Each section owns
+  its single Stage All/Unstage All action. Rows retain status/path review plus an
+  explicit Eye/View Diff affordance and their own Stage/Unstage action. No second
+  list, checkbox-selection workflow, help wall or commit navigation page.
+- With staged entries, **Commit Staged** is primary and never stages anything;
+  **Stage All & Commit** is secondary when working entries also exist. With only
+  working entries, staged-only submission is disabled and explicit stage-all is
+  primary. Empty messages/clean or unknown status cannot submit. Counts distinguish
+  index/working entries (including both sides of a partially staged path); unknown
+  status says composer counts unavailable rather than claiming a clean index.
+  Rejected, failed or mismatched refreshes invalidate known status until recovery;
+  they cannot leave commit enabled against an unverified snapshot.
+- `GitButton` remains the only status poller/controller and mutation owner. One
+  synchronous lock covers optional stage-all, successful-stage check, native
+  commit/hooks and canonical refresh. Stage failure or an obsolete scope cannot
+  dispatch commit; late native results cannot refresh another repository. No
+  optimistic success or presentation-owned Git IPC.
+- Focused `CommitComposer` presentation and `useCommitComposer` draft/inference
+  lifecycle replace `CommitDialog.tsx` and its CSS. The hook lives in the scoped
+  controller, not the conditionally mounted Changes page: navigation through
+  History/Overview and closing/reopening preserves the same-context draft. Scope
+  replacement/unmount drops it; confirmed success clears it, failure retains it.
+  No persisted drafts or second Git store/controller.
+- Optional Generate retains the existing enabled setting, configured backend
+  harness/model and main failure/capability checks. It is local-only, never stages
+  or submits, and uses the existing generation IPC. Request/draft/status/scope
+  generations reject superseded or stale results (including A → B → A), protect
+  typing during inference, and retain failures without deleting the draft.
+  Navigation does not cancel valid same-context inference or steal another page's
+  focus. Main's existing all-change prompt context is unchanged: generated text
+  must still be reviewed for a staged-only commit. No live AI CLI smoke is claimed.
+- Overview's **Review Changes** navigates inside the same shell; old Commit Changes
+  callbacks/modal paths are removed. No existing dedicated commit shortcut was
+  found, and none is added. The feature screenshot capture now uses Changes and
+  its inline composer rather than the obsolete Git-menu/CommitDialog path.
+- The unchanged `useFileDiffReview`/`FileDiffReview`/modal DiffViewer path retains
+  local/SSH authorization, selection/revision invalidation, binary/no-diff and
+  empty new/deleted content. Source Control holds one native Browser suppression
+  lease; file review adds only its own nested lease. Escape closes the top viewer
+  and returns to the same row/page. Git mutation blocks conflicting actions,
+  navigation and dismissal, with staging/hooks progress. Successful submission
+  focuses the enabled message field; closing Source Control restores its trigger.
+
+### Verification and review gate
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **380 files / 7,796 tests
+  passed**; branding, lint, typecheck, Fallow, security-check (unchanged documented
+  dev-only exception), build and full tests pass.
+- Expanded clean-PATH focused suite: **38 files / 919 tests passed**. Command:
+  `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/SourceControl.test.tsx
+  tests/renderer/unit/ChangesWorkflow.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/git/ tests/renderer/unit/DiffViewer.test.tsx
+  tests/renderer/unit/geometryContract.test.ts tests/main/unit/gitService/
+  tests/main/unit/gitIpc.test.ts tests/main/integration/gitService.real.test.ts`.
+- Former CommitDialog regressions are migrated, not bypassed: counts/status/row
+  staging/diffs/errors/scope/dismissal live in ChangesWorkflow, SourceControl,
+  GitButton and the existing diff-lifecycle/DiffViewer suites; validation/AI/draft/
+  duplicate/failure/focus/request guards live in CommitComposer tests. Separate
+  modal visibility/cancel and duplicated file-list assertions are obsolete because
+  that surface is removed. Real Git staging/commit and IPC suites remain unchanged.
+- Source Control Electron smoke: **PASS**, real disposable partially staged file,
+  per-file/all staging, single composer/no Create Commit dialog, retained drafts,
+  Overview routing, real staged-only then explicit all commit, clear/focus after
+  success, native Browser suppression/restoration, eight pages, three themes and
+  1100×760/640×480. Changes/composer images reviewed in
+  `/tmp/clanker-source-control-visual-d5zCsG`; no overlap/horizontal overflow.
+- Settings Electron smoke: **PASS**, inherited PATH for installed harness discovery;
+  screenshots `/tmp/clanker-settings-visual-fWjtgf`. Full-renderer native Browser
+  smoke: **PASS**. Separate native multi-Browser smoke: **FAIL**, Electron SIGSEGV,
+  exit 1, the independently documented preexisting failure; no workaround or unrelated
+  Browser/platform changes to conceal it.
+- Logs: `/tmp/154-4b-validate.log`, `/tmp/154-4b-focused.log`,
+  `/tmp/154-4b-source-smoke.log`, `/tmp/154-4b-settings-smoke.log`,
+  `/tmp/154-4b-browser-smoke.log`, `/tmp/154-4b-multi-browser.log`.
+- HEAD → working/index semantics, modal-next-file review, no hunk staging and
+  isolated-checkout Git unavailability remain. Live SSH, live configured AI CLI,
+  real agent edits under load, high zoom/OS scaling, screen readers and native
+  Windows/macOS focus remain owner smoke. Stop after Phase 4B for independent code
+  review and owner visual testing before further implementation.
+
+## Phase 4A — Changes-first review, staging and commit (historical)
 
 Starts from reviewed `50b878b0c6542f79ef386707fb852059af559829` on
 `feat/154-management-settings`. Implements approved Option A only; no PR, merge,

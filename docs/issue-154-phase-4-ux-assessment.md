@@ -1,10 +1,49 @@
-# Issue #154 — Phase 4 workflow assessment / approved Phase 4A
+# Issue #154 — Phase 4 workflow assessment / approved Phase 4A–4B
 
 Original assessment against reviewed Phase 3D `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
 Phase 4A starts from reviewed correctness commit `50b878b0c6542f79ef386707fb852059af559829`.
 **Owner approved Option A and explicit staged-only versus stage-all commit policy.**
 
-## Phase 4A implementation
+## Phase 4B implementation — unified Changes workspace
+
+Starts from reviewed `34b24caa75ed8ccb18298efd22c333ab671032f6`.
+The owner approved consolidating review/staging/message/generation/submission
+inside Changes, retaining Option A's existing modal file viewer.
+
+- One compact file workspace, no duplicated staging toolbar/list: each staged or
+  unstaged section owns its All action; status/path rows retain review and explicit
+  Eye/View Diff plus Stage/Unstage. A permanent multiline composer follows the rows.
+- Commit Staged is primary for indexed changes and stages nothing. Explicit Stage
+  All & Commit is secondary for mixed changes, primary for working-only changes.
+  Empty/clean/unknown status cannot submit; failed staging cannot dispatch commit.
+- `GitButton` still owns scope/status/polling/mutations and holds one lock across
+  stage-all → commit/hooks → canonical refresh. `useCommitComposer` owns only the
+  scope-local draft/inference lifecycle; `CommitComposer` renders the form. Drafts
+  survive History/Overview navigation and close/reopen in the same scope, not a
+  workspace/environment/checkout replacement. Success clears; failure preserves.
+- Local-only optional AI retains existing settings/configured backend IPC. Stale
+  scope/status/request/edit results cannot replace a newer draft; failures stay
+  visible. Same-scope navigation can receive a result without stealing focus.
+  The existing all-change generation context is not a staged-only prompt backend.
+- CommitDialog, its CSS, rendering/callback state and competing entry points are
+  removed. Overview's Review Changes navigates within the same shell. No second
+  commit page, standalone modal, new shortcut or presentation-owned Git command.
+- Existing authorized DiffViewer lifecycle/HEAD-to-working-or-index semantics and
+  Browser leases are unchanged. Pending mutations guard actions/navigation/close;
+  progress/errors are explicit. Nested review returns to its row/page; successful
+  submission returns focus to the enabled message field, shell close to its trigger.
+- Meaningful old dialog regressions move to composer/Changes/controller/diff
+  suites; obsolete modal/cancel/duplicated-list assertions are retired. Native
+  smoke covers the single form, drafts/routing, real selective/all commits and
+  Browser suppression in Dark/Light/Slate at desktop/reduced sizes.
+
+Results/limits are in `issue-154-management-interface.md`. No inline/hunk diff,
+new backend authorization, Settings/Browser redesign, release cleanup, PR or merge.
+Stop after Phase 4B for independent review and owner visual testing. Live SSH/AI,
+agent edits under load, OS scaling and assistive/native-platform checks remain
+owner smoke; separate native multi-Browser SIGSEGV remains independently recorded.
+
+## Phase 4A implementation (historical; composer superseded by Phase 4B)
 
 - Changes is the initial landing page in the existing ManagementShell, followed by
   History, Overview, Branches and Worktrees; Operations stays Stashes/Remotes/Merge.
@@ -171,6 +210,6 @@ staging, auto-commit or speculative features.
 3. **Unchanged boundary:** isolated-checkout Git support is a separate backend
    assignment; no parent-root substitution or new authorization here.
 
-Stop after Phase 4A for independent code review and owner visual testing. Settings
+Stop after Phase 4B for independent code review and owner visual testing. Settings
 suggestions and inline review remain unimplemented. Validation results are in
 `issue-154-management-interface.md`.

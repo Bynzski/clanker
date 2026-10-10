@@ -72,6 +72,7 @@ const mockElectronAPI = {
   gitClearStashes: mockGitClearStashes,
   gitGetRemotes: mockGitGetRemotes,
   gitFetch: mockGitFetch,
+  getAiCommitSettings: vi.fn().mockResolvedValue({ enabled: false, provider: 'codex', model: '' }),
   gitPull: mockGitPull,
   gitPush: mockGitPush,
   gitUnstage: mockGitUnstage,
@@ -83,31 +84,7 @@ const mockElectronAPI = {
   vcsOpenDeepLink: mockVcsOpenDeepLink,
 };
 
-// Mock child components
-vi.mock('../../../src/renderer/components/CommitDialog', () => ({
-  default: ({
-    isOpen,
-    onCommit,
-    onStageAll,
-    onUnstage,
-    onUnstageAll,
-  }: {
-    isOpen: boolean;
-    onCommit: (message: string) => Promise<unknown>;
-    onStageAll: () => Promise<unknown>;
-    onUnstage: (path: string) => Promise<unknown>;
-    onUnstageAll: () => Promise<unknown>;
-  }) =>
-    isOpen ? (
-      <div data-testid="commit-dialog">
-        <button type="button" onClick={() => void onCommit('feat: test commit')}>commit</button>
-        <button type="button" onClick={() => void onStageAll()}>stage-all</button>
-        <button type="button" onClick={() => void onUnstage('src/index.ts')}>unstage-one</button>
-        <button type="button" onClick={() => void onUnstageAll()}>unstage-all</button>
-      </div>
-    ) : null,
-}));
-
+// Mock repository-management child components; Changes remains the real canonical workflow.
 vi.mock('../../../src/renderer/components/git/GitBranchesSection', () => ({
   GitBranchesSection: (props: Record<string, unknown>) => {
     componentMocks.gitBranchesLastProps = props;
@@ -588,7 +565,7 @@ describe('GitButton', () => {
 
     it('renders commit button', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]);
-      expect(screen.getByText('Commit Changes')).toBeTruthy();
+      expect(screen.getByText('Review Changes')).toBeTruthy();
     });
 
     it('renders refresh button', async () => {
@@ -612,21 +589,19 @@ describe('GitButton', () => {
   // =========================================================================
   // Commit Dialog
   // =========================================================================
-  describe('commit dialog', () => {
-    it('opens commit dialog when commit button is clicked', async () => {
+  describe('canonical commit workflow', () => {
+    it('routes the Overview entry point to Changes without a dialog', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]);
-      await act(async () => {
-        fireEvent.click(screen.getByText('Commit Changes'));
-      });
-      expect(screen.getByTestId('commit-dialog')).toBeTruthy();
+      await act(async () => { fireEvent.click(screen.getByText('Review Changes')); });
+      expect(screen.getByRole('textbox', { name: 'Commit Message' })).toBeVisible();
+      expect(screen.queryByRole('dialog', { name: 'Create Commit' })).toBeNull();
     });
 
-    it('keeps Source Control mounted beneath the nested commit workflow', async () => {
+    it('retains one Source Control shell and one inline composer', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]);
-      await act(async () => {
-        fireEvent.click(screen.getByText('Commit Changes'));
-      });
-      expect(screen.getByTestId('commit-dialog')).toBeTruthy();
+      await act(async () => { fireEvent.click(screen.getByText('Review Changes')); });
+      expect(screen.getAllByRole('textbox', { name: 'Commit Message' })).toHaveLength(1);
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
       expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
   });

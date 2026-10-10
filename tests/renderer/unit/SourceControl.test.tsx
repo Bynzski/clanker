@@ -32,7 +32,7 @@ async function open(page = 'Overview') {
   const user = userEvent.setup(); const view = render(<GitButton workspacePath="/repo" workspaceId="ws" />);
   await user.click(screen.getByRole('button', { name: 'Source Control' }));
   if (page !== 'Changes') await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: page }));
-  await waitFor(() => expect(screen.getByRole('button', { name: page === 'Changes' ? 'Refresh changes' : 'Commit Changes' })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: page === 'Changes' ? 'Refresh changes' : 'Review Changes' })).toBeEnabled());
   return { user, view, dialog: screen.getByRole('dialog', { name: 'Source Control' }) };
 }
 describe('Source Control foundation', () => {
@@ -82,12 +82,13 @@ describe('Source Control foundation', () => {
     await user.click(screen.getByRole('button', { name: 'Publish branch' })); expect(api.gitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', false, true, 'ws');
     expect(await screen.findByText('Push denied')).toBeVisible();
   });
-  it('keeps the Source Control lease through the real CommitDialog nested handoff', async () => {
-    const { user } = await open(); const counts: number[] = []; const off = useWorkspaceStore.subscribe(() => counts.push(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount ?? 0));
-    await user.click(screen.getByRole('button', { name: 'Commit Changes' })); await screen.findByRole('dialog', { name: 'Create Commit' });
-    expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(2);
-    await user.keyboard('{Escape}'); expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
-    expect(Math.min(...counts)).toBeGreaterThan(0); off();
+  it('keeps one Source Control lease when Overview routes to the inline Changes composer', async () => {
+    const { user } = await open();
+    await user.click(screen.getByRole('button', { name: 'Review Changes' }));
+    expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getAllByRole('textbox', { name: 'Commit Message' })).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: 'Create Commit' })).toBeNull();
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(1);
   });
   it('offers the existing initial branch choices and initializes only explicitly', async () => {
     status = { ...status, isRepo: false, currentBranch: null }; const user = userEvent.setup(); render(<GitButton workspacePath="/repo" workspaceId="ws" />);
@@ -116,7 +117,7 @@ describe('Source Control foundation', () => {
     act(() => { useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, fileSurfaceContextId: 'task', checkoutContexts: [...(entry.checkoutContexts ?? []), { id: 'task', workspaceId: 'ws', environmentId: 'local', path: '/repo-worktrees/task', kind: 'worktree' as const, branch: 'task' }] })) })); });
     expect(screen.queryByRole('dialog')).toBeNull(); await waitFor(() => expect(screen.getByRole('button', { name: 'Source Control' })).toHaveFocus()); await user.click(screen.getByRole('button', { name: 'Source Control' }));
     expect(screen.getByRole('alert')).toHaveTextContent('not substituted'); expect(api.gitStartPolling).toHaveBeenCalledTimes(before);
-    expect(screen.queryByRole('button', { name: 'Commit Changes' })).toBeNull(); expect(api.gitFetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Review Changes' })).toBeNull(); expect(api.gitFetch).not.toHaveBeenCalled();
   });
 });
 
