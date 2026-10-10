@@ -231,4 +231,30 @@ Phase 2A verification:
   real Hermes startup, high zoom, platform focus and screen-reader smoke remain
   owner checks. Automated auth/account tests use safe mocked IPC projections.
 
-No Settings-wide search or Git destination was implemented here.
+## Phase 2A review corrections (after `5ee43b8`)
+
+- Capability preferences are application-wide configuration, not permission to
+  activate a capability in the focused workspace. Hermes attention is editable
+  from Local and SSH Settings, with explicit SSH-only support guidance. Descriptor
+  attention transport metadata determines the explanation and whether any launch
+  supports it. The MCP preference is editable from both contexts for descriptor-
+  eligible providers, with the existing local-only launch explanation. No per-host
+  preference copies, extra toggles, or runtime attention/MCP gate changes.
+- AI commit availability now has its own **local** capability snapshot inside the
+  existing settings controller. Initial desktop discovery shares an in-flight
+  `getHarnessOptions` request with local launcher discovery. Focus changes never
+  substitute an SSH result or clear that snapshot. Existing launcher discovery on
+  returning to Local can refresh it; equal provider availability does not refetch
+  models. There is no new polling, global cache, or remote discovery path.
+- AI commit models still use desktop `getHarnessModels` only. Saved provider/model
+  values remain intact on discovery/model failures and unavailable providers; local
+  discovery failure is reported explicitly. Persistence and its error reporting
+  are unchanged. Regression coverage checks both opposite Local/SSH Codex
+  availability combinations, pending SSH focus transitions, single initial local
+  discovery, stable models, unavailable saved selections, and no remote model probe.
+- Correction verification: `npm run validate` **369 files / 7,631 tests**; focused
+  renderer/integration/descriptor regressions **19 files / 406 tests**. Settings
+  Electron and full-renderer Browser smokes pass; separate native multi-Browser
+  SIGSEGV and the previously documented live/platform coverage limits remain.
+
+No Settings-wide search or Git destination was implemented here. Phase 2B is not begun.

@@ -72,11 +72,82 @@ describe('canonical agent Settings pages', () => {
     expect(window.electronAPI.listHarnessAccounts).not.toHaveBeenCalled();
     await selectHarness(user, 'Hermes');
     expect(screen.queryByRole('checkbox', { name: 'Clanker bridge for Hermes' })).toBeNull();
-    expect(screen.getByRole('checkbox', { name: 'Agent attention for Hermes' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Agent attention for Hermes' })).toBeEnabled();
     expect(screen.queryByRole('region', { name: 'Codex preferences' })).toBeNull();
     expect('agentBridge' in HARNESS_DESCRIPTORS.hermes).toBe(false);
     await selectHarness(user, 'Pi');
     expect(screen.queryByRole('checkbox', { name: 'Show Pi in Usage' })).toBeNull();
+  });
+
+  it.each(['local', 'remote'])('configures SSH-only Hermes attention from %s Settings', async (workspaceId) => {
+    useWorkspaceStore.getState().selectWorkspace(workspaceId);
+    const user = userEvent.setup();
+    await openPage(user, 'Harnesses');
+    await selectHarness(user, 'Hermes');
+    const attention = screen.getByRole('checkbox', { name: 'Agent attention for Hermes' });
+    expect(attention).toBeEnabled();
+    expect(screen.getByText(/SSH launches only; local attention is unsupported/)).toBeVisible();
+    await user.click(attention);
+    expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ hermes: expect.objectContaining({ attentionEnabled: true }) }));
+  });
+
+  it.each(['local', 'remote'])('configures local-only MCP bridge from %s Settings', async (workspaceId) => {
+    useWorkspaceStore.getState().selectWorkspace(workspaceId);
+    const user = userEvent.setup();
+    await openPage(user, 'Harnesses');
+    await selectHarness(user, 'Codex');
+    const bridge = screen.getByRole('checkbox', { name: 'Clanker bridge for Codex' });
+    expect(bridge).toBeEnabled();
+    expect(screen.getByText(/Local launches only. Your own MCP configuration/)).toBeVisible();
+    await user.click(bridge);
+    expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ agentBridgeEnabled: true }) }));
+  });
+
+  it.each([true, false])('uses local AI commit capability when local Codex availability is %s and SSH is the opposite', async (localAvailable) => {
+    useWorkspaceStore.getState().selectWorkspace('remote');
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: 'saved-model' });
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue(localAvailable ? options : { hermes: options.hermes });
+    vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockResolvedValue(localAvailable ? {} : options);
+    const user = userEvent.setup();
+    await openPage(user, 'Git Preferences');
+    await waitFor(() => expect(screen.getByRole('option', { name: localAvailable ? 'Codex' : 'Codex (unavailable)' })).toBeVisible());
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'AI commit model' })).toHaveValue('saved-model'));
+    expect(screen.getByRole('combobox', { name: 'AI commit provider' })).toHaveValue('codex');
+    expect(window.electronAPI.getHarnessOptions).toHaveBeenCalledTimes(1);
+    if (localAvailable) expect(window.electronAPI.getHarnessModels).toHaveBeenCalledExactlyOnceWith('codex');
+    else expect(window.electronAPI.getHarnessModels).not.toHaveBeenCalled();
+    expect(window.electronAPI.setAiCommitModel).not.toHaveBeenCalled();
+    expect(window.electronAPI.setAiCommitProvider).not.toHaveBeenCalled();
+  });
+
+  it('keeps Git Preferences local capability and saved model stable through pending SSH discovery and back', async () => {
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: 'saved-model' });
+    vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    await openPage(user, 'Git Preferences');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'AI commit model' })).toHaveValue('saved-model'));
+    expect(window.electronAPI.getHarnessOptions).toHaveBeenCalledTimes(1);
+    act(() => useWorkspaceStore.getState().selectWorkspace('remote'));
+    expect(screen.getByRole('option', { name: 'Codex' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'AI commit model' })).toHaveValue('saved-model');
+    act(() => useWorkspaceStore.getState().selectWorkspace('local'));
+    await waitFor(() => expect(window.electronAPI.getHarnessOptions).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('combobox', { name: 'AI commit model' })).toHaveValue('saved-model');
+    expect(window.electronAPI.getHarnessModels).toHaveBeenCalledExactlyOnceWith('codex');
+    expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledExactlyOnceWith('ssh-one');
+    expect(window.electronAPI.setAiCommitModel).not.toHaveBeenCalled();
+  });
+
+  it('reports failed local discovery without losing saved AI preferences or using SSH availability', async () => {
+    useWorkspaceStore.getState().selectWorkspace('remote');
+    vi.mocked(window.electronAPI.getHarnessOptions).mockRejectedValue(new Error('local discovery failed'));
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: 'saved-model' });
+    const user = userEvent.setup();
+    await openPage(user, 'Git Preferences');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not discover local AI commit providers');
+    expect(screen.getByRole('combobox', { name: 'AI commit provider' })).toHaveValue('codex');
+    expect(screen.getByRole('combobox', { name: 'AI commit model' })).toHaveValue('saved-model');
+    expect(window.electronAPI.getHarnessModels).not.toHaveBeenCalled();
   });
 
   it('routes harness Manage Accounts into the sole accounts controller and focuses its information', async () => {
@@ -144,7 +215,7 @@ describe('canonical agent Settings pages', () => {
     await user.click(screen.getByRole('button', { name: 'Codex default model' }));
     expect(screen.queryByText('Old local model')).toBeNull();
     await user.keyboard('{Escape}');
-    expect(screen.getByRole('checkbox', { name: 'Clanker bridge for Codex' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Clanker bridge for Codex' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Accounts' }));
     await user.click(screen.getByRole('button', { name: 'Appearance' }));
     expect(window.electronAPI.getHarnessModels).toHaveBeenCalledTimes(1);

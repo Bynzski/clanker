@@ -27,6 +27,7 @@ export default function GitPreferencesSettings({ settings }: { settings: ReturnT
         </>}
       </Select>
     </Field>
+    {settings.aiCommitDiscoveryError && <p role="alert">{settings.aiCommitDiscoveryError}</p>}
     {settings.aiCommitModelsError && <p role="alert">{settings.aiCommitModelsError}</p>}
   </div>;
 }

@@ -226,9 +226,8 @@ describe('Hermes model settings', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Hermes default model' })).toHaveTextContent('anthropic/claude-sonnet · OpenRouter'));
     const attention = screen.getByRole('checkbox', { name: 'Agent attention for Hermes' });
     expect(attention).not.toBeChecked();
-    expect(attention).toBeDisabled();
-    expect(screen.getByText(/Attention is unavailable here/)).toBeInTheDocument();
-    await user.click(attention);
+    expect(attention).toBeEnabled();
+    expect(screen.getByText(/SSH launches only; local attention is unsupported/)).toBeInTheDocument();
     expect(props.handleSetHarnessAttention).not.toHaveBeenCalled();
   });
 

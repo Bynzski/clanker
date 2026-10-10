@@ -38,7 +38,7 @@ export default function SettingsManagement({ page, onPageChange, children, envir
         {page === 'appearance' && <AppearanceSettings />}
         {page === 'layout' && <WorkspaceLayoutSettings />}
         {page === 'shortcuts' && <KeyboardShortcutsContent />}
-        {(page === 'harnesses' || page === 'accounts') && <p className="management-page-description">Environment: {environmentId === 'local' ? 'Local' : `SSH · ${environmentId}`}.{page === 'harnesses' ? ' Defaults are application-wide; capabilities reflect this environment.' : ' Accounts are scoped to this environment.'}</p>}
+        {(page === 'harnesses' || page === 'accounts') && <p className="management-page-description">Environment: {environmentId === 'local' ? 'Local' : `SSH · ${environmentId}`}.{page === 'harnesses' ? ' Defaults are application-wide; launch support is explained below.' : ' Accounts are scoped to this environment.'}</p>}
         {page === 'assistants' && assistantsAvailable && <AssistantsSettings />}
         {(page === 'harnesses' || page === 'accounts' || page === 'git-preferences') && children}
         {page === 'legacy' && <div className="settings-legacy">

@@ -58,7 +58,9 @@ function HarnessDetail({ harnessId, label, environmentId = 'local', ...props }: 
   const [manual, setManual] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const visible = defaults?.visible !== false;
-  const attentionSupported = remote ? descriptor.attention.remote : descriptor.attention.local;
+  const attentionSupported = descriptor.attention.local || descriptor.attention.remote;
+  const attentionScope = descriptor.attention.local && descriptor.attention.remote ? 'Local and SSH launches.'
+    : descriptor.attention.remote ? 'SSH launches only; local attention is unsupported.' : 'Local launches only; SSH attention is unsupported.';
   return <section className="settings-harness-detail" aria-label={`${label} preferences`}>
     <h3 className="management-page-title">{label}</h3>
     <p className="management-page-description">Available · Defaults apply to future launches.</p>
@@ -66,9 +68,9 @@ function HarnessDetail({ harnessId, label, environmentId = 'local', ...props }: 
       onChange={(event) => void props.handleSetHarnessVisible(harnessId, event.target.checked)}>Show in toolbar and launcher</Checkbox>
     <Checkbox checked={defaults?.attentionEnabled === true} disabled={!attentionSupported} aria-label={`Agent attention for ${label}`}
       onChange={(event) => void props.handleSetHarnessAttention(harnessId, event.target.checked)}>Agent attention</Checkbox>
-    {!attentionSupported && <p className="management-page-description">Attention is unavailable here; this preference applies only to supported environments.</p>}
+    <p className="management-page-description">{attentionSupported ? attentionScope : 'Agent attention is unsupported.'} This application-wide preference applies to future supported launches.</p>
     {'agentBridge' in descriptor && props.handleSetHarnessAgentBridge && <>
-      <Checkbox checked={defaults?.agentBridgeEnabled === true} disabled={remote} aria-label={`Clanker bridge for ${label}`}
+      <Checkbox checked={defaults?.agentBridgeEnabled === true} aria-label={`Clanker bridge for ${label}`}
         onChange={(event) => void props.handleSetHarnessAgentBridge?.(harnessId, event.target.checked)}>Clanker bridge (MCP)</Checkbox>
       <p className="management-page-description">Local launches only. Your own MCP configuration is not changed.</p>
     </>}
