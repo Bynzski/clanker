@@ -8,8 +8,9 @@ import type { AttentionSignal } from './attentionSignal';
 /** `unverified`: nothing proven yet (fresh registration, or after a session boundary).
  * `idle`: root bound, no foreground turn. `starting`: Clanker submitted a prompt and the
  * provider has not yet named its turn. `running`: an identified foreground turn is live.
+ * `provisional`: a correlated candidate stop, with final outcome and continued execution unknown.
  * `failed`: the latest foreground turn ended on a proven provider failure. */
-export type AgentRuntimeStatus = 'unverified' | 'idle' | 'starting' | 'running' | 'failed';
+export type AgentRuntimeStatus = 'unverified' | 'idle' | 'starting' | 'running' | 'provisional' | 'failed';
 
 /** `null` kind: the wait is proven but the provider cannot prove input vs approval. */
 export type AgentPendingRequestKind = 'input' | 'approval';
@@ -42,8 +43,11 @@ export interface AgentAttentionSnapshot {
     turnId: string | null;
     startedAt: number | null;
   };
-  /** A durable wait on the user. Present until its matching resolution or its turn's boundary. */
+  /** Request evidence, retained until matching resolution or a final turn boundary.
+   * resolutionUnknown retains history without claiming the user still needs to act. */
   pendingRequest: {
+    /** A provisional stop superseded the actionable wait without proving its resolution. */
+    resolutionUnknown?: true;
     id: string | null;
     turnId: string | null;
     kind: AgentPendingRequestKind | null;

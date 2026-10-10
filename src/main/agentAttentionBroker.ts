@@ -13,18 +13,18 @@ import {
 /** Wire events. `session_continued` is an identity transition; `agent_exited` retires the registration.
  * `location_changed` only moves the agent's reported location; any root event may also carry `cwd`. */
 type WireEvent =
-  | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
-  | 'observer_diagnostic' | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
+  | 'turn_provisional' | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
+  | 'observer_diagnostic' | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'session_replaced' | 'agent_exited' | 'location_changed';
 const EVENTS = new Set<WireEvent>([
-  'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
-  'session_started', 'session_ended', 'session_continued', 'agent_exited', 'location_changed', 'observer_diagnostic',
+  'turn_provisional', 'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
+  'session_started', 'session_ended', 'session_continued', 'session_replaced', 'agent_exited', 'location_changed', 'observer_diagnostic',
 ]);
 const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
 const MAX_REMEMBERED_REVISIONS = 1024;
 const EVENT_FIELDS = new Set([
   'version', 'token', 'harness', 'event', 'sessionId', 'turnId', 'scope', 'inputId', 'requestKind', 'nativeEvent', 'continuesSessionId',
-  'cwd', 'diagnostic',
+  'cwd', 'diagnostic', 'previousSessionId',
 ]);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
@@ -59,7 +59,7 @@ export interface AttentionRegistrationOptions {
   quality?: SourceQuality;
 }
 
-export type AttentionEffectiveState = 'unverified' | 'idle' | 'working' | 'needs_input' | 'failed';
+export type AttentionEffectiveState = 'unverified' | 'idle' | 'working' | 'needs_input' | 'provisional' | 'failed';
 
 /** Developer-facing answer to "why does this agent show this state?". Safe metadata only. */
 export interface AttentionExplanation {
@@ -79,6 +79,7 @@ export interface AttentionExplanation {
 }
 
 interface PendingRequest {
+  resolutionUnknown?: true;
   turnId?: string;
   inputId?: string;
   kind: AgentPendingRequestKind | null;
@@ -123,6 +124,7 @@ interface ParsedEvent {
   diagnostic?: HookDiagnostic;
   event: WireEvent;
   continuesSessionId?: string;
+  previousSessionId?: string;
   sessionId?: string;
   turnId?: string;
   scope?: Scope;
@@ -294,16 +296,18 @@ export class AgentAttentionBroker {
   }
 
   private toSnapshot(r: Registration): AgentAttentionSnapshot {
+    const request = r.pending.find(entry => !entry.resolutionUnknown) ?? r.pending[0];
     return {
       terminalId: r.terminalId,
       ...(r.signal ? { signal: { ...r.signal } } : {}),
       revision: r.revision,
       sessionId: r.rootSessionId ?? null,
       runtime: { status: r.status, turnId: r.activeTurnId ?? null, startedAt: r.startedAt },
-      // Compact public view: the oldest outstanding wait stands for the set.
-      pendingRequest: r.pending[0] ? {
-        id: r.pending[0].inputId ?? null, turnId: r.pending[0].turnId ?? null, kind: r.pending[0].kind,
-        evidence: r.pending[0].evidence, revision: r.pending[0].revision, createdAt: r.pending[0].createdAt,
+      // Prefer the oldest actionable wait; otherwise retain the oldest unresolved history.
+      pendingRequest: request ? {
+        ...(request.resolutionUnknown ? { resolutionUnknown: true } : {}),
+        id: request.inputId ?? null, turnId: request.turnId ?? null, kind: request.kind,
+        evidence: request.evidence, revision: request.revision, createdAt: request.createdAt,
       } : null,
       lastCompletion: r.lastCompletion ? { ...r.lastCompletion } : null,
       lastOutcome: r.lastOutcome ? { ...r.lastOutcome } : null,
@@ -316,7 +320,7 @@ export class AgentAttentionBroker {
   explain(terminalId: string): AttentionExplanation | null {
     const r = this.current(terminalId);
     if (!r) return null;
-    const effective: AttentionEffectiveState = r.pending.length > 0 ? 'needs_input'
+    const effective: AttentionEffectiveState = r.status === 'provisional' ? 'provisional' : r.pending.some(request => !request.resolutionUnknown) ? 'needs_input'
       : isActive(r) ? 'working' : r.status === 'failed' ? 'failed' : r.status === 'idle' ? 'idle' : 'unverified';
     return {
       terminalId: r.terminalId, harness: r.harness, transport: r.transport, effective,
@@ -363,10 +367,11 @@ export class AgentAttentionBroker {
     return this.handoffState(terminalId) === 'ready';
   }
 
-  handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable' {
+  handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'provisional' | 'unavailable' {
     const registration = this.current(terminalId);
     if (!registration) return 'unavailable';
-    if (isActive(registration)) return registration.pending.length > 0 ? 'needs_input' : 'running';
+    if (registration.status === 'provisional') return 'provisional';
+    if (isActive(registration)) return registration.pending.some(request => !request.resolutionUnknown) ? 'needs_input' : 'running';
     return registration.status === 'idle' && registration.lastOutcome?.kind === 'completed' ? 'ready' : 'unverified';
   }
 
@@ -393,7 +398,7 @@ export class AgentAttentionBroker {
    * location stay, and a later native turn start recovers normally. Returns whether anything changed. */
   markLifecycleLost(terminalId: string): boolean {
     const registration = this.current(terminalId);
-    if (!registration || (!isActive(registration) && registration.pending.length === 0)) return false;
+    if (!registration || (!isActive(registration) && registration.status !== 'provisional' && registration.pending.length === 0)) return false;
     this.commit(registration, () => {
       if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
       registration.activeTurnId = undefined;
@@ -451,7 +456,7 @@ export class AgentAttentionBroker {
       : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return 'rejected-transport';
     if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return { registration, rejection: 'rejected-invalid' };
     if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return { registration, rejection: 'rejected-invalid' };
-    for (const key of ['sessionId', 'turnId', 'inputId', 'continuesSessionId'] as const) {
+    for (const key of ['sessionId', 'turnId', 'inputId', 'continuesSessionId', 'previousSessionId'] as const) {
       if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return { registration, rejection: 'rejected-invalid' };
     }
     if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return { registration, rejection: 'rejected-invalid' };
@@ -473,6 +478,7 @@ export class AgentAttentionBroker {
       ...(data.scope ? { scope: data.scope } : {}),
       ...(typeof data.inputId === 'string' ? { inputId: data.inputId } : {}),
       ...(data.requestKind ? { requestKind: data.requestKind } : {}),
+      ...(typeof data.previousSessionId === 'string' ? { previousSessionId: data.previousSessionId } : {}),
       ...(typeof data.continuesSessionId === 'string' ? { continuesSessionId: data.continuesSessionId } : {}),
       ...(typeof data.nativeEvent === 'string' ? { nativeEvent: data.nativeEvent } : {}),
       ...(location ? { location } : {}),
@@ -512,7 +518,7 @@ export class AgentAttentionBroker {
         : decision === 'rejected-mismatch' || decision === 'rejected-ambiguous' ? 'identity-rejected' : undefined;
       if (error) registration.signal = { ...registration.signal, health: 'degraded', reason: error };
       else if (decision === 'accepted' && parsed.event !== 'observer_diagnostic' &&
-          (registration.signal.health === 'unverified' || ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'].includes(parsed.event))) {
+          (registration.signal.health === 'unverified' || ['turn_provisional', 'turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended', 'session_replaced'].includes(parsed.event))) {
         registration.signal = { requested: registration.signal.requested, attachment: 'prepared', health: 'observed' };
       }
     }
@@ -559,6 +565,22 @@ export class AgentAttentionBroker {
     if (event.scope === 'child') return 'ignored-child';
     if (event.scope !== 'root') return 'rejected-ambiguous';
     if (!event.sessionId) return 'rejected-ambiguous';
+    if (event.event === 'session_replaced') {
+      // Provider-proven explicit replacement (Codex SessionStart source=clear), never an
+      // unrelated root start. Name exactly the old root before replacing any authority.
+      if (!registration.rootSessionId || !event.previousSessionId) return 'rejected-ambiguous';
+      if (event.previousSessionId !== registration.rootSessionId || event.sessionId === registration.rootSessionId) return 'rejected-mismatch';
+      this.commit(registration, revision => {
+        registration.rootSessionId = event.sessionId;
+        registration.activeTurnId = undefined;
+        registration.retiredTurns = [];
+        registration.pending = [];
+        registration.status = 'unverified';
+        registration.startedAt = null;
+        registration.lastOutcome = { kind: 'session_ended', turnId: null, revision, at: this.now() };
+      });
+      return 'accepted';
+    }
     if (event.event === 'session_continued') {
       // The provider proved the same foreground conversation moved to a new session ID
       // (for example context compression). It must name exactly the bound root it continues.
@@ -609,15 +631,18 @@ export class AgentAttentionBroker {
     const turnId = event.turnId;
     if (!turnId) return 'rejected-ambiguous';
     if (registration.retiredTurns.includes(turnId)) return 'ignored-stale';
-    const active = isActive(registration);
+    const open = isActive(registration) || registration.status === 'provisional';
 
     if (event.event === 'turn_started') {
       const binds = registration.rootSessionId === undefined;
-      if (active && registration.activeTurnId === turnId) {
-        if (binds) this.commit(registration, () => { registration.rootSessionId = event.sessionId; });
+      if (open && registration.activeTurnId === turnId) {
+        if (binds || registration.status === 'provisional') this.commit(registration, () => {
+          registration.rootSessionId = event.sessionId;
+          registration.status = 'running';
+        });
         return 'accepted';
       }
-      if (active && !registration.activeTurnId) {
+      if (open && !registration.activeTurnId) {
         // Clanker submitted this prompt; the native start now names its turn.
         this.commit(registration, () => {
           registration.rootSessionId ??= event.sessionId;
@@ -640,15 +665,24 @@ export class AgentAttentionBroker {
     // Everything else needs a bound root and the live, identified foreground turn: a
     // completion or input event can never establish authority or settle another turn.
     if (!registration.rootSessionId) return 'rejected-ambiguous';
-    if (!active || registration.activeTurnId !== turnId) return 'ignored-stale';
+    if (!open || registration.activeTurnId !== turnId) return 'ignored-stale';
 
     switch (event.event) {
+      case 'turn_provisional':
+        // Keep correlation and historical waits for a later native outcome. This is neither
+        // active execution nor success, and cannot authorize a handoff or checkout move.
+        if (registration.status !== 'provisional') this.commit(registration, () => {
+          registration.status = 'provisional';
+          registration.pending = registration.pending.map(request => ({ ...request, resolutionUnknown: true }));
+        });
+        return 'accepted';
       case 'input_requested': {
         // The same correlated request (same proven id, or two id-less waits) is a duplicate.
         // A distinct id is another outstanding wait. A fallback wait is weaker evidence and yields.
-        if (registration.pending.some((request) => request.evidence === 'structured' && request.inputId === event.inputId)) return 'accepted';
+        if (registration.pending.some((request) => request.evidence === 'structured' && request.inputId === event.inputId && !request.resolutionUnknown) && registration.status !== 'provisional') return 'accepted';
         this.commit(registration, (revision) => {
-          registration.pending = [...registration.pending.filter((request) => request.evidence === 'structured'), {
+          registration.status = 'running';
+          registration.pending = [...registration.pending.filter((request) => request.evidence === 'structured' && request.inputId !== event.inputId), {
             turnId, inputId: event.inputId, kind: event.requestKind ?? null, evidence: 'structured', revision, createdAt: this.now(),
           }];
         });

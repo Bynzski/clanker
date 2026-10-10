@@ -41,3 +41,5 @@
 .agent-attention-state.state-signal_degraded { color: var(--status-warning-emphasis); }
 
 .agent-signal-warning { color: var(--status-warning-emphasis); }
+
+.agent-attention-state.state-provisional { color: var(--status-warning-emphasis); }

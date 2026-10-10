@@ -213,3 +213,5 @@
 
 .ws-rail-agent-state.state-signal_unavailable,
 .ws-rail-agent-state.state-signal_degraded { background: var(--status-warning-emphasis); }
+
+.ws-rail-agent-state.state-provisional { background: var(--status-warning-emphasis); }

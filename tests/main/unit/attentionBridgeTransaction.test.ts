@@ -220,7 +220,7 @@ describe('attention bridge state transactions', () => {
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(true); // provisional boundary cannot recover lifecycle
     await run('codex.mjs', 'Interrupt', turn);
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
-    expect(updates).toEqual(['turn_started', 'turn_interrupted']);
+    expect(updates).toEqual(['turn_started', 'turn_provisional', 'turn_interrupted']);
   });
 
   it('keeps poison across rejected and ignored boundaries; only an accepted native boundary recovers', async () => {

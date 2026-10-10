@@ -6,8 +6,8 @@ const { AgentAttentionBroker } = require('../dist/main/main/agentAttentionBroker
 const { attentionLaunchStep } = require('../dist/main/main/attentionLaunchStep'); const { prepareLaunchAttachments } = require('../dist/main/main/launchAttachments');
 const { removeAttentionAdapterFiles } = require('../dist/main/main/agentAttentionAdapters');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-claude-native-'));
-let child, attachments, requests = 0, results = 0, failure = false;
-const broker = new AgentAttentionBroker(() => {}, () => {});
+let child, attachments, requests = 0, results = 0, failure = false, stops = 0;
+const broker = new AgentAttentionBroker(() => {}, event => { if (event.semantic === 'turn_provisional' && event.decision === 'accepted') stops++; });
 const server = http.createServer((request, response) => {
   request.resume(); request.on('end', () => {
     if (request.url.includes('count_tokens')) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end('{"input_tokens":1}'); return; }
@@ -40,9 +40,9 @@ async function until(check, label) { const deadline = Date.now() + 20000; while 
       const previousTurn = broker.snapshot('claude')?.runtime.turnId;
       child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: 'Reply ok.' } }) + '\n');
       await until(() => results > i || exited, 'Claude native result timed out'); assert(!exited, 'Claude exited before repeated turns');
-      await until(() => broker.signalDiagnostics('claude')?.hooks['settlement-unverified'] > i, 'Claude native Stop not received');
+      await until(() => stops > i, 'Claude native Stop not received');
       assert.notEqual(broker.snapshot('claude').runtime.turnId, previousTurn, 'Claude did not publish a fresh foreground turn');
-      assert.equal(broker.snapshot('claude').runtime.status, 'running'); assert.equal(broker.snapshot('claude').lastCompletion, null);
+      assert.equal(broker.snapshot('claude').runtime.status, 'provisional'); assert.equal(broker.snapshot('claude').lastCompletion, null);
     }
     assert(requests >= 11, 'Separate Claude Stop hook did not continue');
     const beforeFailure = requests; failure = true; child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: 'Reply ok.' } }) + '\n');

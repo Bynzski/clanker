@@ -688,6 +688,11 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(broker.markSubmitted).toHaveBeenCalledWith('term-agent');
       const statuses = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'get-agent-handoff-statuses')?.[1] as () => Record<string, string>;
       expect(statuses()).toEqual({ 'term-agent': 'unverified' });
+      broker.canHandoff.mockReturnValue(false);
+      broker.handoffState.mockReturnValue('provisional');
+      expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'fixture' }).error).toContain('without a verified final outcome');
+      expect(write).toHaveBeenCalledTimes(1);
+      broker.canHandoff.mockReturnValue(true);
       expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'unsafe\x1b[201~' }).success).toBe(false);
       expect(write).toHaveBeenCalledTimes(1);
     } finally {
@@ -701,7 +706,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     try {
       const { terminals, opts } = createMockDeps();
       const write = vi.fn();
-      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
       registerTerminalIpc({ ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never });
       const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
         _: unknown, payload: unknown,
@@ -729,7 +734,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     function setup(overrides: Record<string, unknown> = {}, workspace: Record<string, unknown> | null = { workspaceId: 'ws-ssh', location: { environmentId: 'ssh-1', path: ROOT } }) {
       const { terminals, opts } = createMockDeps();
       const write = vi.fn();
-      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
       terminals.set('term-agent', {
         id: 'term-agent', cwd: '/home/desktop/other', harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1',
         remoteWorkingDir: `${ROOT}/pkg`, pty: { write }, ...overrides,
@@ -797,7 +802,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         const { terminals, opts } = createMockDeps();
         const write = vi.fn();
         terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1', remoteWorkingDir: workspacePath, pty: { write } });
-        const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+        const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
         mockIpcMain.handle.mockClear();
         registerTerminalIpc({
           ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never,

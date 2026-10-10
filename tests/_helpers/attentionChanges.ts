@@ -7,6 +7,7 @@ const active = (snapshot: AgentAttentionSnapshot): boolean => snapshot.runtime.s
 export function labelChange(previous: AgentAttentionSnapshot | null, change: AgentAttentionChange): string {
   const next = change.snapshot;
   if (!next) return 'agent_exited';
+  if (next.runtime.status === 'provisional' && previous?.runtime.status !== 'provisional') return 'turn_provisional';
   if (next.lastOutcome && next.lastOutcome.revision !== previous?.lastOutcome?.revision) {
     return { completed: 'turn_completed', interrupted: 'turn_interrupted', failed: 'turn_failed', session_ended: 'session_ended' }[next.lastOutcome.kind];
   }

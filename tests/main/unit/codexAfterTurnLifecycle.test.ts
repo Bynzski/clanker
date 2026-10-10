@@ -261,6 +261,33 @@ const treeContext = () => contexts.find((context) => context.kind === 'worktree'
 const kinds = () => events.map((event) => event.kind);
 
 describe('create (after-turn)', () => {
+  it('native session end cancels the old scheduled request so a subsequent turn can schedule again', async () => {
+    const { id, spawn } = await launch();
+    await turn(spawn, 't1');
+    await call(spawn, 'clanker_create_isolated_checkout', { branch: 'feature' });
+    await frame(spawn, 'session_ended'); await settle();
+    expect(JSON.stringify(events)).toContain('session ended or changed');
+    expect(live()).toEqual([id]);
+    await turn(spawn, 't2');
+    expect((await call(spawn, 'clanker_create_isolated_checkout', { branch: 'feature' })).data).toMatchObject({ status: 'scheduled' });
+    expect(kinds()).not.toContain('terminal-replaced');
+  });
+
+  it('cancels a scheduled move on provisional settlement and keeps the source and checkout', async () => {
+    const { id, spawn } = await launch();
+    await turn(spawn, 't1');
+    expect((await call(spawn, 'clanker_create_isolated_checkout', { branch: 'feature' })).data).toMatchObject({ status: 'scheduled' });
+    await frame(spawn, 'turn_provisional', { turnId: 't1' });
+    await settle();
+    expect(live()).toEqual([id]);
+    expect(spawns).toHaveLength(1);
+    expect(treeContext()).toBeDefined();
+    expect(JSON.stringify(events)).toContain('without proving completion');
+    const retry = await call(spawn, 'clanker_create_isolated_checkout', { branch: 'another' });
+    expect(JSON.stringify(retry)).toContain('without a verified final outcome');
+    expect(kinds()).not.toContain('terminal-replaced');
+  });
+
   it('does not retire a source that begins a newer turn while post-completion history discovery is pending', async () => {
     const { id, spawn } = await launch();
     await turn(spawn, 't1');

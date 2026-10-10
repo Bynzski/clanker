@@ -46,7 +46,7 @@ export default function interpret(input, hook, store) {
       if (input.fullyIdle !== true || !live) return null;
       if (input.terminationReason === 'error' || input.terminationReason === 'max_steps_exceeded') { store.write({ ...state, open: false }); return event('turn_failed', { turnId: live, cwd }); }
       store.write({ ...state, provisional: true });
-      return { event: { type: 'observer_diagnostic', diagnostic: 'settlement-unverified', nativeEvent: hook } };
+      return event('turn_provisional', { turnId: live });
     default: return null;
   }
 }

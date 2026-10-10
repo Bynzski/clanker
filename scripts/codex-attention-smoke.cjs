@@ -4,8 +4,8 @@ const assert = require('node:assert/strict'); const fs = require('node:fs'); con
 const { AgentAttentionBroker } = require('../dist/main/main/agentAttentionBroker'); const { attentionLaunchStep } = require('../dist/main/main/attentionLaunchStep'); const { prepareLaunchAttachments } = require('../dist/main/main/launchAttachments'); const { removeAttentionAdapterFiles } = require('../dist/main/main/agentAttentionAdapters');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-codex-native-'));
 let attachments, requests = 0;
-let starts = 0;
-const broker = new AgentAttentionBroker(() => {}, event => { if (event.decision === 'accepted' && event.semantic === 'turn_started') starts++; });
+let starts = 0, stops = 0;
+const broker = new AgentAttentionBroker(() => {}, event => { if (event.decision === 'accepted' && event.semantic === 'turn_started') starts++; if (event.decision === 'accepted' && event.semantic === 'turn_provisional') stops++; });
 const server = http.createServer((request, response) => { request.resume(); request.on('end', () => {
   requests++; response.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const events = [{ type: 'response.created', response: { id: `resp_${requests}` } }, { type: 'response.output_item.done', item: { type: 'message', role: 'assistant', id: `msg_${requests}`, content: [{ type: 'output_text', text: 'ok' }] } }, { type: 'response.completed', response: { id: `resp_${requests}`, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }];
@@ -27,8 +27,8 @@ const server = http.createServer((request, response) => { request.resume(); requ
     const session = await invoke(null, false);
     const withoutTrust = broker.signalDiagnostics('codex');
     for (let i = 0; i < 10; i++) {
-      const prior = { starts, stops: broker.signalDiagnostics('codex').hooks['settlement-unverified'] ?? 0 }; await invoke(session, true);
-      assert.equal(starts, prior.starts + 1); assert.equal(broker.signalDiagnostics('codex').hooks['settlement-unverified'], prior.stops + 1);
+      const prior = { starts, stops }; await invoke(session, true);
+      assert.equal(starts, prior.starts + 1); assert.equal(stops, prior.stops + 1);
       assert.equal(broker.snapshot('codex').lastCompletion, null);
       assert.equal(broker.snapshot('codex').lastOutcome.kind, 'session_ended');
     }

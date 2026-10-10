@@ -4,7 +4,7 @@ import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { AttentionSeen } from '../store/agentAttentionStore';
 
 /** What an agent's attention indicator shows; `null` view means nothing is shown. */
-export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
+export type AttentionDisplay = 'provisional' | 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
 
 export interface AttentionView {
   display: AttentionDisplay;
@@ -16,7 +16,8 @@ export interface AttentionView {
 
 /**
  * Pure projection of canonical facts onto presentation. It never correlates sessions, infers
- * turn boundaries or replays events. Precedence: a pending request, then active work, then a
+ * turn boundaries or replays events. A provisional stop explicitly supersedes work/wait claims.
+ * Otherwise precedence: an actionable request, then active work, then a
  * proven failure, then a completion that is both the latest outcome and not yet acknowledged.
  * Because active work outranks completion, an old completion needs no explicit clearing, and
  * because Done requires the latest outcome to be that completion, an older one can never
@@ -36,7 +37,10 @@ export function deriveAttention(
   let view: AttentionView | null = null;
   if (snapshot) {
     const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
-    if (pendingRequest) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
+    if (runtime.status === 'provisional') view = { display: 'provisional', unseen: false, description: pendingRequest
+      ? 'Provider stopped provisionally; request resolution and final outcome are unverified. Answer in the agent terminal if needed.'
+      : 'Provider stopped provisionally; final outcome is unverified. Continue in the agent terminal.' };
+    else if (pendingRequest && !pendingRequest.resolutionUnknown) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
     else if (runtime.status === 'starting' || runtime.status === 'running') view = { display: 'running', unseen: false };
     else if (runtime.status === 'failed') view = { display: 'failed', unseen: false };
     else if (runtime.status === 'idle' && lastCompletion && lastOutcome?.kind === 'completed'
@@ -44,7 +48,7 @@ export function deriveAttention(
       view = { display: 'turn_complete', unseen: true };
     }
   }
-  if (view) return warning ? { ...view, signalWarning: warning, description: `${getAttentionPresentation(view.display).label} · ${warning}` } : view;
+  if (view) return warning ? { ...view, signalWarning: warning, description: `${view.description ?? getAttentionPresentation(view.display).label} · ${warning}` } : view;
   if (warning) return { display: signal?.attachment === 'unavailable' ? 'signal_unavailable' : 'signal_degraded', unseen: false, description: warning };
   return null;
 }
@@ -52,6 +56,7 @@ export function deriveAttention(
 /** Shared label/icon semantics for a displayed attention state. */
 export function getAttentionPresentation(display: AttentionDisplay) {
   switch (display) {
+    case 'provisional': return { label: 'Stopped · outcome unverified', Icon: CircleAlert };
     case 'signal_unavailable': return { label: 'Native attention unavailable', Icon: CircleAlert };
     case 'signal_degraded': return { label: 'Native attention degraded', Icon: CircleAlert };
     case 'needs_input': return { label: 'Needs input', Icon: CircleAlert };

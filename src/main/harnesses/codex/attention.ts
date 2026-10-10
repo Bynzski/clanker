@@ -23,7 +23,7 @@ export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionR
  *     PostToolUse       -> mark the call done; a wait resolves only when ALL its calls are done
  *   The broker sees one `input_requested` for the first wait and one `input_resolved` once no wait
  *   remains, so an unrelated tool finishing cannot clear a real wait. A call the user denies runs
- *   no PostToolUse, so its wait lasts until a fresh prompt, Interrupt or SessionEnd. More than 16 live waits put the
+ *   no PostToolUse, so its wait becomes resolution-unknown at provisional Stop and clears on a fresh prompt, Interrupt or SessionEnd. More than 16 live waits put the
  *   state in overflow: nothing resolves until the turn ends (live waits are never dropped).
  *   The bridge serializes each read/interpret/write transaction per terminal.
  * - Location: every hook carries `cwd`, the session's working directory. A command never moves it
@@ -35,7 +35,13 @@ const text = (value) => typeof value === 'string' && value ? value : undefined;
 const canonical = (value) => value === null || typeof value !== 'object' ? JSON.stringify(value)
   : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
   : '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
-const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(input.tool_input ?? null)).digest('hex').slice(0, 16);
+// Codex 0.162 Bash PreToolUse carries {command}; PermissionRequest adds the human-only
+// description (justification). Ignore only that documented decoration, keeping exact command
+// equality and refusing unknown extra fields. Identical calls still resolve as one all-done group.
+const correlationInput = (input) => input.tool_name === 'Bash' && typeof input.tool_input?.command === 'string'
+  && Object.keys(input.tool_input).every(key => key === 'command' || key === 'description')
+    ? { command: input.tool_input.command } : input.tool_input ?? null;
+const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(correlationInput(input))).digest('hex').slice(0, 16);
 // Bounds. calls (32) and done (64) hold completed-call bookkeeping: dropping the oldest can only
 // leave a wait unmatched or unresolved, which fails closed (Needs Input until the turn ends).
 // waits (16) hold live human waits and are NEVER trimmed: past the cap the state goes to
@@ -61,6 +67,13 @@ export default function interpret(input, hook, store) {
   const reset = (ending = false) => store.write({ session: ending ? undefined : stored.session ?? sessionId, turn: undefined, calls: [], done: [], waits: [], seq: state.seq });
   switch (hook) {
     case 'SessionStart':
+      // Native source=clear proves explicit replacement; it need not emit SessionEnd.
+      // Installed TUI /new emits startup instead, so it cannot safely rebind a known root.
+      if (input.source === 'clear' && stored.session && sessionId && stored.session !== sessionId) {
+        store.write({ session: sessionId, calls: [], done: [], waits: [], seq: stored.seq ?? 0 });
+        return event('session_replaced', { previousSessionId: stored.session, cwd });
+      }
+      if (!stored.session && sessionId) store.write({ ...stored, session: sessionId });
       return event('session_started', { cwd });
     case 'UserPromptSubmit':
       save();
@@ -94,9 +107,13 @@ export default function interpret(input, hook, store) {
       return resolved ? event('input_resolved', { turnId, inputId }) : null;
     }
     case 'Stop':
-      // Stop handlers run before the aggregate continuation decision. Never clear a
-      // confirmed wait or announce completion from this provisional boundary.
-      return current ? { event: { type: 'observer_diagnostic', diagnostic: 'settlement-unverified', nativeEvent: hook } } : null;
+      // Stop handlers run before the aggregate continuation decision. Preserve the turn
+      // and request history, but no longer claim active execution or an actionable wait.
+      if (!current) return null;
+      // The broker retains unresolved request history. Retire this candidate batch's
+      // correlation cache so continuation requests cannot inherit denied/overflowed calls.
+      store.write({ ...state, calls: [], done: [], waits: [], overflow: false, input: undefined });
+      return event('turn_provisional', { turnId });
     case 'Interrupt':
       if (current) reset();
       return event('turn_interrupted', { turnId, cwd });

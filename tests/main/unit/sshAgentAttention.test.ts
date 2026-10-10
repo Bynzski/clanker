@@ -521,7 +521,7 @@ if (${JSON.stringify(harness)} === 'pi') {
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
     expect(events.map((event) => event.event)).toEqual(harness === 'pi'
       ? ['turn_started', 'input_requested', 'input_resolved', 'turn_failed', 'turn_started', 'turn_interrupted', 'session_ended']
-      : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'observer_diagnostic']);
+      : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'turn_provisional']);
     expect(JSON.stringify(events)).not.toContain('private');
     if (harness === 'pi') {
       expect(events[2]).toMatchObject({ inputId: (events[1] as { inputId?: string }).inputId, turnId: '1' });

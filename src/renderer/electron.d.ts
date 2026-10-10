@@ -144,7 +144,7 @@ export interface ElectronAPI {
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) => Promise<{ success: boolean; error?: string }>;
-  getAgentHandoffStatuses: () => Promise<Record<string, 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable'>>;
+  getAgentHandoffStatuses: () => Promise<Record<string, 'unverified' | 'ready' | 'running' | 'needs_input' | 'provisional' | 'unavailable'>>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
   killTerminal: (id: string) => Promise<{ success: boolean; error?: string }>;
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;

@@ -5,7 +5,7 @@ import { MAX_AGENT_LOCATION_BYTES } from '../agentLocation';
 /** Shared observer helpers. Providers own the meaning of native events; shared
  * code only bounds and forwards the sanitized canonical envelope. A reported working directory
  * (`cwd`) that is not bounded and printable is dropped on its own: the lifecycle event still goes. */
-export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId'];
+export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId', 'previousSessionId'];
 function envelope(event, fields) {
   const extra = {};
   for (const key of IDENTIFIERS) {
@@ -211,7 +211,7 @@ let diagnostic = intakeFailure;
 if (!diagnostic) {
   try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { diagnostic = 'interpreter-unavailable'; failed = true; }
 }
-const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'];
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended', 'session_replaced'];
 if (interpreter || diagnostic) {
   const locked = await acquire();
   if (!locked) { failed = true; diagnostic ??= 'lock-unavailable'; }

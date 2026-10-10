@@ -31,7 +31,7 @@ export default function (omp) {
     if (scope !== 'root' || !open || sessionId(ctx) !== root || event.willContinue === true) return;
     open = false;
     const last = [...(event.messages ?? [])].reverse().find(message => message.role === 'assistant');
-    if (!last) return emit('observer_diagnostic', { diagnostic: 'settlement-unverified', nativeEvent: 'agent_end' });
+    if (!last) return emit('turn_provisional', { scope, sessionId: root, turnId: String(epoch), nativeEvent: 'agent_end' });
     const outcome = last.stopReason === 'aborted' ? 'turn_interrupted'
       : last.stopReason === 'error' ? 'turn_failed' : 'turn_completed';
     return emit(outcome, { scope, sessionId: root, turnId: String(epoch), nativeEvent: 'agent_end', cwd: cwd(ctx) });

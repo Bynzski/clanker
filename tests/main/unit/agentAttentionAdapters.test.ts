@@ -210,7 +210,7 @@ describe('agent attention launch adapters', () => {
       await run('Stop', { conversationId: 'c2', fullyIdle: true, terminationReason: 'model_stop' });
       expect(received).toEqual([]);
       await run('Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' });
-      expect(received).toEqual([]); // Stop diagnostic is not a lifecycle transition
+      expect(received).toEqual(['turn_provisional']); // Candidate stop is canonical uncertainty
     } finally {
       broker.close();
     }
@@ -426,7 +426,7 @@ describe('Antigravity attention plugin resilience', () => {
       received.length = 0;
       await runGuard(guard, 'PostToolUse', askPayload, env);
       await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' }, env);
-      expect(received).toEqual(['input_resolved']);
+      expect(received).toEqual(['input_resolved', 'turn_provisional']);
       expect(broker.snapshot('term-live')?.lastCompletion).toBeNull();
     } finally {
       broker.close();
@@ -447,7 +447,7 @@ describe('Antigravity attention plugin resilience', () => {
       await runGuard(guard, 'Stop', prefix + ' '.repeat(8 * 1024 * 1024), env);
       expect(broker.snapshot('guard-large')).toMatchObject({ runtime: { status: 'running' }, lastCompletion: null, signal: { reason: 'input-oversized' } });
       await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true, terminationReason: 'model_stop' }, env);
-      expect(broker.snapshot('guard-large')).toMatchObject({ runtime: { status: 'running' }, signal: { reason: 'settlement-unverified' } });
+      expect(broker.snapshot('guard-large')).toMatchObject({ runtime: { status: 'provisional' }, signal: { health: 'observed' } });
       await runGuard(guard, 'PreInvocation', { conversationId: 'c1', invocationNum: 0 }, env);
       expect(broker.snapshot('guard-large')?.runtime.status).toBe('running');
     } finally { broker.close(); fs.rmSync(home, { recursive: true, force: true }); }

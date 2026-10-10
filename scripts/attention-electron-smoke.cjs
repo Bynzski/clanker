@@ -1,4 +1,4 @@
-/* global window */
+/* global window, document */
 // Full built Electron app, real PTYs/IPC/mounted React. Explicit lifecycle fixture, NOT native provider verification.
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
@@ -15,7 +15,7 @@ if(process.argv.includes('--version')) {console.log('1.1.0');process.exit(0)}
  let epoch=0,queue=Promise.resolve();const lines=require('node:readline').createInterface({input:process.stdin});
  lines.on('line',line=>{queue=queue.then(async()=>{
   if(line==='exit')process.exit(0);
-  const event=line==='start'?'turn_started':line==='done'?'turn_completed':line==='ask'?'input_requested':line==='resolve'?'input_resolved':null;
+  const event=line==='start'?'turn_started':line==='stop'?'turn_provisional':line==='done'?'turn_completed':line==='ask'?'input_requested':line==='resolve'?'input_resolved':null;
   if(!event)return;if(line==='start')epoch++;
   await emit(event,{scope:'root',sessionId:'fixture',turnId:String(epoch),inputId:'wait',nativeEvent:'electron_fixture'});
   console.log('fixture-processed');
@@ -33,7 +33,7 @@ let app;
 (async () => {
   try {
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
-    const page = await app.firstWindow(); page.setDefaultTimeout(10000);
+    let page = await app.firstWindow(); page.setDefaultTimeout(10000);
     await page.evaluate(() => { window.__fixtureReady = new Set(); window.electronAPI.onTerminalData(({ id, data }) => { if (data.includes('fixture-ready')) window.__fixtureReady.add(id); }); });
     const open = async name => {
       await page.getByRole('button', { name: 'Open Workspace', exact: true }).first().click();
@@ -62,13 +62,20 @@ let app;
     await until(async () => (await explain(a)).renderer.residency === 'cold', 'Four-workspace cold unmount did not occur');
     assert.equal((await explain(a)).renderer.snapshotPresent, true);
     assert.equal((await explain(a)).renderer.tombstone, false);
+    await send(a, 'stop'); await state(a, 'provisional');
+    assert.equal((await explain(a)).renderer.indicator, 'provisional');
+    assert.equal((await page.evaluate(() => window.electronAPI.getAgentHandoffStatuses()))[a], 'provisional');
+    await send(a, 'start'); await state(a, 'running');
     await send(a, 'ask'); await state(a, 'running');
     await until(async () => (await explain(a)).renderer.indicator === 'needs_input', 'Cold background wait not visible in store');
     // Select the actual tab, remount contents and ensure the attention icon is mounted.
     await page.locator('.workspace-tab').filter({ hasText: 'A' }).first().click();
     await until(async () => (await explain(a)).renderer.terminalPanePresented, 'Restored pane not presented');
     await page.getByRole('img', { name: /Needs input/ }).first().waitFor();
-    await send(a, 'resolve'); await state(a, 'running');
+    await send(a, 'stop'); await state(a, 'provisional');
+    assert.equal((await explain(a)).renderer.indicator, 'provisional');
+    await page.getByRole('img', { name: /Stopped · outcome unverified/ }).first().waitFor();
+    await send(a, 'start'); await state(a, 'running');
     await page.getByRole('button', { name: 'Minimize pane', exact: true }).first().click();
     await until(async () => !(await explain(a)).renderer.terminalPanePresented, 'Minimized pane still presented');
     await send(a, 'done'); await state(a, 'idle');
@@ -86,10 +93,26 @@ let app;
     await until(async () => (await explain(a)).main === null, 'Terminal close did not retire main');
     await send(b, 'exit'); await until(async () => (await explain(b)).main === null && (await explain(b)).renderer.tombstone, 'PTY exit did not retire renderer');
     assert.equal((await explain(c)).renderer.workspaceMember, true); assert.equal((await explain(d)).renderer.workspaceMember, true);
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current' }));
+    // Restart with the same owned profile. Workspace persistence survives; old PTY authority must not.
+    await send(c, 'start'); await state(c, 'running'); await send(c, 'stop'); await state(c, 'provisional');
+    await page.evaluate(async ids => { for (const id of ids) await window.electronAPI.killTerminal(id); }, [c, d]);
+    await until(async () => page.evaluate(() => JSON.parse(localStorage.getItem('clanker-grid:open-workspaces:v1')).workspaces.length === 4), 'Workspace set not persisted');
+    await app.evaluate(({ session }) => session.defaultSession.flushStorageData());
+    await pause(500);
+    await app.close();
+    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    page = await app.firstWindow(); page.setDefaultTimeout(10000);
+    await until(async () => (await page.locator('.workspace-tab').count()) === 4, 'Four workspaces not restored after restart');
+    assert.equal((await page.evaluate(() => window.electronAPI.getAgentAttentionSnapshots())).length, 0, 'Restart resurrected old attention authority');
+    await page.evaluate(() => { window.__fixtureReady = new Set(); window.electronAPI.onTerminalData(({ id, data }) => { if (data.includes('fixture-ready')) window.__fixtureReady.add(id); }); });
+    const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
+    await send(restored, 'stop'); await state(restored, 'provisional');
+    await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', provisionalStop: 'passed in cold and mounted panes', provisionalApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);
+    if (app) console.error(JSON.stringify(await (await app.firstWindow()).evaluate(() => ({ restoredTabs: document.querySelectorAll('.workspace-tab').length, savedCount: JSON.parse(localStorage.getItem('clanker-grid:open-workspaces:v1') || '{}').workspaces?.length }))));
     if (app) { const page = await app.firstWindow(); console.error(JSON.stringify(await page.evaluate(async () => Promise.all((window.__smokeIds ?? []).map(id => window.clankerAttention?.explain(id)))))); }
     process.exitCode = 1;
   } finally { await app?.close(); fs.rmSync(root, { recursive: true, force: true }); }

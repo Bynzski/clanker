@@ -71,6 +71,25 @@ async function interpreter(harness: 'codex' | 'claude' | 'agy') {
 }
 
 describe('Codex lifecycle', () => {
+  it('replaces the root only on explicit native clear source, never ordinary startup or fork', async () => {
+    const hook = await interpreter('codex'); const { feed, broker, state } = rig('codex');
+    feed(hook('SessionStart', { session_id: 'root', source: 'startup' }));
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    feed(hook('PermissionRequest', { session_id: 'root', turn_id: 't1', tool_name: 'Bash', tool_input: { command: 'x' } }));
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    feed(hook('SessionStart', { session_id: 'unrelated', source: 'startup' }));
+    feed(hook('SessionStart', { session_id: 'fork', source: 'fork' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    feed(hook('SessionStart', { session_id: 'replacement', source: 'clear' }));
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'replacement', runtime: { status: 'unverified' }, pendingRequest: null, lastCompletion: null });
+    feed(hook('UserPromptSubmit', { session_id: 'replacement', turn_id: 't2' }));
+    expect(state()).toBe('running');
+    feed(hook('SessionEnd', { session_id: 'root' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('replacement');
+    feed(hook('Stop', { session_id: 'replacement', turn_id: 't2' }));
+    expect(state()).toBe('provisional');
+  });
+
   it('recovers a cleared resume binding from native SessionStart without inventing a turn', async () => {
     const hook = await interpreter('codex');
     const { broker, feed, state, decisions } = rig('codex', 'root');
@@ -87,7 +106,7 @@ describe('Codex lifecycle', () => {
     expect(broker.snapshot('term')?.sessionId).toBe('root');
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 'new' }));
     feed(hook('Stop', { session_id: 'root', turn_id: 'new' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
     expect(decisions).toContain('rejected-mismatch');
   });
 
@@ -96,7 +115,7 @@ describe('Codex lifecycle', () => {
   // `PreToolUse`/`PostToolUse` carry `tool_use_id`; `PermissionRequest` carries `turn_id`,
   // `tool_name`, `tool_input` and NO `tool_use_id`. Permission correlation is Clanker-derived
   // (see the interpreter): PreToolUse ids + a fingerprint of tool_name/tool_input.
-  it('stays Running through hidden, child and provisional root stops', async () => {
+  it('ignores hidden and child stops and represents a correlated root stop provisionally', async () => {
     const hook = await interpreter('codex');
     const { feed, state, decisions } = rig('codex');
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1', prompt: 'private' }));
@@ -109,7 +128,7 @@ describe('Codex lifecycle', () => {
     expect(state()).toBe('running');
     expect(decisions).toEqual(['accepted', 'ignored-child', 'ignored-child']);
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
 
   const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
@@ -117,6 +136,44 @@ describe('Codex lifecycle', () => {
   const ask = (tool: object, turn = 't1') => ({ session_id: 'root', turn_id: turn, ...tool }); // no tool_use_id
   const post = (id: string, tool: object, turn = 't1') => ({ session_id: 'root', turn_id: turn, tool_use_id: id, tool_response: 'PRIVATE', ...tool });
 
+  it('a continuation approval is actionable and an old tool result cannot resolve it', async () => {
+    const hook = await interpreter('codex'); const { feed, state, broker } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('old', bash('identical')));
+    feed(hook('PermissionRequest', ask(bash('identical'))));
+    const oldRequest = broker.snapshot('term')?.pendingRequest?.id;
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('new', bash('identical')));
+    feed(hook('PermissionRequest', ask(bash('identical'))));
+    expect(state()).toBe('needs_input');
+    expect(broker.snapshot('term')?.pendingRequest?.id).not.toBe(oldRequest);
+    feed(hook('PostToolUse', post('old', bash('identical'))));
+    expect(state()).toBe('needs_input');
+    feed(hook('PostToolUse', post('new', bash('identical'))));
+    expect(state()).toBe('running');
+    expect(broker.snapshot('term')?.pendingRequest).toMatchObject({ id: oldRequest, resolutionUnknown: true });
+  });
+  it('correlates native Bash permission descriptions without weakening exact command matching', async () => {
+    const hook = await interpreter('codex'); const { feed, state } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call', bash('printf fixture')));
+    feed(hook('PermissionRequest', ask({ tool_name: 'Bash', tool_input: { command: 'printf fixture', description: 'PRIVATE justification' } })));
+    feed(hook('PostToolUse', post('call', bash('printf fixture'))));
+    expect(state()).toBe('running');
+  });
+  it('denial without PostToolUse becomes resolution-unknown at Stop, then a fresh prompt recovers', async () => {
+    const hook = await interpreter('codex'); const { feed, state, broker } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call', bash('printf fixture')));
+    feed(hook('PermissionRequest', ask(bash('printf fixture'))));
+    expect(state()).toBe('needs_input');
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    expect(state()).toBe('provisional');
+    expect(broker.snapshot('term')?.pendingRequest).toMatchObject({ resolutionUnknown: true });
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't2' }));
+    expect(state()).toBe('running');
+    expect(broker.snapshot('term')?.pendingRequest).toBeNull();
+  });
   it('keeps Needs Input when an unrelated Bash call finishes, and resolves when the waiting call does', async () => {
     const hook = await interpreter('codex');
     const { feed, state } = rig('codex');
@@ -165,7 +222,7 @@ describe('Codex lifecycle', () => {
     feed(hook('PostToolUse', post('call-a', bash('one'))));
     expect(state()).toBe('needs_input'); // not cleared by an unrelated finish
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
-    expect(state()).toBe('needs_input'); // provisional Stop cannot clear the confirmed wait
+    expect(state()).toBe('provisional'); // request is retained with resolution unknown
   });
   describe('wait capacity', () => {
     const CAPACITY = 16;
@@ -185,7 +242,7 @@ describe('Codex lifecycle', () => {
       for (const id of ids) feed(hook('PostToolUse', post(id, bash(`command-${id}`))));
       expect(state()).toBe('needs_input');
       feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
-      expect(state()).toBe('needs_input'); // a candidate stop cannot clear overflow either
+      expect(state()).toBe('provisional'); // candidate stop makes resolution unknown
     });
     it.each([
       ['Interrupt', 'unverified'], ['SessionEnd', 'unverified'],
@@ -262,7 +319,7 @@ describe('Codex lifecycle', () => {
     feed(hook('Stop', { session_id: 'resumed', turn_id: 't1' }));
     expect(state()).toBe('running');
     feed(hook('Stop', { session_id: 'next', turn_id: 't1' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
 
   // Location: every Codex hook carries `cwd`, the session's working directory. Commands never move
@@ -330,14 +387,14 @@ describe('Claude lifecycle', () => {
     expect(decisions.slice(1)).toEqual(['ignored-child', 'ignored-child', 'ignored-child']);
     // Neither background counts nor a candidate Stop prove the aggregate stop decision.
     feed(hook('Stop', { ...common, background_tasks: [{ id: 'bg', type: 'shell', status: 'running' }], session_crons: [{ id: 'cron' }] }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
   it('a clean root Stop cannot prove the aggregate stop decision', async () => {
     const hook = await interpreter('claude');
     const { feed, state } = rig('claude');
     feed(hook('UserPromptSubmit', { ...common, hook_event_name: 'UserPromptSubmit' }));
     feed(hook('Stop', { ...common, background_tasks: [], session_crons: [], stop_reason: 'end_turn' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
   it('enters Needs Input on the real PermissionRequest shape, survives unrelated tool completions, and resolves with the batch', async () => {
     const hook = await interpreter('claude');
@@ -352,6 +409,16 @@ describe('Claude lifecycle', () => {
     expect(state()).toBe('needs_input');
     feed(hook('PostToolBatch', batch()));
     expect(state()).toBe('running');
+  });
+  it('restores an actionable request after a provisional Stop-hook continuation', async () => {
+    const hook = await interpreter('claude'); const { feed, state, broker } = rig('claude');
+    feed(hook('UserPromptSubmit', common)); feed(hook('PermissionRequest', request()));
+    const revision = broker.snapshot('term')!.pendingRequest!.revision;
+    feed(hook('Stop', common)); expect(state()).toBe('provisional');
+    feed(hook('PreToolUse', { ...common, tool_name: 'AskUserQuestion' }));
+    expect(state()).toBe('needs_input');
+    expect(broker.snapshot('term')!.pendingRequest!.revision).toBeGreaterThan(revision);
+    feed(hook('PostToolBatch', batch())); expect(state()).toBe('running');
   });
   it('tracks AskUserQuestion without requiring a permission dialog and resolves at its batch', async () => {
     const hook = await interpreter('claude'); const { feed, state } = rig('claude');
@@ -436,7 +503,7 @@ describe('Claude lifecycle', () => {
     expect(state()).toBe('running');
     expect(decisions[decisions.length - 1]).toBe('accepted');
     feed(hook('Stop', { ...common, prompt_id: 'p2' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
   it('rebinds on SessionEnd (clear) without losing attention', async () => {
     const hook = await interpreter('claude');
@@ -446,7 +513,7 @@ describe('Claude lifecycle', () => {
     expect(broker.canHandoff('term')).toBe(true);
     feed(hook('UserPromptSubmit', { ...common, session_id: 'two', prompt_id: 'p2' }));
     feed(hook('Stop', { ...common, session_id: 'two', prompt_id: 'p2' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
 
   // Location: every hook carries `cwd` (Claude's tracked working directory, which moves with a
@@ -466,7 +533,7 @@ describe('Claude lifecycle', () => {
     expect(state()).toBe('running');
 
     feed(hook('Stop', { ...common, cwd: '/home/u/repo', hook_event_name: 'Stop' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
     expect(broker.snapshot('term')?.location).toEqual({ path: '/home/u/repo', checkoutContextId: null });
   });
   it('ignores a subagent changing directory and never reports location from mid-turn tool hooks', async () => {
@@ -495,7 +562,7 @@ describe('Agy lifecycle', () => {
     expect(state()).toBe('running');
     expect(decisions).toEqual(['accepted', 'rejected-mismatch']);
     feed(hook('Stop', { conversationId: 'root', fullyIdle: true, terminationReason: 'model_stop', executionNum: 1 }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
   });
   it('never labels an error, exhausted execution or unknown cancellation as successful completion', async () => {
     const hook = await interpreter('agy'); const { feed, broker } = rig('agy');
@@ -506,7 +573,7 @@ describe('Agy lifecycle', () => {
     }
     feed(hook('PreInvocation', { conversationId: 'root', invocationNum: 0 }));
     feed(hook('Stop', { conversationId: 'root', fullyIdle: true, terminationReason: 'undocumented-cancel' }));
-    expect(broker.snapshot('term')?.runtime.status).toBe('running'); expect(broker.snapshot('term')?.lastCompletion).toBeNull();
+    expect(broker.snapshot('term')?.runtime.status).toBe('provisional'); expect(broker.snapshot('term')?.lastCompletion).toBeNull();
   });
   it('opens a fresh epoch after provisional Stop and rejects a late input resolution', async () => {
     const hook = await interpreter('agy');
@@ -515,7 +582,7 @@ describe('Agy lifecycle', () => {
     feed(hook('PreToolUse', { conversationId: 'root', toolCall: { name: 'ask_permission' } }));
     const lateResolution = hook('PostToolUse', { conversationId: 'root', toolCall: { name: 'ask_permission' } });
     feed(hook('Stop', { conversationId: 'root', fullyIdle: true, terminationReason: 'model_stop' }));
-    expect(state()).toBe('needs_input'); // provisional settlement cannot erase a confirmed wait
+    expect(state()).toBe('provisional'); // historical request is retained without an actionable claim
     const nextStart = hook('PreInvocation', { conversationId: 'root', invocationNum: 0 });
     expect(nextStart?.turnId).toBe('2');
     feed(nextStart);
@@ -523,7 +590,7 @@ describe('Agy lifecycle', () => {
     feed(lateResolution);
     expect(decisions[decisions.length - 1]).toBe('ignored-stale');
     feed(hook('Stop', { conversationId: 'root', fullyIdle: true, terminationReason: 'model_stop' }));
-    expect(state()).toBe('running');
+    expect(state()).toBe('provisional');
     expect(broker.snapshot('term')?.lastCompletion).toBeNull();
   });
   it('maps interaction tools to a matching input wait', async () => {
@@ -784,8 +851,8 @@ describe('Oh My Pi lifecycle', () => {
     const main = { sessionManager: { getSessionId: () => 'main' }, agent: { kind: 'main' } };
     const { feed, broker } = rig('omp'); drain();
     await handlers.agent_start({}, main); await handlers.agent_end({ messages: [] }, main);
-    const wires = drain(); expect(wires[wires.length - 1]).toMatchObject({ event: 'observer_diagnostic', diagnostic: 'settlement-unverified' }); wires.forEach(feed);
-    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'running' }, lastOutcome: null });
+    const wires = drain(); expect(wires[wires.length - 1]).toMatchObject({ event: 'turn_provisional', sessionId: 'main', turnId: '1' }); wires.forEach(feed);
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'provisional' }, lastOutcome: null });
     await handlers.agent_start({}, main); await handlers.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, main); drain().forEach(feed);
     expect(broker.snapshot('term')?.lastCompletion?.turnId).toBe('2');
   });

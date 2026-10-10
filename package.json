@@ -39,6 +39,7 @@
     "smoke:attention:native": "node scripts/native-attention-smoke.cjs",
     "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
+    "smoke:attention:codex-tui": "node scripts/codex-attention-tui-smoke.cjs",
     "smoke:attention:opencode": "node scripts/opencode-attention-smoke.cjs",
     "smoke:attention:electron": "node scripts/attention-electron-smoke.cjs"
   },

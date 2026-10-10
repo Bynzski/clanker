@@ -518,7 +518,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
-      return fail('The agent is no longer available for handoff. Copy the message instead.');
+      return fail(agentAttentionBroker?.handoffState(payload.terminalId) === 'provisional'
+        ? 'The provider stopped without a verified final outcome. Continue in the agent terminal or copy the message instead.'
+        : 'The agent is no longer available for handoff. Copy the message instead.');
     }
     const message = payload.message.replace(/\r\n?/g, '\n');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {

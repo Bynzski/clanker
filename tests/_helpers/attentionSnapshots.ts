@@ -1,6 +1,6 @@
 import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../src/shared/types/agentAttention';
 
-export type SnapshotKind = 'unverified' | 'idle' | 'starting' | 'running' | 'needs_input' | 'approval' | 'completed' | 'interrupted' | 'failed';
+export type SnapshotKind = 'provisional' | 'unverified' | 'idle' | 'starting' | 'running' | 'needs_input' | 'approval' | 'completed' | 'interrupted' | 'failed';
 
 /** Canonical snapshot fixture. The facts mirror what the broker produces for each situation. */
 export function snapshot(terminalId: string, kind: SnapshotKind, revision = 1, overrides: Partial<AgentAttentionSnapshot> = {}): AgentAttentionSnapshot {
@@ -13,6 +13,7 @@ export function snapshot(terminalId: string, kind: SnapshotKind, revision = 1, o
     case 'unverified': return { ...base, sessionId: null, ...overrides };
     case 'idle': return { ...base, runtime: { status: 'idle', turnId: null, startedAt: null }, ...overrides };
     case 'starting': return { ...base, runtime: { status: 'starting', turnId: null, startedAt: 1 }, ...overrides };
+    case 'provisional': return { ...base, runtime: { status: 'provisional', turnId: 'T', startedAt: 1 }, ...overrides };
     case 'running': return { ...base, runtime: { status: 'running', turnId: 'T', startedAt: 1 }, ...overrides };
     case 'needs_input':
     case 'approval':

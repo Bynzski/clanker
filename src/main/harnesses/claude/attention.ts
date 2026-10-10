@@ -58,12 +58,12 @@ export default function interpret(input, hook, store) {
       // AskUserQuestion is intrinsically interactive and may need no permission approval.
       // Its enclosing batch is the native resolution boundary, just like an approval wait.
       if (!current || !turnId) return null;
-      if (state.pending) return null;
+      if (state.pending && !state.provisional) return null;
       store.write({ session: sessionId, turn: turnId, pending: true });
       return event('input_requested', { turnId, inputId: 'permission', requestKind: 'input' });
     case 'PermissionRequest':
       if (!current) return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
-      if (state.pending) return null;
+      if (state.pending && !state.provisional) return null;
       store.write({ session: sessionId, turn: turnId, pending: true });
       return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
     case 'PostToolBatch':
@@ -71,9 +71,11 @@ export default function interpret(input, hook, store) {
       store.write({ session: sessionId, turn: turnId, pending: false });
       return event('input_resolved', { turnId, inputId: 'permission' });
     case 'Stop':
-      // Every Stop hook sees a candidate stop BEFORE other hooks may block/continue it.
-      // stop_hook_active describes prior continuation, not the final aggregate decision.
-      return current ? { event: { type: 'observer_diagnostic', diagnostic: 'settlement-unverified', nativeEvent: hook } } : null;
+      // Every Stop hook sees a candidate BEFORE other hooks may block/continue it.
+      // Publish uncertainty, keeping correlation without claiming work or actionable input.
+      if (!current) return null;
+      store.write({ ...state, provisional: true });
+      return event('turn_provisional', { turnId });
     case 'StopFailure':
       return settle('turn_failed');
     case 'SessionEnd':
