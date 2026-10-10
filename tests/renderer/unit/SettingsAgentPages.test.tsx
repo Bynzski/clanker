@@ -45,14 +45,15 @@ async function selectHarness(user: ReturnType<typeof userEvent.setup>, name: str
 }
 
 describe('canonical agent Settings pages', () => {
-  it('keeps migrated settings out of Legacy and gates the Assistants destination', async () => {
+  it('has canonical Authentication instead of Legacy and gates the Assistants destination', async () => {
     const user = userEvent.setup();
-    await openPage(user, 'Legacy Settings');
+    await openPage(user, 'Authentication');
     expect(screen.queryByRole('button', { name: 'Assistants' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'AI commit messages' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: /Agent attention/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Manage VCS credentials' })).toBeVisible();
-    expect(screen.getByText(/Open Workspace → target settings/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'SSH Keys' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'SSH Targets' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Legacy Settings' })).toBeNull();
     act(() => useAssistantsStore.setState({ snapshot: snapshot() }));
     expect(screen.getByRole('button', { name: 'Assistants' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Assistants' }));

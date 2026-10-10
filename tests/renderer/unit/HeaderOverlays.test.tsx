@@ -193,51 +193,37 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it.each([0, 1])('hands Settings off to Credentials without releasing browser suppression (other owners: %s)', async (otherOwners) => {
+    it.each([0, 1])('navigates to canonical Authentication without releasing or duplicating suppression (other owners: %s)', async (otherOwners) => {
       const user = userEvent.setup();
       if (otherOwners) useWorkspaceStore.getState().pushBrowserOverlay('ws-1');
       renderHeader();
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
-      expect(count()).toBe(otherOwners + 1);
-      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
+      const dialog = screen.getByRole('dialog', { name: 'Settings' });
       const counts: number[] = [];
       const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
-      const focusTargets: EventTarget[] = [];
-      const recordFocus = (event: FocusEvent) => { if (event.target) focusTargets.push(event.target); };
-      document.addEventListener('focusin', recordFocus);
       try {
-        await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
-        const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
-        expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
-        expect(dialog.contains(document.activeElement)).toBe(true);
-        expect(focusTargets).not.toContain(trigger);
+        await user.click(screen.getByRole('button', { name: 'Authentication' }));
+        expect(screen.getByRole('dialog', { name: 'Settings' })).toBe(dialog);
+        expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).toBeNull();
         expect(count()).toBe(otherOwners + 1);
-        expect(counts).toContain(otherOwners + 2);
-        expect(Math.min(...counts)).toBe(otherOwners + 1);
+        expect(counts.every((value) => value === otherOwners + 1)).toBe(true);
         await user.keyboard('{Escape}');
         expect(count()).toBe(otherOwners);
-        expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).not.toBeInTheDocument();
         await waitFor(() => expect(trigger).toHaveFocus());
-        expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      } finally {
-        unsubscribe();
-        document.removeEventListener('focusin', recordFocus);
-        if (otherOwners) useWorkspaceStore.getState().popBrowserOverlay('ws-1');
-      }
+      } finally { unsubscribe(); if (otherOwners) useWorkspaceStore.getState().popBrowserOverlay('ws-1'); }
     });
 
-    it.each(['close button', 'backdrop'])('Credentials closes via %s after handoff', async (method) => {
+    it.each(['close button', 'backdrop'])('Authentication closes through Settings via %s', async (method) => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
-      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
-      await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
-      const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
-      expect(within(dialog).getByRole('heading', { name: 'VCS Credentials' })).toBeInTheDocument();
-      if (method === 'close button') await user.click(within(dialog).getByRole('button', { name: 'Close VCS Credentials' }));
-      else await user.click(document.querySelector('.credential-settings-overlay')!);
-      expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Authentication' }));
+      const dialog = screen.getByRole('dialog', { name: 'Settings' });
+      expect(within(dialog).getByRole('heading', { name: 'Authentication' })).toBeInTheDocument();
+      if (method === 'close button') await user.click(within(dialog).getByRole('button', { name: 'Close Settings' }));
+      else await user.click(document.querySelector('.clanker-dialog-overlay')!);
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(count()).toBe(0);
       await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
     });

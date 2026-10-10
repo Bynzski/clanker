@@ -1,9 +1,11 @@
-# Issue #154 — Inventory and Phase 0–2A decisions
+# Issue #154 — Inventory and Phase 0–2B decisions
 
-Scope: application Settings foundation and Phase 2A destinations only. Started from `origin/main` at
-`c85bec0`; the full issue was read. Source Control migration, settings-wide search
-and Authentication / SSH Targets belong to later phases. No Git operation,
-IPC, credential storage or provider semantics change here.
+Scope: application Settings foundation through Phase 2B. Phase 2B starts from reviewed
+`2c9a207787111e4961606a478096a51583b168a9` on `feat/154-management-settings`.
+Authentication, SSH Targets and control-level search are canonical Settings surfaces;
+Legacy Settings and the competing credential/SSH dialogs are removed. Git operation
+redesign remains a later phase. No main IPC, credential storage, SSH persistence,
+provider API, instance authorization or launch-capability semantics change here.
 
 ## Source → destination and ownership
 
@@ -16,8 +18,8 @@ IPC, credential storage or provider semantics change here.
 | Harness Accounts (default/managed, select/add/reconnect/remove) | Environment + harness; `HarnessAccountsRow`, main `accounts/harnessAccountService.ts` and account IPC own metadata, account homes/auth and selection. SSH managed accounts remain unsupported. | Canonical Accounts page only. Harnesses and Usage navigate there with exact harness/intent. No account controller remains in Harnesses or Legacy Settings. Existing account controller resets on environment/harness change, cancels old auth and ignores stale results/events. |
 | Hermes Assistants enable/autostart/status | Local app service; `assistantsStore` snapshot/configure/refresh and main `assistants/`. Feature availability is still owned by existing component/service. | Reuse `AssistantsSettings` on the availability-gated Assistants page. |
 | Git AI commit enable/provider/model | App preferences; `useHeaderSettings` → settings IPC/main store; `aiCommit.ts` generation is local-only. | Existing controls extracted into canonical Git Preferences. Not a Git operation redesign. |
-| VCS SSH keys / provider PATs | Local credentials, main `credentialService`/`sshKeyService`, credential IPC; `CredentialSettings` and `vcsStore` compose status/action feedback. Secrets never move into renderer persistence. | Existing Credentials dialog reached from Legacy Settings; later Authentication content extraction. |
-| SSH target add/edit/test/remove/default root | Saved environment IDs in main; `SshEnvironmentManager` → SSH environment IPC/service. `OpenWorkspaceDialog` owns chooser selection and saved-list refresh, not the target's authoritative configuration. | Original Open Workspace target settings / Add server route retained and explicitly signposted in Legacy Settings; later SSH Targets. No duplicate manager/controller. |
+| VCS SSH keys / provider PATs | Local credentials, main `credentialService`/`sshKeyService`, credential IPC; `CredentialSettings` and `vcsStore` compose status/action feedback. Secrets never move into renderer persistence. | Canonical Source Control → Authentication, composed by `AuthenticationSettings`; main owns all key/token operations and secret storage. Only public-key/status/validation metadata enters the shared VCS store; an entered token is temporary component state. |
+| SSH target add/edit/test/remove/default root | Saved environment IDs in main; `SshEnvironmentManager` → SSH environment IPC/service. `OpenWorkspaceDialog` owns chooser selection and saved-list refresh, not the target's authoritative configuration. | Canonical Connections → SSH Targets, composed by `SshTargetsSettings` with the same validated configuration shape and main APIs. Open Workspace add/edit/server-root affordances deep-link here; no standalone manager remains. |
 
 ### Git inventory (untouched)
 
@@ -54,13 +56,13 @@ in the Git phase, **not** changes during Phase 1.
   or unmounting releases only that lease. Assistant-native views are also covered
   by the existing primitive. No force-mounted hidden content.
 - `ApplicationSettingsProvider`, mounted once beneath App's stable
-  WorkspacePaneDragProvider, owns the Settings dialog, page, Usage intent and
-  Credentials handoff. It invokes the existing `useHeaderSettings` preference /
+  WorkspacePaneDragProvider, owns the Settings dialog, page, Usage intent, search
+  destination context and bounded Open Workspace handoff. It invokes the existing `useHeaderSettings` preference /
   discovery controller exactly once; Header reads launcher visibility and invokes
   the same entry point through a small React context. The hook no longer owns
-  dialog presentation state. Phase 2A page selection and account-harness intent live
-  in that same provider. `LegacySettingsContent` now contains only the Credentials
-  entry point; the SSH-manager instructions remain beside it.
+  dialog presentation state. Page selection and account-harness intent live in that
+  same provider. Authentication and SSH Targets are content, not competing modal
+  owners; credential/key/target deletion uses the existing nested AlertDialog.
 - Toolbar and `app.openSettings` (Ctrl/Cmd+,) invoke this stable app-owned state path.
   A fresh opening starts at Appearance; an already-open Settings keeps its page.
   Usage opens Accounts and selects its harness and requested Manage/Add intent.
@@ -71,17 +73,21 @@ in the Git phase, **not** changes during Phase 1.
   caller-owned grouped navigation and content, optional header-actions slot,
   independent navigation/content scroll. No settings schema, persistence,
   discovery, action controller or source-control identity logic lives there.
-- Credentials still uses the existing acquire-before-close handoff. The outgoing
-  Settings lease remains until Credentials autofocus, and outgoing focus return is
-  suppressed. Both Settings and Credentials resolve the current toolbar button
-  through the provider's shared ref when closing; they never try to restore the
-  disconnected trigger from a previous Header placement. Shared Dialog primitives
-  still own focus traps, autofocus and dismissal. Header closes its contextual Chat
-  History when application Settings opens; recipes/history remain Header-owned.
+- Open Workspace → Settings acquires the incoming Settings lease before suspending
+  chooser content. Return refreshes saved targets and mounts/focuses the same live
+  chooser before releasing Settings. The local draft lives outside suspended Dialog
+  content and is also retained when selecting a newly saved remote target and then
+  returning to This PC. Exact IDs, not labels/order, identify targets; a removed
+  target or refresh error safely falls back to local. A removed originating chooser
+  is never reopened. Repeated returns and busy operation retargets are refused.
+  Settings otherwise restores the provider's live toolbar ref, never a disconnected
+  Header trigger. Shared Dialog primitives own traps/autofocus/dismissal; no manual
+  native Browser visibility manipulation is introduced. Chat History and recipes
+  remain Header-owned.
 - Global pages stay open across workspace switches. Canonical accounts explicitly
   display their environment and reuse the controller's existing safe scope reset /
   rebind policy; workspace change clears Usage intent. No old authentication result
-  is accepted into the new environment. Phase 2 must retain these safeguards.
+  is accepted into the new environment. These safeguards remain unchanged.
 - Sidebar/Tabs takes effect immediately through the existing App layout. Header
   still remounts in its new location, but Settings and its navigation remain mounted
   under their independent app owner. Workspaces & Layout stays selected with the
@@ -97,8 +103,8 @@ and uses the existing Git management repairs. Workspace/tab/agent selection,
 restore, Explorer menus, pane controls, Browser SSH previews/forwarding/dev services,
 Usage quick monitor, Notification Center, Launch Recipes and checkout dev-server
 configuration remain in their existing scopes and entry points. Open Workspace
-remains the chooser, with its SSH target manager reachable there. Nothing routes
-these capabilities through global Settings.
+remains the chooser; only its target-configuration affordances navigate to canonical
+SSH Targets. None of its workspace browsing/opening capabilities become Settings actions.
 
 ## Verification and remaining owner smoke
 
@@ -257,4 +263,84 @@ Phase 2A verification:
   Electron and full-renderer Browser smokes pass; separate native multi-Browser
   SIGSEGV and the previously documented live/platform coverage limits remain.
 
-No Settings-wide search or Git destination was implemented here. Phase 2B is not begun.
+The preceding results describe the reviewed Phase 2A state. Phase 2B below adds
+Settings search and the final configuration destinations; Git redesign remains untouched.
+
+## Phase 2B — final Settings configuration surfaces
+
+- **Authentication:** one embedded SSH-key or provider-token workflow. Existing
+  credential IPC/services still own generation/deletion, encrypted tokens,
+  supported-provider validation and public-key reads. Fingerprints are displayed
+  when supplied by the existing API. Copy copies only the public key. Tokens are
+  password inputs held only by the selected provider's temporary component state;
+  Cancel, page/provider change and closing clear that entry. Save/remove results
+  cannot update another provider or an unmounted workflow. Main-returned scopes
+  and validation metadata are displayed as such, never guessed as `repo` or
+  treated as repository authorization. Provider help/docs use the existing
+  validated external-open path; GitLab explicitly distinguishes gitlab.com from
+  separately authorized self-managed origins (#145). Git's SSH/credential helper
+  remains separate from provider API tokens.
+- The existing global credential status API performs provider validation. The
+  Authentication content shares only an **in-flight metadata promise**, including
+  across page/provider remounts, and drains it before a credential write. This
+  avoids concurrent stale validation publications without changing main services
+  or adding a persisted cache/controller. Failed retrieval is unknown/error, not
+  an invented empty credential list; failed writes retain the entered draft.
+- **SSH Targets:** single canonical list/add/edit/delete/test/default-root content.
+  Shared SSH validation and the existing main endpoints retain the configuration
+  format, transport/security policy, exact IDs and authoritative in-use rejection.
+  Loading and mutation errors are explicit; failed edits retain their draft,
+  refreshing the list does not reset it, and only explicit Test initiates SSH.
+  Mutations disable navigation/search/close until complete; late results after
+  unmount publish nothing. Duplicate labels have target descriptions for accessible
+  disambiguation. The selected opaque ID is remembered for search navigation, not
+  used as backend authority or copied into another configuration store.
+- **Destructive actions:** key/token/target removal uses the shared AlertDialog,
+  default Cancel focus and explicit confirmation. Cancel, Escape and opted-in
+  backdrop dismissal never mutate. No JavaScript confirm/alert is introduced.
+- **Search:** a small Popover/Input/Button composition, with static semantic
+  control descriptors composed from existing harness and keybinding metadata.
+  It spans theme/layout, individual shortcut editors, harness controls/accounts,
+  available Assistants, Git preferences, keys/provider tokens and SSH target/root
+  controls. No token, account name, saved target label/address/path or private
+  configuration value is indexed. Results retain harness/provider/current
+  environment and selected SSH entity context. Selecting reveals, scrolls and
+  focuses stable IDs; it never clicks a control, changes a preference or starts
+  auth, a process, service, SSH test or Git operation. Search-based Authentication
+  navigation defers credential retrieval/validation until explicit refresh. Existing
+  lightweight account/saved-target metadata loading remains with its page owner.
+  Disabled/unavailable controls retain gating explanations rather than being forced
+  interactive. A bounded observer stops on success, navigation or user focus movement.
+  Arrow keys/Enter navigate; Escape first dismisses search without closing Settings.
+- **Cleanup:** `LegacySettingsContent`, `CredentialSettings` and its lookalike CSS,
+  `SshEnvironmentManager` and obsolete styles/tests are removed. No alternative
+  workflow, new dependency, settings schema, Git controller or backend policy exists.
+  The original Git inventory and Phase 2A local discovery/capability contracts above
+  remain intact.
+
+Phase 2B verification:
+- Final `npm run validate`: **371 files / 7,666 tests passed**; branding, lint,
+  typecheck, Fallow, security and build all passed. The existing documented
+  dev-only electron-builder audit exception and Vite bundle-size warning remain.
+- Focused component/integration/backend-policy tests: **32 files / 743 tests passed**.
+  This includes credential and SSH IPC/service safety, provider origin boundaries,
+  stale responses, pending validation/write cancellation, explicit confirmations,
+  chooser drafts/IDs/return ownership, search focus/no-actions, shortcuts, toolbar
+  relocation, account/Usage routing and prior settings/discovery regressions.
+- Settings Electron smoke and full-renderer native Browser smoke passed. Settings
+  covers all nine available pages, three token providers and search in Dark/Light/
+  Slate at 1100×760 and 640×480; independent scrolling/viewport/overflow, same-dialog
+  relocation, exact search focus, chooser acquire/return leases/focus, Ctrl+, and
+  Browser restoration are asserted. Representative final screenshots reviewed in
+  `/tmp/clanker-settings-visual-jNs9Uu`; no overlap/horizontal overflow observed.
+  Assistants availability remains a synthetic presentation snapshot, not real service
+  startup. Credential/target mutations and real authentication are not exercised by
+  that isolated native fixture.
+- Separate native multi-Browser runner retried and still exits with **SIGSEGV**;
+  `/tmp/154-2b-multi-browser.log`. No unrelated Browser internals changed to hide it.
+- Owner checks remain: real SSH test/save/in-use rejection against a live host,
+  real credential save/remove/OS keychain and key generation, account auth, real
+  Hermes, Windows/macOS desktop focus/key behavior, high zoom/OS scaling and screen
+  readers. Main security/backend tests simulate boundaries; they do not establish
+  live platform/credential correctness.
+- No PR, merge or Git redesign. Stop here for independent architectural review.

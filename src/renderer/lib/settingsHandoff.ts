@@ -14,6 +14,22 @@ export function openAccountSettings(harnessId: string, intent: 'manage' | 'add')
   return true;
 }
 
+export interface SshSettingsHandoff {
+  environmentId: string | null;
+  onAcquired: () => void;
+  /** Returns false if the originating chooser has gone away. finish runs after its lease is acquired. */
+  onReturn: (selectedId: string | undefined, finish: (acquired?: boolean) => void) => boolean;
+}
+let sshHandler: ((request: SshSettingsHandoff) => boolean) | null = null;
+export function registerSshSettingsHandler(next: (request: SshSettingsHandoff) => boolean): () => void {
+  sshHandler = next;
+  return () => { if (sshHandler === next) sshHandler = null; };
+}
+export function openSshTargetSettings(request: SshSettingsHandoff): boolean {
+  if (!sshHandler) return false;
+  return sshHandler(request);
+}
+
 /** Settings saved a harness preference the Usage widget depends on ("Show in Usage"); it re-reads. */
 const listeners = new Set<() => void>();
 

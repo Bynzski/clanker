@@ -54,7 +54,7 @@ async function until(check, message) {
         const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
         await dialog.getByRole('radio', { name: theme, exact: true }).click();
         await until(async () => (await views()).every(view => !view.visible), 'Settings did not suppress native Browser');
-        for (const section of ['Appearance', 'Workspaces & Layout', 'Keyboard Shortcuts', 'Harnesses', 'Accounts', 'Assistants', 'Git Preferences', 'Legacy Settings']) {
+        for (const section of ['Appearance', 'Workspaces & Layout', 'Keyboard Shortcuts', 'Harnesses', 'Accounts', 'Assistants', 'Git Preferences', 'Authentication', 'SSH Targets']) {
           await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
           if (section === 'Harnesses' && await dialog.locator('.settings-harness-selector button').count()) {
             await dialog.locator('.settings-harness-selector button').first().click();
@@ -63,6 +63,7 @@ async function until(check, message) {
             const harness = await dialog.locator('#account-harness').evaluate(element => Array.from(element.options).find(option => option.value && !option.disabled)?.value);
             if (harness) await dialog.locator('#account-harness').selectOption(harness);
           }
+          if (section === 'Authentication') await dialog.getByRole('button', { name: 'SSH Keys', exact: true }).click();
           const geometry = await dialog.evaluate(element => {
             const content = element.querySelector('.management-content');
             const nav = element.querySelector('nav');
@@ -85,7 +86,21 @@ async function until(check, message) {
           await page.mouse.move(0, 0);
           await pause(200); // Let the existing primitive hover transition settle before visual review.
           await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${section.toLowerCase().replaceAll(/[^a-z]+/g, '-')}.png`) });
+          if (section === 'Authentication') {
+            await dialog.getByRole('button', { name: 'Access Tokens', exact: true }).click();
+            for (const provider of ['github', 'gitlab', 'bitbucket']) {
+              await dialog.getByLabel('Provider', { exact: true }).selectOption(provider);
+              await pause(200);
+              await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-authentication-${provider}.png`) });
+            }
+            await dialog.getByRole('button', { name: 'SSH Keys', exact: true }).click();
+          }
         }
+        await page.getByRole('searchbox', { name: 'Search Settings' }).fill('MCP');
+        await page.getByRole('button', { name: 'Codex · Clanker MCP bridge', exact: true }).waitFor();
+        await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-search-mcp.png`) });
+        await page.keyboard.press('Escape');
+        assert(await dialog.isVisible(), 'Search Escape dismissed Settings');
         await dialog.getByRole('button', { name: 'Close Settings' }).click();
         await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Native Browser did not restore');
         assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Settings trigger focus not restored');
@@ -110,13 +125,30 @@ async function until(check, message) {
     await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Relocation close lost native Browser');
     assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Relocated trigger focus not restored');
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Legacy Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Manage VCS credentials', exact: true }).click();
-    await page.getByRole('dialog', { name: 'VCS Credentials', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Authentication', exact: true }).click();
+    await page.getByRole('heading', { name: 'Authentication', exact: true }).waitFor();
     assert((await views()).every(view => !view.visible), 'Credentials handoff exposed native Browser');
     await page.keyboard.press('Escape');
     await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Credentials close lost native Browser');
     assert(await page.getByRole('button', { name: 'Settings', exact: true }).evaluate(element => document.activeElement === element), 'Credentials did not restore relocated trigger focus');
+    // Control-level search uses only static navigation; focus must reach the exact control.
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('searchbox', { name: 'Search Settings' }).fill('Codex MCP');
+    await page.getByRole('button', { name: 'Codex · Clanker MCP bridge', exact: true }).click();
+    assert(await page.getByRole('checkbox', { name: 'Clanker bridge for Codex' }).evaluate(element => document.activeElement === element), 'Search did not focus MCP');
+    await page.getByRole('button', { name: 'Close Settings' }).click();
+    // Cancel-only chooser handoff: no SSH connection, target write or credential mutation.
+    await page.getByRole('button', { name: 'Open Workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose location: This PC' }).click();
+    await page.getByRole('button', { name: 'Add server…', exact: true }).click();
+    await page.getByRole('heading', { name: 'SSH Targets', exact: true }).waitFor();
+    assert((await views()).every(view => !view.visible), 'SSH Settings handoff exposed native Browser');
+    await page.getByRole('button', { name: 'Back to Open Workspace', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Open Workspace', exact: true }).waitFor();
+    assert((await views()).every(view => !view.visible), 'Chooser return exposed Browser');
+    assert(await page.getByRole('button', { name: 'Choose location: This PC' }).evaluate(element => document.activeElement === element), 'Chooser focus was stranded');
+    await page.keyboard.press('Escape');
+    await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Chooser close lost Browser');
     // Real registered keyboard route, not an IPC or DOM-state shortcut.
     await page.getByRole('button', { name: 'Settings', exact: true }).focus();
     await page.keyboard.press('Control+,');

@@ -32,7 +32,7 @@ export default function AssistantsSettings() {
     : transition ?? PROBLEM[service.state] ?? 'Not connected';
   const info = `Uses a local Hermes service (hermes serve). Ordinary Hermes harness usage is independent. Status: ${statusText}.`;
   return (
-    <div className="settings-section" aria-label="Hermes Assistants">
+    <div id="setting-assistants" tabIndex={-1} className="settings-section" aria-label="Hermes Assistants">
       <div className="assistants-settings-header">
         <div className="settings-section-title">Hermes Assistants</div>
         <IconButton size="xs" variant="ghost" aria-label="Hermes Assistants information" title={info}>

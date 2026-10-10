@@ -12,7 +12,7 @@ export interface ManagementNavigationItem {
 }
 
 /** Presentation only. The caller owns the Dialog root, selection, scope and page content. */
-export function ManagementShell({ title, items, selectedId, onSelect, children, headerActions, ...props }:
+export function ManagementShell({ title, items, selectedId, onSelect, children, headerActions, busy = false, ...props }:
   Omit<DialogContentProps, 'children' | 'title'> & {
     title: string;
     items: readonly ManagementNavigationItem[];
@@ -20,6 +20,7 @@ export function ManagementShell({ title, items, selectedId, onSelect, children, 
     onSelect: (id: string) => void;
     children: ReactNode;
     headerActions?: ReactNode;
+    busy?: boolean;
   }) {
   const contentId = useId();
   return (
@@ -29,7 +30,7 @@ export function ManagementShell({ title, items, selectedId, onSelect, children, 
         <div className="management-header-actions">
           {headerActions}
           <DialogClose asChild>
-            <IconButton variant="ghost" className="clanker-dialog-close" aria-label={`Close ${title}`}><X size={14} /></IconButton>
+            <IconButton variant="ghost" className="clanker-dialog-close" disabled={busy} aria-label={`Close ${title}`}><X size={14} /></IconButton>
           </DialogClose>
         </div>
       </div>
@@ -38,7 +39,7 @@ export function ManagementShell({ title, items, selectedId, onSelect, children, 
           {items.map((item, index) => (
             <div key={item.id}>
               {(index === 0 || items[index - 1].group !== item.group) && <h2 className="management-group">{item.group}</h2>}
-              <Button size="sm" variant="ghost" className="management-navigation-item"
+              <Button disabled={busy} size="sm" variant="ghost" className="management-navigation-item"
                 aria-current={selectedId === item.id ? 'page' : undefined} aria-controls={contentId}
                 onClick={() => onSelect(item.id)}>{item.label}</Button>
             </div>

@@ -7,7 +7,7 @@ export default function AppearanceSettings() {
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
   return (
-    <section className="settings-section" aria-label="Theme selection">
+    <section id="setting-theme" tabIndex={-1} className="settings-section" aria-label="Theme selection">
       <div className="settings-field">
         <span className="settings-row-label" id={themeLabelId}>Theme</span>
         <ThemePicker aria-labelledby={themeLabelId} value={theme} onChange={(selected) => void setTheme(selected)} />

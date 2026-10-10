@@ -1,0 +1,4 @@
+.authentication-settings, .authentication-section { display: flex; flex-direction: column; gap: 8px; }
+.authentication-sections, .authentication-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.authentication-section > .clanker-button { align-self: flex-start; }
+.authentication-section p { margin: 0; overflow-wrap: anywhere; }

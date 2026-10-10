@@ -1,0 +1,4 @@
+.settings-search { width: min(240px, 42vw); }
+.settings-search-results { width: min(420px, calc(100vw - 40px)); max-height: min(300px, calc(100vh - 120px)); overflow-y: auto; }
+.settings-search-results .clanker-button { width: 100%; justify-content: flex-start; }
+.settings-search-results p { margin: 4px; }

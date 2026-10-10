@@ -1,0 +1,5 @@
+.ssh-targets-settings, .ssh-targets-form { display: flex; flex-direction: column; gap: 8px; }
+.ssh-targets-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ssh-targets-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-default); }
+.ssh-targets-row > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.ssh-targets-row p { margin: 0; color: var(--text-secondary); }

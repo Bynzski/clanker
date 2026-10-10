@@ -30,7 +30,7 @@ export default function WorkspaceLayoutSettings() {
           {WORKSPACE_NAVIGATION_MODES.map((mode) => {
             const Icon = NAVIGATION_MODE_ICONS[mode];
             return (
-              <SegmentedControlItem key={mode} value={mode}>
+              <SegmentedControlItem id={`setting-workspace-${mode}`} key={mode} value={mode}>
                 <Icon size={12} strokeWidth={2} aria-hidden="true" />
                 {WORKSPACE_NAVIGATION_MODE_LABELS[mode]}
               </SegmentedControlItem>

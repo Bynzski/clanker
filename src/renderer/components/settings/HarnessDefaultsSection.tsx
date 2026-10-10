@@ -64,17 +64,17 @@ function HarnessDetail({ harnessId, label, environmentId = 'local', ...props }: 
   return <section className="settings-harness-detail" aria-label={`${label} preferences`}>
     <h3 className="management-page-title">{label}</h3>
     <p className="management-page-description">Available · Defaults apply to future launches.</p>
-    <Checkbox checked={visible} aria-label={`${visible ? 'Hide' : 'Show'} ${label}`}
+    <Checkbox id="setting-harness-visible" checked={visible} aria-label={`${visible ? 'Hide' : 'Show'} ${label}`}
       onChange={(event) => void props.handleSetHarnessVisible(harnessId, event.target.checked)}>Show in toolbar and launcher</Checkbox>
-    <Checkbox checked={defaults?.attentionEnabled === true} disabled={!attentionSupported} aria-label={`Agent attention for ${label}`}
+    <Checkbox id="setting-harness-attention" checked={defaults?.attentionEnabled === true} disabled={!attentionSupported} aria-label={`Agent attention for ${label}`}
       onChange={(event) => void props.handleSetHarnessAttention(harnessId, event.target.checked)}>Agent attention</Checkbox>
     <p className="management-page-description">{attentionSupported ? attentionScope : 'Agent attention is unsupported.'} This application-wide preference applies to future supported launches.</p>
     {'agentBridge' in descriptor && props.handleSetHarnessAgentBridge && <>
-      <Checkbox checked={defaults?.agentBridgeEnabled === true} aria-label={`Clanker bridge for ${label}`}
+      <Checkbox id="setting-harness-bridge" checked={defaults?.agentBridgeEnabled === true} aria-label={`Clanker bridge for ${label}`}
         onChange={(event) => void props.handleSetHarnessAgentBridge?.(harnessId, event.target.checked)}>Clanker bridge (MCP)</Checkbox>
       <p className="management-page-description">Local launches only. Your own MCP configuration is not changed.</p>
     </>}
-    {'usage' in descriptor && <Checkbox checked={defaults?.usageVisible !== false} aria-label={`Show ${label} in Usage`}
+    {'usage' in descriptor && <Checkbox id="setting-harness-usage" checked={defaults?.usageVisible !== false} aria-label={`Show ${label} in Usage`}
       onChange={(event) => void props.handleSetHarnessUsageVisible(harnessId, event.target.checked)}>Show in Usage</Checkbox>}
     <Field>
       <FieldLabel htmlFor={`flags-${harnessId}`}>Extra flags</FieldLabel>
@@ -84,11 +84,11 @@ function HarnessDetail({ harnessId, label, environmentId = 'local', ...props }: 
     <div className="settings-field">
       <span className="settings-row-label">Default model</span>
       {descriptor.modelSelection === 'text' || (custom && (manual || models.length === 0)) ?
-        <Input autoFocus={manual} aria-label={manual ? `${label} custom model` : `${label} default model`} value={manual && custom && models.some((entry) => entry.id === current) ? '' : current}
+        <Input id="setting-harness-model" autoFocus={manual} aria-label={manual ? `${label} custom model` : `${label} default model`} value={manual && custom && models.some((entry) => entry.id === current) ? '' : current}
           onChange={(event) => void props.handleSetDefaultModel(harnessId, event.target.value)} placeholder="Use harness default" /> :
         <ModelSearchPicker harness={harnessId} model={current} models={models} favorites={defaults?.favorites ?? []}
           savedHermesModel={current} loading={loading} refreshing={loading} disabled={loading} fullWidth includeDefault
-          triggerLabel={`${label} default model`} open={pickerOpen} onOpenChange={setPickerOpen}
+          triggerId="setting-harness-model" triggerLabel={`${label} default model`} open={pickerOpen} onOpenChange={setPickerOpen}
           onSelect={(model) => void props.handleSetDefaultModel(harnessId, model)}
           onToggleFavorite={(model) => props.handleToggleFavorite(harnessId, model)}
           onRefreshHermes={() => { setPickerOpen(false); void props.loadHarnessModels(harnessId, true); }}

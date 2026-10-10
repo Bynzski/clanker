@@ -200,19 +200,6 @@
 
 .settings-segmented .clanker-segmented-item { gap: var(--space-xs); }
 
-.settings-links { gap: 0; }
-
-.settings-legacy .settings-dropdown-action {
-  justify-content: flex-start;
-  width: 100%;
-  padding: 0 6px;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.settings-legacy .settings-dropdown-action span { flex: 1; text-align: left; }
-.settings-dropdown-action-chevron { color: var(--text-muted); }
-
 /* Harness Defaults Section */
 .settings-section-title {
   font-size: var(--font-size-xs);

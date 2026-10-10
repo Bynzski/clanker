@@ -130,7 +130,7 @@ export default function KeyboardShortcutsContent() {
         <div className="keyboard-shortcuts-toolbar">
           <Input
             type="search"
-            aria-label="Search shortcuts"
+            id="setting-keyboard" aria-label="Search shortcuts"
             placeholder="Search shortcuts…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -187,7 +187,7 @@ export default function KeyboardShortcutsContent() {
                       {capturing ? (
                         <Button onClick={stopCapture} aria-label={`Cancel editing ${command.label}`}>Cancel</Button>
                       ) : (
-                        <Button
+                        <Button id={`shortcut-${command.id}`}
                           onClick={() => { setPending(null); setCapturingId(command.id); }}
                           disabled={capturingId != null}
                           aria-label={`Edit ${command.label} shortcut`}

@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import OpenWorkspaceDialog from '../../../src/renderer/components/OpenWorkspaceDialog';
 import { installElectronApiMock } from '../../setup/electron';
+import { registerSshSettingsHandler } from '../../../src/renderer/lib/settingsHandoff';
 import { openWorkspace } from '../../../src/renderer/lib/openWorkspace';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
@@ -74,7 +75,8 @@ it('opens an SSH absolute path through the selected environment', async () => {
   expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledWith(expect.any(String), '/srv/project', 'ssh-host');
   expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
 });
-it('rejects relative remote paths and retains server management', async () => {
+it('rejects relative remote paths and routes server settings by exact ID', async () => {
+  const request = vi.fn(); const stop = registerSshSettingsHandler(request);
   const user = userEvent.setup(); const onOpen = vi.fn();
   render(<OpenWorkspaceDialog isOpen onClose={vi.fn()} onOpen={onOpen} />);
   await user.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
@@ -85,7 +87,8 @@ it('rejects relative remote paths and retains server management', async () => {
   expect(onOpen).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button', { name: 'Choose location: Host' }));
   await user.click(screen.getByRole('button', { name: 'Settings for Host' }));
-  expect(await screen.findByDisplayValue('dev@host')).toBeInTheDocument();
+  expect(request).toHaveBeenCalledWith(expect.objectContaining({ environmentId: 'ssh-host' }));
+  stop();
 });
 
 it('submits remote paths without the trailing slash used for type-ahead', async () => {

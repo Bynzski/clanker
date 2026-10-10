@@ -56,9 +56,9 @@ describe('Settings management destination', () => {
       expect(count('one')).toBe(0);
       await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
       await user.click(screen.getByRole('button', { name: 'Settings' }));
-      await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
-      await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
-      expect(screen.getByRole('dialog', { name: 'VCS Credentials' })).toBeVisible();
+      await user.click(screen.getByRole('button', { name: 'Authentication' }));
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+      expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).toBeNull();
       expect(count('one')).toBe(1);
       await user.keyboard('{Escape}');
       expect(count('one')).toBe(0);
@@ -107,9 +107,10 @@ describe('Settings management destination', () => {
     expect(window.electronAPI.setWorkspaceNavigationMode).toHaveBeenCalledWith('sidebar');
     await user.click(screen.getByRole('button', { name: 'Keyboard Shortcuts' }));
     expect(screen.getByRole('searchbox', { name: 'Search shortcuts' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Legacy Settings' }));
-    expect(screen.getByRole('button', { name: 'Manage VCS credentials' })).toBeVisible();
-    expect(screen.getByText(/Open Workspace → target settings/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Authentication' }));
+    expect(screen.getByRole('button', { name: 'SSH Keys' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'SSH Targets' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Legacy Settings' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Close Settings' }));
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByRole('button', { name: 'Appearance' })).toHaveAttribute('aria-current', 'page');
