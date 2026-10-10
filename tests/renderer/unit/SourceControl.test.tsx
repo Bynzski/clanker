@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -229,5 +229,343 @@ describe('Permanent Branches and Worktrees', () => {
     let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; })); const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' }));
     const before = api.gitGetBranchState.mock.calls.length; act(() => { useWorkspaceStore.setState((state) => change === 'workspace' ? { activeWorkspaceId: null } : { workspaces: state.workspaces.map((entry) => change === 'environment' ? { ...entry, environmentId: 'ssh-other' } : { ...entry, fileSurfaceContextId: 'unregistered' }) }); });
     expect(screen.queryByRole('dialog')).toBeNull(); await act(async () => finish({ success: true })); expect(api.gitGetBranchState).toHaveBeenCalledTimes(before); expect(screen.queryByText(/Current checkout: feature/)).toBeNull();
+  });
+});
+
+describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
+  const sampleStashes = [
+    { ref: 'stash@{0}', hash: 'hash000', message: 'WIP on feature' },
+    { ref: 'stash@{1}', hash: 'hash111', message: 'WIP on bugfix' },
+  ];
+  const sampleRemotes = [
+    { name: 'origin', fetchUrl: 'https://github.com/a/b.git', pushUrl: 'git@github.com:a/b.git' },
+  ];
+
+  beforeEach(() => {
+    api.gitGetBranchState.mockImplementation(async () => ({
+      success: true,
+      isRepo: true,
+      currentBranch: status.currentBranch,
+      isDetached: status.isDetached,
+      branches: ['main', 'feature'].map((name) => ({ name, isCurrent: name === status.currentBranch && !status.isDetached })),
+    }));
+    api.gitGetStashes.mockResolvedValue(sampleStashes);
+    api.gitGetRemotes.mockResolvedValue({ success: true, provider: 'github', remotes: sampleRemotes });
+    api.gitStash = vi.fn().mockResolvedValue({ success: true });
+    api.gitApplyStash = vi.fn().mockResolvedValue({ success: true });
+    api.gitPopStash = vi.fn().mockResolvedValue({ success: true });
+    api.gitDropStash = vi.fn().mockResolvedValue({ success: true });
+    api.gitClearStashes = vi.fn().mockResolvedValue({ success: true });
+    api.gitAddRemote = vi.fn().mockResolvedValue({ success: true });
+    api.gitRenameRemote = vi.fn().mockResolvedValue({ success: true });
+    api.gitRemoveRemote = vi.fn().mockResolvedValue({ success: true });
+    api.gitMergeBranch = vi.fn().mockResolvedValue({ success: true });
+    api.gitAbortOperation = vi.fn().mockResolvedValue({ success: true });
+  });
+
+  it('navigates to all permanent pages and keeps existing tools strictly to history/diff', async () => {
+    const { user, dialog } = await open();
+
+    // Verify all navigation items exist in the expected groups
+    expect(within(dialog).getByRole('button', { name: 'Overview' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Branches' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Worktrees' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Stashes' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Remotes' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Merge' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Existing Git Tools' })).toBeVisible();
+
+    // Navigate to Stashes
+    await user.click(within(dialog).getByRole('button', { name: 'Stashes' }));
+    expect(within(dialog).getByText(/Apply restores changes without removing the stash/)).toBeVisible();
+    expect(within(dialog).getByText('WIP on feature')).toBeVisible();
+
+    // Navigate to Remotes
+    await user.click(within(dialog).getByRole('button', { name: 'Remotes' }));
+    expect(within(dialog).getByText(/Configured remote repositories/)).toBeVisible();
+    expect(within(dialog).getByText('origin')).toBeVisible();
+
+    // Navigate to Merge
+    await user.click(within(dialog).getByRole('button', { name: 'Merge' }));
+    expect(within(dialog).getByText(/Integrate changes from another branch/)).toBeVisible();
+
+    // Navigate to Existing Git Tools - only History/Diff remains
+    await user.click(within(dialog).getByRole('button', { name: 'Existing Git Tools' }));
+    expect(within(dialog).getByText(/History and Diff retain their existing implementations/)).toBeVisible();
+    expect(within(dialog).queryByText(/Apply restores changes/)).toBeNull();
+    expect(within(dialog).queryByText(/Configured remote repositories/)).toBeNull();
+    expect(within(dialog).queryByText(/Integrate changes from another branch/)).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Add remote' })).toBeNull();
+  });
+
+  describe('Stashes page', () => {
+    async function stashesPage() {
+      const result = await open();
+      await result.user.click(within(result.dialog).getByRole('button', { name: 'Stashes' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh stashes' })).toBeEnabled());
+      return result;
+    }
+
+    it('creates a stash with optional message and untracked files', async () => {
+      const { user } = await stashesPage();
+      const input = screen.getByPlaceholderText('Optional stash message');
+      await user.type(input, 'My experiment');
+      await user.click(screen.getByRole('button', { name: 'Stash' }));
+      expect(api.gitStash).toHaveBeenCalledWith('/repo', 'My experiment', true, 'ws');
+    });
+
+    it('applies stash without dropping and pops stash on clean result', async () => {
+      const { user } = await stashesPage();
+
+      // Apply stash
+      await user.click(screen.getByRole('button', { name: 'Apply stash@{0}' }));
+      expect(api.gitApplyStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+      expect(api.gitDropStash).not.toHaveBeenCalled();
+
+      // Pop stash
+      await user.click(screen.getByRole('button', { name: 'Pop stash@{0}' }));
+      expect(api.gitPopStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+    });
+
+    it('confirms and cancels single stash drop via AlertDialog with lease tracking', async () => {
+      const { user } = await stashesPage();
+      await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
+
+      const alert = await screen.findByRole('alertdialog');
+      expect(within(alert).getByText(/Drop stash@\{0\}\?/)).toBeVisible();
+      expect(within(alert).getByText(/Permanently delete stash/)).toBeVisible();
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(2);
+
+      // Cancel leaves stash intact
+      await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
+      expect(api.gitDropStash).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(1);
+
+      // Reopen and confirm
+      await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
+      const reopenAlert = await screen.findByRole('alertdialog');
+      await user.click(within(reopenAlert).getByRole('button', { name: 'Drop stash' }));
+      expect(api.gitDropStash).toHaveBeenCalledWith('/repo', 'stash@{0}', 'ws');
+    });
+
+    it('refuses to drop if positional stash reference shifted while confirmation was open', async () => {
+      const { user } = await stashesPage();
+      await user.click(screen.getByRole('button', { name: 'Drop stash@{0}' }));
+      const alert = await screen.findByRole('alertdialog');
+
+      // Before drop confirms, background stash shift occurs: stash@{0} now points to a new hash
+      api.gitGetStashes.mockResolvedValueOnce([
+        { ref: 'stash@{0}', hash: 'shiftedHash', message: 'New background stash' },
+        { ref: 'stash@{1}', hash: 'hash000', message: 'WIP on feature' },
+      ]);
+
+      await user.click(within(alert).getByRole('button', { name: 'Drop stash' }));
+      expect(api.gitDropStash).not.toHaveBeenCalled();
+      expect(await screen.findByText(/Stash reference changed/)).toBeVisible();
+    });
+
+    it('confirms and clears all stashes via distinct AlertDialog', async () => {
+      const { user } = await stashesPage();
+      await user.click(screen.getByRole('button', { name: 'Clear All' }));
+
+      const alert = await screen.findByRole('alertdialog');
+      expect(within(alert).getByText('Clear all stashes?')).toBeVisible();
+      expect(within(alert).getByText(/Permanently delete all 2 saved stashes/)).toBeVisible();
+
+      // Cancel
+      await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
+      expect(api.gitClearStashes).not.toHaveBeenCalled();
+
+      // Reopen and confirm
+      await user.click(screen.getByRole('button', { name: 'Clear All' }));
+      const reopen = await screen.findByRole('alertdialog');
+      await user.click(within(reopen).getByRole('button', { name: 'Clear all stashes' }));
+      expect(api.gitClearStashes).toHaveBeenCalledWith('/repo', 'ws');
+    });
+  });
+
+  describe('Remotes page', () => {
+    async function remotesPage() {
+      const result = await open();
+      await result.user.click(within(result.dialog).getByRole('button', { name: 'Remotes' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh remotes' })).toBeEnabled());
+      return result;
+    }
+
+    it('displays remote name, fetch URL and push URL', async () => {
+      await remotesPage();
+      expect(screen.getByText('origin')).toBeVisible();
+      expect(screen.getByText(/Fetch: https:\/\/github\.com\/a\/b\.git · Push: git@github\.com:a\/b\.git/)).toBeVisible();
+    });
+
+    it('adds a remote through form validation without contacting servers', async () => {
+      const { user } = await remotesPage();
+      await user.click(screen.getByRole('button', { name: 'Add remote' }));
+
+      const name = screen.getByLabelText('Name');
+      const url = screen.getByLabelText('URL');
+      fireEvent.change(name, { target: { value: 'upstream' } });
+      fireEvent.change(url, { target: { value: 'https://github.com/upstream/repo.git' } });
+      await user.click(screen.getByRole('button', { name: 'Add Remote' }));
+
+      expect(api.gitAddRemote).toHaveBeenCalledWith('/repo', 'upstream', 'https://github.com/upstream/repo.git', 'ws');
+    });
+
+    it('renames a remote through validated inline form', async () => {
+      const { user } = await remotesPage();
+      await user.click(screen.getByRole('button', { name: 'Rename remote' }));
+
+      const newNameInput = screen.getByLabelText('New Name');
+      await user.clear(newNameInput);
+      await user.type(newNameInput, 'origin-renamed');
+      await user.click(screen.getByRole('button', { name: 'Rename Remote' }));
+
+      expect(api.gitRenameRemote).toHaveBeenCalledWith('/repo', 'origin', 'origin-renamed', 'ws');
+    });
+
+    it('confirms remote removal via AlertDialog identifying the exact remote', async () => {
+      const { user } = await remotesPage();
+      await user.click(screen.getByRole('button', { name: 'Remove remote' }));
+
+      const alert = await screen.findByRole('alertdialog');
+      expect(within(alert).getByText("Remove remote 'origin'?", { selector: 'h3' })).toBeVisible();
+      expect(within(alert).getByText(/Fetch URL: https:\/\/github\.com\/a\/b\.git/)).toBeVisible();
+      expect(within(alert).getByText(/Push URL: git@github\.com:a\/b\.git/)).toBeVisible();
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(2);
+
+      // Cancel leaves remote untouched
+      await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
+      expect(api.gitRemoveRemote).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(1);
+
+      // Reopen and confirm
+      await user.click(screen.getByRole('button', { name: 'Remove remote' }));
+      const reopen = await screen.findByRole('alertdialog');
+      await user.click(within(reopen).getByRole('button', { name: 'Remove remote' }));
+      expect(api.gitRemoveRemote).toHaveBeenCalledWith('/repo', 'origin', 'ws');
+    });
+  });
+
+  describe('Merge page', () => {
+    async function mergePage() {
+      const result = await open();
+      await result.user.click(within(result.dialog).getByRole('button', { name: 'Merge' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh merge state' })).toBeEnabled());
+      return result;
+    }
+
+    it('shows clear merge direction and executes merge into current checkout', async () => {
+      const { user } = await mergePage();
+      expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+      expect(screen.getByText(/Merge branch/).textContent).toContain('Merge branch feature into main');
+
+      await user.click(screen.getByRole('button', { name: 'Merge feature into main' }));
+      expect(api.gitMergeBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws');
+    });
+
+    it('disables merge when current checkout is detached HEAD with explanation', async () => {
+      status = { ...status, currentBranch: null, isDetached: true };
+      await mergePage();
+      expect(screen.getByText(/Current checkout: Detached HEAD/)).toBeVisible();
+      expect(screen.getByText(/detached HEAD state.*Merging into a detached HEAD is disabled/)).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Merge branch' })).toBeDisabled();
+    });
+
+    it('displays conflicted merge state and confirms abort with conflict details', async () => {
+      api.gitGetOperationState.mockResolvedValue({
+        success: true,
+        isRepo: true,
+        inProgress: true,
+        mode: 'merge',
+        conflicts: ['src/index.ts', 'package.json'],
+        message: 'Merge has 2 conflicts',
+      });
+
+      const { user } = await mergePage();
+      expect(await screen.findByText('Merge has 2 conflicts')).toBeVisible();
+      expect(screen.getByText('src/index.ts')).toBeVisible();
+      expect(screen.getByText('package.json')).toBeVisible();
+
+      // Click Abort
+      await user.click(screen.getByRole('button', { name: 'Abort Merge' }));
+      const alert = await screen.findByRole('alertdialog');
+      expect(within(alert).getByText('Abort merge?')).toBeVisible();
+      expect(within(alert).getByText(/Unresolved conflicts in 2 files/)).toBeVisible();
+      expect(within(alert).getByText('src/index.ts')).toBeVisible();
+      expect(within(alert).getByText('package.json')).toBeVisible();
+
+      // Cancel leaves merge in progress
+      await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
+      expect(api.gitAbortOperation).not.toHaveBeenCalled();
+
+      // Reopen and confirm
+      await user.click(screen.getByRole('button', { name: 'Abort Merge' }));
+      const reopen = await screen.findByRole('alertdialog');
+      await user.click(within(reopen).getByRole('button', { name: 'Abort merge' }));
+      expect(api.gitAbortOperation).toHaveBeenCalledWith('/repo', 'ws');
+    });
+
+    it('displays rebase in progress mode and aborts rebase cleanly', async () => {
+      api.gitGetOperationState.mockResolvedValue({
+        success: true,
+        isRepo: true,
+        inProgress: true,
+        mode: 'rebase',
+        conflicts: [],
+        message: 'Rebase in progress',
+      });
+
+      const { user } = await mergePage();
+      expect(await screen.findByText('Rebase in progress')).toBeVisible();
+
+      await user.click(screen.getByRole('button', { name: 'Abort Rebase' }));
+      const alert = await screen.findByRole('alertdialog');
+      expect(within(alert).getByText('Abort rebase?')).toBeVisible();
+      await user.click(within(alert).getByRole('button', { name: 'Abort rebase' }));
+      expect(api.gitAbortOperation).toHaveBeenCalledWith('/repo', 'ws');
+    });
+
+    it('does not offer abort when operation state discovery fails', async () => {
+      api.gitGetOperationState.mockResolvedValue({
+        success: false,
+        isRepo: false,
+        inProgress: false,
+        mode: 'none',
+        conflicts: [],
+        message: 'Failed to inspect merge state',
+      });
+
+      await mergePage();
+      expect(await screen.findByText('Failed to inspect merge state')).toBeVisible();
+      expect(screen.queryByRole('button', { name: /Abort/ })).toBeNull();
+    });
+
+    it.each(['workspace', 'checkout', 'environment'])('discards a pending merge result after a %s change', async (change) => {
+      let finish!: (value: unknown) => void;
+      api.gitMergeBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      const { user } = await mergePage();
+      await user.click(screen.getByRole('button', { name: 'Merge feature into main' }));
+
+      const before = api.gitGetBranchState.mock.calls.length;
+      act(() => {
+        useWorkspaceStore.setState((state) =>
+          change === 'workspace'
+            ? { activeWorkspaceId: null }
+            : {
+                workspaces: state.workspaces.map((entry) =>
+                  change === 'environment'
+                    ? { ...entry, environmentId: 'ssh-other' }
+                    : { ...entry, fileSurfaceContextId: 'unregistered' }
+                ),
+              }
+        );
+      });
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await act(async () => finish({ success: true }));
+      expect(api.gitGetBranchState).toHaveBeenCalledTimes(before);
+    });
   });
 });

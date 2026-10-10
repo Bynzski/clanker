@@ -575,11 +575,11 @@ describe('GitButton', () => {
   // Menu Sections
   // =========================================================================
   describe('menu sections', () => {
-    it('renders all existing git sections in the transitional destination', async () => {
+    it('renders only history/diff in the transitional destination, while stashes, remotes, and merge have migrated', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]); await openTools();
       expect(screen.queryByTestId('git-branches-section')).toBeNull();
-      expect(screen.getByTestId('git-stash-section')).toBeTruthy();
-      expect(screen.getByTestId('git-merge-section')).toBeTruthy();
+      expect(screen.queryByTestId('git-stash-section')).toBeNull();
+      expect(screen.queryByTestId('git-merge-section')).toBeNull();
       expect(screen.getByTestId('git-history-section')).toBeTruthy();
     });
 

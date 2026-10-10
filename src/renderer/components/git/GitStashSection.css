@@ -64,9 +64,37 @@
   white-space: nowrap;
 }
 
-.git-stash-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.git-stash-hash {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   flex: none;
 }
+
+.source-control-stashes .git-stash-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.source-control-stashes .git-stash-item {
+  flex-wrap: wrap;
+  padding-block: 6px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.source-control-stashes .git-stash-item:last-child {
+  border-bottom: none;
+}
+
+.source-control-stashes .git-stash-meta {
+  flex: 1;
+  min-width: 200px;
+  flex-wrap: wrap;
+}
+
+.source-control-stashes .git-stash-message {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+

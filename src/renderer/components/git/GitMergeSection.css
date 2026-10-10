@@ -56,3 +56,22 @@
   flex: 1;
   min-width: 0;
 }
+
+.git-merge-direction {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.git-merge-direction strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.git-merge-warning {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+

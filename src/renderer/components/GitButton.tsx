@@ -7,11 +7,15 @@ import { sameWorkspacePath } from '../lib/pathUtils';
 import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import CommitDialog from './CommitDialog';
+import { GitAbortOperationDialog } from './git/GitAbortOperationDialog';
+import { GitClearStashesDialog } from './git/GitClearStashesDialog';
 import { GitDeleteBranchDialog } from './git/GitDeleteBranchDialog';
+import { GitDropStashDialog } from './git/GitDropStashDialog';
 import { GitInitMenu } from './git/GitInitMenu';
 import { GitRepoMenu } from './git/GitRepoMenu';
 import { getStatusErrorMessage, getUpstreamLabel } from './git/gitButtonViewModels';
 import { useGitBranchActions } from './git/useGitBranchActions';
+import { useGitMergeActions } from './git/useGitMergeActions';
 import { useGitRemoteActions } from './git/useGitRemoteActions';
 import { useGitStashActions } from './git/useGitStashActions';
 import type {
@@ -69,8 +73,6 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [operationState, setOperationState] = useState<GitOperationState | null>(null);
   const [isLoadingOperation, setIsLoadingOperation] = useState(false);
-  const [mergeError, setMergeError] = useState<string | null>(null);
-  const [mergeTargetBranch, setMergeTargetBranch] = useState('');
   const [stashes, setStashes] = useState<GitStash[]>([]);
   const [isLoadingStashes, setIsLoadingStashes] = useState(false);
   const [history, setHistory] = useState<GitHistoryEntry[]>([]);
@@ -253,18 +255,46 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   });
 
   const {
+    clearDialog,
+    closeClearDialog,
+    closeDropDialog,
+    dropDialog,
     handleApplyStash,
     handleClearStashes,
     handleDropStash,
     handlePopStash,
     handleStash,
     includeUntracked,
+    performClearStashes,
+    performDropStash,
     setIncludeUntracked,
     setStashError,
     setStashMessage,
     stashError,
     stashMessage,
   } = useGitStashActions({
+    isCurrent,
+    activeAction,
+    onSetActiveAction: setActiveAction,
+    refreshAfterAction,
+    stashes,
+    workspacePath,
+    workspaceId,
+  });
+
+  const {
+    abortDialog,
+    closeAbortDialog,
+    handleMergeBranch,
+    handleRequestAbort,
+    mergeError,
+    mergeTargetBranch,
+    performAbortOperation,
+    setMergeError,
+    setMergeTargetBranch,
+  } = useGitMergeActions({
+    isCurrent,
+    activeAction,
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
     workspacePath,
@@ -342,7 +372,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
           inProgress: false,
           mode: 'none',
           conflicts: [],
-          message: opState.error || 'Unable to load merge state',
+          message: opState.message || opState.error || 'Unable to load merge state',
           error: opState.error,
         });
       }
@@ -392,7 +422,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setIsLoadingDiff(false);
       }
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError, isCurrent]);
+  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
@@ -587,49 +617,6 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     setIsMenuOpen((value) => !value);
   };
 
-  const handleMergeBranch = async () => {
-    if (!isCurrent()) return;
-    if (!mergeTargetBranch) {
-      setMergeError('Select a branch to merge');
-      return;
-    }
-
-    setActiveAction(`merge:${mergeTargetBranch}`);
-    setMergeError(null);
-
-    try {
-      const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch, workspaceId);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setMergeError(result.error || 'Failed to merge branch');
-      }
-    } catch (error: unknown) {
-      setMergeError(error instanceof Error ? error.message : 'Failed to merge branch');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleAbortOperation = async () => {
-    if (!isCurrent()) return;
-    setActiveAction('abort-operation');
-    setMergeError(null);
-
-    try {
-      const result = await window.electronAPI.gitAbortOperation(workspacePath, workspaceId);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setMergeError(result.error || 'Failed to abort operation');
-      }
-    } catch (error: unknown) {
-      setMergeError(error instanceof Error ? error.message : 'Failed to abort operation');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
   const handleSelectWorkingDiff = async (mode: DiffMode) => {
     await loadDiff(mode, mode === 'commit' ? selectedDiffRef ?? history[0]?.hash : undefined);
   };
@@ -639,6 +626,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   };
 
   const isBusy = activeAction !== null || remoteAction !== null;
+  const stashConfirmationOpen = dropDialog !== null || clearDialog;
+  const mergeConfirmationOpen = abortDialog !== null;
   const selectedCommit = selectedDiffMode === 'commit'
     ? history.find((entry) => entry.hash === selectedDiffRef) ?? null
     : null;
@@ -647,6 +636,11 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       (activeAction === `delete:${deleteDialog.branch}` ||
         activeAction === `force-delete:${deleteDialog.branch}`)
   );
+  const dropDialogBusy = Boolean(
+    dropDialog && activeAction === `drop:${dropDialog.ref}`
+  );
+  const clearDialogBusy = activeAction === 'clear-stashes';
+  const abortDialogBusy = activeAction === 'abort-operation';
 
   return (
     <>
@@ -674,6 +668,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             scope={scope}
             statusKnown={statusKnown}
             branchConfirmationOpen={deleteDialog !== null}
+            stashConfirmationOpen={stashConfirmationOpen}
+            mergeConfirmationOpen={mergeConfirmationOpen}
             isScopeCurrent={isCurrent}
             onWorktreesChanged={() => { if (isCurrent()) void Promise.all([refreshMenuDataRef.current(false), window.electronAPI.gitRefresh(workspaceId)]).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             activeAction={activeAction}
@@ -703,15 +699,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             mergeError={mergeError}
             mergeTargetBranch={mergeTargetBranch}
             newBranchName={newBranchName}
-            onAbortOperation={() => void handleAbortOperation()}
+            onAbortOperation={() => { if (isCurrent()) handleRequestAbort(operationState?.mode === 'rebase' ? 'rebase' : 'merge', operationState?.conflicts ?? []); }}
             onApplyStash={(stashRef) => { if (isCurrent()) void handleApplyStash(stashRef); }}
-            onClearStashes={() => { if (isCurrent()) void handleClearStashes(); }}
+            onClearStashes={() => { if (isCurrent()) handleClearStashes(); }}
             onRestoreFocus={() => trigger.current?.focus()}
             onCreateBranch={(event) => { if (isCurrent()) void handleCreateBranch(event); }}
             onDeleteBranch={(branchName) => { if (isCurrent()) handleDeleteBranch(branchName); }}
-            onDropStash={(stashRef) => { if (isCurrent()) void handleDropStash(stashRef); }}
+            onDropStash={(stash) => { if (isCurrent()) handleDropStash(stash); }}
             onFetch={() => { if (isCurrent()) void handleFetch(); }}
-            onMergeBranch={() => void handleMergeBranch()}
+            onMergeBranch={() => { if (isCurrent()) void handleMergeBranch(); }}
             onOpenCommitDialog={() => void handleOpenCommitDialog()}
             onPopStash={(stashRef) => { if (isCurrent()) void handlePopStash(stashRef); }}
             onPublish={() => { if (isCurrent()) void handlePublish(); }}
@@ -776,6 +772,37 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
           isBusy={deleteDialogBusy}
           onCancel={closeDeleteDialog}
           onConfirmDelete={(forceDelete) => { if (isCurrent()) void performDeleteBranch(forceDelete); }}
+        />
+      )}
+
+      {dropDialog && (
+        <GitDropStashDialog
+          stash={dropDialog}
+          workspaceId={workspaceId}
+          isBusy={dropDialogBusy}
+          onCancel={closeDropDialog}
+          onConfirmDrop={() => { if (isCurrent()) void performDropStash(); }}
+        />
+      )}
+
+      {clearDialog && (
+        <GitClearStashesDialog
+          stashCount={stashes.length}
+          workspaceId={workspaceId}
+          isBusy={clearDialogBusy}
+          onCancel={closeClearDialog}
+          onConfirmClear={() => { if (isCurrent()) void performClearStashes(); }}
+        />
+      )}
+
+      {abortDialog && (
+        <GitAbortOperationDialog
+          mode={abortDialog.mode}
+          conflicts={abortDialog.conflicts}
+          workspaceId={workspaceId}
+          isBusy={abortDialogBusy}
+          onCancel={closeAbortDialog}
+          onConfirmAbort={() => { if (isCurrent()) void performAbortOperation(); }}
         />
       )}
     </>

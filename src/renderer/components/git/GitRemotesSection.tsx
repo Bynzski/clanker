@@ -11,6 +11,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { Plus, Trash2, Edit2, X, Loader2, Check, AlertCircle } from 'lucide-react';
 import type { VcsProvider } from '../../../shared/types/vcs';
+import { GitRemoveRemoteDialog } from './GitRemoveRemoteDialog';
 import './GitRemotesSection.css';
 
 export interface GitRemoteEntry {
@@ -19,13 +20,16 @@ export interface GitRemoteEntry {
   pushUrl: string;
 }
 
-interface GitRemotesSectionProps {
+export interface GitRemotesSectionProps {
   workspacePath: string;
   workspaceId?: string;
   remotes: GitRemoteEntry[];
   provider: VcsProvider;
   onRemotesChanged: () => void;
   onError: (error: string | null) => void;
+  isScopeCurrent?: () => boolean;
+  onBusyChange?: (busy: boolean) => void;
+  management?: boolean;
 }
 
 type RemoteMode = 'list' | 'add' | 'edit';
@@ -102,7 +106,7 @@ function RemoteList({
   remotes: GitRemoteEntry[];
   onAdd: () => void;
   onEdit: (remote: GitRemoteEntry) => void;
-  onRemove: (name: string) => void;
+  onRemove: (remote: GitRemoteEntry) => void;
 }) {
   return (
     <div className="git-remotes-list">
@@ -120,7 +124,9 @@ function RemoteList({
             <div className="git-remote-info">
               <span className="git-remote-name">{remote.name}</span>
               <span className="git-remote-url" title={remote.fetchUrl}>
-                {remote.fetchUrl}
+                {remote.pushUrl && remote.pushUrl !== remote.fetchUrl
+                  ? `Fetch: ${remote.fetchUrl} · Push: ${remote.pushUrl}`
+                  : remote.fetchUrl}
               </span>
             </div>
             <div className="git-remote-actions">
@@ -130,7 +136,7 @@ function RemoteList({
               <IconButton size="xs" aria-label="Remove remote" variant="ghost"
                 type="button"
                 className="git-remote-action-btn git-remote-action-btn-danger"
-                onClick={() => onRemove(remote.name)}
+                onClick={() => onRemove(remote)}
                 title="Remove remote"
               >
                 <Trash2 size={12} />
@@ -150,9 +156,14 @@ export default function GitRemotesSection({
   provider,
   onRemotesChanged,
   onError,
+  isScopeCurrent = () => true,
+  onBusyChange,
+  management = false,
 }: GitRemotesSectionProps) {
   const [mode, setMode] = useState<RemoteMode>('list');
   const [editingRemote, setEditingRemote] = useState<string | null>(null);
+  const [removeDialog, setRemoveDialog] = useState<GitRemoteEntry | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [form, setForm] = useState<RemoteFormState>({
     name: '',
     url: '',
@@ -160,6 +171,19 @@ export default function GitRemotesSection({
     error: null,
   });
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    onBusyChange?.(form.isSubmitting || isRemoving || removeDialog !== null);
+  }, [form.isSubmitting, isRemoving, removeDialog, onBusyChange]);
+
+  // If remotes change while editing and the edited remote is gone, reset
+  useEffect(() => {
+    if (mode === 'edit' && editingRemote && !remotes.some((r) => r.name === editingRemote)) {
+      setForm({ name: '', url: '', isSubmitting: false, error: null });
+      setEditingRemote(null);
+      setMode('list');
+    }
+  }, [remotes, mode, editingRemote]);
 
   // Focus input when switching to add/edit mode
   useEffect(() => {
@@ -182,6 +206,7 @@ export default function GitRemotesSection({
       return;
     }
 
+    if (!isScopeCurrent()) return;
     setForm((prev) => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
@@ -191,6 +216,8 @@ export default function GitRemotesSection({
         form.url.trim(),
         workspaceId
       );
+
+      if (!isScopeCurrent()) return;
 
       if (result.success) {
         resetForm();
@@ -204,36 +231,47 @@ export default function GitRemotesSection({
         }));
       }
     } catch (err) {
-      setForm((prev) => ({
-        ...prev,
-        isSubmitting: false,
-        error: err instanceof Error ? err.message : 'Failed to add remote',
-      }));
+      if (isScopeCurrent()) {
+        setForm((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          error: err instanceof Error ? err.message : 'Failed to add remote',
+        }));
+      }
     }
-  }, [form.name, form.url, workspacePath, workspaceId, resetForm, onRemotesChanged, onError]);
+  }, [form.name, form.url, workspacePath, workspaceId, resetForm, onRemotesChanged, onError, isScopeCurrent]);
 
   // Handle removing a remote
-  const handleRemoveRemote = useCallback(
-    async (name: string) => {
-      if (!confirm(`Are you sure you want to remove the remote '${name}'?`)) {
-        return;
+  const handleStartRemove = useCallback((remote: GitRemoteEntry) => {
+    if (!isScopeCurrent()) return;
+    onError(null);
+    setRemoveDialog(remote);
+  }, [isScopeCurrent, onError]);
+
+  const handleConfirmRemoveRemote = useCallback(async () => {
+    if (!removeDialog || isRemoving) return;
+    if (!isScopeCurrent()) return;
+
+    setIsRemoving(true);
+    try {
+      const result = await window.electronAPI.gitRemoveRemote(workspacePath, removeDialog.name, workspaceId);
+      if (!isScopeCurrent()) return;
+
+      if (result.success) {
+        setRemoveDialog(null);
+        onRemotesChanged();
+        onError(null);
+      } else {
+        onError(result.error || 'Failed to remove remote');
       }
-
-      try {
-        const result = await window.electronAPI.gitRemoveRemote(workspacePath, name, workspaceId);
-
-        if (result.success) {
-          onRemotesChanged();
-          onError(null);
-        } else {
-          onError(result.error || 'Failed to remove remote');
-        }
-      } catch (err) {
+    } catch (err) {
+      if (isScopeCurrent()) {
         onError(err instanceof Error ? err.message : 'Failed to remove remote');
       }
-    },
-    [workspacePath, workspaceId, onRemotesChanged, onError]
-  );
+    } finally {
+      setIsRemoving(false);
+    }
+  }, [removeDialog, isRemoving, workspacePath, workspaceId, onRemotesChanged, onError, isScopeCurrent]);
 
   // Handle renaming a remote
   const handleRenameRemote = useCallback(async () => {
@@ -247,6 +285,7 @@ export default function GitRemotesSection({
       return;
     }
 
+    if (!isScopeCurrent()) return;
     setForm((prev) => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
@@ -256,6 +295,8 @@ export default function GitRemotesSection({
         form.name.trim(),
         workspaceId
       );
+
+      if (!isScopeCurrent()) return;
 
       if (result.success) {
         resetForm();
@@ -269,13 +310,15 @@ export default function GitRemotesSection({
         }));
       }
     } catch (err) {
-      setForm((prev) => ({
-        ...prev,
-        isSubmitting: false,
-        error: err instanceof Error ? err.message : 'Failed to rename remote',
-      }));
+      if (isScopeCurrent()) {
+        setForm((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          error: err instanceof Error ? err.message : 'Failed to rename remote',
+        }));
+      }
     }
-  }, [editingRemote, form.name, workspacePath, workspaceId, resetForm, onRemotesChanged, onError]);
+  }, [editingRemote, form.name, workspacePath, workspaceId, resetForm, onRemotesChanged, onError, isScopeCurrent]);
 
   // Start editing a remote
   const startEditing = useCallback(
@@ -335,7 +378,7 @@ export default function GitRemotesSection({
   const formErrorMessage = form.error || validationError;
 
   return (
-    <div className="git-menu-section git-remotes-section">
+    <div className={`git-menu-section git-remotes-section${management ? ' source-control-remotes' : ''}`}>
       <div className="git-menu-section-header git-remotes-header">
         <div className="git-remotes-title">
           <span>Remotes</span>
@@ -368,7 +411,17 @@ export default function GitRemotesSection({
           remotes={remotes}
           onAdd={() => setMode('add')}
           onEdit={startEditing}
-          onRemove={(name) => void handleRemoveRemote(name)}
+          onRemove={handleStartRemove}
+        />
+      )}
+
+      {removeDialog && (
+        <GitRemoveRemoteDialog
+          remote={removeDialog}
+          isBusy={isRemoving}
+          onCancel={() => { if (!isRemoving) setRemoveDialog(null); }}
+          onConfirmRemove={() => void handleConfirmRemoveRemote()}
+          workspaceId={workspaceId}
         />
       )}
 

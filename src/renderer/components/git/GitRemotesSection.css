@@ -181,3 +181,25 @@
 
 /* The empty state is a hint, not a list. */
 .git-menu .git-remotes-list:has(> .git-remotes-empty) { border: none; max-height: none; }
+
+.source-control-remotes .git-remotes-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.source-control-remotes .git-remote-item {
+  flex-wrap: wrap;
+  padding-block: 6px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.source-control-remotes .git-remote-item:last-child {
+  border-bottom: none;
+}
+
+.source-control-remotes .git-remote-url {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+

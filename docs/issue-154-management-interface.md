@@ -1,4 +1,91 @@
-# Issue #154 — Inventory and Phase 0–3B decisions
+# Issue #154 — Inventory and Phase 0–3C decisions
+
+## Phase 3C — permanent Stashes, Remotes, and Merge
+
+Starts from reviewed `22c184d87edd52f50a82e30688d3e3ede87fac58` on
+`feat/154-management-settings`. No Phase 3D/4, PR, merge or unrelated Browser work.
+
+### Navigation and ownership
+
+Source Control navigation now provides:
+- **Repository**: Overview, Branches, Worktrees
+- **Operations**: Stashes, Remotes, Merge
+- **Advanced — Transitional**: Existing Git Tools (strictly History and Diff)
+
+`GitButton` remains the sole canonical Git controller: polling, branch/stash/remote/merge
+state, action hooks, busy state and scoped VCS metadata are owned there. `GitRepoMenu`
+owns page selection and section composition. Navigation across all permanent destinations
+is non-mutating, adds no duplicate polling or state caches, and uses the shell's content
+scroll. Migrated sections are not duplicated inside Existing Git Tools.
+
+### Stashes page and identity safeguards
+
+- The permanent Stashes page preserves stash creation (with optional message and untracked
+  toggle), listing of saved stashes, Apply, Pop, Drop, and Clear All.
+- Action distinctions are clear: Apply restores changes while preserving the stash; Pop
+  applies changes and only removes the stash if Git applies cleanly without conflict; Drop
+  permanently deletes one stash entry; Clear All deletes the repository's stash collection.
+  The UI does not imply that Pop always deletes if conflicts occur, and never reports success
+  until Git confirms it.
+- Replaced JavaScript `window.confirm()` with dedicated `GitDropStashDialog` and
+  `GitClearStashesDialog` built on Clanker's shared `AlertDialog` primitive. Confirmations
+  identify exact stash reference, commit hash, and message; Cancel leaves stashes intact;
+  Escape is guarded while busy; Browser overlay leases are held continuously.
+- **Stash reference identity guard**: Positional Git references (e.g. `stash@{0}`) can shift
+  if background stashes are created or dropped. Before executing drop, the controller
+  re-verifies the stash reference against authoritative `gitGetStashes` to confirm the commit
+  hash still matches. If the reference shifted, the operation fails closed with an explicit
+  error without silently dropping the wrong stash or retargeting.
+
+### Remotes page and lifecycle
+
+- The permanent Remotes page preserves remote listing, names, fetch URLs, distinct push
+  URLs, add remote (with suggestions and format validation), rename, and remove.
+- Long HTTPS and SSH URLs wrap without horizontal overflow (`overflow-wrap: anywhere; word-break: break-all`).
+- Replaced JavaScript `confirm()` with `GitRemoveRemoteDialog` (`AlertDialog`), displaying
+  exact remote name, fetch URL, push URL, and local repository consequence warning.
+- Scope guards (`isScopeCurrent`) protect add, rename, and remove operations: stale responses
+  are discarded after scope changes; form drafts reset if the targeted remote is dropped
+  or reloaded; and `onBusyChange` coordinates with the management shell to disable navigation
+  during submissions or open dialogs.
+
+### Merge page and abort safety
+
+- The permanent Merge page shows current checkout identity, available merge targets,
+  merge-in-progress state, conflict details, rebase/merge operation status, and abort.
+- Merge direction is unambiguous: explicitly displays `Merge branch <target> into <current>`
+  and configures action labels accordingly.
+- Detached HEAD disables merge with a clear explanation to prevent unreferenced commits.
+- Accurately distinguishes clean state, in-progress merge, in-progress rebase, conflicted
+  files, and failed or unknown operation state discovery. If operation state discovery
+  fails, abort is never offered based on guessed state.
+- Aborting an in-progress merge or rebase discards unresolved conflict work. Replaced inline
+  abort with `GitAbortOperationDialog` (`AlertDialog`), detailing mode and conflicted files,
+  requiring explicit confirmation, and cancelling cleanly with zero mutation.
+- Pending merge and abort operations guard continuations with `isCurrent()`: scope changes
+  discard responses without retargeting or false reporting.
+
+### Management lifecycle and verification
+
+All confirmation dialogs (`GitDeleteBranchDialog`, `GitDropStashDialog`, `GitClearStashesDialog`,
+`GitRemoveRemoteDialog`, `GitAbortOperationDialog`, worktree confirmations) use `AlertDialogContent`
+with continuous `BrowserOverlayLease` acquisition, topmost Escape trapping, and default Cancel focus.
+`ManagementShell busy={busy}` locks navigation during active operations and open confirmations.
+
+- Validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,749 tests passed**;
+  branding check, lint, typecheck, Fallow dead-code check, security check, and build all clean.
+- Focused Git/VCS/Source Control regressions: **34 files / 749 tests passed**.
+- Source Control Electron smoke: passed across Dark, Light, Slate at 1100×760 and 640×480 with
+  Overview, Branches, Worktrees, Stashes, Remotes, Merge, and Existing Git Tools, verifying
+  cancel-only confirmations, real CommitDialog handoff, Browser suppression/restoration, and focus.
+- Unchanged Settings Electron smoke and full renderer Browser smoke passed.
+- Separate native multi-Browser runner continues to exit SIGSEGV independently.
+
+### Remaining Phase 3D and Phase 4 work
+
+- **Phase 3D**: Redesign History and Diff into permanent Source Control page(s), retire
+  the transitional Existing Git Tools destination.
+- **Phase 4**: Final design polish, shortcut verification, cleanup, and documentation.
 
 ## Phase 3B — permanent Branches and Worktrees
 
