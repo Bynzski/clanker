@@ -2,19 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Check, Loader2, Sparkles, Eye } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { AiCommitSettings } from '../types/shared';
-import DiffViewer from './DiffViewer';
-import type { DiffViewerState } from './git/diffTypes';
-import { initialDiffViewerState } from './git/diffTypes';
+import { FileDiffReview } from './git/FileDiffReview';
+import { useFileDiffReview } from './git/useFileDiffReview';
+import { changedFileCount, gitStatusBadge } from './git/gitChangePresentation';
 import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { Textarea } from './ui/Textarea';
 import './CommitDialog.css';
-interface GitStatus {
-  path: string;
-  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
-  staged: boolean;
-}
+import type { GitStatus } from './git/types';
 
 interface CommitDialogProps {
   isOpen: boolean;
@@ -26,6 +22,9 @@ interface CommitDialogProps {
   changes: GitStatus[];
   workspacePath: string;
   workspaceId?: string;
+  isScopeCurrent?: () => boolean;
+  reviewRevision?: number;
+  onRestoreFocus?: () => void;
 }
 
 export default function CommitDialog({
@@ -38,6 +37,9 @@ export default function CommitDialog({
   changes,
   workspacePath,
   workspaceId,
+  isScopeCurrent,
+  reviewRevision = 0,
+  onRestoreFocus,
 }: CommitDialogProps) {
   const [message, setMessage] = useState('');
   const [aiSettings, setAiSettings] = useState<AiCommitSettings | null>(null);
@@ -57,7 +59,10 @@ export default function CommitDialog({
   const changesIdentityRef = useRef(changesIdentity);
   changesIdentityRef.current = changesIdentity;
   const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
-  const [diffState, setDiffState] = useState<DiffViewerState>(initialDiffViewerState);
+  const operationLock = useRef(false);
+  const actionGeneration = useRef(0);
+  const { diffState, viewDiff: handleViewFileDiff, closeDiff: handleCloseDiff } = useFileDiffReview(
+    workspacePath, workspaceId, isOpen, `${changesIdentity}:${reviewRevision}`, isScopeCurrent);
   // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -69,8 +74,11 @@ export default function CommitDialog({
       setCommitStatus(null);
       setUnstagingPaths(new Set());
     }
+    operationLock.current = false;
+    actionGeneration.current++;
     generationRef.current += 1;
-    return () => { generationRef.current += 1; };
+    const lifetime = actionGeneration;
+    return () => { generationRef.current += 1; lifetime.current++; };
   }, [isOpen, workspaceId, workspacePath]);
 
   useEffect(() => {
@@ -102,26 +110,35 @@ export default function CommitDialog({
   }, [isOpen]);
 
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent, stageAll = false) => {
     e.preventDefault();
-
+    if (operationLock.current || isScopeCurrent?.() === false) return;
+    if (!hasChanges || (!stageAll && !hasStagedChanges)) {
+      setError('Stage changes before committing.');
+      return;
+    }
     if (!message.trim()) {
       setError('Please enter a commit message');
       return;
     }
 
+    operationLock.current = true;
+    const generation = actionGeneration.current;
+    const fresh = () => generation === actionGeneration.current && isScopeCurrent?.() !== false;
     setIsCommitting(true);
     setError(null);
-    setCommitStatus(hasUnstagedChanges ? 'Staging changes…' : 'Running git hooks…');
+    setCommitStatus(stageAll ? 'Staging changes…' : 'Running git hooks…');
 
     try {
-      if (hasUnstagedChanges) {
+      if (stageAll) {
         const staged = await onStageAll();
+        if (!fresh()) return;
         if (staged && !staged.success) throw new Error(staged.error || 'Failed to stage changes');
         setCommitStatus('Running git hooks…');
       }
 
       const result = await onCommit(message);
+      if (!fresh()) return;
       if (result.success) {
         setMessage('');
         onClose();
@@ -129,10 +146,13 @@ export default function CommitDialog({
         setError(result.error || 'Failed to create commit');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      if (fresh()) setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
-      setIsCommitting(false);
-      setCommitStatus(null);
+      if (fresh()) {
+        operationLock.current = false;
+        setIsCommitting(false);
+        setCommitStatus(null);
+      }
     }
   };
 
@@ -169,117 +189,62 @@ export default function CommitDialog({
     }
   };
 
-  const getStatusBadge = (status: GitStatus['status']) => {
-    const badges: Record<string, string> = {
-      modified: 'M',
-      added: 'A',
-      deleted: 'D',
-      untracked: '??',
-      renamed: 'R',
-    };
-    return badges[status] || '?';
-  };
-
   const handleUnstageFile = useCallback(
     async (path: string) => {
-      if (isUnstaging || isCommitting) return;
+      if (operationLock.current || isScopeCurrent?.() === false) return;
+      operationLock.current = true;
+      setIsUnstaging(true);
 
       setUnstagingPaths((prev) => new Set(prev).add(path));
+      const generation = actionGeneration.current;
+      const fresh = () => generation === actionGeneration.current && isScopeCurrent?.() !== false;
 
       try {
         const result = await onUnstage(path);
+        if (!fresh()) return;
         if (!result.success) {
           setError(result.error || 'Failed to unstage file');
         }
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Failed to unstage file');
+        if (fresh()) setError(err instanceof Error ? err.message : 'Failed to unstage file');
       } finally {
-        setUnstagingPaths((prev) => {
-          const next = new Set(prev);
-          next.delete(path);
-          return next;
-        });
-      }
-    },
-    [isUnstaging, isCommitting, onUnstage]
-  );
-
-  const handleUnstageAll = useCallback(async () => {
-    if (isUnstaging || isCommitting) return;
-
-    setIsUnstaging(true);
-    setError(null);
-
-    try {
-      const result = await onUnstageAll();
-      if (!result.success) {
-        setError(result.error || 'Failed to unstage files');
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to unstage files');
-    } finally {
-      setIsUnstaging(false);
-    }
-  }, [isUnstaging, isCommitting, onUnstageAll]);
-
-  const handleViewFileDiff = useCallback(
-    async (filePath: string, mode: 'working' | 'staged') => {
-      if (!workspacePath) return;
-
-      setDiffState({
-        ...initialDiffViewerState,
-        isOpen: true,
-        filePath,
-        isLoading: true,
-      });
-
-      try {
-        const result = await window.electronAPI.gitGetFileDiff(
-          workspacePath,
-          filePath,
-          mode,
-          workspaceId
-        );
-
-        if (result.success) {
-          setDiffState({
-            ...initialDiffViewerState,
-            isOpen: true,
-            filePath,
-            oldContent: result.oldContent,
-            newContent: result.newContent,
-            oldPath: result.oldPath,
-            newPath: result.newPath,
-            isBinary: result.isBinary,
-            hasDiff: result.hasDiff,
-            isLoading: false,
-            error: null,
-          });
-        } else {
-          setDiffState({
-            ...initialDiffViewerState,
-            isOpen: true,
-            filePath,
-            isLoading: false,
-            error: result.error || 'Failed to load diff',
+        if (fresh()) {
+          operationLock.current = false;
+          setIsUnstaging(false);
+          setUnstagingPaths((prev) => {
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
           });
         }
-      } catch {
-        setDiffState({
-          ...initialDiffViewerState,
-          isOpen: true,
-          filePath,
-          isLoading: false,
-          error: 'Failed to load diff',
-        });
       }
     },
-    [workspacePath, workspaceId]
+    [isScopeCurrent, onUnstage]
   );
 
-  const handleCloseDiff = useCallback(() => {
-    setDiffState(initialDiffViewerState);
-  }, []);
+  const handleStageChange = useCallback(async (stage: boolean) => {
+    if (operationLock.current || isScopeCurrent?.() === false) return;
+    operationLock.current = true;
+    setIsUnstaging(true);
+    setError(null);
+    const generation = actionGeneration.current;
+    const fresh = () => generation === actionGeneration.current && isScopeCurrent?.() !== false;
+
+    try {
+      const result = await (stage ? onStageAll() : onUnstageAll());
+      if (!fresh()) return;
+      if (result && !result.success) {
+        setError(result.error || 'Failed to update staging');
+      }
+    } catch (err: unknown) {
+      if (fresh()) setError(err instanceof Error ? err.message : 'Failed to update staging');
+    } finally {
+      if (fresh()) {
+        operationLock.current = false;
+        setIsUnstaging(false);
+      }
+    }
+  }, [isScopeCurrent, onStageAll, onUnstageAll]);
 
   if (!isOpen) return null;
 
@@ -291,12 +256,15 @@ export default function CommitDialog({
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isBusy) onClose(); }}>
       <DialogContent
         className="commit-dialog"
         overlayClassName="commit-dialog-overlay"
         workspaceId={workspaceId}
         aria-describedby={undefined}
+        onCloseAutoFocus={onRestoreFocus ? (event) => { event.preventDefault(); onRestoreFocus(); } : undefined}
+        onEscapeKeyDown={(event) => { if (isBusy) event.preventDefault(); }}
+        onInteractOutside={(event) => { if (isBusy) event.preventDefault(); }}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
@@ -307,13 +275,13 @@ export default function CommitDialog({
             <h2 className="clanker-dialog-title">Create Commit</h2>
           </DialogTitle>
           <DialogClose asChild>
-            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close" title="Close">
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close" title="Close" disabled={isBusy}>
               <X size={14} />
             </IconButton>
           </DialogClose>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(event) => void handleSubmit(event)}>
           <div className="commit-dialog-body clanker-dialog-body">
             {error && <div className="commit-error">{error}</div>}
 
@@ -358,7 +326,7 @@ export default function CommitDialog({
               <div className="commit-files-header">
                 <span className="commit-files-title">
                   {hasChanges
-                    ? `${changes.length} file${changes.length !== 1 ? 's' : ''} changed`
+                    ? `${changedFileCount(changes)} file${changedFileCount(changes) !== 1 ? 's' : ''} changed`
                     : 'No changes'}
                 </span>
                 <div className="commit-files-header-actions">
@@ -368,10 +336,10 @@ export default function CommitDialog({
                       variant="secondary"
                       type="button"
                       className="commit-unstage-btn"
-                      onClick={() => void handleUnstageAll()}
+                      onClick={() => void handleStageChange(false)}
                       disabled={isBusy}
                     >
-                      {isUnstaging ? 'Unstaging…' : 'Unstage All'}
+                      {isUnstaging ? 'Updating…' : 'Unstage All'}
                     </Button>
                   )}
                   {hasUnstagedChanges && (
@@ -380,7 +348,7 @@ export default function CommitDialog({
                       variant="secondary"
                       type="button"
                       className="commit-stage-btn"
-                      onClick={onStageAll}
+                      onClick={() => void handleStageChange(true)}
                       disabled={isBusy}
                     >
                       Stage All
@@ -391,10 +359,10 @@ export default function CommitDialog({
 
               {hasChanges ? (
                 <div className="commit-files-list">
-                  {changes.map((change, index) => (
-                    <div key={index} className="commit-file-item">
+                  {changes.map((change) => (
+                    <div key={`${change.staged}:${change.path}`} className="commit-file-item">
                       <span className={`commit-file-status ${change.status}`}>
-                        {getStatusBadge(change.status)}
+                        {gitStatusBadge(change.status)}
                       </span>
                       <span className="commit-file-path" title={change.path}>
                         {change.path}
@@ -404,7 +372,7 @@ export default function CommitDialog({
                         className="commit-file-diff-action"
                         onClick={() => void handleViewFileDiff(change.path, change.staged ? 'staged' : 'working')}
                         disabled={isBusy}
-                        aria-label={`View diff for ${change.path}`}
+                        aria-label={`View ${change.staged ? 'staged' : 'working'} diff for ${change.path}`}
                         title="View diff"
                       >
                         <Eye size={12} />
@@ -453,58 +421,17 @@ export default function CommitDialog({
               >
                 Cancel
               </Button>
-              {hasUnstagedChanges ? (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  type="submit"
-                  disabled={isBusy || !message.trim()}
-                >
-                  {isCommitting ? (
-                    <>
-                      <Loader2 size={15} className="spin" />
-                      Stage & Commit
-                    </>
-                  ) : (
-                    'Stage All & Commit'
-                  )}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  type="submit"
-                  disabled={isBusy || !message.trim()}
-                >
-                  {isCommitting ? (
-                    <>
-                      <Loader2 size={15} className="spin" />
-                      Commit
-                    </>
-                  ) : (
-                    'Commit'
-                  )}
-                </Button>
-              )}
+              {hasUnstagedChanges && <Button size="sm" variant={hasStagedChanges ? 'secondary' : 'primary'}
+                type="button" disabled={isBusy || !message.trim() || !hasChanges}
+                onClick={(event) => void handleSubmit(event, true)}>Stage All & Commit</Button>}
+              <Button size="sm" variant="primary" type="submit"
+                disabled={isBusy || !message.trim() || !hasStagedChanges}>Commit Staged</Button>
             </div>
           </div>
         </form>
       </DialogContent>
     </Dialog>
-    {diffState.isOpen && (
-      <DiffViewer
-        oldContent={diffState.oldContent}
-        newContent={diffState.newContent}
-        oldPath={diffState.oldPath}
-        newPath={diffState.newPath}
-        isBinary={diffState.isBinary}
-        hasDiff={diffState.hasDiff}
-        isLoading={diffState.isLoading}
-        error={diffState.error}
-        workspaceId={workspaceId}
-        onClose={handleCloseDiff}
-      />
-    )}
+    <FileDiffReview state={diffState} workspaceId={workspaceId} onClose={handleCloseDiff} />
     </>
   );
 }

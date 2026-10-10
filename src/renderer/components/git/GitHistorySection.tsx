@@ -67,7 +67,7 @@ export function GitHistorySection({
         <span className="git-menu-count">{history.length}</span>
       </div>
 
-      <div className="git-history-toolbar">
+      {!management && <div className="git-history-toolbar">
         <Button size="xs"
           type="button"
           className={`git-history-toggle ${selectedDiffMode === 'working' ? 'active' : ''}`}
@@ -86,7 +86,7 @@ export function GitHistorySection({
         >
           Staged
         </Button>
-      </div>
+      </div>}
 
       {isLoadingHistory ? (
         <div className="git-menu-empty">Loading history…</div>

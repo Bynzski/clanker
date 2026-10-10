@@ -1,0 +1,7 @@
+.source-control-change-identity { overflow-wrap: anywhere; margin-block: var(--space-sm); }
+.source-control-changes .source-control-actions { flex-wrap: wrap; }
+.source-control-change-help { color: var(--text-secondary); font-size: var(--font-size-sm); margin-block: var(--space-sm); }
+.source-control-changes h3 { font-size: var(--font-size-md); margin-top: var(--space-md); }
+.source-control-file-list { list-style: none; padding: 0; margin: var(--space-sm) 0; }
+.source-control-file-list li { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; border-bottom: 1px solid var(--border-default); padding-block: var(--space-xs); }
+.source-control-file-path { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; height: auto; white-space: normal; overflow-wrap: anywhere; }

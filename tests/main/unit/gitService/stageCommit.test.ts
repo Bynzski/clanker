@@ -399,6 +399,27 @@ describe('commit - happy path with real git', () => {
     expect(logResult.stdout).toContain('Update initial file');
   });
 
+  it('commits only the index of a partially staged path and leaves all working content intact', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'partial.ts': 'HEAD\n', 'other.ts': 'other\n' } });
+    await modifyFile(repo.path, 'partial.ts', 'indexed\n', true);
+    await modifyFile(repo.path, 'partial.ts', 'working\n');
+    await modifyFile(repo.path, 'other.ts', 'unselected\n');
+    expect((await service.commit(repo.path, 'Selected index only')).success).toBe(true);
+    expect((await git(repo.path, ['show', 'HEAD:partial.ts'])).stdout).toBe('indexed\n');
+    expect((await git(repo.path, ['show', 'HEAD:other.ts'])).stdout).toBe('other\n');
+    const status = await service.getStatus(repo.path);
+    expect(status.changes).toEqual(expect.arrayContaining([
+      { path: 'partial.ts', status: 'modified', staged: false },
+      { path: 'other.ts', status: 'modified', staged: false },
+    ]));
+    expect(status.changes.some((entry) => entry.staged)).toBe(false);
+    // Explicit convenience is the existing stage-all followed by the same commit implementation.
+    expect((await service.stage(repo.path)).success).toBe(true);
+    expect((await service.commit(repo.path, 'Explicit all')).success).toBe(true);
+    expect((await git(repo.path, ['show', 'HEAD:partial.ts'])).stdout).toBe('working\n');
+    expect((await git(repo.path, ['show', 'HEAD:other.ts'])).stdout).toBe('unselected\n');
+  });
+
   it('commits newly added file', async () => {
     repo = await createTempGitRepo({
       initialFiles: { 'initial.ts': 'initial' },

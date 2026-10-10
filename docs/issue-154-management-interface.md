@@ -1,4 +1,101 @@
-# Issue #154 — Inventory and Phase 0–3D decisions
+# Issue #154 — Inventory and Phase 0–4A decisions
+
+## Phase 4A — Changes-first review, staging and commit
+
+Starts from reviewed `50b878b0c6542f79ef386707fb852059af559829` on
+`feat/154-management-settings`. Implements approved Option A only; no PR, merge,
+inline diff, isolated-checkout authorization, Settings redesign or release cleanup.
+
+### Workflow and ownership
+
+- The existing ManagementShell initially lands on **Changes**. Repository order:
+  Changes, History, Overview, Branches, Worktrees. Operations remains Stashes,
+  Remotes, Merge. Returning from DiffViewer/Commit preserves the underlying page.
+- `GitChanges.tsx` is presentation: checkout/environment/root/branch, unique file
+  count, staged/unstaged groups, status badges, actual file review, per-file Stage/
+  Unstage, Stage All/Unstage All, commit composer entry and refresh. Errors and
+  loading are explicit; selection alone performs no mutation.
+- `GitButton` retains its one status subscription/poller and authoritative
+  snapshots. All change mutations go through one synchronous pending lock, scope
+  guard and canonical status refresh. No presentation-owned Git execution or
+  optimistic staging. Scope changes reject late mutation results/refreshes.
+- `useFileDiffReview` provides one reusable request lifecycle for Changes and
+  CommitDialog: clear before fetch, monotonic request generation, close/unmount,
+  status revision and workspace/root invalidation, local/SSH workspace identity.
+  `FileDiffReview` reuses the unchanged modal DiffViewer and `gitGetFileDiff`.
+  Binary, new/deleted, loading and failure states retain the backend semantics.
+- Small canonical status correction: porcelain index/working sides both appear
+  for partially staged ordinary and renamed paths. For example MM has staged M
+  and working M entries, while MD has staged M and working D. Shared presentation
+  counts unique paths but never deduplicates the review entries. Renderer Git
+  types now re-export the existing shared IPC types rather than redefining them.
+- **Commit Staged** is primary with indexed changes. It calls the existing commit
+  callback without staging. **Stage All & Commit** is a separately labelled,
+  explicit convenience which checks stage-all success before using that same
+  callback. Only unstaged files require deliberate staging or that convenience;
+  ordinary form submission never auto-stages. Empty commits are disabled.
+  Message validation, local-only AI, hooks and failure/draft recovery remain.
+- Nested dialogs retain the Source Control Browser lease; each modal adds/removes
+  its own lease. Escape dismisses only the top surface, commit operations guard
+  Escape/outside dismissal, and focus returns to the initiating control (the page
+  heading if that control is disabled after committing the last changes). No
+  Browser internals were changed.
+- Overview retains repository identity, sync/provider/PR/CI/operation data and
+  loses obsolete migration copy. Management History now shows commit history and
+  exact-hash summaries only (the reviewed generation/refresh/50-entry protections
+  remain), not the working-file workflow.
+
+### Verification and evidence
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **380 files / 7,812 tests
+  passed**; branding, lint, typecheck, Fallow, security-check (unchanged documented
+  dev-only exception), build and full tests pass.
+- Focused Git/Source Control, CommitDialog/DiffViewer, request lifecycle and main
+  status/staging/commit/file-diff/IPC suite: **25 files / 596 tests passed**.
+  Command: `env PATH=/usr/bin:/bin npm run test --
+  tests/renderer/unit/SourceControl.test.tsx tests/renderer/unit/ChangesWorkflow.test.tsx
+  tests/renderer/unit/CommitDialog.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/DiffViewer.test.tsx tests/renderer/unit/git/
+  tests/main/unit/gitService/getStatus.test.ts tests/main/unit/gitService/stageCommit.test.ts
+  tests/main/unit/gitService/fileDiff.test.ts tests/main/unit/gitIpc.test.ts`.
+  Coverage includes partial-file index/working separation, real staged-only
+  commits, explicit stage-all failure, duplicate/pending actions, error recovery,
+  pending file switching/close/reopen, scope changes, binary/new/deleted content,
+  canonical refresh, leases and restored focus. Existing Git/checkout checks run
+  in the full suite; no assertions were removed to bypass them.
+- `env PATH=/usr/bin:/bin npm run smoke:source-control`: **PASS**. Updated runner
+  uses a unique local repository and real partially staged README: reads actual
+  staged/working CodeMirror contents without entering Commit, stages/unstages
+  per-file/all, commits indexed content without working content, then explicitly
+  stages/commits all. All eight destinations, maintenance cancellation, Browser
+  suppression/restoration and focus pass across Dark/Light/Slate at 1100×760 and
+  640×480. Changes and modal diff screenshots inspected; no horizontal overflow.
+  Screenshots: `/tmp/clanker-source-control-visual-NhjFrd`.
+- `npm run smoke:settings`: **PASS**, inherited PATH; screenshots:
+  `/tmp/clanker-settings-visual-o4rI6I`. The unchanged fixture needs installed
+  harness discovery. Validation and focused Git tests retain clean system-only
+  PATH to exclude installed harness shims from process-resolution fixtures.
+- `env PATH=/usr/bin:/bin node scripts/workspace-page-browser-renderer-smoke.cjs`:
+  **PASS**, including all 24 page transitions and renderer/native lease lifecycle.
+- Separate native multi-Browser smoke:
+  `env PATH=/usr/bin:/bin node_modules/.bin/electron --ozone-platform=headless
+  scripts/workspace-multi-browser-smoke.cjs`: **FAIL**, Electron SIGSEGV, exit 1;
+  independently reproduced prior failure, not counted as passing.
+- Logs: `/tmp/154-4a-validate.log`, `/tmp/154-4a-focused.log`,
+  `/tmp/154-4a-source-smoke.log`, `/tmp/154-4a-settings-smoke.log`,
+  `/tmp/154-4a-browser-smoke.log`, `/tmp/154-4a-multi-browser.log`.
+
+### Limits and owner review
+
+Diffs remain **HEAD → working file** or **HEAD → index**, not index → working;
+reviewing another file closes the modal first. No hunk staging or full commit
+patch backend. Isolated checkout Source Control stays explicitly unavailable,
+never substituted with its parent. SSH uses existing registered-environment
+authorization and manual commits; AI commit generation stays local-only.
+Live SSH, real agent edits under load, high zoom/OS scaling, native OS focus and
+screen-reader checks remain owner smoke. Independent code review and visual owner
+testing are required before any further Phase 4 work. Approved decisions and the
+original alternatives remain in [the UX assessment](issue-154-phase-4-ux-assessment.md).
 
 ## Phase 3D correctness follow-up / Phase 4 owner review
 

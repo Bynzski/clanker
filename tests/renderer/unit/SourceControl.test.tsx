@@ -28,10 +28,11 @@ beforeEach(() => {
   useAgentAttentionStore.setState({ byTerminalId: {} });
   useWorkspaceStore.setState({ activeWorkspaceId: 'ws', workspaces: [createWorkspaceFixture({ id: 'ws', workspacePath: '/repo', environmentId: 'local', browserVisible: true, browserOverlayCount: 0, terminals: [], activeTerminalId: null })] });
 });
-async function open() {
+async function open(page = 'Overview') {
   const user = userEvent.setup(); const view = render(<GitButton workspacePath="/repo" workspaceId="ws" />);
   await user.click(screen.getByRole('button', { name: 'Source Control' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Commit Changes' })).toBeEnabled());
+  if (page !== 'Changes') await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: page }));
+  await waitFor(() => expect(screen.getByRole('button', { name: page === 'Changes' ? 'Refresh changes' : 'Commit Changes' })).toBeEnabled());
   return { user, view, dialog: screen.getByRole('dialog', { name: 'Source Control' }) };
 }
 describe('Source Control foundation', () => {
@@ -279,7 +280,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
     // Navigate to History - permanent destination
     await user.click(within(dialog).getByRole('button', { name: 'History' }));
     expect(within(dialog).getByText(/Inspect repository commit history/)).toBeVisible();
-    expect(within(dialog).getByText('Working Changes Summary')).toBeVisible();
+    expect(within(dialog).getByText('Commit Summary')).toBeVisible();
 
     // Navigate to Stashes
     await user.click(within(dialog).getByRole('button', { name: 'Stashes' }));
@@ -637,18 +638,19 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       expect(within(dialog).getByText('2026-03-01')).toBeVisible();
 
       // Truthful summary label
-      expect(within(dialog).getByText('Working Changes Summary')).toBeVisible();
-      expect(within(dialog).getByText(/Summary of uncommitted modifications in the working tree/)).toBeVisible();
+      expect(within(dialog).getByText('Commit Summary')).toBeVisible();
+      expect(within(dialog).getByText('Select a summary to view')).toBeVisible();
+      expect(within(dialog).queryByRole('button', { name: 'Working Tree' })).toBeNull();
     });
 
-    it('switches to Staged Changes Summary with accurate label', async () => {
-      api.gitGetDiff.mockResolvedValue({ success: true, output: ' 1 file changed, 2 insertions(+)', title: 'Staged Diff' });
+    it('shows accurate commit statistics, not working-tree patches', async () => {
+      api.gitGetDiff.mockResolvedValue({ success: true, output: ' 1 file changed, 2 insertions(+)', title: 'Commit Summary' });
       const { user, dialog } = await historyPage();
 
-      await user.click(within(dialog).getByRole('button', { name: 'Staged' }));
-      expect(api.gitGetDiff).toHaveBeenCalledWith('/repo', 'staged', undefined, 'ws');
-      expect(await within(dialog).findByText('Staged Changes Summary')).toBeVisible();
-      expect(within(dialog).getByText(/Summary of changes staged for the next commit/)).toBeVisible();
+      await user.click(within(dialog).getByRole('button', { name: /feat: add first feature/ }));
+      expect(api.gitGetDiff).toHaveBeenCalledWith('/repo', 'commit', mockCommits[0].hash, 'ws');
+      expect(await within(dialog).findByText('Commit Summary · c111111')).toBeVisible();
+      expect(within(dialog).getByText(/Summary of files changed in this commit/)).toBeVisible();
       expect(within(dialog).getByText('1 file changed, 2 insertions(+)')).toBeVisible();
     });
 
@@ -700,6 +702,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
     it('invalidates displayed content immediately and rejects late responses across rapid selections', async () => {
       api.gitGetDiff.mockResolvedValue({ success: true, output: 'initial working output' });
       const { user, dialog } = await historyPage();
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
       await within(dialog).findByText('initial working output');
       let finishA!: (value: unknown) => void;
       let finishB!: (value: unknown) => void;
@@ -715,20 +718,20 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       expect(within(dialog).queryByText('A output')).toBeNull();
       let finishStaged!: (value: unknown) => void;
       api.gitGetDiff.mockImplementationOnce(() => new Promise((resolve) => { finishStaged = resolve; }));
-      await user.click(within(dialog).getByRole('button', { name: 'Staged' }));
+      await user.click(within(dialog).getByRole('button', { name: /feat: add first feature/ }));
       expect(within(dialog).queryByText('B output')).toBeNull();
       expect(within(dialog).getByText('Loading summary…')).toBeVisible();
       await act(async () => finishStaged({ success: false, error: 'Summary denied', output: 'invalid output' }));
       expect(within(dialog).getByText('Summary unavailable')).toBeVisible();
-      expect(within(dialog).queryByText('No staged changes')).toBeNull();
+      expect(within(dialog).queryByText('No file changes recorded in this commit')).toBeNull();
       expect(within(dialog).queryByText('invalid output')).toBeNull();
       api.gitGetDiff.mockRejectedValueOnce(new Error('Transport failed'));
-      await user.click(within(dialog).getByRole('button', { name: 'Working Tree' }));
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
       expect((await within(dialog).findAllByText('Transport failed'))[0]).toBeVisible();
-      expect(within(dialog).queryByText('No uncommitted working tree changes')).toBeNull();
+      expect(within(dialog).queryByText('No file changes recorded in this commit')).toBeNull();
       api.gitGetDiff.mockResolvedValueOnce({ success: true, output: '' });
-      await user.click(within(dialog).getByRole('button', { name: 'Working Tree' }));
-      expect(await within(dialog).findByText('No uncommitted working tree changes')).toBeVisible();
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
+      expect(await within(dialog).findByText('No file changes recorded in this commit')).toBeVisible();
     });
 
     it('retains the exact selected hash outside a refreshed ten-commit window, including unavailable objects', async () => {
@@ -798,6 +801,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       api.gitGetDiff.mockImplementationOnce(() => new Promise((r) => { resolveDiffRefresh = r; }));
 
       const { user, dialog } = await historyPage();
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
 
       // User explicitly clicks commit 1 while refresh is in progress
       api.gitGetDiff.mockResolvedValueOnce({
@@ -824,7 +828,8 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
 
     it('displays diff error clearly without claiming no diff to display', async () => {
       api.gitGetDiff.mockResolvedValue({ success: false, error: 'Git diff failed: permission denied' });
-      const { dialog } = await historyPage();
+      const { user, dialog } = await historyPage();
+      await user.click(within(dialog).getByRole('button', { name: /feat: add first feature/ }));
 
       await waitFor(() => expect(within(dialog).getAllByText('Git diff failed: permission denied').length).toBeGreaterThan(0));
       expect(within(dialog).queryByText('No diff to display')).toBeNull();
@@ -835,7 +840,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       api.gitGetDiff.mockReturnValue(new Promise((r) => { finishDiff = r; }));
 
       const { user } = await historyPage();
-      await user.click(screen.getByRole('button', { name: 'Staged' }));
+      await user.click(screen.getByRole('button', { name: /feat: add first feature/ }));
 
       act(() => {
         useWorkspaceStore.setState((state) =>

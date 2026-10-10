@@ -687,6 +687,15 @@ export class GitService {
     return { path, status, staged };
   }
 
+  private parseStatusSides(xy: string, path: string): GitStatusEntry[] {
+    const entry = this.parseStatusEntry(xy, path);
+    // Porcelain reports index and working changes independently (e.g. MM, AM, RM).
+    // Keep both identities so selective staging never hides the working side.
+    return entry.staged && xy[1] !== '.' && xy[1] !== ' '
+      ? [entry, this.parseStatusEntry(`.${xy[1]}`, path)]
+      : [entry];
+  }
+
   private parseGitStatusV2(output: string): GitStatusEntry[] {
     const changes: GitStatusEntry[] = [];
     const lines = output.split('\n').filter(Boolean);
@@ -701,7 +710,7 @@ export class GitService {
         if (parts.length < 9) continue;
         const xy = parts[1];
         const path = parts.slice(8).join(' ');
-        changes.push(this.parseStatusEntry(xy, path));
+        changes.push(...this.parseStatusSides(xy, path));
       } else if (line.startsWith('2 ')) {
         // Rename/copy entry: 2 XY SUB MH MI MW HH HI SCORE PATH<TAB>ORIG
         const parts = line.split(' ');
@@ -710,7 +719,7 @@ export class GitService {
         const pathOrig = parts.slice(9).join(' ');
         const tabIndex = pathOrig.indexOf('\t');
         const path = tabIndex >= 0 ? pathOrig.slice(0, tabIndex) : pathOrig;
-        changes.push(this.parseStatusEntry(xy, path));
+        changes.push(...this.parseStatusSides(xy, path));
       } else if (line.startsWith('? ')) {
         // Untracked: ? PATH
         changes.push({ path: line.slice(2), status: 'untracked', staged: false });

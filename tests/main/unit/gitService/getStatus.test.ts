@@ -88,6 +88,29 @@ describe('getStatus - happy path with real git', () => {
     expect(result.changes.some(c => c.path === 'README.md' && c.staged === true)).toBe(true);
   });
 
+  it('keeps both index and working sides of partially staged files, including rename and deletion', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'partial.txt': 'base\n', 'rename.txt': 'rename\n' } });
+    await modifyFile(repo.path, 'partial.txt', 'indexed\n');
+    await git(repo.path, ['add', 'partial.txt']);
+    await modifyFile(repo.path, 'partial.txt', 'working\n');
+    await git(repo.path, ['mv', 'rename.txt', 'renamed.txt']);
+    await modifyFile(repo.path, 'renamed.txt', 'rename\nworking\n');
+    const result = await service.getStatus(repo.path);
+    expect(result.changes.filter((entry) => entry.path === 'partial.txt')).toEqual([
+      { path: 'partial.txt', status: 'modified', staged: true },
+      { path: 'partial.txt', status: 'modified', staged: false },
+    ]);
+    expect(result.changes.filter((entry) => entry.path === 'renamed.txt')).toEqual([
+      { path: 'renamed.txt', status: 'renamed', staged: true },
+      { path: 'renamed.txt', status: 'modified', staged: false },
+    ]);
+    await deleteFile(repo.path, 'partial.txt');
+    expect((await service.getStatus(repo.path)).changes.filter((entry) => entry.path === 'partial.txt')).toEqual([
+      { path: 'partial.txt', status: 'modified', staged: true },
+      { path: 'partial.txt', status: 'deleted', staged: false },
+    ]);
+  });
+
   it('returns status with new untracked files', async () => {
     repo = await createTempGitRepo({});
     

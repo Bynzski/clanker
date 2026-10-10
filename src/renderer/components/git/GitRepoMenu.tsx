@@ -5,6 +5,7 @@ import { GitHistorySection } from './GitHistorySection';
 import { useState } from 'react';
 import { ManagementShell } from '../ui/ManagementShell';
 import { GitOverview } from './GitOverview';
+import { GitChanges } from './GitChanges';
 import type { gitManagementScope } from './gitManagementScope';
 import { GitMergeSection } from './GitMergeSection';
 import GitRemotesSection from './GitRemotesSection';
@@ -18,6 +19,7 @@ import type {
   GitOperationState,
   GitRemote,
   GitStash,
+  GitStatus,
   VcsProvider,
 } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
@@ -37,6 +39,15 @@ export interface GitRepoMenuProps {
   branchError: string | null;
   branches: GitBranch[];
   changeCount: number;
+  changes: GitStatus[];
+  changesError: string | null;
+  isLoadingChanges: boolean;
+  reviewRevision: number;
+  onRefreshChanges: () => Promise<void>;
+  onStageFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onStageAll: () => Promise<{ success: boolean; error?: string }>;
+  onUnstageFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onUnstageAll: () => Promise<{ success: boolean; error?: string }>;
   createBranchInputRef: React.RefObject<HTMLInputElement | null>;
   currentBranch: string | null;
   currentBranchLabel: string;
@@ -109,7 +120,7 @@ export interface GitRepoMenuProps {
 }
 
 export function GitRepoMenu(props: GitRepoMenuProps) {
-  const [page, setPage] = useState('overview');
+  const [page, setPage] = useState('changes');
   const [worktreeBusy, setWorktreeBusy] = useState(false);
   const [remoteBusy, setRemoteBusy] = useState(false);
   const busy = props.isBusy || props.branchConfirmationOpen || props.stashConfirmationOpen || props.mergeConfirmationOpen || worktreeBusy || remoteBusy;
@@ -178,17 +189,18 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
     <ManagementShell busy={busy} onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }} onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
       onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control"
       items={[
+        { id: 'changes', label: 'Changes', group: 'Repository' },
+        { id: 'history', label: 'History', group: 'Repository' },
         { id: 'overview', label: 'Overview', group: 'Repository' },
         { id: 'branches', label: 'Branches', group: 'Repository' },
         { id: 'worktrees', label: 'Worktrees', group: 'Repository' },
-        { id: 'history', label: 'History', group: 'Repository' },
         { id: 'stashes', label: 'Stashes', group: 'Operations' },
         { id: 'remotes', label: 'Remotes', group: 'Operations' },
         { id: 'merge', label: 'Merge', group: 'Operations' },
       ]}
       selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
-      {page !== 'overview' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
-      {page === 'overview' ? <GitOverview {...props} /> : page === 'branches' ? <div className="source-control-page">
+      {page !== 'overview' && page !== 'changes' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
+      {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} /> : page === 'branches' ? <div className="source-control-page">
       <h2 className="clanker-dialog-title">Branches</h2>
       <p>Local branches of this repository. Switch changes the workspace checkout, not an agent's working directory. Git checks worktree ownership before deletion.</p>
       <p>Current checkout: {props.statusKnown ? props.currentBranchLabel : 'Unknown'}. The current branch cannot be deleted or switched to again.</p>
@@ -282,7 +294,7 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         />
       </div> : <div className="source-control-page source-control-history">
         <h2 className="clanker-dialog-title">History</h2>
-        <p>Inspect repository commit history and view summary statistics of working, staged, or committed changes.</p>
+        <p>Inspect repository commit history and view commit summary statistics. Review working files on Changes.</p>
         <Button disabled={busy || isLoadingHistory} onClick={props.onRefresh}>
           Refresh history
         </Button>

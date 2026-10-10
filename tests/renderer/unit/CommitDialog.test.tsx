@@ -206,12 +206,41 @@ describe('CommitDialog', () => {
         { path: 'file.ts', status: 'modified' as const, staged: true },
       ],
     });
-    expect(screen.getByText('Commit')).toBeTruthy();
+    expect(screen.getByText('Commit Staged')).toBeTruthy();
   });
 
   // =========================================================================
   // Commit flow
   // =========================================================================
+  it('never stages on ordinary submission with only unstaged files or commits an empty change list', async () => {
+    const view = renderDialog({ changes: [{ path: 'file.ts', status: 'modified', staged: false }] });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'message' } });
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeDisabled();
+    fireEvent.submit(document.querySelector('form')!);
+    expect(screen.getByText('Stage changes before committing.')).toBeVisible();
+    expect(mockOnStageAll).not.toHaveBeenCalled(); expect(mockOnCommit).not.toHaveBeenCalled();
+    view.unmount();
+    renderDialog({ changes: [] });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'message' } });
+    fireEvent.submit(document.querySelector('form')!);
+    expect(mockOnCommit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeDisabled();
+  });
+
+  it('guards duplicate submissions, Escape and Close while native commit hooks are pending', async () => {
+    let finish!: (value: unknown) => void;
+    mockOnCommit.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    renderDialog({ changes: [{ path: 'file.ts', status: 'modified', staged: true }] });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'message' } });
+    fireEvent.submit(document.querySelector('form')!); fireEvent.submit(document.querySelector('form')!);
+    expect(mockOnCommit).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: 'Escape' }); fireEvent.click(screen.getByTitle('Close'));
+    expect(mockOnClose).not.toHaveBeenCalled();
+    await act(async () => finish({ success: false, error: 'Hook failed' }));
+    expect(screen.getByText('Hook failed')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeEnabled();
+  });
+
   it('shows error when submitting empty message', async () => {
     renderDialog({
       changes: [
@@ -237,7 +266,7 @@ describe('CommitDialog', () => {
     const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'fix: resolve issue' } });
     // Click the submit button instead of form submit
-    fireEvent.click(screen.getByText('Commit'));
+    fireEvent.click(screen.getByText('Commit Staged'));
 
     await waitFor(() => {
       expect(mockOnStageAll).not.toHaveBeenCalled();
@@ -276,7 +305,7 @@ describe('CommitDialog', () => {
     const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'my commit' } });
     // Click the submit button
-    fireEvent.click(screen.getByText('Commit'));
+    fireEvent.click(screen.getByText('Commit Staged'));
 
     await waitFor(() => {
       expect(mockOnClose).not.toHaveBeenCalled();
@@ -300,7 +329,7 @@ describe('CommitDialog', () => {
 
     const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'feat: add feature' } });
-    fireEvent.click(screen.getByText('Commit'));
+    fireEvent.click(screen.getByText('Commit Staged'));
 
     await waitFor(() => {
       expect(screen.getByText('Running git hooks…')).toBeTruthy();
@@ -348,7 +377,7 @@ describe('CommitDialog', () => {
     await waitFor(() => expect(window.electronAPI.getAiCommitSettings).toHaveBeenCalled());
     expect(screen.queryByText('Generate')).toBeNull();
     fireEvent.change(screen.getByPlaceholderText('Describe your changes…'), { target: { value: 'manual commit' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Commit Staged' }));
     await waitFor(() => expect(mockOnCommit).toHaveBeenCalledWith('manual commit'));
     expect(window.electronAPI.generateCommitMessage).not.toHaveBeenCalled();
   });
@@ -553,8 +582,8 @@ describe('CommitDialog', () => {
     });
 
     fireEvent.click(screen.getByText('Unstage All'));
-    // Button text changes to "Unstaging…" while in progress
-    expect(screen.getByText('Unstaging…')).toBeDisabled();
+    // Button text changes while staging state is being updated.
+    expect(screen.getByText('Updating…')).toBeDisabled();
   });
 
   it('disables footer buttons while unstage is in progress', () => {
@@ -571,7 +600,7 @@ describe('CommitDialog', () => {
     fireEvent.click(screen.getByText('Unstage All'));
 
     expect(screen.getByText('Cancel')).toBeDisabled();
-    expect(screen.getByText('Commit')).toBeDisabled();
+    expect(screen.getByText('Commit Staged')).toBeDisabled();
   });
 
   it('shows both Unstage All and Stage All when mixed staged/unstaged files', () => {
@@ -636,7 +665,7 @@ describe('CommitDialog', () => {
 
     // Start a commit by typing a message and clicking Commit
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test message' } });
-    fireEvent.click(screen.getByText('Commit'));
+    fireEvent.click(screen.getByText('Commit Staged'));
 
     // Eye button should be disabled
     const eyeButton = screen.getByTitle('View diff');

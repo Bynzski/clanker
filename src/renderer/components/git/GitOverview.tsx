@@ -12,7 +12,7 @@ export function GitOverview(props: GitRepoMenuProps) {
   const foundPr = !vcsContextError && !isLoadingContext && pullRequest?.exists === true && (!pullRequest.outcome || pullRequest.outcome === 'found');
   const noPr = !vcsContextError && !isLoadingContext && (pullRequest?.outcome === 'none' || pullRequest?.exists === false && !pullRequest.outcome);
   return <div className="source-control-overview">
-    <h2 className="clanker-dialog-title">Overview</h2>
+    <h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
     <div className="source-control-actions">
       <Button variant="primary" disabled={isBusy || !statusKnown} onClick={props.onOpenCommitDialog}>Commit Changes</Button>
       <Button disabled={isBusy || isLoadingBranches || isLoadingOperation} onClick={props.onRefresh}>Refresh</Button>
@@ -34,6 +34,6 @@ export function GitOverview(props: GitRepoMenuProps) {
     </dl>
     {[statusErrorMessage, branchError, remoteError, vcsContextError, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
-    <p>Branches and Worktrees have dedicated pages. Stashes, Remotes, Merge and History remain in Existing Git Tools during migration.</p>
+    <p>Review files on Changes. Branches, Worktrees, History, Stashes, Remotes and Merge have dedicated pages.</p>
   </div>;
 }

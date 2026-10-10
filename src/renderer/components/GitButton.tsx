@@ -12,6 +12,7 @@ import { GitClearStashesDialog } from './git/GitClearStashesDialog';
 import { GitDeleteBranchDialog } from './git/GitDeleteBranchDialog';
 import { GitDropStashDialog } from './git/GitDropStashDialog';
 import { GitInitMenu } from './git/GitInitMenu';
+import { changedFileCount } from './git/gitChangePresentation';
 import { GitRepoMenu } from './git/GitRepoMenu';
 import { getStatusErrorMessage, getUpstreamLabel } from './git/gitButtonViewModels';
 import { useGitBranchActions } from './git/useGitBranchActions';
@@ -28,6 +29,7 @@ import type {
   GitStash,
   GitStatus,
 } from './git/types';
+import type { GitStatusResult } from '../../shared/types/git';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
 import { Dialog } from './ui/Dialog';
 import { ManagementShell } from './ui/ManagementShell';
@@ -66,6 +68,11 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [changes, setChanges] = useState<GitStatus[]>([]);
+  const [changesError, setChangesError] = useState<string | null>(null);
+  const [isLoadingChanges, setIsLoadingChanges] = useState(false);
+  const [reviewRevision, setReviewRevision] = useState(0);
+  const changeMutationLock = useRef(false);
+  const commitReturnFocus = useRef<{ control: HTMLElement; heading: HTMLElement | null } | null>(null);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isDetached, setIsDetached] = useState(false);
   const [branches, setBranches] = useState<GitBranch[]>([]);
@@ -82,9 +89,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const historyLoadingRef = useRef(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [selectedDiffMode, setSelectedDiffMode] = useState<DiffMode>('working');
+  const [selectedDiffMode, setSelectedDiffMode] = useState<DiffMode>('commit');
   const [selectedDiffRef, setSelectedDiffRef] = useState<string | null>(null);
-  const diffSelectionRef = useRef<{ mode: DiffMode; ref: string | null }>({ mode: 'working', ref: null });
+  const diffSelectionRef = useRef<{ mode: DiffMode; ref: string | null }>({ mode: 'commit', ref: null });
   diffSelectionRef.current = { mode: selectedDiffMode, ref: selectedDiffRef };
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
@@ -540,7 +547,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setStashes([]);
       setHistory([]);
       setHistoryLimit(10);
-      setSelectedDiffMode('working');
+      setSelectedDiffMode('commit');
       setSelectedDiffRef(null);
       setDiffResult(null);
       setDiffError(null);
@@ -560,8 +567,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     };
   }, [workspacePath, workspaceId]);
 
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onGitStatusUpdate((status) => {
+  const applyStatus = useCallback((status: GitStatusResult) => {
       if (!isCurrent()) return;
       const activeWs = useWorkspaceStore.getState().getActiveWorkspace();
       if (activeWs) {
@@ -582,7 +588,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setStatusKnown(status.success);
       if (status.success) {
         setIsRepo(status.isRepo);
-        setChangeCount(status.changes.length);
+        setChangeCount(changedFileCount(status.changes));
         setChanges(status.changes);
         setCurrentBranch(status.currentBranch);
         setIsDetached(status.isDetached);
@@ -607,10 +613,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         useWorkspaceStore.getState().setGitChanges([]);
         useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
       }
-    });
-
-    return unsubscribe;
   }, [workspacePath, workspaceId, isCurrent]);
+
+  useEffect(() => window.electronAPI.onGitStatusUpdate(applyStatus), [applyStatus]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -624,29 +629,54 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     void refreshMenuData();
   }, [isMenuOpen, isRepo, refreshMenuData]);
 
-  const handleCommit = async (message: string) => isCurrent() ? window.electronAPI.gitCommit(workspacePath, message, workspaceId) : { success: false, error: 'Repository scope changed' };
-
-  const handleStage = async () => isCurrent() ? window.electronAPI.gitStage(workspacePath, undefined, workspaceId) : { success: false, error: 'Repository scope changed' };
-
-  const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
-    if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
-    const result = await window.electronAPI.gitUnstage(workspacePath, [path], workspaceId);
-    if (result.success && isCurrent()) {
-      const status = await window.electronAPI.gitRefresh(workspaceId);
-      if (status?.success && isCurrent()) { setChanges(status.changes); setChangeCount(status.changes.length); }
+  const refreshChanges = async () => {
+    const status = await window.electronAPI.gitRefresh(workspaceId);
+    if (!isCurrent()) throw new Error('Repository scope changed');
+    if (!status?.success) {
+      setStatusKnown(false);
+      throw new Error(status?.error || 'Could not refresh changes');
     }
-    return result;
+    if ((workspaceId && status.workspaceId !== workspaceId) ||
+      (status.workspacePath && !sameWorkspacePath(status.workspacePath, workspacePath)) ||
+      (status.environmentId && status.environmentId !== scope.environmentId)) throw new Error('Repository scope changed');
+    applyStatus(status);
+    setReviewRevision((value) => value + 1);
   };
 
-  const handleUnstageAll = async (): Promise<{ success: boolean; error?: string }> => {
+  // All change mutations share a synchronous lock, authoritative status refresh and scope guard.
+  const runChangeMutation = async (action: string, run: () => Promise<{ success: boolean; error?: string }>) => {
     if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
-    const result = await window.electronAPI.gitUnstage(workspacePath, undefined, workspaceId);
-    if (result.success && isCurrent()) {
-      const status = await window.electronAPI.gitRefresh(workspaceId);
-      if (status?.success && isCurrent()) { setChanges(status.changes); setChangeCount(status.changes.length); }
+    if (changeMutationLock.current || activeAction || remoteAction) return { success: false, error: 'Git operation already pending' };
+    changeMutationLock.current = true;
+    setActiveAction(action); setChangesError(null);
+    try {
+      const result = await run();
+      if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
+      if (!result.success) throw new Error(result.error || 'Git operation failed');
+      await refreshChanges();
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Git operation failed';
+      if (isCurrent()) setChangesError(message);
+      return { success: false, error: message };
+    } finally {
+      changeMutationLock.current = false;
+      if (isCurrent()) setActiveAction(null);
     }
-    return result;
   };
+  const handleRefreshChanges = async () => {
+    if (!isCurrent() || changeMutationLock.current || activeAction || remoteAction) return;
+    changeMutationLock.current = true;
+    setIsLoadingChanges(true); setChangesError(null);
+    try { await refreshChanges(); }
+    catch (error) { if (isCurrent()) setChangesError(error instanceof Error ? error.message : 'Could not refresh changes'); }
+    finally { changeMutationLock.current = false; if (isCurrent()) setIsLoadingChanges(false); }
+  };
+  const handleCommit = (message: string) => runChangeMutation('commit', () => window.electronAPI.gitCommit(workspacePath, message, workspaceId));
+  const handleStage = () => runChangeMutation('stage-all', () => window.electronAPI.gitStage(workspacePath, undefined, workspaceId));
+  const handleStageFile = (path: string) => runChangeMutation(`stage:${path}`, () => window.electronAPI.gitStage(workspacePath, [path], workspaceId));
+  const handleUnstageFile = (path: string) => runChangeMutation(`unstage:${path}`, () => window.electronAPI.gitUnstage(workspacePath, [path], workspaceId));
+  const handleUnstageAll = () => runChangeMutation('unstage-all', () => window.electronAPI.gitUnstage(workspacePath, undefined, workspaceId));
 
   const handleInitRepository = async () => {
     if (!isCurrent() || !statusKnown || isInitializing) return;
@@ -670,17 +700,18 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   };
 
   const handleOpenCommitDialog = async () => {
-    if (!isCurrent() || activeAction) return;
-    setActiveAction('open-commit');
+    if (!isCurrent() || activeAction || changeMutationLock.current) return;
+    const control = document.activeElement;
+    if (control instanceof HTMLElement) commitReturnFocus.current = {
+      control, heading: control.closest('[role="dialog"]')?.querySelector<HTMLElement>('.management-content h2') ?? null,
+    };
+    changeMutationLock.current = true;
+    setActiveAction('open-commit'); setChangesError(null);
     try {
-      const status = await window.electronAPI.gitRefresh(workspaceId);
-      if (!isCurrent()) return;
-      if (!status?.success) { setRemoteError('Could not refresh changes before opening Commit'); return; }
-      setChanges(status.changes); setChangeCount(status.changes.length);
-      setCurrentBranch(status.currentBranch); setIsDetached(status.isDetached);
-      setIsDialogOpen(true);
-    } catch (error) { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Could not refresh changes'); }
-    finally { if (isCurrent()) setActiveAction(null); }
+      await refreshChanges();
+      if (isCurrent()) setIsDialogOpen(true);
+    } catch (error) { if (isCurrent()) { const message = error instanceof Error ? error.message : 'Could not refresh changes'; setChangesError(message); setRemoteError(message); } }
+    finally { changeMutationLock.current = false; if (isCurrent()) setActiveAction(null); }
   };
 
   const handleToggleMenu = () => {
@@ -739,6 +770,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             stashConfirmationOpen={stashConfirmationOpen}
             mergeConfirmationOpen={mergeConfirmationOpen}
             isScopeCurrent={isCurrent}
+            changes={changes}
+            changesError={changesError}
+            isLoadingChanges={isLoadingChanges}
+            reviewRevision={reviewRevision}
+            onRefreshChanges={handleRefreshChanges}
+            onStageFile={handleStageFile}
+            onStageAll={handleStage}
+            onUnstageFile={handleUnstageFile}
+            onUnstageAll={handleUnstageAll}
             onWorktreesChanged={() => { if (isCurrent()) void Promise.all([refreshMenuDataRef.current(false), window.electronAPI.gitRefresh(workspaceId)]).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             activeAction={activeAction}
             ahead={ahead}
@@ -824,6 +864,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
       <CommitDialog
         isOpen={isDialogOpen}
+        isScopeCurrent={isCurrent}
+        reviewRevision={reviewRevision}
+        onRestoreFocus={() => {
+          if (!isCurrent()) return;
+          const target = commitReturnFocus.current;
+          if (target?.control.isConnected && !target.control.hasAttribute('disabled')) target.control.focus();
+          else if (target?.heading?.isConnected) target.heading.focus();
+          else trigger.current?.focus();
+        }}
         onClose={() => setIsDialogOpen(false)}
         onCommit={handleCommit}
         onStageAll={handleStage}

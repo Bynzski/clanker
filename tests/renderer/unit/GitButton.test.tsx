@@ -243,6 +243,8 @@ describe('GitButton', () => {
     act(() => {
       vi.runAllTimers();
     });
+    const overview = screen.queryByRole('button', { name: 'Overview' });
+    if (overview) await act(async () => { fireEvent.click(overview); });
   };
 
   const openRepoMenu = async (changes: unknown[] = []) => {
@@ -602,6 +604,7 @@ describe('GitButton', () => {
     it('shows diff error message', async () => {
       mockGitGetDiff.mockResolvedValueOnce({ success: false, error: 'Unable to load diff' });
       await openRepoMenu(); await openHistory();
+      await act(async () => { fireEvent.click(screen.getByText('diff-working')); });
       expect(screen.getByText('Unable to load diff')).toBeTruthy();
     });
   });
@@ -713,7 +716,7 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      expect(screen.getByText('3 changed')).toBeTruthy();
+      expect(screen.getByText(/3 changed files/)).toBeTruthy();
     });
   });
 
@@ -746,7 +749,7 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      const refreshButton = screen.getByText('Refresh');
+      const refreshButton = screen.getByText('Refresh changes');
       await act(async () => {
         fireEvent.click(refreshButton);
       });
@@ -1128,6 +1131,7 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
 
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Overview' })); });
       expect(screen.getByText('origin/main')).toBeTruthy();
       expect(screen.getByText('2 ahead · 1 behind')).toBeTruthy();
     });

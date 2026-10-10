@@ -1,7 +1,34 @@
-# Issue #154 — Phase 4 workflow assessment (owner review)
+# Issue #154 — Phase 4 workflow assessment / approved Phase 4A
 
-Assessment against reviewed Phase 3D `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
-**Proposal only: no Phase 4 UX implementation, PR or merge.**
+Original assessment against reviewed Phase 3D `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
+Phase 4A starts from reviewed correctness commit `50b878b0c6542f79ef386707fb852059af559829`.
+**Owner approved Option A and explicit staged-only versus stage-all commit policy.**
+
+## Phase 4A implementation
+
+- Changes is the initial landing page in the existing ManagementShell, followed by
+  History, Overview, Branches and Worktrees; Operations stays Stashes/Remotes/Merge.
+  Returning from a nested dialog preserves the selected page.
+- Compact staged/unstaged groups expose actual file review in two clicks from the
+  toolbar, per-file and all-file staging, refresh and the existing commit composer.
+  `GitButton` still owns status polling, scope and mutation callbacks.
+- `useFileDiffReview` and `FileDiffReview` are shared with CommitDialog and use the
+  existing authorized `gitGetFileDiff` and modal DiffViewer. Selection, close,
+  status revision and scope changes invalidate requests; no inline viewer or new
+  diff engine. HEAD-to-working semantics remain explicit.
+- Porcelain index/working sides now both appear for partially staged paths (MM,
+  AM, RM, etc.); unique file counts do not hide either review entry.
+- Commit Staged is primary when the index has changes and never calls stage-all.
+  Stage All & Commit is explicit; ordinary form submission with only unstaged
+  files does not stage them. Empty submission is disabled. One composer retains
+  message validation, local-only AI generation, Git hooks and failure recovery.
+- Overview retains identity/sync/provider/operation information; obsolete migration
+  copy is gone. Management History contains commits and commit summaries only.
+
+The findings and alternatives below are retained as the **pre-implementation
+assessment**, not a description of current defects. Verification, limitations and
+owner smoke are recorded in `issue-154-management-interface.md`. No Phase 4 final
+cleanup, Settings redesign, PR or merge.
 
 ## 1. Confirmed usability problems
 
@@ -95,11 +122,10 @@ its bounded list and exact-hash summary backend.
 - Index → working diffs with exact unstaged semantics, hunk staging, arbitrary
   commit file patches, or history beyond the existing 50-entry bound require
   reviewed contracts/capabilities. Do not promise them in Changes.
-- Commit-only-staged needs **no new Git backend** (gitCommit already exists), but
-  does require an explicit product decision and a shared composer behavior change:
-  do not silently stage all on entering Changes or submitting a staged-only
-  workflow. Preserve any “stage all and commit” convenience only as an explicit,
-  separately understood choice. No such change is implemented here.
+- Commit-only-staged needs **no new Git backend** (gitCommit already exists).
+  This decision was approved and implemented in Phase 4A through the one shared
+  composer; entering Changes or ordinary staged-only submission never stages all.
+  “Stage All & Commit” remains a separately labelled explicit choice.
 
 ## 4. Settings assessment
 
@@ -137,12 +163,14 @@ staged/working headings. Consistent error/loading placement and concise capabili
 copy matter more than decoration. No new dashboard, activity feed, automatic
 staging, auto-commit or speculative features.
 
-## Owner decisions requested
+## Owner decisions / review gate
 
-1. Approve A (Changes-first + existing modal diff), B, or C.
-2. Approve staged-only commit semantics versus an explicitly labelled stage-all
-   convenience before selective staging UI is implemented.
-3. Confirm isolated-checkout Git support remains a separate backend assignment.
+1. **Approved and implemented:** A (Changes-first + existing modal diff).
+2. **Approved and implemented:** staged-only primary commit with explicit
+   Stage All & Commit convenience.
+3. **Unchanged boundary:** isolated-checkout Git support is a separate backend
+   assignment; no parent-root substitution or new authorization here.
 
-Validation/correctness delivery results are recorded in the companion architecture
-log: `issue-154-management-interface.md`. Stop for review before Phase 4 code.
+Stop after Phase 4A for independent code review and owner visual testing. Settings
+suggestions and inline review remain unimplemented. Validation results are in
+`issue-154-management-interface.md`.

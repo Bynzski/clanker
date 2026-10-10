@@ -52,15 +52,45 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
       await app.evaluate(({ BrowserWindow }, size) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); }, [width, height]);
       for (const theme of ['Dark', 'Light', 'Slate']) {
         await page.getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('radio', { name: theme, exact: true }).click(); await page.getByRole('button', { name: 'Close Settings' }).click();
+        // A real partially staged file: both review sides must stay visible.
+        fs.writeFileSync(path.join(project, 'README.md'), 'fixture\nindexed change\n');
+        git('add', 'README.md');
+        fs.appendFileSync(path.join(project, 'README.md'), 'uncommitted agent change\n');
         await page.getByRole('button', { name: 'Source Control', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: 'Source Control', exact: true });
-        await dialog.getByText('main', { exact: true }).waitFor(); await dialog.getByText('1 changed', { exact: true }).waitFor();
+        await dialog.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+        await dialog.getByText('main', { exact: true }).waitFor(); await dialog.getByText(/1 changed file/).waitFor();
         await until(async () => (await views()).every(view => !view.visible), 'Source Control exposed native Browser');
-        assert(await dialog.getByText('Local', { exact: true }).isVisible()); assert.equal(await dialog.getByRole('button', { name: 'Overview', exact: true }).getAttribute('aria-current'), 'page');
+        assert((await dialog.locator('.source-control-change-identity').textContent()).includes('Local')); assert.equal(await dialog.getByRole('button', { name: 'Changes', exact: true }).getAttribute('aria-current'), 'page');
         const geometry = await dialog.evaluate(element => { const bounds = element.getBoundingClientRect(); const content = element.querySelector('.management-content'); return { within: bounds.left >= 0 && bounds.top >= 0 && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight, overflow: content.scrollWidth > content.clientWidth }; });
-        assert(geometry.within && !geometry.overflow, `Overview geometry ${theme}/${width}`);
-        await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-overview.png`) });
-        for (const section of ['Branches', 'Worktrees', 'History', 'Stashes', 'Remotes', 'Merge']) {
+        assert(geometry.within && !geometry.overflow, `Changes geometry ${theme}/${width}`);
+        await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-changes.png`) });
+        for (const mode of ['staged', 'working']) {
+          const file = dialog.getByRole('button', { name: `View ${mode} diff for README.md`, exact: true });
+          await file.click();
+          const viewer = page.getByRole('dialog', { name: 'README.md', exact: true });
+          await viewer.locator('.cm-content').first().waitFor();
+          const content = await viewer.locator('.cm-content').allTextContents();
+          assert(content.join('\n').includes('fixture') && content.join('\n').includes('indexed change'), 'Actual file content missing');
+          assert.equal(content.join('\n').includes('uncommitted agent change'), mode === 'working', 'Staged/working content confused');
+          assert.equal(await page.getByRole('dialog', { name: 'Create Commit' }).count(), 0, 'Review entered Commit');
+          assert((await views()).every(view => !view.visible), 'Diff exposed Browser');
+          await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${mode}-diff.png`) });
+          await page.keyboard.press('Escape');
+          await until(() => file.evaluate(element => document.activeElement === element), 'Diff file focus not restored');
+          assert(await dialog.isVisible());
+        }
+        await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).click();
+        await until(async () => (await dialog.getByRole('button', { name: 'View working diff for README.md' }).count()) === 0, 'Per-file Stage did not refresh');
+        assert(git('diff', '--cached').toString().includes('uncommitted agent change'));
+        await dialog.getByRole('button', { name: 'Unstage README.md', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).waitFor();
+        assert.equal(git('diff', '--cached').toString(), '');
+        await dialog.getByRole('button', { name: 'Stage All', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Unstage README.md', exact: true }).waitFor();
+        await dialog.getByRole('button', { name: 'Unstage All', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).waitFor();
+        for (const section of ['History', 'Overview', 'Branches', 'Worktrees', 'Stashes', 'Remotes', 'Merge']) {
           await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
           await dialog.getByRole('heading', { name: section, exact: true }).waitFor();
           if (section === 'Branches') await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).waitFor();
@@ -70,10 +100,9 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: 'Prune missing worktrees…' }).waitFor();
           }
           if (section === 'History') {
-            await dialog.getByRole('button', { name: 'Working Tree', exact: true }).waitFor();
-            await dialog.getByRole('button', { name: 'Staged', exact: true }).waitFor();
-            await dialog.getByRole('button', { name: 'Staged', exact: true }).click();
-            await dialog.getByRole('button', { name: 'Working Tree', exact: true }).click();
+            assert.equal(await dialog.getByRole('button', { name: 'Working Tree', exact: true }).count(), 0);
+            await dialog.getByRole('button', { name: /View summary for commit/ }).first().click();
+            await dialog.getByText(/Commit Summary ·/).waitFor();
           }
           if (section === 'Stashes') {
             await dialog.getByRole('button', { name: 'Apply stash@{0}' }).waitFor();
@@ -108,17 +137,45 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         await dialog.getByRole('navigation').getByRole('button', { name: 'Worktrees', exact: true }).click(); await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
         await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).click(); await page.getByRole('alertdialog').waitFor();
         assert((await views()).every(view => !view.visible), 'Worktree confirmation exposed Browser'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-        assert(await dialog.isVisible()); await dialog.getByRole('button', { name: 'Overview', exact: true }).click();
-        await dialog.getByRole('button', { name: 'Commit Changes', exact: true }).click(); await page.getByRole('dialog', { name: 'Create Commit', exact: true }).waitFor();
+        assert(await dialog.isVisible()); await dialog.getByRole('button', { name: 'Changes', exact: true }).click();
+        const commitAction = dialog.getByRole('button', { name: 'Stage All & Commit', exact: true });
+        await commitAction.click(); await page.getByRole('dialog', { name: 'Create Commit', exact: true }).waitFor();
         assert((await views()).every(view => !view.visible), 'Commit handoff exposed Browser'); await page.keyboard.press('Escape'); assert(await dialog.isVisible());
+        await until(() => commitAction.evaluate(element => document.activeElement === element), 'Commit action focus not restored');
         await page.keyboard.press('Escape'); await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Browser did not restore');
         assert(await page.getByRole('button', { name: 'Source Control', exact: true }).evaluate(element => document.activeElement === element), 'Source Control trigger focus not restored');
       }
     }
-    assert.equal(git('status', '--porcelain').toString().trim(), 'M README.md', 'Smoke changed fixture worktree contents');
+    assert.equal(git('status', '--porcelain').toString().trim(), 'M README.md', 'Review unexpectedly committed fixture contents');
+    // Real staged-only commit must leave the working side untouched, then explicit all-and-commit.
+    fs.writeFileSync(path.join(project, 'README.md'), 'fixture\nindexed change\n'); git('add', 'README.md');
+    fs.appendFileSync(path.join(project, 'README.md'), 'uncommitted agent change\n');
+    await page.getByRole('button', { name: 'Source Control', exact: true }).click();
+    const changes = page.getByRole('dialog', { name: 'Source Control', exact: true });
+    await changes.getByRole('button', { name: 'Refresh changes' }).click();
+    await changes.getByRole('button', { name: 'Commit Staged', exact: true }).click();
+    let composer = page.getByRole('dialog', { name: 'Create Commit', exact: true });
+    await composer.getByRole('textbox', { name: 'Commit Message' }).fill('reviewed staged change');
+    await composer.getByRole('button', { name: 'Commit Staged', exact: true }).click();
+    await composer.waitFor({ state: 'hidden' });
+    assert(!git('show', 'HEAD:README.md').toString().includes('uncommitted agent change'), 'Staged-only commit included working content');
+    assert(git('diff').toString().includes('uncommitted agent change'), 'Staged-only commit changed working content');
+    assert((await views()).every(view => !view.visible), 'Successful Commit exposed Browser');
+    await until(() => changes.getByRole('button', { name: 'Stage All & Commit', exact: true }).evaluate(element => document.activeElement === element), 'Successful Commit focus not restored');
+    await changes.getByRole('button', { name: 'Stage All & Commit', exact: true }).click();
+    composer = page.getByRole('dialog', { name: 'Create Commit', exact: true });
+    await composer.getByRole('textbox', { name: 'Commit Message' }).fill('explicitly commit all');
+    await composer.getByRole('button', { name: 'Stage All & Commit', exact: true }).click();
+    await composer.waitFor({ state: 'hidden' });
+    assert(git('show', 'HEAD:README.md').toString().includes('uncommitted agent change'));
+    assert.equal(git('status', '--porcelain').toString(), '');
+    await changes.getByText('Working directory is clean').waitFor();
+    await until(() => changes.getByRole('heading', { name: 'Changes', exact: true }).evaluate(element => document.activeElement === element), 'Clean Changes heading focus not restored');
+    await page.keyboard.press('Escape');
+    await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Browser did not restore after commits');
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Overview/Branches/Worktrees/History/Stashes/Remotes/Merge permanent navigation, cancel-only branch/worktree/stash/remote confirmations, real CommitDialog, native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; real partially staged file diffs, per-file/all staging, real staged-only and explicit stage-all commits, cancel-only maintenance confirmations, native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
