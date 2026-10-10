@@ -37,6 +37,7 @@
     "branding:generate": "node scripts/generate-branding.cjs",
     "branding:check": "node scripts/check-branding.cjs",
     "smoke:settings": "node scripts/settings-management-smoke.cjs",
+    "smoke:source-control": "node scripts/source-control-management-smoke.cjs",
     "smoke:attention:native": "node scripts/native-attention-smoke.cjs",
     "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",

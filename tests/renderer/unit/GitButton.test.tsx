@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceState } from '../../../src/renderer/store/workspaceStoreTypes';
@@ -268,8 +269,10 @@ describe('GitButton', () => {
     });
   };
 
+  const openTools = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Existing Git Tools' })); }); };
+
   it('ignores older provider replies after a newer explicit refresh', async () => {
-    await openRepoMenu();
+    await openRepoMenu(); await openTools();
     let resolveOld!: (value: unknown) => void;
     mockVcsGetContext.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
     await act(async () => { fireEvent.click(screen.getByText('refresh-context')); });
@@ -517,34 +520,34 @@ describe('GitButton', () => {
   // Menu Open/Close
   // =========================================================================
   describe('menu open/close', () => {
-    it('opens menu when git button is clicked', async () => {
+    it('opens Overview when git button is clicked', async () => {
       await openRepoMenu();
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
 
     it('closes menu when clicking outside', async () => {
       await openRepoMenu();
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
 
       await act(async () => {
-        fireEvent.mouseDown(document.body);
+        await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(document.querySelector('.clanker-dialog-overlay')!);
       });
       act(() => {
         vi.runAllTimers();
       });
 
-      expect(screen.queryByTestId('git-branches-section')).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull();
     });
 
     it('closes menu when Escape is pressed', async () => {
       await openRepoMenu();
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
 
       await act(async () => {
-        fireEvent.keyDown(document, { key: 'Escape' });
+        fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape' });
       });
 
-      expect(screen.queryByTestId('git-branches-section')).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull();
     });
 
     it('renders menu header with current branch', async () => {
@@ -555,15 +558,15 @@ describe('GitButton', () => {
 
     it('renders menu close button', async () => {
       await openRepoMenu();
-      expect(screen.getByTitle('Close')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Close Source Control' })).toBeTruthy();
     });
 
     it('closes menu when close button is clicked', async () => {
       await openRepoMenu();
       await act(async () => {
-        fireEvent.click(screen.getByTitle('Close'));
+        fireEvent.click(screen.getByRole('button', { name: 'Close Source Control' }));
       });
-      expect(screen.queryByTestId('git-branches-section')).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull();
     });
   });
 
@@ -571,8 +574,8 @@ describe('GitButton', () => {
   // Menu Sections
   // =========================================================================
   describe('menu sections', () => {
-    it('renders all git sections when menu is open', async () => {
-      await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]);
+    it('renders all existing git sections in the transitional destination', async () => {
+      await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]); await openTools();
       expect(screen.getByTestId('git-branches-section')).toBeTruthy();
       expect(screen.getByTestId('git-stash-section')).toBeTruthy();
       expect(screen.getByTestId('git-merge-section')).toBeTruthy();
@@ -596,7 +599,7 @@ describe('GitButton', () => {
   describe('error display', () => {
     it('shows diff error message', async () => {
       mockGitGetDiff.mockResolvedValueOnce({ success: false, error: 'Unable to load diff' });
-      await openRepoMenu();
+      await openRepoMenu(); await openTools();
       expect(screen.getByText('Unable to load diff')).toBeTruthy();
     });
   });
@@ -613,12 +616,13 @@ describe('GitButton', () => {
       expect(screen.getByTestId('commit-dialog')).toBeTruthy();
     });
 
-    it('closes menu when commit button is clicked', async () => {
+    it('keeps Source Control mounted beneath the nested commit workflow', async () => {
       await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]);
       await act(async () => {
         fireEvent.click(screen.getByText('Commit Changes'));
       });
-      expect(screen.queryByTestId('git-branches-section')).toBeNull();
+      expect(screen.getByTestId('commit-dialog')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
   });
 
@@ -671,8 +675,8 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      // Menu should open successfully
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      // Overview should open successfully.
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
   });
 
@@ -749,8 +753,8 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      // Should not crash
-      expect(screen.getByTestId('git-branches-section')).toBeTruthy();
+      // A failed refresh must not open a commit workflow or throw.
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
   });
 
@@ -767,14 +771,12 @@ describe('GitButton', () => {
     it('shows "up to date" pill when synced with upstream', async () => {
       setupTrackedMain();
       await openMenuOnly();
-      const syncPill = screen.getByText('up to date');
-      expect(syncPill).toBeTruthy();
-      expect(syncPill.closest('.git-menu-sync')).toHaveClass('synced');
+      expect(screen.getByText('0 ahead · 0 behind')).toBeTruthy();
     });
 
     [
-      { name: 'shows ahead count when commits are ahead of upstream', ahead: 3, behind: 0, label: '↑3' },
-      { name: 'shows behind count when commits are behind upstream', ahead: 0, behind: 2, label: '↓2' },
+      { name: 'shows ahead count when commits are ahead of upstream', ahead: 3, behind: 0, label: '3 ahead · 0 behind' },
+      { name: 'shows behind count when commits are behind upstream', ahead: 0, behind: 2, label: '0 ahead · 2 behind' },
     ].forEach(({ name, ahead, behind, label }) => {
       it(name, async () => {
         emitStatus({
@@ -806,12 +808,7 @@ describe('GitButton', () => {
 
       await openMenuOnly();
 
-      const syncPill = document.querySelector('.git-menu-sync.diverged');
-      expect(syncPill).toBeTruthy();
-      expect(syncPill?.textContent).toContain('↑2');
-      expect(syncPill?.textContent).toContain('↓1');
-      expect(syncPill?.querySelector('.lucide-arrow-up')).toBeTruthy();
-      expect(syncPill?.querySelector('.lucide-arrow-down')).toBeTruthy();
+      expect(screen.getByText('2 ahead · 1 behind')).toBeTruthy();
     });
 
     it('shows "no upstream" pill when branch has no tracking remote', async () => {
@@ -835,9 +832,7 @@ describe('GitButton', () => {
 
       await openMenuOnly();
 
-      const pill = screen.getByText('no upstream');
-      expect(pill).toBeTruthy();
-      expect(pill.closest('.git-menu-sync')).toHaveClass('none');
+      expect(screen.getByText('No upstream')).toBeTruthy();
     });
 
     it('does not show upstream or no-upstream pill for detached HEAD', async () => {
@@ -896,12 +891,12 @@ describe('GitButton', () => {
         name: 'shows "no remote" pill when provider is unknown',
         provider: 'unknown',
         url: 'https://git.mycompany.com/owner/repo.git',
-        text: 'no remote',
+        text: 'Unknown provider',
         className: 'provider-none',
       },
     ] as const;
 
-    providerCases.forEach(({ name, provider, url, text, className }) => {
+    providerCases.forEach(({ name, provider, url, text }) => {
       it(name, async () => {
         mockGitGetRemotes.mockResolvedValue({
           success: true,
@@ -913,7 +908,7 @@ describe('GitButton', () => {
 
         const pill = screen.getByText(text);
         expect(pill).toBeTruthy();
-        expect(pill.closest('.git-menu-provider')).toHaveClass(className);
+        expect(screen.getByRole('dialog', { name: 'Source Control' })).toContainElement(pill);
       });
     });
 
@@ -926,10 +921,8 @@ describe('GitButton', () => {
 
       await openMenuOnly();
 
-      const headerRight = document.querySelector('.git-menu-header-right');
-      expect(headerRight).toBeTruthy();
-      expect(headerRight?.querySelector('.git-menu-provider')).toBeTruthy();
-      expect(headerRight?.querySelector('.git-menu-close')).toBeTruthy();
+      expect(screen.getByText('GitHub')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Close Source Control' })).toBeTruthy();
     });
 
     it('provider pill is present after menu re-opens', async () => {
@@ -955,7 +948,7 @@ describe('GitButton', () => {
       expect(screen.getByText('GitHub')).toBeTruthy();
 
       await act(async () => {
-        fireEvent.click(screen.getByTitle('Close'));
+        fireEvent.click(screen.getByRole('button', { name: 'Close Source Control' }));
       });
 
       mockGitGetRemotes
@@ -1134,7 +1127,7 @@ describe('GitButton', () => {
       });
 
       expect(screen.getByText('origin/main')).toBeTruthy();
-      expect(screen.getByText('↑2 ↓1')).toBeTruthy();
+      expect(screen.getByText('2 ahead · 1 behind')).toBeTruthy();
     });
 
     it('loads VCS context via GitBranchesSection refresh callback', async () => {
@@ -1169,7 +1162,7 @@ describe('GitButton', () => {
       });
 
       render(<GitButton workspacePath="/repo" />);
-      fireEvent.click(document.querySelector('.git-btn')!);
+      await act(async () => { fireEvent.click(document.querySelector('.git-btn')!); }); await openTools();
 
       await act(async () => {
         fireEvent.click(screen.getByText('refresh-context'));

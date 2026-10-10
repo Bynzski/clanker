@@ -1,8 +1,10 @@
 import { GitBranchesSection } from './GitBranchesSection';
 import { GitHistorySection } from './GitHistorySection';
-import { GitMenuHeader } from './GitMenuHeader';
+import { useState } from 'react';
+import { ManagementShell } from '../ui/ManagementShell';
+import { GitOverview } from './GitOverview';
+import type { gitManagementScope } from './gitManagementScope';
 import { GitMergeSection } from './GitMergeSection';
-import { GitRemoteActionsSection } from './GitRemoteActionsSection';
 import GitRemotesSection from './GitRemotesSection';
 import { GitStashSection } from './GitStashSection';
 import { GitWorktreesSection } from './GitWorktreesSection';
@@ -18,7 +20,9 @@ import type {
 } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
 
-interface GitRepoMenuProps {
+export interface GitRepoMenuProps {
+  scope: ReturnType<typeof gitManagementScope>;
+  statusKnown: boolean;
   activeAction: string | null;
   ahead: number;
   availableMergeTargets: string[];
@@ -49,9 +53,7 @@ interface GitRepoMenuProps {
   onAbortOperation: () => void;
   onApplyStash: (stashRef: string) => void;
   onClearStashes: () => void;
-  onClose: () => void;
-  /** Reports a menu-owned portal modal opening/closing so the host does not treat clicks in it as outside clicks. */
-  onModalOpenChange?: (open: boolean) => void;
+  onRestoreFocus: () => void;
   onCreateBranch: (event: React.FormEvent) => void;
   onDeleteBranch: (branchName: string) => void;
   onDropStash: (stashRef: string) => void;
@@ -97,17 +99,15 @@ interface GitRepoMenuProps {
   workspaceId?: string;
 }
 
-export function GitRepoMenu({
+export function GitRepoMenu(props: GitRepoMenuProps) {
+  const [page, setPage] = useState('overview');
+  const {
   activeAction,
-  ahead,
   availableMergeTargets,
-  behind,
   branchError,
   branches,
-  changeCount,
   createBranchInputRef,
   currentBranch,
-  currentBranchLabel,
   deepLinks,
   diffError,
   diffResult,
@@ -115,7 +115,6 @@ export function GitRepoMenu({
   historyError,
   includeUntracked,
   isBusy,
-  isDetached,
   isLoadingBranches,
   isLoadingContext,
   isLoadingDiff,
@@ -128,19 +127,11 @@ export function GitRepoMenu({
   onAbortOperation,
   onApplyStash,
   onClearStashes,
-  onClose,
-  onModalOpenChange,
   onCreateBranch,
   onDeleteBranch,
   onDropStash,
-  onFetch,
   onMergeBranch,
-  onOpenCommitDialog,
   onPopStash,
-  onPublish,
-  onPull,
-  onPush,
-  onRefresh,
   onRefreshContext,
   onRemotesChanged,
   onSelectCommitDiff,
@@ -157,7 +148,6 @@ export function GitRepoMenu({
   providerContext,
   pullRequest,
   refreshKey = 0,
-  remoteAction,
   remoteError,
   remotes,
   selectedCommit,
@@ -167,12 +157,10 @@ export function GitRepoMenu({
   stashMessage,
   stashes,
   statusErrorMessage,
-  upstream,
-  upstreamLabel,
   vcsContextError,
   workspacePath,
   workspaceId,
-}: GitRepoMenuProps) {
+  } = props;
   const errors = [
     statusErrorMessage,
     branchError,
@@ -184,44 +172,14 @@ export function GitRepoMenu({
   ].filter((error): error is string => Boolean(error));
 
   return (
-    <div className="git-menu" role="menu" aria-label="Git actions">
-      <GitMenuHeader
-        ahead={ahead}
-        behind={behind}
-        changeCount={changeCount}
-        currentBranch={currentBranch}
-        currentBranchLabel={currentBranchLabel}
-        isBusy={isBusy}
-        isDetached={isDetached}
-        isLoadingBranches={isLoadingBranches}
-        isLoadingHistory={isLoadingHistory}
-        isLoadingOperation={isLoadingOperation}
-        onClose={onClose}
-        onOpenCommitDialog={onOpenCommitDialog}
-        onRefresh={onRefresh}
-        operationState={operationState}
-        provider={provider}
-        upstream={upstream}
-        upstreamLabel={upstreamLabel}
-      />
-
+    <ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }, { id: 'tools', label: 'Existing Git Tools', group: 'Advanced (transitional)' }]} selectedId={page} onSelect={setPage}>
+      {page !== 'overview' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
+      {page === 'overview' ? <GitOverview {...props} /> : <div className="git-tools-content">
+      <h2 className="clanker-dialog-title">Existing Git Tools</h2>
+      <p>Branches, Worktrees, Stashes, Remotes, Merge and History use their existing implementations during migration.</p>
       {errors.map((error) => (
         <div key={error} className="git-menu-error">{error}</div>
       ))}
-
-      {!isDetached && (
-        <GitRemoteActionsSection
-          currentBranch={currentBranch}
-          hasRemotes={remotes.length > 0}
-          isBusy={isBusy}
-          onFetch={onFetch}
-          onPublish={onPublish}
-          onPull={onPull}
-          onPush={onPush}
-          remoteAction={remoteAction}
-          upstream={upstream}
-        />
-      )}
 
       <GitBranchesSection
         activeAction={activeAction}
@@ -245,7 +203,7 @@ export function GitRepoMenu({
         workspaceId={workspaceId}
       />
 
-      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} onModalOpenChange={onModalOpenChange} />
+      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} />
 
       <GitStashSection
         activeAction={activeAction}
@@ -296,6 +254,7 @@ export function GitRepoMenu({
         selectedDiffMode={selectedDiffMode}
         selectedDiffRef={selectedDiffRef}
       />
-    </div>
+      </div>}
+    </ManagementShell>
   );
 }

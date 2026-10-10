@@ -1,4 +1,83 @@
-# Issue #154 — Inventory and Phase 0–2B decisions
+# Issue #154 — Inventory and Phase 0–3A decisions
+
+Current scope: application Settings through Phase 2B and Source Control foundation / Overview through Phase 3A. Phase 3A starts from reviewed
+`18348cabfebd6bb4aa11d7973a35348ad1205e1c` on `feat/154-management-settings`.
+No Phase 3B, PR or merge is included.
+
+## Phase 3A — Source Control foundation
+
+- The toolbar's **Source Control** opens a separate shared Dialog / ManagementShell,
+  initially **Overview**. It is not a Settings page. Git Preferences and
+  Authentication remain application preferences / credential management in Settings.
+- `GitButton` remains the sole Git controller: existing polling, action hooks,
+  scoped VCS snapshot and main Git APIs remain authoritative. There is no new Git
+  store, persistence, service, IPC, subprocess or authorization path. Removed
+  `GitMenuHeader` and the dropdown's outside/Escape/viewport/suppression ownership;
+  shared Dialog owns those responsibilities. The ManagementShell type now omits
+  native DOM `onSelect` so its navigation callback has one unambiguous signature.
+- Overview presents the actual working root, environment ID, checkout context,
+  current branch / detached HEAD, upstream, ahead/behind, file count, operation,
+  provider repository and native PR/CI metadata. Commit / Refresh and the existing
+  Fetch / Pull / Push / Publish controls are prominent. Unavailable status,
+  authorization errors, unsupported providers and failed discovery never become
+  confirmed PR absence or guessed checks. No new provider action is synthesized.
+- **Existing Git Tools** is the explicit transitional destination for the complete
+  existing branches, worktrees, stashes, remotes, merge/abort and history/diff
+  implementations. It is intentionally not the Phase 3B page redesign. Destructive
+  confirmations, notifications, validated external links, checkout removal guards,
+  SSH host/reservation protections and main-owned execution remain unchanged.
+- `gitManagementScope` is descriptive, not authority. Git IPC currently authorizes
+  the registered **workspace root**, while provider metadata can target a checkout.
+  For a selected isolated checkout this phase fails closed with an explanation:
+  it does **not** silently run parent-repository Git operations. Opening that
+  checkout as its own workspace remains supported. Unregistered/missing selections
+  and inactive workspaces are also refused. `mainCheckoutPath` grants no access.
+- Scope identity includes workspace, environment, canonical selected root and
+  selected checkout. A changed scope remounts the controller and closes all its
+  dialogs; old async results cannot update the new UI or scoped VCS snapshot.
+  Action entry points and post-action refresh recheck liveness/scope. Request
+  generations discard superseded metadata/diff responses. Initial remote discovery
+  uses the existing single loader rather than a second startup read.
+- Non-repositories retain explicit initialization and main/master selection through
+  the existing `gitInit` path. Unknown status disables initialization. Existing
+  CommitDialog is nested over Source Control, preserving continuous Browser
+  suppression and returning to Overview on cancel. Shared primitives trap focus,
+  own topmost Escape and portal confirmation dismissal; closing returns focus to
+  the live Source Control trigger. There is no custom Browser visibility code.
+- New `SourceControl.test.tsx` covers truthful metadata, actual remote-hook calls,
+  publish failure, init, nested real CommitDialog leases, focus, scope reset and
+  rejection of parent substitution. Existing GitButton and real worktree ownership
+  tests navigate the transitional destination; inspect/remove/unlock/prune/stale
+  checkout assertions are preserved.
+- `npm run smoke:source-control` uses an isolated local Git repository/profile and
+  a real native Browser. It checks Dark/Light/Slate at 1100×760 and 640×480,
+  Overview geometry, transitional worktree confirmation (Cancel only), real
+  CommitDialog, continuous native suppression/restoration and trigger focus.
+  It neither authenticates nor exercises real network fetch/pull/push.
+
+### Phase 3A verification and remaining owner checks
+
+- Full `npm run validate`: **372 files / 7,681 tests passed**, including branding,
+  lint, typecheck, Fallow, security and build (final log:
+  `/tmp/154-3a-validate-final.log`).
+- Focused Git/VCS/checkout/renderer regression suite: **60 files / 1,355 tests
+  passed** (`/tmp/154-3a-focused-final.log`). An initial parallel run timed out in
+  the real session-worktree history test; its isolated retry and subsequent complete
+  focused run passed without changing that test or its timeout.
+- Source Control Electron smoke, unchanged Settings Electron smoke and full-renderer
+  Browser smoke passed. Reviewed responsive theme screenshots in
+  `/tmp/clanker-source-control-visual-W7Mt2p` (primary actions remain visible at
+  640×480). Logs: `/tmp/154-3a-source-smoke-final.log`,
+  `/tmp/154-3a-settings-smoke.log`, `/tmp/154-3a-browser-renderer-final.log`.
+- Separate native multi-Browser smoke: **SIGSEGV**, reproduced again
+  (`/tmp/154-3a-multi-browser.log`); not counted as a passing smoke.
+
+Real authenticated provider PR/CI, local/SSH network Git operations, Windows/macOS
+focus, high zoom / OS scaling and screen-reader checks remain owner tests. The
+separate multi-Browser native smoke remains an independently reproduced SIGSEGV;
+this phase does not alter unrelated Browser internals to conceal it.
+
+## Earlier Settings phases
 
 Scope: application Settings foundation through Phase 2B. Phase 2B starts from reviewed
 `2c9a207787111e4961606a478096a51583b168a9` on `feat/154-management-settings`.
@@ -21,7 +100,7 @@ provider API, instance authorization or launch-capability semantics change here.
 | VCS SSH keys / provider PATs | Local credentials, main `credentialService`/`sshKeyService`, credential IPC; `CredentialSettings` and `vcsStore` compose status/action feedback. Secrets never move into renderer persistence. | Canonical Source Control → Authentication, composed by `AuthenticationSettings`; main owns all key/token operations and secret storage. Only public-key/status/validation metadata enters the shared VCS store; an entered token is temporary component state. |
 | SSH target add/edit/test/remove/default root | Saved environment IDs in main; `SshEnvironmentManager` → SSH environment IPC/service. `OpenWorkspaceDialog` owns chooser selection and saved-list refresh, not the target's authoritative configuration. | Canonical Connections → SSH Targets, composed by `SshTargetsSettings` with the same validated configuration shape and main APIs. Open Workspace add/edit/server-root affordances deep-link here; no standalone manager remains. |
 
-### Git inventory (untouched)
+### Original Git inventory (Phase 0–2B; Phase 3A changes documented above)
 
 All operations go through existing preload Git methods and main `gitIpc` /
 `gitService`, with workspace/checkout validation and local/SSH execution. The
@@ -40,7 +119,7 @@ not a newly derived display path. `mainCheckoutPath` is not access authority.
 | `GitHistorySection` | GitButton history/diff state and loaders; working/commit diffs, loading/errors. |
 
 `GitRepoMenu` is the section composition extraction point, not a second Git
-controller. GitButton currently has its own outside/Escape handling, viewport
+controller. Before Phase 3A, GitButton had its own outside/Escape handling, viewport
 placement, suppression count and modal-count guard. Those need deliberate review
 in the Git phase, **not** changes during Phase 1.
 

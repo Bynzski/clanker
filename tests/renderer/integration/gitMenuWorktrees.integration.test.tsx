@@ -57,6 +57,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       if (!button) throw new Error('no git button');
       return button as HTMLElement;
     }));
+    await user.click(await screen.findByRole('button', { name: 'Existing Git Tools' }));
     await screen.findByText(expectedBranch);
   };
   const clickRemove = async () => {
@@ -98,21 +99,21 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
 
   it('still closes the menu on an outside click when no confirmation is active', async () => {
     await openMenu();
-    expect(document.querySelector('.git-menu')).not.toBeNull();
-    await user.click(document.body);
-    await waitFor(() => expect(document.querySelector('.git-menu')).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
+    await user.click(document.querySelector('.clanker-dialog-overlay')!);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull());
   });
 
   it('keeps the menu open on Escape and outside clicks while the confirmation is open', async () => {
     await openMenu();
     await clickRemove();
     fireEvent.mouseDown(document.body);
-    expect(document.querySelector('.git-menu')).not.toBeNull();
+    expect(screen.getByRole('dialog', { hidden: true })).toBeInTheDocument();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
     // Escape dismisses the confirmation only; the menu stays for the user to continue.
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(document.querySelector('.git-menu')).not.toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
   });
 
   it('forgets only an authoritative unused stale context and does not resurrect it when reopened', async () => {
@@ -241,7 +242,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       expect((await screen.findByRole('alertdialog')).textContent).toContain('external drive');
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(api.gitUnlockWorktree).not.toHaveBeenCalled();
-      expect(document.querySelector('.git-menu')).not.toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Source Control' })).toBeVisible();
     });
 
     it('keeps a refused unlock visible with its error', async () => {

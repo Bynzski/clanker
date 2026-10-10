@@ -13,7 +13,7 @@ export interface ManagementNavigationItem {
 
 /** Presentation only. The caller owns the Dialog root, selection, scope and page content. */
 export function ManagementShell({ title, items, selectedId, onSelect, children, headerActions, busy = false, ...props }:
-  Omit<DialogContentProps, 'children' | 'title'> & {
+  Omit<DialogContentProps, 'children' | 'title' | 'onSelect'> & {
     title: string;
     items: readonly ManagementNavigationItem[];
     selectedId: string;

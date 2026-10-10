@@ -25,7 +25,9 @@ import type {
   GitStatus,
 } from './git/types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
-import { useKeepInViewport } from '../lib/useKeepInViewport';
+import { Dialog } from './ui/Dialog';
+import { ManagementShell } from './ui/ManagementShell';
+import { gitManagementScope } from './git/gitManagementScope';
 import './GitButton.css';
 
 interface GitButtonProps {
@@ -33,7 +35,28 @@ interface GitButtonProps {
   workspaceId?: string;
 }
 
-export default function GitButton({ workspacePath, workspaceId }: GitButtonProps) {
+export default function GitButton(props: GitButtonProps) {
+  const workspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === props.workspaceId));
+  useAgentLocation(workspace?.activeTerminalId);
+  useWorkspaceStore((state) => state.activeWorkspaceId);
+  const scope = gitManagementScope(props.workspacePath, props.workspaceId);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return scope.blocked ? <UnavailableGit key={scope.key} scope={scope} trigger={trigger} /> : <GitController key={scope.key} {...props} scope={scope} trigger={trigger} />;
+}
+
+function UnavailableGit({ scope, trigger }: { scope: ReturnType<typeof gitManagementScope>; trigger: React.RefObject<HTMLButtonElement | null> }) {
+  const [open, setOpen] = useState(false);
+  return <><Button ref={trigger} size="xs" variant="ghost" aria-label="Source Control" onClick={() => setOpen(true)}><GitBranchIcon size={14} /></Button>
+    <Dialog open={open} onOpenChange={setOpen}><ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }]} selectedId="overview" onSelect={() => {}}>
+      <p>{scope.environmentId === 'local' ? 'Local' : `SSH · ${scope.environmentId}`} · {scope.path}</p><p role="alert">{scope.blocked}</p>
+    </ManagementShell></Dialog></>;
+}
+
+function GitController({ workspacePath, workspaceId, scope, trigger }: GitButtonProps & { scope: ReturnType<typeof gitManagementScope>; trigger: React.RefObject<HTMLButtonElement | null> }) {
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  const isCurrent = useCallback(() => live.current && gitManagementScope(workspacePath, workspaceId).key === scope.key, [workspacePath, workspaceId, scope.key]);
+  const [statusKnown, setStatusKnown] = useState(false);
   const [changeCount, setChangeCount] = useState(0);
   const [isRepo, setIsRepo] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -72,17 +95,9 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   const [initError, setInitError] = useState<string | null>(null);
   const [selectedDefaultBranch, setSelectedDefaultBranch] = useState('main');
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
-  const menuRef = useRef<HTMLDivElement>(null);
-  // Modals owned by menu content render in portals outside `menuRef`; while one is open, outside
-  // pointer/Escape closing is suspended so the menu (and the modal's owner) outlives its action.
-  const menuModalCountRef = useRef(0);
-  const handleMenuModalChange = useCallback((open: boolean) => {
-    menuModalCountRef.current = Math.max(0, menuModalCountRef.current + (open ? 1 : -1));
-  }, []);
-  useKeepInViewport(menuRef, '.git-menu', isMenuOpen, isRepo);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
-  const { activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
+  const { activeWorkspaceId } = useWorkspaceStore();
   const focusedWorkspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === workspaceId));
   const agentLocation = useAgentLocation(focusedWorkspace?.activeTerminalId);
   const checkoutContextId = focusedWorkspace ? selectedVcsCheckoutId(focusedWorkspace, agentLocation) : undefined;
@@ -100,26 +115,9 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     };
   }, [workspacePath, workspaceId, checkoutContextId, activeWorkspaceId, invalidateVcsRequest]);
 
-  useEffect(() => {
-    if (!isMenuOpen) {
-      return;
-    }
-
-    if (!activeWorkspaceId) {
-      return;
-    }
-
-    pushBrowserOverlay(activeWorkspaceId);
-    return () => popBrowserOverlay(activeWorkspaceId);
-  }, [activeWorkspaceId, isMenuOpen, pushBrowserOverlay, popBrowserOverlay]);
-
   const currentBranchLabel = useMemo(() => {
-    if (currentBranch) {
-      return currentBranch;
-    }
-    if (isDetached) {
-      return 'Detached HEAD';
-    }
+    if (isDetached) return currentBranch ? `Detached HEAD · ${currentBranch}` : 'Detached HEAD';
+    if (currentBranch) return currentBranch;
     return 'No branch selected';
   }, [currentBranch, isDetached]);
 
@@ -139,8 +137,9 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   );
 
   const loadVcsContext = useCallback(async (refresh = false) => {
+    if (!isCurrent()) return;
     const generation = ++vcsGeneration.current;
-    const fresh = () => generation === vcsGeneration.current && (!workspaceId
+    const fresh = () => isCurrent() && generation === vcsGeneration.current && (!workspaceId
       || (useWorkspaceStore.getState().activeWorkspaceId === workspaceId && currentVcsCheckoutId(workspaceId) === checkoutContextId));
     if (!workspacePath || checkoutContextId === null) {
       setVcsProviderContext(null);
@@ -158,7 +157,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
         : await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
       if (!fresh()) return;
       useVcsStore.getState().setContextSnapshot(result);
-      setVcsContextError(result.error ?? null);
+      setVcsContextError(result.error ?? (result.success ? null : 'Provider context unavailable'));
       if (result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
         setPullRequest(result.pullRequest as PullRequestContext | null);
@@ -169,29 +168,34 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
         setDeepLinks([]);
       }
     } catch {
-      if (fresh()) setVcsContextError('Failed to load provider context');
+      if (fresh()) {
+        setVcsContextError('Failed to load provider context');
+        setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+        useVcsStore.getState().setContextSnapshot(null);
+      }
     } finally {
       if (fresh()) setIsLoadingVcsContext(false);
     }
-  }, [workspacePath, workspaceId, checkoutContextId]);
+  }, [workspacePath, workspaceId, checkoutContextId, isCurrent]);
 
   const loadRemotes = useCallback(async () => {
-    if (!workspacePath) {
+    if (!workspacePath || !isCurrent()) {
       return;
     }
 
     try {
       const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
+      if (!isCurrent()) return;
       if (remotesResult.success) {
         setRemotes(remotesResult.remotes);
         setProvider(remotesResult.provider);
       } else {
-        setRemotes([]);
+        setRemotes([]); setProvider('unknown');
       }
     } catch {
-      setRemotes([]);
+      if (isCurrent()) { setRemotes([]); setProvider('unknown'); }
     }
-  }, [workspacePath, workspaceId]);
+  }, [workspacePath, workspaceId, isCurrent]);
 
   useEffect(() => {
     if (!workspacePath) {
@@ -206,8 +210,9 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
   const refreshAfterAction = useCallback(async () => {
+    if (!isCurrent()) return;
     await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh(workspaceId)]);
-  }, [workspaceId]);
+  }, [workspaceId, isCurrent]);
 
   const {
     branchError,
@@ -265,8 +270,11 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     workspaceId,
   });
 
+  const dataRequest = useRef(0);
   const refreshMenuData = useCallback(async () => {
-    if (!workspacePath) {
+    const request = ++dataRequest.current;
+    const fresh = () => isCurrent() && request === dataRequest.current;
+    if (!workspacePath || !fresh()) {
       return;
     }
 
@@ -291,6 +299,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
         window.electronAPI.gitGetHistory(workspacePath, 8, workspaceId),
       ]);
 
+      if (!fresh()) return;
       if (branchState.success) {
         const sortedBranches = [...branchState.branches].sort((a, b) => {
           if (a.isCurrent !== b.isCurrent) {
@@ -312,6 +321,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
           return availableTargets[0]?.name ?? '';
         });
       } else {
+        setStatusKnown(false);
         setIsRepo(false);
         setCurrentBranch(null);
         setIsDetached(false);
@@ -347,40 +357,49 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
       }
 
       const diff = await window.electronAPI.gitGetDiff(workspacePath, selectedDiffMode, diffRef, workspaceId);
+      if (!fresh()) return;
       setDiffResult(diff);
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
 
       const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
+      if (!fresh()) return;
       if (remotesResult.success) {
         setProvider(remotesResult.provider);
         setRemotes(remotesResult.remotes);
       } else {
-        setRemotes([]);
+        setRemotes([]); setProvider('unknown');
       }
 
       await loadVcsContext();
     } catch (error: unknown) {
+      if (!fresh()) return;
       const message = error instanceof Error ? error.message : 'Unable to load git data';
+      setOperationState(null);
       setBranchError(message);
       setMergeError(message);
       setStashError(message);
       setHistoryError(message);
       setDiffError(message);
     } finally {
+      if (fresh()) {
       setIsLoadingBranches(false);
       setIsLoadingOperation(false);
       setIsLoadingStashes(false);
       setIsLoadingHistory(false);
       setIsLoadingDiff(false);
+      }
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError]);
+  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError, isCurrent]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
+  const diffRequest = useRef(0);
   const loadDiff = async (mode: DiffMode, ref?: string) => {
-    if (!workspacePath) {
+    const request = ++diffRequest.current;
+    const fresh = () => isCurrent() && request === diffRequest.current;
+    if (!workspacePath || !fresh()) {
       return;
     }
 
@@ -391,14 +410,15 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
 
     try {
       const diff = await window.electronAPI.gitGetDiff(workspacePath, mode, ref, workspaceId);
+      if (!fresh()) return;
       setDiffResult(diff);
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
     } catch (error: unknown) {
-      setDiffError(error instanceof Error ? error.message : 'Unable to load diff');
+      if (fresh()) setDiffError(error instanceof Error ? error.message : 'Unable to load diff');
     } finally {
-      setIsLoadingDiff(false);
+      if (fresh()) setIsLoadingDiff(false);
     }
   };
 
@@ -427,17 +447,6 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
 
     window.electronAPI.gitStartPolling(workspacePath, workspaceId);
 
-    void (async () => {
-      try {
-        const result = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
-        if (result.success) {
-          setProvider(result.provider);
-        }
-      } catch {
-        return;
-      }
-    })();
-
     return () => {
       void window.electronAPI.gitStopPolling(workspaceId).catch((error: unknown) => {
         if (error instanceof Error && error.message.includes('Workspace identity is no longer registered')) return;
@@ -448,6 +457,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onGitStatusUpdate((status) => {
+      if (!isCurrent()) return;
       const activeWs = useWorkspaceStore.getState().getActiveWorkspace();
       if (activeWs) {
         if (workspaceId
@@ -464,6 +474,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
       } else if (workspacePath && status.workspacePath && !sameWorkspacePath(status.workspacePath, workspacePath)) {
         return;
       }
+      setStatusKnown(status.success);
       if (status.success) {
         setIsRepo(status.isRepo);
         setChangeCount(status.changes.length);
@@ -494,7 +505,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     });
 
     return unsubscribe;
-  }, [workspacePath, workspaceId]);
+  }, [workspacePath, workspaceId, isCurrent]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -505,65 +516,41 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
       return;
     }
 
-    window.setTimeout(() => createBranchInputRef.current?.focus(), 50);
     void refreshMenuData();
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (menuModalCountRef.current > 0) return;
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && menuModalCountRef.current === 0) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
   }, [isMenuOpen, isRepo, refreshMenuData]);
 
-  const handleCommit = async (message: string) => window.electronAPI.gitCommit(workspacePath, message, workspaceId);
+  const handleCommit = async (message: string) => isCurrent() ? window.electronAPI.gitCommit(workspacePath, message, workspaceId) : { success: false, error: 'Repository scope changed' };
 
-  const handleStage = async () => window.electronAPI.gitStage(workspacePath, undefined, workspaceId);
+  const handleStage = async () => isCurrent() ? window.electronAPI.gitStage(workspacePath, undefined, workspaceId) : { success: false, error: 'Repository scope changed' };
 
   const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
+    if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
     const result = await window.electronAPI.gitUnstage(workspacePath, [path], workspaceId);
-    if (result.success) {
+    if (result.success && isCurrent()) {
       const status = await window.electronAPI.gitRefresh(workspaceId);
-      if (status) {
-        setChanges(status.changes);
-        setChangeCount(status.changes.length);
-      }
+      if (status?.success && isCurrent()) { setChanges(status.changes); setChangeCount(status.changes.length); }
     }
     return result;
   };
 
   const handleUnstageAll = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
     const result = await window.electronAPI.gitUnstage(workspacePath, undefined, workspaceId);
-    if (result.success) {
+    if (result.success && isCurrent()) {
       const status = await window.electronAPI.gitRefresh(workspaceId);
-      if (status) {
-        setChanges(status.changes);
-        setChangeCount(status.changes.length);
-      }
+      if (status?.success && isCurrent()) { setChanges(status.changes); setChangeCount(status.changes.length); }
     }
     return result;
   };
 
   const handleInitRepository = async () => {
+    if (!isCurrent() || !statusKnown || isInitializing) return;
     setIsInitializing(true);
     setInitError(null);
 
     try {
       const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch, workspaceId);
+      if (!isCurrent()) return;
       if (result.success) {
         await window.electronAPI.gitRefresh(workspaceId);
         setIsMenuOpen(false);
@@ -578,19 +565,21 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   };
 
   const handleOpenCommitDialog = async () => {
-    const status = await window.electronAPI.gitRefresh(workspaceId);
-    if (status) {
-      setChanges(status.changes);
-      setChangeCount(status.changes.length);
-      setCurrentBranch(status.currentBranch);
-      setIsDetached(status.isDetached);
-    }
-    setIsMenuOpen(false);
-    setIsDialogOpen(true);
+    if (!isCurrent() || activeAction) return;
+    setActiveAction('open-commit');
+    try {
+      const status = await window.electronAPI.gitRefresh(workspaceId);
+      if (!isCurrent()) return;
+      if (!status?.success) { setRemoteError('Could not refresh changes before opening Commit'); return; }
+      setChanges(status.changes); setChangeCount(status.changes.length);
+      setCurrentBranch(status.currentBranch); setIsDetached(status.isDetached);
+      setIsDialogOpen(true);
+    } catch (error) { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Could not refresh changes'); }
+    finally { if (isCurrent()) setActiveAction(null); }
   };
 
   const handleToggleMenu = () => {
-    if (!workspacePath) {
+    if (!workspacePath || !isCurrent()) {
       return;
     }
 
@@ -598,6 +587,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   };
 
   const handleMergeBranch = async () => {
+    if (!isCurrent()) return;
     if (!mergeTargetBranch) {
       setMergeError('Select a branch to merge');
       return;
@@ -621,6 +611,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   };
 
   const handleAbortOperation = async () => {
+    if (!isCurrent()) return;
     setActiveAction('abort-operation');
     setMergeError(null);
 
@@ -646,25 +637,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     await loadDiff('commit', commit.hash);
   };
 
-  if (!isRepo) {
-    return (
-      <div className="git-menu-container" ref={menuRef}>
-        <GitInitMenu
-          initError={initError}
-          isInitializing={isInitializing}
-          isMenuOpen={isMenuOpen}
-          onClose={() => setIsMenuOpen(false)}
-          onInitialize={() => void handleInitRepository()}
-          onSelectDefaultBranch={setSelectedDefaultBranch}
-          onToggleMenu={() => setIsMenuOpen((value) => !value)}
-          selectedDefaultBranch={selectedDefaultBranch}
-          statusErrorMessage={statusErrorMessage}
-        />
-      </div>
-    );
-  }
-
-  const isBusy = activeAction !== null;
+  const isBusy = activeAction !== null || remoteAction !== null;
   const selectedCommit = selectedDiffMode === 'commit'
     ? history.find((entry) => entry.hash === selectedDiffRef) ?? null
     : null;
@@ -676,24 +649,29 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
 
   return (
     <>
-      <div className="git-menu-container" ref={menuRef}>
+      <div className="git-menu-container">
         <Button
+          ref={trigger}
+          aria-label="Source Control"
           size="xs"
           variant="ghost"
           className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
           onClick={handleToggleMenu}
           aria-expanded={isMenuOpen}
-          title={currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
+          title={!isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
         >
           <GitBranchIcon size={14} strokeWidth={2} />
+          {!isRepo && <span>Init Git</span>}
           {changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}
           <ChevronDown size={12} strokeWidth={2.5} />
         </Button>
 
-        {isMenuOpen && (
-          <GitRepoMenu
+        <Dialog open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+        {isRepo ? <GitRepoMenu
+            scope={scope}
+            statusKnown={statusKnown}
             activeAction={activeAction}
             ahead={ahead}
             availableMergeTargets={availableMergeTargets}
@@ -722,21 +700,20 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             mergeTargetBranch={mergeTargetBranch}
             newBranchName={newBranchName}
             onAbortOperation={() => void handleAbortOperation()}
-            onApplyStash={(stashRef) => void handleApplyStash(stashRef)}
-            onClearStashes={() => void handleClearStashes()}
-            onClose={() => setIsMenuOpen(false)}
-            onModalOpenChange={handleMenuModalChange}
-            onCreateBranch={handleCreateBranch}
-            onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
-            onDropStash={(stashRef) => void handleDropStash(stashRef)}
-            onFetch={() => void handleFetch()}
+            onApplyStash={(stashRef) => { if (isCurrent()) void handleApplyStash(stashRef); }}
+            onClearStashes={() => { if (isCurrent()) void handleClearStashes(); }}
+            onRestoreFocus={() => trigger.current?.focus()}
+            onCreateBranch={(event) => { if (isCurrent()) void handleCreateBranch(event); }}
+            onDeleteBranch={(branchName) => { if (isCurrent()) handleDeleteBranch(branchName); }}
+            onDropStash={(stashRef) => { if (isCurrent()) void handleDropStash(stashRef); }}
+            onFetch={() => { if (isCurrent()) void handleFetch(); }}
             onMergeBranch={() => void handleMergeBranch()}
             onOpenCommitDialog={() => void handleOpenCommitDialog()}
-            onPopStash={(stashRef) => void handlePopStash(stashRef)}
-            onPublish={() => void handlePublish()}
-            onPull={() => void handlePull()}
-            onPush={() => void handlePush()}
-            onRefresh={() => void refreshMenuData()}
+            onPopStash={(stashRef) => { if (isCurrent()) void handlePopStash(stashRef); }}
+            onPublish={() => { if (isCurrent()) void handlePublish(); }}
+            onPull={() => { if (isCurrent()) void handlePull(); }}
+            onPush={() => { if (isCurrent()) void handlePush(); }}
+            onRefresh={() => { void refreshAfterAction().catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             onRefreshContext={() => void loadVcsContext(true)}
             onRemotesChanged={() => void loadRemotes()}
             onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
@@ -746,8 +723,8 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             onSetNewBranchName={setNewBranchName}
             onSetRemoteError={setRemoteError}
             onSetStashMessage={setStashMessage}
-            onStash={() => void handleStash()}
-            onSwitchBranch={(branchName) => void handleSwitchBranch(branchName)}
+            onStash={() => { if (isCurrent()) void handleStash(); }}
+            onSwitchBranch={(branchName) => { if (isCurrent()) void handleSwitchBranch(branchName); }}
             operationState={operationState}
             provider={provider}
             providerContext={vcsProviderContext}
@@ -768,8 +745,11 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             vcsContextError={vcsContextError}
             workspacePath={workspacePath}
             workspaceId={workspaceId}
-          />
-        )}
+          /> : <ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }]} selectedId="overview" onSelect={() => {}}>
+            <p>{scope.environmentId === 'local' ? 'Local' : `SSH · ${scope.environmentId}`} · {scope.path}</p>
+            <GitInitMenu initError={initError} isInitializing={isInitializing} onInitialize={() => void handleInitRepository()} onSelectDefaultBranch={setSelectedDefaultBranch} selectedDefaultBranch={selectedDefaultBranch} statusErrorMessage={statusErrorMessage} statusKnown={statusKnown} />
+          </ManagementShell>}
+        </Dialog>
       </div>
 
       <CommitDialog
@@ -790,7 +770,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
           deleteDialog={deleteDialog}
           isBusy={deleteDialogBusy}
           onCancel={closeDeleteDialog}
-          onConfirmDelete={(forceDelete) => void performDeleteBranch(forceDelete)}
+          onConfirmDelete={(forceDelete) => { if (isCurrent()) void performDeleteBranch(forceDelete); }}
         />
       )}
     </>
