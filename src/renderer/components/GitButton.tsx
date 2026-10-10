@@ -76,13 +76,18 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [stashes, setStashes] = useState<GitStash[]>([]);
   const [isLoadingStashes, setIsLoadingStashes] = useState(false);
   const [history, setHistory] = useState<GitHistoryEntry[]>([]);
+  const [historyLimit, setHistoryLimit] = useState(10);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedDiffMode, setSelectedDiffMode] = useState<DiffMode>('working');
   const [selectedDiffRef, setSelectedDiffRef] = useState<string | null>(null);
+  const diffSelectionRef = useRef<{ mode: DiffMode; ref: string | null }>({ mode: 'working', ref: null });
+  diffSelectionRef.current = { mode: selectedDiffMode, ref: selectedDiffRef };
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
+  const diffGeneration = useRef(0);
+  const hasMoreHistory = history.length === historyLimit && historyLimit < 50;
   const [statusErrorCode, setStatusErrorCode] = useState<string | null>(null);
   const [upstream, setUpstream] = useState<string | null>(null);
   const [ahead, setAhead] = useState(0);
@@ -302,9 +307,80 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     operationState,
   });
 
+  const fetchDiff = useCallback(async (mode: DiffMode, ref: string | null) => {
+    if (!workspacePath || !isCurrent()) {
+      return;
+    }
+    const generation = ++diffGeneration.current;
+    const fresh = () => isCurrent() && generation === diffGeneration.current;
+
+    setIsLoadingDiff(true);
+    setDiffError(null);
+
+    try {
+      const commitRef = mode === 'commit' ? ref ?? undefined : undefined;
+      const result = await window.electronAPI.gitGetDiff(workspacePath, mode, commitRef, workspaceId);
+      if (!fresh()) return;
+      setDiffResult(result);
+      if (!result.success) {
+        setDiffError(result.error || 'Unable to load summary');
+      } else {
+        setDiffError(null);
+      }
+    } catch (error: unknown) {
+      if (fresh()) {
+        setDiffResult(null);
+        setDiffError(error instanceof Error ? error.message : 'Unable to load summary');
+      }
+    } finally {
+      if (fresh()) {
+        setIsLoadingDiff(false);
+      }
+    }
+  }, [workspacePath, workspaceId, isCurrent]);
+
+  const handleSelectWorkingDiff = useCallback((mode: DiffMode) => {
+    if (!isCurrent()) return;
+    diffSelectionRef.current = { mode, ref: null };
+    setSelectedDiffMode(mode);
+    setSelectedDiffRef(null);
+    void fetchDiff(mode, null);
+  }, [isCurrent, fetchDiff]);
+
+  const handleSelectCommitDiff = useCallback((commit: GitHistoryEntry) => {
+    if (!isCurrent()) return;
+    diffSelectionRef.current = { mode: 'commit', ref: commit.hash };
+    setSelectedDiffMode('commit');
+    setSelectedDiffRef(commit.hash);
+    void fetchDiff('commit', commit.hash);
+  }, [isCurrent, fetchDiff]);
+
+  const handleLoadMoreHistory = useCallback(async () => {
+    if (!isCurrent() || isLoadingHistory || !hasMoreHistory) return;
+    const nextLimit = Math.min(50, historyLimit + 15);
+    setHistoryLimit(nextLimit);
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+
+    try {
+      const items = await window.electronAPI.gitGetHistory(workspacePath, nextLimit, workspaceId);
+      if (!isCurrent()) return;
+      setHistory(items);
+    } catch (error: unknown) {
+      if (isCurrent()) {
+        setHistoryError(error instanceof Error ? error.message : 'Unable to load history');
+      }
+    } finally {
+      if (isCurrent()) {
+        setIsLoadingHistory(false);
+      }
+    }
+  }, [isCurrent, isLoadingHistory, hasMoreHistory, historyLimit, workspacePath, workspaceId]);
+
   const dataRequest = useRef(0);
   const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
     const request = ++dataRequest.current;
+    const startDiffGen = diffGeneration.current;
     const fresh = () => isCurrent() && request === dataRequest.current;
     if (!workspacePath || !fresh()) {
       return;
@@ -316,19 +392,17 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     setIsLoadingOperation(true);
     setIsLoadingStashes(true);
     setIsLoadingHistory(true);
-    setIsLoadingDiff(true);
     setBranchError(null);
     setMergeError(null);
     setStashError(null);
     setHistoryError(null);
-    setDiffError(null);
 
     try {
       const [branchState, opState, stashItems, historyItems] = await Promise.all([
         window.electronAPI.gitGetBranchState(workspacePath, workspaceId),
         window.electronAPI.gitGetOperationState(workspacePath, workspaceId),
         window.electronAPI.gitGetStashes(workspacePath, workspaceId),
-        window.electronAPI.gitGetHistory(workspacePath, 8, workspaceId),
+        window.electronAPI.gitGetHistory(workspacePath, historyLimit, workspaceId),
       ]);
 
       if (!fresh()) return;
@@ -381,18 +455,20 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setStashes(stashItems);
       setHistory(historyItems);
 
-      const diffRef = selectedDiffMode === 'commit'
-        ? selectedDiffRef ?? historyItems[0]?.hash
-        : undefined;
-      if (selectedDiffMode === 'commit' && diffRef && !selectedDiffRef) {
-        setSelectedDiffRef(diffRef);
-      }
-
-      const diff = await window.electronAPI.gitGetDiff(workspacePath, selectedDiffMode, diffRef, workspaceId);
-      if (!fresh()) return;
-      setDiffResult(diff);
-      if (!diff.success) {
-        setDiffError(diff.error || 'Unable to load diff');
+      // Only refresh diff if user has not explicitly clicked a different selection while refresh was in-flight
+      if (diffGeneration.current === startDiffGen) {
+        const { mode, ref } = diffSelectionRef.current;
+        if (mode === 'commit') {
+          const targetRef = ref && historyItems.some((c: GitHistoryEntry) => c.hash === ref)
+            ? ref
+            : historyItems[0]?.hash ?? null;
+          if (targetRef && targetRef !== ref) {
+            setSelectedDiffRef(targetRef);
+          }
+          void fetchDiff('commit', targetRef);
+        } else {
+          void fetchDiff(mode, null);
+        }
       }
 
       const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
@@ -424,43 +500,17 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setDiffError(message);
     } finally {
       if (fresh()) {
-      setIsLoadingBranches(false);
-      setIsLoadingOperation(false);
-      setIsLoadingStashes(false);
-      setIsLoadingHistory(false);
-      setIsLoadingDiff(false);
+        setIsLoadingBranches(false);
+        setIsLoadingOperation(false);
+        setIsLoadingStashes(false);
+        setIsLoadingHistory(false);
       }
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
+  }, [historyLimit, workspacePath, workspaceId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
-  const diffRequest = useRef(0);
-  const loadDiff = async (mode: DiffMode, ref?: string) => {
-    const request = ++diffRequest.current;
-    const fresh = () => isCurrent() && request === diffRequest.current;
-    if (!workspacePath || !fresh()) {
-      return;
-    }
 
-    setSelectedDiffMode(mode);
-    setSelectedDiffRef(mode === 'commit' ? ref ?? null : null);
-    setIsLoadingDiff(true);
-    setDiffError(null);
-
-    try {
-      const diff = await window.electronAPI.gitGetDiff(workspacePath, mode, ref, workspaceId);
-      if (!fresh()) return;
-      setDiffResult(diff);
-      if (!diff.success) {
-        setDiffError(diff.error || 'Unable to load diff');
-      }
-    } catch (error: unknown) {
-      if (fresh()) setDiffError(error instanceof Error ? error.message : 'Unable to load diff');
-    } finally {
-      if (fresh()) setIsLoadingDiff(false);
-    }
-  };
 
   useEffect(() => {
     if (!workspacePath) {
@@ -480,6 +530,12 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       setOperationState(null);
       setStashes([]);
       setHistory([]);
+      setHistoryLimit(10);
+      setSelectedDiffMode('working');
+      setSelectedDiffRef(null);
+      setDiffResult(null);
+      setDiffError(null);
+      diffGeneration.current++;
       setIsMenuOpen(false);
       setIsDialogOpen(false);
       return;
@@ -626,13 +682,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     setIsMenuOpen((value) => !value);
   };
 
-  const handleSelectWorkingDiff = async (mode: DiffMode) => {
-    await loadDiff(mode, mode === 'commit' ? selectedDiffRef ?? history[0]?.hash : undefined);
-  };
 
-  const handleSelectCommitDiff = async (commit: GitHistoryEntry) => {
-    await loadDiff('commit', commit.hash);
-  };
 
   const isBusy = activeAction !== null || remoteAction !== null;
   const stashConfirmationOpen = dropDialog !== null || clearDialog !== null;
@@ -694,6 +744,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             deepLinks={deepLinks}
             diffError={diffError}
             diffResult={diffResult}
+            hasMoreHistory={hasMoreHistory}
             history={history}
             historyError={historyError}
             includeUntracked={includeUntracked}
@@ -711,6 +762,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onAbortOperation={() => { if (isCurrent()) handleRequestAbort(operationState?.mode === 'rebase' ? 'rebase' : 'merge', operationState?.conflicts ?? []); }}
             onApplyStash={(stash) => { if (isCurrent()) void handleApplyStash(stash); }}
             onClearStashes={() => { if (isCurrent()) handleClearStashes(); }}
+            onLoadMoreHistory={handleLoadMoreHistory}
             onRestoreFocus={() => trigger.current?.focus()}
             onCreateBranch={(event) => { if (isCurrent()) void handleCreateBranch(event); }}
             onDeleteBranch={(branchName) => { if (isCurrent()) handleDeleteBranch(branchName); }}

@@ -134,7 +134,7 @@ describe('Permanent Branches and Worktrees', () => {
     const { user, dialog } = await branchesPage(); expect(screen.getByRole('button', { name: 'Delete branch main' })).toBeDisabled();
     await user.click(within(dialog).getByRole('button', { name: 'Worktrees' })); await screen.findByText('Main checkout');
     expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull(); expect(api.gitListWorktrees).toHaveBeenCalledTimes(1);
-    await user.click(within(dialog).getByRole('button', { name: 'Existing Git Tools' })); expect(screen.queryByRole('button', { name: 'Delete branch feature' })).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'History' })); expect(screen.queryByRole('button', { name: 'Delete branch feature' })).toBeNull();
     expect(screen.queryByText('Listed checkouts')).toBeNull(); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
     expect(api.gitCreateBranch).not.toHaveBeenCalled(); expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
   });
@@ -263,17 +263,23 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
     api.gitAbortOperation = vi.fn().mockResolvedValue({ success: true });
   });
 
-  it('navigates to all permanent pages and keeps existing tools strictly to history/diff', async () => {
+  it('navigates to all permanent pages and eliminates transitional tools entirely', async () => {
     const { user, dialog } = await open();
 
     // Verify all navigation items exist in the expected groups
     expect(within(dialog).getByRole('button', { name: 'Overview' })).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Branches' })).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Worktrees' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'History' })).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Stashes' })).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Remotes' })).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Merge' })).toBeVisible();
-    expect(within(dialog).getByRole('button', { name: 'Existing Git Tools' })).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: 'Existing Git Tools' })).toBeNull();
+
+    // Navigate to History - permanent destination
+    await user.click(within(dialog).getByRole('button', { name: 'History' }));
+    expect(within(dialog).getByText(/Inspect repository commit history/)).toBeVisible();
+    expect(within(dialog).getByText('Working Changes Summary')).toBeVisible();
 
     // Navigate to Stashes
     await user.click(within(dialog).getByRole('button', { name: 'Stashes' }));
@@ -288,14 +294,6 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
     // Navigate to Merge
     await user.click(within(dialog).getByRole('button', { name: 'Merge' }));
     expect(within(dialog).getByText(/Integrate changes from another branch/)).toBeVisible();
-
-    // Navigate to Existing Git Tools - only History/Diff remains
-    await user.click(within(dialog).getByRole('button', { name: 'Existing Git Tools' }));
-    expect(within(dialog).getByText(/History and Diff retain their existing implementations/)).toBeVisible();
-    expect(within(dialog).queryByText(/Apply restores changes/)).toBeNull();
-    expect(within(dialog).queryByText(/Configured remote repositories/)).toBeNull();
-    expect(within(dialog).queryByText(/Integrate changes from another branch/)).toBeNull();
-    expect(within(dialog).queryByRole('button', { name: 'Add remote' })).toBeNull();
   });
 
   describe('Stashes page', () => {
@@ -614,6 +612,162 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       await act(async () => finish({ success: true }));
       expect(api.gitGetBranchState).toHaveBeenCalledTimes(before);
+    });
+  });
+
+  describe('History page and Diff summaries (Phase 3D)', () => {
+    const mockCommits = [
+      { hash: 'c111111111111111111111111111111111111111', shortHash: 'c111111', author: 'Alice', date: '2026-03-01', subject: 'feat: add first feature' },
+      { hash: 'c222222222222222222222222222222222222222', shortHash: 'c222222', author: 'Bob', date: '2026-03-02', subject: 'fix: resolve edge case' },
+    ];
+
+    async function historyPage(commits = mockCommits) {
+      api.gitGetHistory.mockResolvedValue(commits);
+      const result = await open();
+      await result.user.click(within(result.dialog).getByRole('button', { name: 'History' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh history' })).toBeEnabled());
+      return result;
+    }
+
+    it('renders commit list with short hash, author, date, subject, and truthful working summary title', async () => {
+      const { dialog } = await historyPage();
+      expect(within(dialog).getByText('c111111')).toBeVisible();
+      expect(within(dialog).getByText('feat: add first feature')).toBeVisible();
+      expect(within(dialog).getByText('Alice')).toBeVisible();
+      expect(within(dialog).getByText('2026-03-01')).toBeVisible();
+
+      // Truthful summary label
+      expect(within(dialog).getByText('Working Changes Summary')).toBeVisible();
+      expect(within(dialog).getByText(/Summary of uncommitted modifications in the working tree/)).toBeVisible();
+    });
+
+    it('switches to Staged Changes Summary with accurate label', async () => {
+      api.gitGetDiff.mockResolvedValue({ success: true, output: ' 1 file changed, 2 insertions(+)', title: 'Staged Diff' });
+      const { user, dialog } = await historyPage();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Staged' }));
+      expect(api.gitGetDiff).toHaveBeenCalledWith('/repo', 'staged', undefined, 'ws');
+      expect(await within(dialog).findByText('Staged Changes Summary')).toBeVisible();
+      expect(within(dialog).getByText(/Summary of changes staged for the next commit/)).toBeVisible();
+      expect(within(dialog).getByText('1 file changed, 2 insertions(+)')).toBeVisible();
+    });
+
+    it('switches to Commit Summary on commit selection with full SHA metadata bar', async () => {
+      api.gitGetDiff.mockResolvedValue({ success: true, output: 'commit c222222 summary output', title: 'Commit c222222' });
+      const { user, dialog } = await historyPage();
+
+      await user.click(within(dialog).getByRole('button', { name: /fix: resolve edge case/ }));
+      expect(api.gitGetDiff).toHaveBeenCalledWith('/repo', 'commit', mockCommits[1].hash, 'ws');
+      expect(await within(dialog).findByText(/Commit Summary · c222222/)).toBeVisible();
+      expect(within(dialog).getAllByText('Bob').length).toBeGreaterThan(0);
+      expect(within(dialog).getByText(mockCommits[1].hash)).toBeVisible();
+      expect(within(dialog).getByText('commit c222222 summary output')).toBeVisible();
+    });
+
+    it('handles bounded history depth and Load More within 50 entries', async () => {
+      // Return 10 commits (matching initial limit)
+      const tenCommits = Array.from({ length: 10 }, (_, i) => ({
+        hash: `hash${i}${'0'.repeat(35)}`,
+        shortHash: `h${i}00000`,
+        author: `Author ${i}`,
+        date: `2026-03-${10 + i}`,
+        subject: `commit ${i}`,
+      }));
+      api.gitGetHistory.mockResolvedValue(tenCommits);
+      const { user, dialog } = await open();
+      await user.click(within(dialog).getByRole('button', { name: 'History' }));
+
+      // Load more button is offered because count === historyLimit (10) and < 50
+      const loadMoreBtn = await within(dialog).findByRole('button', { name: 'Load more commits' });
+      expect(loadMoreBtn).toBeVisible();
+
+      // Return 15 commits on next request
+      const fifteenCommits = Array.from({ length: 15 }, (_, i) => ({
+        hash: `hash${i}${'0'.repeat(35)}`,
+        shortHash: `h${i}00000`,
+        author: `Author ${i}`,
+        date: `2026-03-${10 + i}`,
+        subject: `commit ${i}`,
+      }));
+      api.gitGetHistory.mockResolvedValue(fifteenCommits);
+
+      await user.click(loadMoreBtn);
+      expect(api.gitGetHistory).toHaveBeenCalledWith('/repo', 25, 'ws');
+      // Now length is 15 but requested was 25 -> history exhausted, no more load more
+      await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Load more commits' })).toBeNull());
+    });
+
+    it('does not display Load more when history is exhausted on initial load', async () => {
+      const { dialog } = await historyPage(mockCommits); // only 2 commits, less than initial limit 10
+      expect(within(dialog).queryByRole('button', { name: 'Load more commits' })).toBeNull();
+    });
+
+    it('displays empty state when repository has no commits yet', async () => {
+      const { dialog } = await historyPage([]);
+      expect(within(dialog).getByText(/No commits found/)).toBeVisible();
+    });
+
+    it('preserves latest explicit selection over older pending refresh results', async () => {
+      let resolveDiffRefresh!: (val: unknown) => void;
+      api.gitGetDiff.mockImplementationOnce(() => new Promise((r) => { resolveDiffRefresh = r; }));
+
+      const { user, dialog } = await historyPage();
+
+      // User explicitly clicks commit 1 while refresh is in progress
+      api.gitGetDiff.mockResolvedValueOnce({
+        success: true,
+        output: 'newer explicit selection output',
+        title: 'Commit c111111',
+      });
+
+      await user.click(within(dialog).getByRole('button', { name: /feat: add first feature/ }));
+
+      // Older refresh finishes afterward with stale working output
+      await act(async () => {
+        resolveDiffRefresh({
+          success: true,
+          output: 'stale working tree output',
+          title: 'Working Tree Diff',
+        });
+      });
+
+      // The newer explicit commit selection output must win
+      expect(await within(dialog).findByText('newer explicit selection output')).toBeVisible();
+      expect(within(dialog).queryByText('stale working tree output')).toBeNull();
+    });
+
+    it('displays diff error clearly without claiming no diff to display', async () => {
+      api.gitGetDiff.mockResolvedValue({ success: false, error: 'Git diff failed: permission denied' });
+      const { dialog } = await historyPage();
+
+      await waitFor(() => expect(within(dialog).getAllByText('Git diff failed: permission denied').length).toBeGreaterThan(0));
+      expect(within(dialog).queryByText('No diff to display')).toBeNull();
+    });
+
+    it.each(['workspace', 'checkout', 'environment'])('discards pending diff results after a %s change', async (change) => {
+      let finishDiff!: (val: unknown) => void;
+      api.gitGetDiff.mockReturnValue(new Promise((r) => { finishDiff = r; }));
+
+      const { user } = await historyPage();
+      await user.click(screen.getByRole('button', { name: 'Staged' }));
+
+      act(() => {
+        useWorkspaceStore.setState((state) =>
+          change === 'workspace'
+            ? { activeWorkspaceId: null }
+            : {
+                workspaces: state.workspaces.map((entry) =>
+                  change === 'environment'
+                    ? { ...entry, environmentId: 'ssh-other' }
+                    : { ...entry, fileSurfaceContextId: 'unregistered' }
+                ),
+              }
+        );
+      });
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await act(async () => finishDiff({ success: true, output: 'late output' }));
+      expect(screen.queryByText('late output')).toBeNull();
     });
   });
 });

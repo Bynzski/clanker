@@ -92,6 +92,71 @@
   text-transform: none;
 }
 
+.source-control-history .git-history-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-control);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.source-control-history .git-history-item {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.source-control-history .git-history-item:hover {
+  background: var(--surface-hover);
+}
+
+.source-control-history .git-history-item.active {
+  background: var(--surface-selected);
+  border-color: var(--border-strong);
+}
+
+.git-history-load-more {
+  margin-top: 4px;
+  align-self: center;
+}
+
+.git-diff-description {
+  margin: 0 0 6px 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.git-commit-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.git-commit-detail-item strong {
+  color: var(--text-primary);
+}
+
+.git-commit-hash-full code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
 .git-diff-output {
   margin: 0;
   padding: 8px;
@@ -107,3 +172,23 @@
   line-height: 1.45;
   white-space: pre-wrap;
 }
+
+.source-control-history .git-diff-output {
+  min-height: 120px;
+  max-height: 380px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.git-diff-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--status-error) 10%, transparent);
+  color: var(--status-error);
+  font-size: var(--font-size-sm);
+}
+

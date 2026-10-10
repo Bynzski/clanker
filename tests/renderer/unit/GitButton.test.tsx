@@ -269,7 +269,7 @@ describe('GitButton', () => {
     });
   };
 
-  const openTools = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Existing Git Tools' })); }); };
+  const openHistory = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'History' })); }); };
   const openBranches = async () => { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Branches' })); }); };
 
   it('ignores older provider replies after a newer explicit refresh', async () => {
@@ -575,8 +575,9 @@ describe('GitButton', () => {
   // Menu Sections
   // =========================================================================
   describe('menu sections', () => {
-    it('renders only history/diff in the transitional destination, while stashes, remotes, and merge have migrated', async () => {
-      await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]); await openTools();
+    it('renders History as a permanent destination without transitional UI', async () => {
+      await openRepoMenu([{ path: 'file1.ts', status: 'modified' }]); await openHistory();
+      expect(screen.queryByRole('button', { name: 'Existing Git Tools' })).toBeNull();
       expect(screen.queryByTestId('git-branches-section')).toBeNull();
       expect(screen.queryByTestId('git-stash-section')).toBeNull();
       expect(screen.queryByTestId('git-merge-section')).toBeNull();
@@ -600,7 +601,7 @@ describe('GitButton', () => {
   describe('error display', () => {
     it('shows diff error message', async () => {
       mockGitGetDiff.mockResolvedValueOnce({ success: false, error: 'Unable to load diff' });
-      await openRepoMenu(); await openTools();
+      await openRepoMenu(); await openHistory();
       expect(screen.getByText('Unable to load diff')).toBeTruthy();
     });
   });

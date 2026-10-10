@@ -43,6 +43,7 @@ export interface GitRepoMenuProps {
   deepLinks: DeepLink[];
   diffError: string | null;
   diffResult: GitDiffResult | null;
+  hasMoreHistory?: boolean;
   history: GitHistoryEntry[];
   historyError: string | null;
   includeUntracked: boolean;
@@ -60,6 +61,7 @@ export interface GitRepoMenuProps {
   onAbortOperation: () => void;
   onApplyStash: (stash: GitStash) => void;
   onClearStashes: () => void;
+  onLoadMoreHistory?: () => void;
   onRestoreFocus: () => void;
   onCreateBranch: (event: React.FormEvent) => void;
   onDeleteBranch: (branchName: string) => void;
@@ -179,10 +181,10 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         { id: 'overview', label: 'Overview', group: 'Repository' },
         { id: 'branches', label: 'Branches', group: 'Repository' },
         { id: 'worktrees', label: 'Worktrees', group: 'Repository' },
+        { id: 'history', label: 'History', group: 'Repository' },
         { id: 'stashes', label: 'Stashes', group: 'Operations' },
         { id: 'remotes', label: 'Remotes', group: 'Operations' },
         { id: 'merge', label: 'Merge', group: 'Operations' },
-        { id: 'tools', label: 'Existing Git Tools', group: 'Advanced — Transitional' },
       ]}
       selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
       {page !== 'overview' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
@@ -278,24 +280,30 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           onSetMergeTargetBranch={onSetMergeTargetBranch}
           operationState={operationState}
         />
-      </div> : <div className="git-tools-content">
-      <h2 className="clanker-dialog-title">Existing Git Tools</h2>
-      <p>History and Diff retain their existing implementations pending later migration.</p>
-      {[historyError, diffError].filter((err): err is string => Boolean(err)).map((error) => (
-        <div key={error} className="git-menu-error">{error}</div>
-      ))}
-      <GitHistorySection
-        diffResult={diffResult}
-        history={history}
-        isBusy={isBusy}
-        isLoadingDiff={isLoadingDiff}
-        isLoadingHistory={isLoadingHistory}
-        onSelectCommitDiff={onSelectCommitDiff}
-        onSelectWorkingDiff={onSelectWorkingDiff}
-        selectedCommit={selectedCommit}
-        selectedDiffMode={selectedDiffMode}
-        selectedDiffRef={selectedDiffRef}
-      />
+      </div> : <div className="source-control-page source-control-history">
+        <h2 className="clanker-dialog-title">History</h2>
+        <p>Inspect repository commit history and view summary statistics of working, staged, or committed changes.</p>
+        <Button disabled={busy || isLoadingHistory} onClick={props.onRefresh}>
+          Refresh history
+        </Button>
+        {historyError && <FormMessage variant="error">{historyError}</FormMessage>}
+        {diffError && <FormMessage variant="error">{diffError}</FormMessage>}
+        <GitHistorySection
+          management
+          diffError={diffError}
+          diffResult={diffResult}
+          history={history}
+          isBusy={isBusy}
+          isLoadingDiff={isLoadingDiff}
+          isLoadingHistory={isLoadingHistory}
+          hasMoreHistory={props.hasMoreHistory}
+          onLoadMoreHistory={props.onLoadMoreHistory}
+          onSelectCommitDiff={onSelectCommitDiff}
+          onSelectWorkingDiff={onSelectWorkingDiff}
+          selectedCommit={selectedCommit}
+          selectedDiffMode={selectedDiffMode}
+          selectedDiffRef={selectedDiffRef}
+        />
       </div>}
     </ManagementShell>
   );

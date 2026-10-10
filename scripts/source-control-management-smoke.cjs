@@ -60,7 +60,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         const geometry = await dialog.evaluate(element => { const bounds = element.getBoundingClientRect(); const content = element.querySelector('.management-content'); return { within: bounds.left >= 0 && bounds.top >= 0 && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight, overflow: content.scrollWidth > content.clientWidth }; });
         assert(geometry.within && !geometry.overflow, `Overview geometry ${theme}/${width}`);
         await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-overview.png`) });
-        for (const section of ['Branches', 'Worktrees', 'Stashes', 'Remotes', 'Merge', 'Existing Git Tools']) {
+        for (const section of ['Branches', 'Worktrees', 'History', 'Stashes', 'Remotes', 'Merge']) {
           await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
           await dialog.getByRole('heading', { name: section, exact: true }).waitFor();
           if (section === 'Branches') await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).waitFor();
@@ -68,6 +68,12 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
             await dialog.getByRole('button', { name: 'Unlock checkout for branch locked' }).waitFor();
             await dialog.getByRole('button', { name: 'Prune missing worktrees…' }).waitFor();
+          }
+          if (section === 'History') {
+            await dialog.getByRole('button', { name: 'Working Tree', exact: true }).waitFor();
+            await dialog.getByRole('button', { name: 'Staged', exact: true }).waitFor();
+            await dialog.getByRole('button', { name: 'Staged', exact: true }).click();
+            await dialog.getByRole('button', { name: 'Working Tree', exact: true }).click();
           }
           if (section === 'Stashes') {
             await dialog.getByRole('button', { name: 'Apply stash@{0}' }).waitFor();
@@ -98,6 +104,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await page.getByRole('button', { name: 'Cancel', exact: true }).click();
           }
         }
+        assert.equal(await dialog.getByRole('navigation').getByRole('button', { name: 'Existing Git Tools' }).count(), 0, 'Transitional Existing Git Tools still present');
         await dialog.getByRole('navigation').getByRole('button', { name: 'Worktrees', exact: true }).click(); await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
         await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).click(); await page.getByRole('alertdialog').waitFor();
         assert((await views()).every(view => !view.visible), 'Worktree confirmation exposed Browser'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -112,6 +119,6 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Overview/Branches/Worktrees/Stashes/Remotes/Merge/transitional tools, cancel-only branch/worktree/stash/remote confirmations, real CommitDialog, native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Overview/Branches/Worktrees/History/Stashes/Remotes/Merge permanent navigation, cancel-only branch/worktree/stash/remote confirmations, real CommitDialog, native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

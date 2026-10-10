@@ -1,4 +1,94 @@
-# Issue #154 — Inventory and Phase 0–3C decisions
+# Issue #154 — Inventory and Phase 0–3D decisions
+
+## Phase 3D — permanent History and Diffs
+
+Starts from reviewed `c61a6c6825c553905e9aab7b015749f2e3f2c608` on
+`feat/154-management-settings`. No Phase 4, PR, merge or unrelated Browser work.
+
+### Final Source Control navigation
+
+Transitional and legacy destinations have been completely eliminated. The permanent
+navigation structure consists solely of canonical destinations in `ManagementShell`:
+
+**Repository**
+- Overview
+- Branches
+- Worktrees
+- History
+
+**Operations**
+- Stashes
+- Remotes
+- Merge
+
+`Advanced — Transitional` and `Existing Git Tools` are removed from the navigation model,
+DOM, and component tree.
+
+### History and diff presentation architecture
+
+- History and change inspection are unified on the permanent **History** page.
+- **Truthful summary semantics**: Existing Git backend operations return statistical summaries
+  (`git diff --stat --summary` for working tree, `git diff --cached --stat --summary` for staged,
+  and `git show --stat --summary --format=medium` for commits), not full patch hunks. The UI
+  accurately communicates this via explicit labels:
+  - **Working Changes Summary**
+  - **Staged Changes Summary**
+  - **Commit Summary · `<shortHash>`**
+  No changed lines, file contents, or patch hunks are invented or misrepresented as source diffs.
+- **Commit metadata & full identity**: Selecting a commit displays its commit subject, author,
+  date, and a dedicated metadata bar showing the exact 40-character commit SHA.
+- **Expanded viewport**: The previous 220px max-height constraint from the dropdown view has
+  been replaced with an expanded management viewer (up to 380px max-height with scrolling,
+  monospace typography, and word-break wrapping), preventing horizontal overflow at 640×480.
+
+### History depth and bounded retrieval
+
+- The controller initializes with a bounded batch of 10 commits.
+- Bounded **Load more commits** requests an additional batch within the Git service's
+  supported 50-commit limit.
+- If the repository has fewer commits than requested or has reached 50, "Load more" is not
+  rendered, preventing false promises of further history.
+- Unbounded history queries, separate caching layers, and redundant network requests are avoided.
+
+### Single-owner diff selection lifecycle & race protection
+
+- Previously, `refreshMenuData` and `loadDiff` used independent request generations, allowing
+  in-flight general refreshes to overwrite newer explicit commit selections with older working diffs.
+- Phase 3D unifies diff retrieval under a single monotonic generation counter (`diffGeneration`):
+  - Every explicit mode or commit click increments `diffGeneration` and starts `fetchDiff`.
+  - When `refreshMenuData` completes its metadata reads, it checks whether `diffGeneration`
+    was modified during its execution. If the user initiated an explicit selection while refresh
+    was in flight, the refresh does not dispatch an overlapping diff fetch.
+  - An in-flight request resolving with an outdated generation is discarded immediately.
+  - Failures clear previous output and display explicit error states (`diffError`) rather than
+    falsely displaying "No diff to display".
+  - Scope changes (workspace switch, inactive checkout) immediately invalidate pending requests
+    and reset selection state.
+
+### Repository identity enforcement
+
+- All history and diff requests route strictly through registered workspace identity,
+  confining Git operations to the canonical root on local and SSH hosts alike.
+- Selected isolated checkouts remain fail-closed without silent parent root substitution.
+
+### Verification and results
+
+- Full validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,783 tests passed**
+  (branding, lint, typecheck, Fallow dead-code, security audit, build, and full tests).
+- Focused regression tests (`tests/renderer/unit/git/`, `SourceControl.test.tsx`, `GitButton.test.tsx`):
+  **17 files / 320 tests passed**.
+- Source Control Electron smoke: passed across Dark, Light, Slate at 1100×760 and 640×480
+  verifying Overview, Branches, Worktrees, History, Stashes, Remotes, and Merge; verified
+  absence of Existing Git Tools; tested working and staged toggle buttons and commit selection.
+- Settings Electron smoke and renderer Browser smoke passed.
+- Multi-Browser smoke runner continues to exit with independent SIGSEGV (unaltered).
+
+### Remaining limitations and Phase 4 scope
+
+- Full patch hunk viewing (interactive side-by-side or unified code diffs) is reserved for
+  a future dedicated diff viewer contract.
+- Live SSH network operations remain owner-smoke items.
+- Phase 4 will handle final design polish, keyboard shortcut audits, and release preparation.
 
 ## Phase 3C — permanent Stashes, Remotes, and Merge
 
