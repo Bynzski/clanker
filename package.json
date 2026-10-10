@@ -35,7 +35,13 @@
     "start": "electron .",
     "prepare": "husky",
     "branding:generate": "node scripts/generate-branding.cjs",
-    "branding:check": "node scripts/check-branding.cjs"
+    "branding:check": "node scripts/check-branding.cjs",
+    "smoke:attention:native": "node scripts/native-attention-smoke.cjs",
+    "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
+    "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
+    "smoke:attention:codex-tui": "node scripts/codex-attention-tui-smoke.cjs",
+    "smoke:attention:opencode": "node scripts/opencode-attention-smoke.cjs",
+    "smoke:attention:electron": "node scripts/attention-electron-smoke.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

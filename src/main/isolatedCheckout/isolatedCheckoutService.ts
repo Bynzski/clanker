@@ -165,7 +165,7 @@ class TransitionAborted extends Error {}
 class TransitionAbortedAfterCreate extends TransitionAborted {}
 
 /** What the agent is told when a move is scheduled rather than done (the move follows its turn). */
-const SCHEDULED_MESSAGE = 'The move is scheduled. Finish your reply now without running more tools; Clanker moves this same conversation when this turn completes, and it continues in the new checkout on its next turn.';
+const SCHEDULED_MESSAGE = 'The move is scheduled. Finish your reply now without running more tools; Clanker moves this same conversation only after verified native completion. A provisional stop cancels the move and keeps the checkout; continue here or launch a separate agent there if native completion cannot be verified.';
 
 const ok = (data: unknown): AgentBridgeToolResult => ({ data });
 const refuse = (error: string): AgentBridgeToolResult => ({ isError: true, data: { error } });
@@ -227,8 +227,22 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       this.notice(pending.workspaceId, 'warning', `The conversation ended before it could be moved to "${pending.label}"; nothing was changed.`);
       return;
     }
-    // A different (or not yet bound) native session never triggers anything.
-    if (snapshot.sessionId !== pending.sessionId) return;
+    // A native end/replacement invalidates the old conversation's pending move. It must
+    // neither execute on the new root nor leave an unfulfillable request blocking retries.
+    if (snapshot.sessionId !== pending.sessionId) {
+      // Unrelated/stale snapshots still do nothing. Only main's current canonical end or
+      // replacement boundary can cancel a scheduled conversation on an identity change.
+      if (snapshot.lastOutcome?.kind !== 'session_ended' || snapshot.lastOutcome.revision !== snapshot.revision
+        || snapshot.runtime?.status !== 'unverified') return;
+      this.pending.delete(pending.terminalId);
+      this.notice(pending.workspaceId, 'warning', `The move to "${pending.label}" was cancelled because the session ended or changed. Nothing was moved; the checkout was kept.`);
+      return;
+    }
+    if (snapshot.runtime?.status === 'provisional') {
+      this.pending.delete(pending.terminalId);
+      this.notice(pending.workspaceId, 'warning', `The move to "${pending.label}" was cancelled: the provider stopped without proving completion. Nothing was moved; the checkout was kept. Continue here, or launch a separate agent in the intended checkout. This conversation cannot be moved automatically with the available native evidence.`);
+      return;
+    }
     const outcome = snapshot.lastOutcome;
     if (!outcome || outcome.revision <= pending.baselineOutcomeRevision) return;
     if (outcome.kind === 'completed') {
@@ -419,6 +433,9 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    */
   private async conversationOf(caller: AgentBridgeCaller): Promise<HarnessSession> {
     const snapshot = this.deps.attention.snapshot(caller.terminalId);
+    if (snapshot?.runtime?.status === 'provisional') {
+      throw new TransitionFailure('The provider stopped without a verified final outcome, so this conversation cannot be moved safely. Continue in this terminal, or launch a separate agent in the intended checkout. This conversation cannot be moved automatically with the available native evidence.');
+    }
     const sessionId = snapshot?.sessionId ?? null;
     if (!sessionId) {
       if (!this.deps.isAttentionEnabled(caller.harnessId)) {
@@ -574,7 +591,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       kind: 'terminal-replaced', workspaceId, previousTerminalId,
       terminal: {
         id: launched.id, pid: launched.pid, workingDir: launched.workingDir, checkoutContextId: launched.checkoutContextId ?? '',
-        environmentId: LOCAL_ENVIRONMENT_ID, harnessId: launched.harnessId, attentionEnabled: launched.attentionEnabled,
+        environmentId: LOCAL_ENVIRONMENT_ID, harnessId: launched.harnessId, attentionEnabled: launched.attentionEnabled, attention: launched.attention,
       },
     });
     // The conversation already moved; a failure retiring the old process must not turn that into an error.

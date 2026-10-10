@@ -12,6 +12,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Bound concurrent real Git/PTY/filesystem fixtures on high-core hosts and CI.
+    maxWorkers: 4,
     // Keep the root config as shared coverage/setup only.
     // File discovery is project-scoped so the runtime environment is obvious:
     // - tests/main/** -> node

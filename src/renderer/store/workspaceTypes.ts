@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type { PanePlacementRestoreHint } from './workspaceLayout';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 import type { GitStatus } from '../components/git/types';
@@ -13,6 +14,7 @@ export interface Terminal {
   environmentId?: string;
   harnessId?: string | null;
   attentionEnabled?: boolean;
+  attention?: NativeAttentionCapability;
   displayName?: string;
 }
 

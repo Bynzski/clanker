@@ -73,8 +73,8 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
-  const attention = useTerminalAttention(terminalId);
-  const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
+  const attention = useTerminalAttention(terminalId, terminal?.attention, terminal?.attentionEnabled === true);
+  const showAgentAttention = Boolean(terminal?.harnessId && attention);
   const attentionSuffix = showAgentAttention ? getAttentionSuffix(attention) : '';
   const harnessOption = getHarnessOption(terminal?.harnessId);
   const HarnessIcon = harnessOption.Icon;

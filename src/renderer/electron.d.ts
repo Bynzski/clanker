@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability, AttentionSignalDiagnostics } from '../shared/types/attentionSignal';
 import type { BrowserPresentation } from '../shared/types/browserPresentation';
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
@@ -138,17 +139,19 @@ export interface ElectronAPI {
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; checkoutContextId?: string }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; attention?: NativeAttentionCapability; checkoutContextId?: string }>;
   waitRecipeCommand: (id: string) => Promise<{ status: 'success' | 'started' | 'failed'; error?: string }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) => Promise<{ success: boolean; error?: string }>;
-  getAgentHandoffStatuses: () => Promise<Record<string, 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable'>>;
+  getAgentHandoffStatuses: () => Promise<Record<string, 'unverified' | 'ready' | 'running' | 'needs_input' | 'provisional' | 'unavailable'>>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
   killTerminal: (id: string) => Promise<{ success: boolean; error?: string }>;
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
+  isAttentionDebugEnabled: () => Promise<boolean>;
+  getAgentAttentionDiagnostics: (terminalId: string) => Promise<{ main: AttentionSignalDiagnostics | null; terminal: { harness: string | null; workspaceId: string | null; environmentId: string; attention: NativeAttentionCapability | null } | null } | null>;
   getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
   onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => () => void;
@@ -439,6 +442,7 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+    clankerAttention?: { explain: (terminalId: string) => Promise<unknown> };
   }
 }
 

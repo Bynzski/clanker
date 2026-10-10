@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from './attentionSignal';
 /**
  * Main -> renderer description of an agent checkout transition (issue #102).
  *
@@ -22,6 +23,7 @@ export interface ReplacementTerminal {
   environmentId: string;
   harnessId: string;
   attentionEnabled: boolean;
+  attention?: NativeAttentionCapability;
 }
 
 export type AgentCheckoutTransitionEvent =

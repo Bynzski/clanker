@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { attentionCounts, useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
-import { deriveAttention } from '../../../src/renderer/lib/agentAttentionPresentation';
+import { deriveAttention, getAttentionPresentation } from '../../../src/renderer/lib/agentAttentionPresentation';
 import { nextAttentionTarget } from '../../../src/renderer/lib/agentAttentionNavigation';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { change, EMPTY_ATTENTION, snapshot, tombstone } from '../../_helpers/attentionSnapshots';
@@ -225,5 +225,28 @@ describe('UI acknowledgement watermarks', () => {
     store().acknowledge('b');
     const done = store();
     expect(nextAttentionTarget([workspace], done.byTerminalId, done.seenByTerminalId, 'c')).toBeNull();
+  });
+});
+
+
+describe('provisional settlement hydration and background presentation', () => {
+  it('hydrates uncertainty without Done, actionable input, navigation or aggregate alerts', () => {
+    const pendingRequest = { ...snapshot('t', 'approval', 2).pendingRequest!, resolutionUnknown: true as const };
+    store().hydrate([snapshot('t', 'provisional', 3, { pendingRequest })], () => false);
+    expect(view('t')).toMatchObject({ display: 'provisional', unseen: false });
+    expect(getAttentionPresentation('provisional').label).toBe('Stop observed · outcome unknown');
+    expect(view('t')?.description).toContain('execution may continue');
+    expect(view('t')?.description).toContain('request resolution');
+    const workspace = { id: 'w', terminals: [{ id: 't' }], panes: [{ id: 'p', terminalId: 't' }] } as WorkspaceTab;
+    expect(nextAttentionTarget([workspace], store().byTerminalId, store().seenByTerminalId, null)).toBeNull();
+    expect(attentionCounts(['t'], store().byTerminalId, store().seenByTerminalId)).toEqual({ needsInput: 0, completed: 0 });
+    store().applyChange(change(snapshot('t', 'running', 2)), false);
+    expect(view('t')?.display).toBe('provisional');
+    store().acknowledge('t');
+    expect(view('t')?.display).toBe('provisional');
+    store().applyChange(change(snapshot('t', 'running', 4)), false);
+    expect(view('t')?.display).toBe('running');
+    store().applyChange(change(snapshot('t', 'completed', 5)), false);
+    expect(view('t')).toEqual({ display: 'turn_complete', unseen: true });
   });
 });

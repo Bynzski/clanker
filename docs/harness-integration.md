@@ -170,8 +170,8 @@ native harness event
 ```
 
 The broker publishes independent semantic facts, never UI concepts: `runtime`
-(`unverified | idle | starting | running | failed`, turn id, start time), a durable
-`pendingRequest` (id, owning turn, `input | approval | null` kind, evidence class),
+(`unverified | idle | starting | running | provisional | failed`, turn id, start time), a durable
+`pendingRequest` (id, owning turn, `input | approval | null` kind, evidence class, optional `resolutionUnknown`),
 `lastCompletion` (set only by an accepted foreground completion and never cleared by new
 work) and `lastOutcome` (the latest completion, interruption, failure or session end, so an
 older completion cannot resurface as a fresh Done). The revision is per terminal, advances
@@ -181,9 +181,17 @@ revisioned tombstone (`snapshot: null`); hydration only lists live registrations
 renderer subscribes first, then hydrates, and keeps the newest revision per terminal
 (tombstones included). Whether the user has seen a completion or request is a renderer
 watermark over those revisions; it never changes lifecycle. `deriveAttention` projects
-Needs Input, then Working, then Failed, then an unseen completion that is also the latest
+Stop observed · outcome unknown for provisional settlement, otherwise actionable Needs Input, then Working, then Failed, then an unseen completion that is also the latest
 outcome. A user-facing `Failed` shows no badge or navigation target; only Needs Input and
 unseen Done are counted and jumped to.
+
+Provisional settlement is a canonical fact, independent of transport health. It never writes
+`lastCompletion`, never grants Ready or handoff eligibility, and never produces completion/input
+badges, attention navigation targets or completion notifications. The indicator remains visible
+in background, minimized and remounted panes. A previously presented request remains recorded
+with `resolutionUnknown: true`; matching native resolution may retire it, but does not prove
+completion. A fresh native turn or request restores the corresponding confirmed fact. A later
+proven failure, interruption or session end clears the unresolved history. No silence timer is used.
 
 Source authority is declared per provider (`attention.authority: full | partial`, and
 `source: native | hook`) and arbitrated centrally (`attentionAuthority.ts`).
@@ -285,10 +293,10 @@ carry a location):
 | Claude | Yes, a Bash `cd` persists (the process never moves) | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed` |
 | Codex | Only `/cd` or a worktree switch, while idle (commands run one-shot) | hook `cwd` on `UserPromptSubmit`/`Stop`/`Interrupt`/`SessionEnd` |
 | Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; `session_start` as `location_changed` |
-| OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`session_stop`; `session_start`/`session_switch` as `location_changed` |
+| OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`agent_end`; `session_start`/`session_switch` as `location_changed` |
 | OpenCode | Per session (`info.directory`) | the verified root session's directory (else the plugin's instance directory) on its turn events |
 | Antigravity | No (per-command `Cwd`); hooks carry no cwd | the root conversation's `workspacePaths` when it has exactly one |
-| Hermes (SSH) | Yes, its terminal keeps a persistent `cd` | the turn task's active **local** terminal environment `cwd` on root `pre_llm_call`/`post_llm_call` (a container backend reports nothing) |
+| Hermes (SSH) | Yes, its terminal keeps a persistent `cd` | the turn task's active **local** terminal environment `cwd` on root `pre_llm_call`/`on_session_end` (a container backend reports nothing) |
 
 A move is shown once it is reported: immediately for Claude, at the next turn
 boundary for the others.
@@ -366,13 +374,13 @@ the root session; turn = the turn identity; child = how child scope is proven).
 
 | Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
 | --- | --- | --- | --- | --- | --- |
-| Codex | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
-| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` (background tasks and crons do not hold the turn open), `StopFailure` = `turn_failed` (Failed, never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
-| OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
+| Codex | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | no proven success boundary: `Stop` is provisional (`turn_provisional`); root `Interrupt` ends the turn without completion | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
+| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` or `PreToolUse` of `AskUserQuestion` = turn-level wait / `PostToolBatch` for the same prompt | `Stop` is provisional (`turn_provisional`); `StopFailure` = `turn_failed` (never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
+| OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root idle: outstanding error → failed, abort → interrupted, otherwise completed; legacy `session.idle` duplicate absorbed | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
 | Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | `ui_prompt_start` / `ui_prompt_end` (extension-owned request epoch; foreground `ctx.ui` dialogs only) | `agent_settled`: aborted → interrupted; latest unrecovered assistant/compaction failure → failed; otherwise completed | `agent_end`, intermediate errors and lower-level events never settle | `session_shutdown` |
-| OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `session_stop` (OMP defers it until agent-owned background jobs are idle); it is the terminal foreground completion | `agent_end` is not terminal completion; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` (main) |
-| Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | `Stop` with `fullyIdle === true` for the root conversation | `Stop` with `fullyIdle` false/absent, other conversations | none native |
-| Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `post_llm_call` of a turn that began as a root turn | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
+| OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `agent_end` with `willContinue !== true`, after control hooks/background maintenance; final assistant error/abort determines failure/interruption; absent assistant outcome → provisional | `session_stop` can request continuation; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` or explicit `session_switch` (main) |
+| Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | fully-idle `Stop`: explicit error/exhaustion → failed; success/unknown outcome → canonical provisional settlement (other hooks can continue) | `Stop` with `fullyIdle` false/absent, other conversations | none native |
+| Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `on_session_end` of a known root turn: interrupted > failed > completed flags; otherwise no outcome | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
 
 Pi attention (checked against 1.1.0). The shared local/SSH observer uses authenticated extension events,
 not the new unauthenticated OSC 7501 program-status reports. `ui_prompt_start` / `ui_prompt_end`
@@ -395,11 +403,29 @@ or logged) and reports one `input_requested` with the constant `inputId` `permis
 Only `PostToolBatch` (fired once after every call of a parallel batch has resolved)
 reports `input_resolved`; per-tool `PostToolUse` is deliberately not subscribed, so an
 unrelated parallel tool finishing cannot clear the wait. A denied call resolves with its
-batch. Cost: after approval the pane stays Needs Input until the batch finishes. Child
+batch. `AskUserQuestion` intrinsically requests input at `PreToolUse`, even without a permission request. Cost: after approval the pane stays Needs Input until the batch finishes. Child
 (`agent_id`) permission and batch events are ignored. `StopFailure` (turn ended on an API
 error) is explicit failure evidence: it is reported as `turn_failed` (Failed), never as a
 completion, and the error text is never forwarded. Claude has no user-interrupt hook,
-so an interrupted turn stays Running until the next prompt or `Stop`.
+so interruption without a native Stop or failure boundary stays Running until the next prompt or explicit session end. A native Stop instead shows provisional settlement. `Stop` is not final settlement: another hook can block it. It reports `turn_provisional`: the identified turn is retained, but execution and any old request resolution are unknown. Neither Working nor actionable Needs Input is claimed until fresh correlated evidence arrives.
+
+Continuation after candidate Stop. Claude and Codex root `PreToolUse` with the already-bound
+`session_id` and current `prompt_id`/`turn_id` emits `turn_activity`. Unlike `turn_started`,
+this event cannot bind a root or open/replace a turn: the broker requires the live matching
+turn, restores Running, retains its original start time and unresolved request history,
+and still refuses handoff. Child activity and earlier-turn IDs cannot resume it. A later
+candidate Stop is provisional again. `PostToolBatch`/`PostToolUse` alone can be delayed
+results from before Stop, so only resolve matching requests; they do not resume execution.
+The tooltip explicitly says execution may continue and the final outcome is unknown.
+
+Antigravity has no native foreground turn ID. Its documented invocation sequence and
+trajectory step counters do not prove which foreground turn a delayed event belongs to.
+Clanker retains the existing initial-invocation (#0) boundary and ask-tool subscriptions;
+noninitial invocations and ordinary tool callbacks do **not** restore Running after Stop.
+It stays visibly provisional, without claiming execution ended or granting handoff. The
+counter behavior across Stop-hook continuation versus fresh user input still needs installed
+native verification; do not treat deterministic fixtures as proof of that behavior. The
+ordinary-tool matcher remains excluded to preserve native permission policy.
 
 Codex permission correlation. `PermissionRequest` has `turn_id`, `tool_name` and
 `tool_input` but no `tool_use_id`; `PreToolUse` and `PostToolUse` carry `tool_use_id`.
@@ -409,17 +435,15 @@ call with the same fingerprint (identical parallel calls form one group). A wait
 only when all of its calls have a `PostToolUse`; the broker sees one `input_requested`
 for the first wait and one `input_resolved` once none remain. A request that matches no
 started call, or a call the user denies (no `PostToolUse`), fails closed: the wait lasts
-until `Stop`, `Interrupt` or session end. Only ids and fingerprints are stored. Whether
-`PreToolUse` and `PermissionRequest` carry byte-identical `tool_input` for every tool has
-not been verified live; a mismatch degrades to the fail-closed behavior. Root `Interrupt`
+until provisional Stop makes its resolution unknown, or a new prompt, `Interrupt` or session end clears it. Only ids and fingerprints are stored. On Codex 0.162.0, Bash PermissionRequest decorates `{command}` with `description` (justification); the fingerprint removes only that documented decoration, preserving exact command matching and rejecting unknown extra fields. Accepted approvals and distinct/identical parallel calls were verified in the installed TUI with a loopback model fixture. Other tool payload differences remain fail-closed. Root `Interrupt`
 maps to the generic `turn_interrupted`: it retires the turn and any wait, keeps the root
 bound and leaves the terminal available, without a Turn complete alert; a later `Stop`
 of that turn is stale.
 
-Hermes details. `post_llm_call` does not carry `parent_session_id`, and approval hooks
+Hermes details. `on_session_end` does not carry `parent_session_id`, and approval hooks
 carry `session_key` (a gateway/TUI key that can be a stale compression parent), not a
 normal root session ID. The plugin therefore remembers each `pre_llm_call` turn as root
-or child and ties `post_llm_call` and approvals back to it by `turn_id`; an unseen turn
+or child and ties `on_session_end` and approvals back to it by `turn_id`; an unseen turn
 is dropped (fail closed). Hermes can rotate `agent.session_id` on context compression,
 which no plugin hook announces. The plugin reports a legitimate rotation as
 `session_continued` only when native data proves it: the turn began under the bound root
@@ -441,17 +465,16 @@ non-managed hooks only after the user reviews them (`/hooks`), and the trust is 
 by the hook definition, so POSIX hooks reference the launch's command and interpreter
 through `$CLANKER_ATTENTION_COMMAND`/`$CLANKER_ATTENTION_INTERPRETER` (remote:
 `CLANKER_REMOTE_ATTENTION_*`) and the definition is identical for every launch: one
-review persists. Until reviewed no events arrive and the pane stays unknown.
+review persists. Until reviewed no events arrive and the pane stays unknown. Remote app-server TUI clients do not forward the launch-owned hooks/environment and are refused by both local and SSH preparation.
 
 ### Remaining limitations
 
 - A provider that does not report a native boundary on an in-TUI session switch
-  (Agy has no end event; Codex `SessionEnd` currently reports reason `other`)
-  stays bound to the old root and fails closed (unknown) until the harness
-  restarts. Pi, OMP, Claude, OpenCode and Hermes report one.
+  (Agy has no end event; Codex `SessionEnd` currently reports reason `other`; installed TUI `/new` emits `SessionStart.source=startup` without ending the old root)
+  stays bound to the old root, rejects the unrelated identity, and displays degraded health until a fresh Clanker launch. Codex source `clear` is an explicit native replacement contract: the adapter names the prior stored root, and the broker replaces it only if that id exactly matches its binding. This is covered by source inspection and deterministic fixtures; the installed 0.162.0 TUI `/new` did **not** emit `clear`, so it remains unsupported. Ordinary startup/resume/fork never grants rebinding. Pi, OMP, Claude, OpenCode and Hermes report one.
 - An interrupted turn with no settle event stays Running rather than Ready.
-- Claude work resumed by a background wake-up after a settled `Stop` is not
-  re-marked Running until the next prompt. Claude events need `prompt_id`
+- Claude, Codex and Agy `Stop` callbacks run before other hooks can request continuation.
+  They cannot prove success; Clanker publishes correlated `turn_provisional`, retains turn identity and request history (`resolutionUnknown`), and displays Stop observed · outcome unknown. No timer or output heuristic announces Done. Claude events need `prompt_id`
   (Claude Code 2.1.196 or newer); without it nothing is reported.
 - Codex hooks, OMP `ctx.agent`, OpenCode `client.session.get` and Hermes hook
   kwargs follow upstream documentation; they have not been verified against live
@@ -829,7 +852,7 @@ found").
 | Harness | Strategy | Mechanism | Evidence |
 | --- | --- | --- | --- |
 | Claude | `hot-replace` | `claude --resume <id>` started in the target directory (launch directory decides; no target option) while the first process waits in the request | one session file continued across main -> worktree -> main in the real app |
-| Codex | `after-turn` | after the native root Stop: retire the first process, then `codex ... resume <id> -s ... --cd <target>` | measured below, plus the real app |
+| Codex | `after-turn` | Requires verified completion. Current Stop is provisional and cancels the scheduled move; continue here or launch a separate agent in the target checkout instead. | historical relocation evidence below; current hook settlement is insufficient |
 | OpenCode | `after-turn` + `relocateConversation` | after the native root idle: retire the first process, move the conversation's recorded directory with OpenCode's own `move-session`, then `opencode --session <id>` | measured below, plus the real app |
 
 **OpenCode (measured with 1.18.34, isolated XDG profile).** `opencode --session <id>` ignores both the process
@@ -889,8 +912,8 @@ reply. The agent's turn completes normally.
   session and whose `lastOutcome` is a **completed** root turn recorded **after** the request (a revision baseline, so an
   earlier completion or an approval prompt never triggers). The broker already drops child/subagent lifecycle, so a child
   Stop cannot; another terminal's Stop, another session's Stop and a stale completion cannot.
-- *Interrupt, failed turn, session end:* **cancel** the pending move (nothing moves behind the user's back; a user
-  notice says so; a created checkout is kept). The terminal disappearing drops it. Shutdown drops it.
+- *Provisional Stop, interrupt, failed turn, session end:* **cancel** the pending move (nothing moves behind the user's back; a user
+  notice says so; a created checkout is kept). A provisional stop explains that completion is unverified and offers continuing here or launching a separate agent in the intended checkout. Requests made while already provisional are refused before checkout creation. The terminal disappearing drops it. Shutdown drops it.
 - *At the trigger,* everything is re-validated (the world may have changed during the turn; checkout identity is compared
   by value, since Git reconciliation legitimately replaces context objects): terminal, workspace, session, both
   contexts, and for complete again "no other terminal / not dirty / not locked". A move that is no longer valid is cancelled
@@ -1648,7 +1671,7 @@ attention events, and session history do not collide with Pi.
 | Models | `omp models --json` returns a `models` array with `selector`, `name`, `kind`, and provider fields; 561 chat entries on this installation | Use `selector` as the ID and accept chat entries only. The catalog can contain models without available credentials, so selection can still fail at launch. |
 | Sessions | Default profile: `~/.omp/agent/sessions/<project>/*.jsonl`; sampled file begins with `title`, then `session` (`id`, `cwd`, `timestamp`); `model_change` uses `model` | Stream metadata extraction with at most 16 files open per batch. Pi's first-line parser is incompatible. Current discovery reads only the default root. |
 | Resume/fork | `omp --resume <path>` and `omp --fork <path>` | Use a saved `.jsonl` path after checking it stays inside the default OMP session store. Fork is present in the installed CLI's session resolution code even though top-level help omits it. |
-| Attention | `--extension <path>` with main-agent `agent_start`, main-session `session_stop`, and `session_shutdown` events | The dedicated extension reports running, main-session completion after background jobs drain, and shutdown. `agent_end` does not settle the turn. It does not report input requests. |
+| Attention | `--extension <path>` with main-agent `agent_start`, main `agent_end`, and `session_shutdown`/`session_switch` events | The dedicated extension reports running and only settles after stop-control hooks/background maintenance, when `willContinue !== true`. Final assistant error/abort prevents Done. It does not report input requests. |
 | AI commit | `--print --no-session --no-tools --no-extensions` | The commit pipeline pipes the prompt through stdin. OMP 18.3.4's source reads piped input as the initial prompt. No billable model request was made during verification. |
 
 The code and tests cover registration, parsing, session invocation arguments,
@@ -1711,7 +1734,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Interactive launch | `agy`; `--model=<selector>` | Registered as a harness using the common PTY launch path. |
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
-| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin is persistent and inert: it is installed or refreshed (atomically, idempotently) when an attention-enabled Antigravity terminal launches and is never removed on release, shutdown or startup, because it is shared by every Clanker process and by Antigravity sessions that outlive them. Every hook runs the plugin's own `guard.mjs`, which forwards to the launch-scoped bridge (`CLANKER_ATTENTION_COMMAND`/`CLANKER_ATTENTION_INTERPRETER`) only for Clanker Antigravity launches whose resources still exist, and otherwise prints `{}` and exits 0, so missing or broken temp resources can never block a tool. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` with `fullyIdle === true` for the bound root conversation to `turn_completed`, and wrapper exit to `agent_exited`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory. On startup it removes the historical `clanker-attention` plugin only when its payload matches the known shape exactly, its script is gone and it holds no other files. |
+| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin is persistent and inert: it is installed or refreshed (atomically, idempotently) when an attention-enabled Antigravity terminal launches and is never removed on release, shutdown or startup, because it is shared by every Clanker process and by Antigravity sessions that outlive them. Every hook runs the plugin's own `guard.mjs`, which forwards to the launch-scoped bridge (`CLANKER_ATTENTION_COMMAND`/`CLANKER_ATTENTION_INTERPRETER`) only for Clanker Antigravity launches whose resources still exist, and otherwise prints `{}` and exits 0, so missing or broken temp resources can never block a tool. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, fully-idle `Stop` with explicit error/exhaustion to `turn_failed`; other fully-idle stops report `turn_provisional` because another hook may continue, and wrapper exit to `agent_exited`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory. On startup it removes the historical `clanker-attention` plugin only when its payload matches the known shape exactly, its script is gone and it holds no other files. |
 | AI commit | `--mode plan --sandbox --disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,
@@ -1723,7 +1746,7 @@ when installed and enabled; Open Workspace does not launch harnesses.
 
 `sshAgentAttention.ts` obtains the selected provider's resources and hook/extension configuration through its remote attention capability, with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
 
-Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `post_llm_call` and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
+Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `on_session_end` with final outcome flags and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
 
 Tests exercise all seven adapters with synthetic lifecycle events over real pseudo-terminals, configuration conflicts, ownership checks, and terminal credential/cleanup routing. Those checks do not make model calls or establish compatibility with every installed CLI version. Live remote agent turns remain a separate smoke check.
 

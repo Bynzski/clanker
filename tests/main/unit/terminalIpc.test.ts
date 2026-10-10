@@ -109,7 +109,7 @@ import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
-import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
+import { GET_AGENT_ATTENTION_DIAGNOSTICS, RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
@@ -170,7 +170,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(13);
+    expect(mockHandle.mock.calls.length).toBe(14);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -206,7 +206,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(26);
+    expect(mockHandle.mock.calls.length).toBe(28);
   });
 });
 
@@ -276,6 +276,32 @@ describe('terminalIpc — error-path: handler returns', () => {
     mockClipboardWriteText.mockClear();
     mockPtySpawn.mockClear();
   });
+  test('developer diagnostics are gated and expose only safe broker/terminal metadata', async () => {
+    const { opts } = createMockDeps();
+    const broker = new AgentAttentionBroker(() => undefined, () => undefined);
+    const token = broker.registerRemote('t', 'codex', { capability: { requested: true, attachment: 'prepared' } });
+    opts.getTerminals().set('t', { harnessId: 'codex', workspaceId: 'ws', cwd: '/SECRET', environmentId: 'ssh', attention: { requested: true, attachment: 'prepared' } });
+    registerTerminalIpc({ ...opts, agentAttentionBroker: broker });
+    const handler = mockHandle.mock.calls.find((call) => call[0] === GET_AGENT_ATTENTION_DIAGNOSTICS)![1];
+    const previous = process.env.CLANKER_DEBUG_ATTENTION;
+    try {
+      delete process.env.CLANKER_DEBUG_ATTENTION;
+      expect(handler(null, null)).toBe(false);
+      expect(handler(null, 't')).toBeNull();
+      process.env.CLANKER_DEBUG_ATTENTION = '1';
+      expect(handler(null, null)).toBe(true);
+      broker.receiveRemote('t', JSON.stringify({ version: 1, token, harness: 'codex', event: 'turn_started', scope: 'root', sessionId: 'SECRET', turnId: 'SECRET' }));
+      const result = handler(null, 't');
+      expect(result).toMatchObject({ main: { received: 1, status: 'running', signal: { health: 'observed' } }, terminal: { workspaceId: 'ws', environmentId: 'ssh' } });
+      expect(JSON.stringify(result)).not.toMatch(/SECRET|cwd|token|sessionId|turnId/);
+      expect(handler(null, {})).toBeNull();
+      expect(handler(null, 'x'.repeat(129))).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.CLANKER_DEBUG_ATTENTION; else process.env.CLANKER_DEBUG_ATTENTION = previous;
+      broker.close();
+    }
+  });
+
   test('routes remote attention from PTY data and releases credentials and files on exit or spawn failure', async () => {
     const { opts } = createMockDeps();
     const updates = vi.fn();
@@ -300,7 +326,8 @@ describe('terminalIpc — error-path: handler returns', () => {
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
     try {
       const result = await handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host');
-      expect(result.attentionEnabled).toBe(true);
+      expect(result).toMatchObject({ attentionEnabled: true, attention: { requested: true, attachment: 'prepared' } });
+      expect(broker.snapshot(result.id)?.signal).toMatchObject({ health: 'unverified' });
       const raw = JSON.stringify({ version: 1, token, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a', turnId: '1' });
       onData('ordinary output' + REMOTE_ATTENTION_PREFIX + Buffer.from(raw).toString('base64') + '\x07');
       expect(updates).toHaveBeenCalledWith(expect.objectContaining({ terminalId: result.id, snapshot: expect.objectContaining({ runtime: expect.objectContaining({ status: 'running' }) }) }));
@@ -310,7 +337,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(broker.handoffState(result.id)).toBe('unavailable');
       broker.receiveRemote(result.id, raw);
       // The start, then the PTY exit's retirement tombstone; the retired credential adds nothing.
-      expect(updates).toHaveBeenCalledTimes(2);
+      expect(updates).toHaveBeenCalledTimes(4); // prepared, runtime, observed-health, authoritative retirement
       expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ terminalId: result.id, snapshot: null }));
       mockPtySpawn.mockImplementationOnce(() => { throw new Error('spawn failed'); });
       await expect(handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host')).rejects.toThrow('spawn failed');
@@ -661,6 +688,11 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(broker.markSubmitted).toHaveBeenCalledWith('term-agent');
       const statuses = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'get-agent-handoff-statuses')?.[1] as () => Record<string, string>;
       expect(statuses()).toEqual({ 'term-agent': 'unverified' });
+      broker.canHandoff.mockReturnValue(false);
+      broker.handoffState.mockReturnValue('provisional');
+      expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'fixture' }).error).toContain('without a verified final outcome');
+      expect(write).toHaveBeenCalledTimes(1);
+      broker.canHandoff.mockReturnValue(true);
       expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'unsafe\x1b[201~' }).success).toBe(false);
       expect(write).toHaveBeenCalledTimes(1);
     } finally {
@@ -674,7 +706,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     try {
       const { terminals, opts } = createMockDeps();
       const write = vi.fn();
-      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
       registerTerminalIpc({ ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never });
       const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
         _: unknown, payload: unknown,
@@ -702,7 +734,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     function setup(overrides: Record<string, unknown> = {}, workspace: Record<string, unknown> | null = { workspaceId: 'ws-ssh', location: { environmentId: 'ssh-1', path: ROOT } }) {
       const { terminals, opts } = createMockDeps();
       const write = vi.fn();
-      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
       terminals.set('term-agent', {
         id: 'term-agent', cwd: '/home/desktop/other', harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1',
         remoteWorkingDir: `${ROOT}/pkg`, pty: { write }, ...overrides,
@@ -770,7 +802,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         const { terminals, opts } = createMockDeps();
         const write = vi.fn();
         terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1', remoteWorkingDir: workspacePath, pty: { write } });
-        const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+        const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unavailable') };
         mockIpcMain.handle.mockClear();
         registerTerminalIpc({
           ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never,
@@ -1050,7 +1082,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const result = await handler(null, '/test/workspace', 'codex', 'gpt-5.4-mini');
 
     expect(result).toBeDefined();
-    expect(broker.register).toHaveBeenCalledWith(result.id, 'codex', { authority: 'full', quality: 'hook' });
+    expect(broker.register).toHaveBeenCalledWith(result.id, 'codex', { authority: 'full', quality: 'hook', capability: { requested: false, attachment: 'disabled' } });
     expect(ensureWrapper).toHaveBeenCalledTimes(1);
     expect(mockPtySpawn).toHaveBeenCalledWith(
       testHarnessWrapper(),

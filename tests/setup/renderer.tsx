@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { setTimeout as waitForUnmountCallbacks } from 'node:timers/promises';
 
 // Mock ResizeObserver for components that use it (TerminalPane, BrowserPanel)
 class ResizeObserverMock {
@@ -40,8 +41,12 @@ class ResizeObserverMock {
 
 global.ResizeObserver = ResizeObserverMock;
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Radix FocusScope defers unmount focus restoration with setTimeout(0). Finish it
+  // in this jsdom realm, before Vitest replaces globals for the next test file.
+  // Use a real timer even when the test uses fake timers; do not run its future work.
+  await waitForUnmountCallbacks(0);
 });
 
 vi.mock('../../src/renderer/assets/harness-logos/codex.svg', () => ({

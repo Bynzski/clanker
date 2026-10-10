@@ -144,6 +144,10 @@ let mainWindow: BrowserWindow | null = null;
 /** Late-bound: the lifecycle service needs controllers that only exist once the app is ready. */
 let isolatedCheckout: IsolatedCheckoutService | undefined;
 const agentAttentionBroker = new AgentAttentionBroker((change) => {
+  if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-publish', JSON.stringify({
+    terminalId: change.terminalId, revision: change.revision, status: change.snapshot?.runtime.status ?? 'retired',
+    rendererAvailable: isWindowAvailable(mainWindow),
+  }));
   if (isWindowAvailable(mainWindow)) {
     mainWindow.webContents.send(AGENT_ATTENTION_CHANGED, change);
   }

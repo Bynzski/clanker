@@ -78,6 +78,7 @@ import {
   AGENT_ATTENTION_CHANGED,
   AGENT_CHECKOUT_TRANSITION,
   GET_AGENT_ATTENTION_SNAPSHOTS,
+  GET_AGENT_ATTENTION_DIAGNOSTICS,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
   HARNESS_ACCOUNTS_ADD_START,
@@ -293,6 +294,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
+  isAttentionDebugEnabled: () => ipcRenderer.invoke(GET_AGENT_ATTENTION_DIAGNOSTICS, null),
+  getAgentAttentionDiagnostics: (terminalId: string) => ipcRenderer.invoke(GET_AGENT_ATTENTION_DIAGNOSTICS, terminalId),
   getAgentAttentionSnapshots: () => ipcRenderer.invoke(GET_AGENT_ATTENTION_SNAPSHOTS),
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => {
     const handler = (_event: IpcRendererEvent, data: AgentAttentionChange) => callback(data);

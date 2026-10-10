@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type { GitWorktreeRemovalOptions } from '../../shared/types/git';
 import { discoverSshWebServices, type RemoteWebEndpoint } from './sshPortDiscovery';
 import { findHarnessProvider, getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
@@ -724,14 +725,25 @@ export class SshEnvironment implements WorkspaceEnvironment {
       `for clanker_key in $(env | sed -n 's/^\\(CLANKER_\\(REMOTE_\\)\\{0,1\\}ATTENTION_[A-Za-z_0-9]*\\)=.*/\\1/p'); do unset "$clanker_key"; done`,
     );
 
+    let attentionCapability: NativeAttentionCapability = { requested: Boolean(params.attentionToken), attachment: 'disabled' };
     let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
       let harnessArgs = params.resumeSession
         ? buildSessionCommand(params.resumeSession.session, { operation: params.resumeSession.fork ? 'fork' : 'resume', transport: 'ssh', userFlags: params.flags }).args
         : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs);
       if (params.attentionToken) {
-        attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken, { rootSessionId: params.attentionRootSessionId });
-        harnessArgs = attention.args;
+        if (!findHarnessProvider(params.harness)?.attention?.remote) {
+          attentionCapability = { requested: true, attachment: 'unavailable', reason: 'unsupported' };
+        } else {
+          try {
+            attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken, { rootSessionId: params.attentionRootSessionId });
+            harnessArgs = attention.args;
+            attentionCapability = { requested: true, attachment: 'prepared' };
+          } catch {
+            // Optional acquisition; preserve the original argv and user-owned configuration.
+            attentionCapability = { requested: true, attachment: 'unavailable', reason: 'preparation-failed' };
+          }
+        }
       }
       const harnessEnv = [remoteHarnessEnvironment(harnessConfig.env), attention ? remoteAttentionEnvironment(attention.env) : ''].filter(Boolean).join(' ');
       const quotedHarness = quotePosixCommand(harnessConfig.command, harnessArgs);
@@ -763,6 +775,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
       initialCommand: undefined, // Embedded directly into ssh remoteExec; avoid duplicate PTY stdin replay
       harnessId: harnessConfig ? params.harness : undefined,
       attentionEnabled: Boolean(attention),
+      attention: attentionCapability,
       releaseAttention: attention?.release,
     };
   }

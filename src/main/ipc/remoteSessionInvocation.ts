@@ -1,3 +1,4 @@
+import { remoteAttentionCapability } from '../attentionCapability';
 import { getHarnessProvider } from '../harnesses/registry';
 import { randomUUID } from 'node:crypto';
 import type { HarnessSession, SessionInvokeOptions } from '../../shared/types/session';
@@ -90,8 +91,10 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   const broker = deps.agentAttentionBroker;
   // The rediscovered host session is the only authority for a resumed root identity.
   const attentionRootSessionId = trustedRootSessionId(session.harness, session, fork === true);
-  const attentionToken = defaults?.attentionEnabled && environment.capabilities.agentAttention && broker
-    ? broker.registerRemote(id, session.harness, { rootSessionId: attentionRootSessionId, ...attentionSourceOptions(session.harness) }) : undefined;
+  const attentionRequested = defaults?.attentionEnabled === true;
+  const attentionAvailable = Boolean(environment.capabilities.agentAttention && broker);
+  const registrationToken = broker?.registerRemote(id, session.harness, { rootSessionId: attentionRootSessionId, ...attentionSourceOptions(session.harness), capability: remoteAttentionCapability(session.harness, attentionRequested, attentionAvailable) });
+  const attentionToken = attentionRequested && attentionAvailable ? registrationToken : undefined;
   let releaseAttention: (() => Promise<void>) | undefined;
   try {
     const resolved = await environment.resolveTerminalSpawn({
@@ -99,13 +102,15 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       resumeSession: { session, fork: fork === true, workspaceRoot: launchRoot },
     });
     releaseAttention = resolved.releaseAttention;
+    const attention = remoteAttentionCapability(session.harness, attentionRequested, attentionAvailable, resolved);
+    broker?.setCapability?.(id, attention);
     checkWorkspace();
     if (registry?.isRemotePathReserved?.(workspace.location.environmentId, session.cwd)) throw new Error('Remote session directory is being removed');
     if (!isCurrentCheckoutContext(registry, launchContext)) throw new Error('Remote session checkout was released while resuming');
     const result = spawnPtyProcess({
       id, spawnCmd: resolved.spawnCmd, spawnArgs: resolved.spawnArgs, cwd: process.cwd(), env: resolved.env,
       terminals: deps.getTerminals(), mainWindow: deps.getMainWindow(), getIsShuttingDown: deps.getIsShuttingDown,
-      launchLabel: resolved.launchLabel, harnessId: session.harness, workspaceId: workspace.workspaceId,
+      launchLabel: resolved.launchLabel, attention, harnessId: session.harness, workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
       ...(initialGeometry ? { initialGeometry } : {}),
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
@@ -117,7 +122,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       },
     });
     return {
-      ...result, harnessId: session.harness, attentionEnabled: resolved.attentionEnabled === true, workingDir: session.cwd,
+      ...result, harnessId: session.harness, attention, attentionEnabled: attention.attachment === 'prepared', workingDir: session.cwd,
       checkoutContextId: launchContext?.id,
       ...(launchContext && launchContext.kind === 'worktree' ? { checkoutContext: launchContext } : {}),
       ...(target.notice ? { resumeNotice: target.notice } : {}),

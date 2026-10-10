@@ -72,7 +72,7 @@ export async function launchWorkspaceTerminal(
     checkoutContextId: checkoutContext?.id ?? info.checkoutContextId,
     environmentId,
     harnessId: info.harnessId ?? options.harness ?? null,
-    attentionEnabled: info.attentionEnabled === true,
+    attention: info.attention, attentionEnabled: info.attentionEnabled === true,
   };
   try {
     useWorkspaceStore.getState().addTerminal(terminal, workspace.id, reservedPaneId, pageId);

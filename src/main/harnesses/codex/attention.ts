@@ -11,7 +11,7 @@ export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionR
 /** Provider-owned meaning of native hook events (fields per the Codex hooks source).
  * - SessionStart binds root identity on startup/resume without declaring a turn.
  * - root identity `session_id`; turn identity `turn_id`; child scope: `SubagentStop` or `agent_id`.
- * - Settled: root `Stop`. User cancel: root `Interrupt` (`turn_interrupted`, never a completion).
+ * - Candidate settlement: root `Stop` (other hooks may still continue). User cancel: root `Interrupt` (`turn_interrupted`, never a completion).
  * - Input wait: `PermissionRequest` has `turn_id`, `tool_name`, `tool_input` and NO `tool_use_id`,
  *   while `PreToolUse` and `PostToolUse` carry `tool_use_id`. The interpreter correlates them in
  *   the bridge store, keeping only bounded derived data (tool_use_ids and a 16-hex fingerprint of
@@ -23,19 +23,25 @@ export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionR
  *     PostToolUse       -> mark the call done; a wait resolves only when ALL its calls are done
  *   The broker sees one `input_requested` for the first wait and one `input_resolved` once no wait
  *   remains, so an unrelated tool finishing cannot clear a real wait. A call the user denies runs
- *   no PostToolUse, so its wait lasts until Stop or Interrupt. More than 16 live waits put the
+ *   no PostToolUse, so its wait becomes resolution-unknown at provisional Stop and clears on a fresh prompt, Interrupt or SessionEnd. More than 16 live waits put the
  *   state in overflow: nothing resolves until the turn ends (live waits are never dropped).
  *   The bridge serializes each read/interpret/write transaction per terminal.
  * - Location: every hook carries `cwd`, the session's working directory. A command never moves it
  *   (each runs one-shot in that directory); `/cd` and worktree switches do, and only while idle, so
- *   the root's turn boundaries (UserPromptSubmit, Stop, Interrupt, SessionEnd) carry it and the next
+ *   the root's turn boundaries (UserPromptSubmit, Interrupt, SessionEnd) carry it and the next
  *   prompt reports a move. Tool hooks and subagents never carry it. */
 export const INTERPRETER = `import { createHash } from 'node:crypto';
 const text = (value) => typeof value === 'string' && value ? value : undefined;
 const canonical = (value) => value === null || typeof value !== 'object' ? JSON.stringify(value)
   : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
   : '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
-const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(input.tool_input ?? null)).digest('hex').slice(0, 16);
+// Codex 0.162 Bash PreToolUse carries {command}; PermissionRequest adds the human-only
+// description (justification). Ignore only that documented decoration, keeping exact command
+// equality and refusing unknown extra fields. Identical calls still resolve as one all-done group.
+const correlationInput = (input) => input.tool_name === 'Bash' && typeof input.tool_input?.command === 'string'
+  && Object.keys(input.tool_input).every(key => key === 'command' || key === 'description')
+    ? { command: input.tool_input.command } : input.tool_input ?? null;
+const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(correlationInput(input))).digest('hex').slice(0, 16);
 // Bounds. calls (32) and done (64) hold completed-call bookkeeping: dropping the oldest can only
 // leave a wait unmatched or unresolved, which fails closed (Needs Input until the turn ends).
 // waits (16) hold live human waits and are NEVER trimmed: past the cap the state goes to
@@ -54,21 +60,31 @@ export default function interpret(input, hook, store) {
     return mapped ? event(mapped, { turnId, inputId: 'w0' }) : null;
   }
   const stored = store.read();
-  const current = turnId !== undefined && stored.turn === turnId;
-  const state = current ? stored : { turn: turnId, calls: [], done: [], waits: [], seq: stored.seq ?? 0 };
+  const sameSession = !stored.session || stored.session === sessionId;
+  const current = sameSession && turnId !== undefined && stored.turn === turnId;
+  const state = current ? stored : { session: sessionId, turn: turnId, calls: [], done: [], waits: [], seq: stored.seq ?? 0 };
   const save = () => { if (current || hook === 'UserPromptSubmit') store.write(state); };
-  const reset = () => store.write({ turn: undefined, calls: [], done: [], waits: [], seq: state.seq });
+  const reset = (ending = false) => store.write({ session: ending ? undefined : stored.session ?? sessionId, turn: undefined, calls: [], done: [], waits: [], seq: state.seq });
   switch (hook) {
     case 'SessionStart':
+      // Native source=clear proves explicit replacement; it need not emit SessionEnd.
+      // Installed TUI /new emits startup instead, so it cannot safely rebind a known root.
+      if (input.source === 'clear' && stored.session && sessionId && stored.session !== sessionId) {
+        store.write({ session: sessionId, calls: [], done: [], waits: [], seq: stored.seq ?? 0 });
+        return event('session_replaced', { previousSessionId: stored.session, cwd });
+      }
+      if (!stored.session && sessionId) store.write({ ...stored, session: sessionId });
       return event('session_started', { cwd });
     case 'UserPromptSubmit':
       save();
       return event('turn_started', { turnId, cwd });
     case 'PreToolUse':
-      if (!current || !text(input.tool_use_id)) return null;
+      // Only root, same-turn tool starts prove continuation; a delayed PostToolUse
+      // alone cannot distinguish work performed before the candidate Stop.
+      if (!current || !text(input.tool_use_id) || !text(input.tool_name)) return null;
       state.calls = keep([...state.calls, { id: input.tool_use_id, fp: fingerprint(input) }], 32);
       save();
-      return null;
+      return state.provisional === true ? event('turn_activity', { turnId }) : null;
     case 'PermissionRequest': {
       if (!current) return event('input_requested', { turnId, inputId: 'w0', requestKind: 'approval' });
       const fp = fingerprint(input);
@@ -93,13 +109,19 @@ export default function interpret(input, hook, store) {
       return resolved ? event('input_resolved', { turnId, inputId }) : null;
     }
     case 'Stop':
-      if (current) reset();
-      return event('turn_completed', { turnId, cwd });
+      // Stop handlers run before the aggregate continuation decision. Preserve the turn
+      // and request history, but no longer claim active execution or an actionable wait.
+      if (!current) return null;
+      // The broker retains unresolved request history. Retire this candidate batch's
+      // correlation cache so continuation requests cannot inherit denied/overflowed calls.
+      store.write({ ...state, calls: [], done: [], waits: [], overflow: false, input: undefined, provisional: true });
+      return event('turn_provisional', { turnId });
     case 'Interrupt':
       if (current) reset();
       return event('turn_interrupted', { turnId, cwd });
     case 'SessionEnd':
-      reset();
+      if (!sameSession) return null;
+      reset(true);
       return event('session_ended', { cwd });
     default: return null;
   }
@@ -115,7 +137,9 @@ export function codexArgsConflict(args: string[]): boolean {
   const overrides = codexConfigOverrides(args);
   const profile = args.some((arg) => arg === '-p' || arg === '--profile' || arg.startsWith('--profile=')
     || (arg.startsWith('-p') && !arg.startsWith('--')));
-  return profile || overrides.some((value) => CODEX_OWNED_CONFIG_KEY.test(value));
+  // Remote TUI clients do not forward launch-owned hook configuration or credentials.
+  const remote = args.some(arg => arg === '--remote' || arg.startsWith('--remote=') || arg === '--remote-auth-token-env' || arg.startsWith('--remote-auth-token-env='));
+  return profile || remote || overrides.some((value) => CODEX_OWNED_CONFIG_KEY.test(value));
 }
 
 /** Conflicts with the user's own hook or profile configuration degrade to unavailable, never to a merge. */

@@ -248,6 +248,26 @@ describe('SshEnvironment', () => {
       expect(spawnConfig.attentionEnabled).toBe(false);
     });
 
+    it('reports prepared remote attention separately from native receipt', async () => {
+      vi.mocked(mockExecutor.exec).mockResolvedValueOnce({ stdout: JSON.stringify({
+        root: '/tmp/clanker-remote-attention-fixture', args: ['--fixture-hook'],
+        env: { CLANKER_REMOTE_ATTENTION_COMMAND: '/tmp/clanker-remote-attention-fixture/command.mjs' },
+      }), stderr: '', exitCode: 0 });
+      const result = await env.resolveTerminalSpawn({ id: 't', workingDir: '/ws', harness: 'claude', attentionToken: 'a'.repeat(64) });
+      expect(result).toMatchObject({ attentionEnabled: true, attention: { requested: true, attachment: 'prepared' } });
+      expect(result.attention).not.toHaveProperty('health');
+      expect(result.releaseAttention).toBeTypeOf('function');
+    });
+
+    it('keeps original remote argv when optional attention preparation fails', async () => {
+      vi.mocked(mockExecutor.exec).mockRejectedValueOnce(new Error('PRIVATE config conflict or missing runtime'));
+      const result = await env.resolveTerminalSpawn({ id: 't', workingDir: '/ws', harness: 'claude', flags: '--bare', attentionToken: 'a'.repeat(64) });
+      expect(result).toMatchObject({ attentionEnabled: false, attention: { requested: true, attachment: 'unavailable', reason: 'preparation-failed' } });
+      expect(result.spawnArgs[2]).toContain('--bare');
+      expect(result.spawnArgs[2]).not.toContain('a'.repeat(64));
+      expect(result.releaseAttention).toBeUndefined();
+    });
+
     it('does not forward local Agent Attention adapter variables to SSH', async () => {
       vi.stubEnv('CLANKER_ATTENTION_COMMAND', '/local/adapter.js');
       vi.stubEnv('CLANKER_ATTENTION_TOKEN', 'local-token');

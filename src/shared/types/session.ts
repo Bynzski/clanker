@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from './attentionSignal';
 import type { HarnessId } from '../harnessIds';
 import type { CheckoutContext } from './checkoutContext';
 import type { TerminalGeometry } from '../terminalGeometry';
@@ -57,6 +58,7 @@ export interface SessionLaunchResult {
   pid: number;
   harnessId?: string;
   attentionEnabled?: boolean;
+  attention?: NativeAttentionCapability;
   workingDir?: string;
   /** The context main bound the terminal to; a worktree context is included so the workspace can record it. */
   checkoutContextId?: string;

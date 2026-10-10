@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import { findHarnessProvider, isHarnessId } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 import { DEFAULT_HARNESS_ACCOUNT_ID } from '../../shared/types/harnessAccounts';
@@ -28,7 +29,7 @@ import { invokeRemoteSession } from './remoteSessionInvocation';
 import { trustedRootSessionId } from '../agentAttentionAdapters';
 import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../launchAttachments';
-import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
+import { attentionLaunchStep, localAttentionCapability, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
@@ -97,6 +98,7 @@ export interface ResumedSessionLaunch {
   pid: number;
   harnessId: string;
   attentionEnabled: boolean;
+  attention?: NativeAttentionCapability;
   checkoutContextId?: string;
   workingDir: string;
 }
@@ -430,6 +432,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       getIsShuttingDown,
       launchLabel,
       harnessId: session.harness,
+      attention: localAttentionCapability(session.harness, attentionEnabled, attachments),
       // Main's own record of ownership: an agent's reported location is resolved against it (agentLocation.ts).
       workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
@@ -441,7 +444,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       ...(internal?.initialGeometry || initialGeometry ? { initialGeometry: internal?.initialGeometry ?? initialGeometry } : {}),
       });
       return {
-        ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,
+        ...result, harnessId: session.harness, attention: localAttentionCapability(session.harness, attentionEnabled, attachments), attentionEnabled: attachments.provided.has(NATIVE_ATTENTION_ATTACHED), checkoutContextId: launchContext?.id,
         // Where it actually started (never the recorded cwd of a removed worktree).
         workingDir: toPosixPath(cwd),
         ...(launchContext && launchContext.kind === 'worktree' ? { checkoutContext: launchContext } : {}),

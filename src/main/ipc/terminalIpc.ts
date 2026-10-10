@@ -1,5 +1,7 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
+import { remoteAttentionCapability } from '../attentionCapability';
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
-import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
+import { attentionLaunchStep, localAttentionCapability, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { retireTerminal } from '../terminalRetirement';
 import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
@@ -26,6 +28,7 @@ import {
   WRITE_TERMINAL,
   GET_AGENT_HANDOFF_STATUSES,
   GET_AGENT_ATTENTION_SNAPSHOTS,
+  GET_AGENT_ATTENTION_DIAGNOSTICS,
   SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
@@ -62,6 +65,7 @@ interface Terminal {
   checkoutContextId?: string;
   environmentId?: string;
   harnessId?: string;
+  attention?: NativeAttentionCapability;
   releaseResources?: () => Promise<void>;
   /** Settles when the PTY process has REALLY exited (node-pty `onExit`); never because the record was removed. */
   exited?: Promise<void>;
@@ -176,9 +180,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         remoteWorkingDir = validation.resolvedPath;
       }
 
-      const attentionRequested = Boolean(harness && store.get('harnessDefaults')[harness]?.attentionEnabled
-        && resolvedWorkspace.environment.capabilities.agentAttention && agentAttentionBroker);
-      const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness, attentionSourceOptions(harness)) : undefined;
+      const attentionRequested = Boolean(harness && store.get('harnessDefaults')[harness]?.attentionEnabled);
+      const attentionAvailable = Boolean(resolvedWorkspace.environment.capabilities?.agentAttention && agentAttentionBroker);
+      const registrationToken = harness && agentAttentionBroker ? agentAttentionBroker.registerRemote(id, harness, {
+        ...attentionSourceOptions(harness), capability: remoteAttentionCapability(harness, attentionRequested, attentionAvailable),
+      }) : undefined;
+      const attentionToken = attentionRequested && attentionAvailable ? registrationToken : undefined;
       let releaseAttention: (() => Promise<void>) | undefined;
       try {
         const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
@@ -192,6 +199,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           attentionToken,
         });
         releaseAttention = resolved.releaseAttention;
+        const attention = remoteAttentionCapability(harness ?? '', attentionRequested, attentionAvailable, resolved);
+        agentAttentionBroker?.setCapability?.(id, attention);
 
         if (appShuttingDown || deps.getAppShuttingDown?.() || !isResolvedTargetCurrent() ||
             registry?.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
@@ -209,6 +218,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           getIsShuttingDown: () => appShuttingDown,
           launchLabel: resolved.launchLabel,
           harnessId: resolved.harnessId,
+          attention,
           initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
           workspaceId: resolvedWorkspace.workspaceId,
           checkoutContextId: checkoutContext.id,
@@ -226,7 +236,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         return {
           id: result.id,
           pid: result.pid,
-          attentionEnabled: resolved.attentionEnabled === true,
+          attention,
+          attentionEnabled: attention.attachment === 'prepared',
           harnessId: resolved.harnessId ?? harness ?? null,
           checkoutContextId: checkoutContext.id,
         };
@@ -262,7 +273,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const baseHarnessEnv = (harness && getHarnessOptions()[harness]?.env) || {};
     const harnessEnv = accountBinding ? accountBinding.mergeEnvironment(baseHarnessEnv) : baseHarnessEnv;
     const harnessDefaults = store.get('harnessDefaults');
-    const attentionEnabled = Boolean(harnessConfig && harness && findHarnessProvider(harness)?.attention?.local && harnessDefaults[harness]?.attentionEnabled);
+    const attentionEnabled = Boolean(harness && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig
@@ -351,6 +362,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
       harnessId: harnessConfig ? harness : undefined,
+      attention: localAttentionCapability(harness ?? '', attentionEnabled, attachments),
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
@@ -363,7 +375,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       return {
         ...result,
         harnessId: harnessConfig ? harness : undefined,
-        attentionEnabled,
+        attention: localAttentionCapability(harness ?? '', attentionEnabled, attachments),
+        attentionEnabled: attachments.provided.has(NATIVE_ATTENTION_ATTACHED),
         checkoutContextId: checkoutContext?.id,
       };
     } catch (error) {
@@ -450,6 +463,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   ));
 
   // Hydration for a renderer that subscribed late or was recreated. Retired agents are absent.
+  ipcMain.handle(GET_AGENT_ATTENTION_DIAGNOSTICS, (_event, terminalId: unknown) => {
+    const enabled = process.env.CLANKER_DEBUG_ATTENTION === '1';
+    if (terminalId === null) return enabled;
+    if (!enabled || typeof terminalId !== 'string' || terminalId.length > 128) return null;
+    const terminal = getTerminals().get(terminalId);
+    return { main: agentAttentionBroker?.signalDiagnostics(terminalId) ?? null,
+      terminal: terminal ? { harness: terminal.harnessId ?? null, workspaceId: terminal.workspaceId ?? null,
+        environmentId: terminal.environmentId ?? 'local', attention: terminal.attention ?? null } : null };
+  });
+
   ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, () => agentAttentionBroker?.snapshots() ?? []);
 
   ipcMain.handle(SEND_ANNOTATION_TO_AGENT, (_, payload: unknown) => {
@@ -495,7 +518,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
-      return fail('The agent is no longer available for handoff. Copy the message instead.');
+      return fail(agentAttentionBroker?.handoffState(payload.terminalId) === 'provisional'
+        ? 'The provider stopped without a verified final outcome. Continue in the agent terminal or copy the message instead.'
+        : 'The agent is no longer available for handoff. Copy the message instead.');
     }
     const message = payload.message.replace(/\r\n?/g, '\n');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {

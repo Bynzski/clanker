@@ -38,6 +38,7 @@ export default function AnnotationHandoffDialog({ sourceWorkspaceId, initialMess
       const canSend = handoffState === 'ready' || handoffState === 'unverified';
       const status = handoffState === 'ready' ? 'Ready'
         : handoffState === 'unverified' ? 'Open · status unverified'
+          : handoffState === 'provisional' ? 'Stop observed · outcome unknown — continue or copy in the agent terminal'
           : handoffState === 'running' ? 'Running'
             : handoffState === 'needs_input' ? 'Needs input' : 'Unavailable';
       return { workspace, terminal, canSend, status };

@@ -58,6 +58,7 @@ export const AGENT_ATTENTION_CHANGED = 'agent-attention-changed';
 /** Push-only (main -> renderer): an agent checkout transition performed by main. Not a handle channel. */
 export const AGENT_CHECKOUT_TRANSITION = 'agent-checkout-transition';
 export const GET_AGENT_ATTENTION_SNAPSHOTS = 'get-agent-attention-snapshots';
+export const GET_AGENT_ATTENTION_DIAGNOSTICS = 'get-agent-attention-diagnostics';
 export const TERMINAL_RESIZED = 'terminal-resized';
 export const TERMINAL_READY = 'terminal-ready';
 export const RECIPE_COMMAND_WAIT = 'recipe-command:wait';
@@ -340,6 +341,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   WRITE_TERMINAL,
   GET_AGENT_HANDOFF_STATUSES,
   GET_AGENT_ATTENTION_SNAPSHOTS,
+  GET_AGENT_ATTENTION_DIAGNOSTICS,
   SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,

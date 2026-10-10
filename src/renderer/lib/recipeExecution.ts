@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type {
   WorkspaceRecipe,
   PersistedRecipeLayout,
@@ -16,10 +17,10 @@ export interface RecipeExecutionDeps {
     model?: string,
     initialCommand?: string,
     recipeCommand?: boolean,
-  ) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  ) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; attention?: NativeAttentionCapability }>;
   onTerminalSpawned: (
     workspaceId: string,
-    terminal: { id: string; pid: number; workingDir: string; harnessId: string | null; attentionEnabled: boolean },
+    terminal: { id: string; pid: number; workingDir: string; harnessId: string | null; attentionEnabled: boolean; attention?: NativeAttentionCapability },
   ) => void;
   openBrowserPreview?: (workspaceId: string, url: string) => Promise<boolean>;
   restoreLayout?: (workspaceId: string, layout: PersistedRecipeLayout) => void;
@@ -129,6 +130,7 @@ export async function executeWorkspaceRecipe(
             workingDir: recipe.workspacePath,
             harnessId: info.harnessId ?? step.harnessId,
             attentionEnabled: info.attentionEnabled === true,
+            attention: info.attention,
           });
           steps.push({
             id: step.id,

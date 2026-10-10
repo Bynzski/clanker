@@ -1,3 +1,4 @@
+import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 /**
  * Shared PTY spawn helper.
  *
@@ -33,6 +34,7 @@ export interface SpawnPtyOptions {
   /** Optional banner line sent to the renderer before any PTY data. */
   launchLabel?: string;
   harnessId?: string;
+  attention?: NativeAttentionCapability;
   initialCommand?: string;
   workspaceId?: string;
   checkoutContextId?: string;
@@ -90,6 +92,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     environmentId: opts.environmentId,
     remoteWorkingDir: opts.remoteWorkingDir,
     harnessId,
+    attention: opts.attention,
     startupBuffer: [],
     startupBufferReady: false,
     initialCommand,

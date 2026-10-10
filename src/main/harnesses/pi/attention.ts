@@ -22,6 +22,7 @@ const sessionId = (ctx) => ctx.sessionManager?.getSessionId?.();
 const cwd = (ctx) => typeof ctx.cwd === 'string' ? ctx.cwd : undefined;
 export default function (pi) {
   pi.on('agent_start', (_event, ctx) => {
+    if (root && sessionId(ctx) !== root) return; // only native shutdown releases the bound root
     if (!open) { epoch += 1; open = true; root = sessionId(ctx); result = 'turn_completed'; pending = undefined; }
     if (!current(ctx)) return;
     return emit('turn_started', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
@@ -60,6 +61,7 @@ export default function (pi) {
     return emit(outcome, { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_settled', cwd: cwd(ctx) });
   });
   pi.on('session_shutdown', (_event, ctx) => {
+    if (root && sessionId(ctx) !== root) return;
     open = false;
     pending = undefined;
     result = 'turn_completed';

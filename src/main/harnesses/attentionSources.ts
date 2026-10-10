@@ -1,14 +1,17 @@
+import { HOOK_DIAGNOSTICS, MAX_NATIVE_HOOK_BYTES } from '../../shared/types/attentionSignal';
+import { ATTENTION_ACK_PREFIX, ATTENTION_VERDICTS, MAX_ATTENTION_ACK_BYTES } from '../../shared/attentionProtocol';
 import { MAX_AGENT_LOCATION_BYTES } from '../agentLocation';
 
 /** Shared observer helpers. Providers own the meaning of native events; shared
  * code only bounds and forwards the sanitized canonical envelope. A reported working directory
  * (`cwd`) that is not bounded and printable is dropped on its own: the lifecycle event still goes. */
-export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId'];
+export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId', 'previousSessionId'];
 function envelope(event, fields) {
   const extra = {};
   for (const key of IDENTIFIERS) {
     if (typeof fields?.[key] === 'string' && fields[key]) extra[key] = fields[key].slice(0, 128);
   }
+  if (${JSON.stringify(HOOK_DIAGNOSTICS)}.includes(fields?.diagnostic)) extra.diagnostic = fields.diagnostic;
   if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
   if (fields?.requestKind === 'input' || fields?.requestKind === 'approval') extra.requestKind = fields.requestKind;
   if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
@@ -17,22 +20,37 @@ function envelope(event, fields) {
 }
 `;
 
+/** emit keeps the provider-facing boolean API; the serialized command requests a detailed
+ * verdict so ignored events neither poison state nor count as an accepted recovery boundary.
+ * Old/unframed ACKs fail closed. TCP chunk boundaries have no protocol meaning. */
 export const OBSERVER = `import net from 'node:net';
 ${OBSERVER_FIELDS}
-export async function emit(event, fields) {
+export async function emit(event, fields, detailed = false) {
   const port = Number(process.env.CLANKER_ATTENTION_PORT);
   const token = process.env.CLANKER_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_ATTENTION_HARNESS;
-  if (!token || !harness || !Number.isInteger(port) || port < 1) return false;
+  if (!token || !harness || !Number.isInteger(port) || port < 1 || port > 65535) return false;
   const payload = JSON.stringify({ version: 1, token, harness, ...envelope(event, fields) });
-  return await new Promise((resolve) => {
+  const verdict = await new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
-    let acknowledged = false;
-    socket.on('data', (chunk) => { if (chunk.toString('utf8') === 'ok') acknowledged = true; });
-    socket.setTimeout(500, () => socket.destroy());
+    let response = '';
+    let ended = false;
+    let invalid = false;
+    const deadline = setTimeout(() => socket.destroy(), 500);
+    socket.on('data', (chunk) => {
+      if (Buffer.byteLength(response) + chunk.length > ${MAX_ATTENTION_ACK_BYTES}) { invalid = true; socket.destroy(); return; }
+      response += chunk.toString('utf8');
+    });
+    socket.on('end', () => { ended = true; });
     socket.on('error', () => resolve(false));
-    socket.on('close', () => resolve(acknowledged));
+    socket.on('close', () => {
+      clearTimeout(deadline);
+      const prefix = ${JSON.stringify(ATTENTION_ACK_PREFIX)};
+      const value = response.slice(prefix.length, -1);
+      resolve(!invalid && ended && response.startsWith(prefix) && response.endsWith('\\n') && ${JSON.stringify(ATTENTION_VERDICTS)}.includes(value) ? value : false);
+    });
   });
+  return detailed ? verdict : verdict === 'accepted-changed' || verdict === 'accepted-idempotent';
 }
 `;
 
@@ -64,17 +82,43 @@ import { emit } from './observer.mjs';
 if (process.argv[2] === '--ended') {
   process.exit(await emit('agent_exited') ? 0 : 1);
 }
-let input = {};
-try {
-  const chunks = [];
+// Read a complete bounded JSON object. Never interpret a prefix, even if it is valid JSON.
+// Total intake deadline + lock wait + one delivery remain below the configured 3 s timeout.
+let intakeFailure;
+const input = await new Promise((resolve) => {
+  let chunks = [];
   let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > 65536) break;
-    chunks.push(chunk);
+  let finished = false;
+  const deadline = setTimeout(() => finish('input-timeout'), 500);
+  function finish(failure) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(deadline);
+    process.stdin.removeAllListeners('data');
+    process.stdin.removeAllListeners('end');
+    process.stdin.removeAllListeners('error');
+    if (failure) {
+      intakeFailure = failure;
+      chunks = [];
+      process.stdin.destroy();
+      resolve(null);
+      return;
+    }
+    try {
+      const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      chunks = [];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
+      resolve(value);
+    } catch { intakeFailure = 'input-malformed'; chunks = []; resolve(null); }
   }
-  input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-} catch { /* malformed hook input is ignored */ }
+  process.stdin.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > ${MAX_NATIVE_HOOK_BYTES}) { finish('input-oversized'); return; }
+    chunks.push(chunk);
+  });
+  process.stdin.on('end', () => finish());
+  process.stdin.on('error', () => finish('input-malformed'));
+});
 
 const STATE_LIMIT = 32768;
 const LOCK_WAIT_MS = 1200;
@@ -123,7 +167,7 @@ function release() {
   try { fs.rmdirSync(lockPath); } catch { /* already gone */ }
 }
 
-let failed = false;
+let failed = Boolean(intakeFailure);
 const store = {
   read() {
     try {
@@ -133,7 +177,7 @@ const store = {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
       return value;
     } catch (error) {
-      if (error.code !== 'ENOENT') failed = true;
+      if (error.code !== 'ENOENT') { failed = true; diagnostic = 'state-unreadable'; }
       return {};
     }
   },
@@ -153,6 +197,7 @@ const store = {
       return true;
     } catch {
       failed = true;
+      diagnostic = 'state-unwritable';
       try { fs.unlinkSync(temporary); } catch { /* not created */ }
       return false;
     }
@@ -162,27 +207,37 @@ const degraded = { read: () => ({}), write: () => false };
 
 let result = null;
 let interpreter = null;
-try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
-const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'];
-if (interpreter) {
+let diagnostic = intakeFailure;
+if (!diagnostic) {
+  try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { diagnostic = 'interpreter-unavailable'; failed = true; }
+}
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended', 'session_replaced'];
+if (interpreter || diagnostic) {
   const locked = await acquire();
-  if (!locked) failed = true;
+  if (!locked) { failed = true; diagnostic ??= 'lock-unavailable'; }
   try {
     // One critical path per terminal: the state transition AND delivery of its event happen
     // under the lock, so an event derived from state this hook produced can never overtake it.
     // Delivery is bounded (loopback ack timeout / non-blocking tty write).
-    try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { /* an interpreter error emits nothing */ }
+    if (interpreter) {
+      try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { diagnostic = 'interpreter-failed'; failed = true; }
+    }
     const poisoned = fs.existsSync(poisonPath);
     let event = result?.event;
-    if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
+    if (event?.type === 'input_resolved' && (failed || poisoned)) { event = undefined; diagnostic = 'resolution-suppressed'; }
+    if (!event) event = { type: 'observer_diagnostic', diagnostic: diagnostic ?? 'no-event', nativeEvent: process.argv[3] };
     if (event) {
       const { type, ...fields } = event;
+      if (diagnostic) fields.diagnostic = diagnostic;
       let delivered = false;
-      try { delivered = await emit(type, fields); } catch { /* counts as undelivered */ }
+      try { delivered = await emit(type, fields, true); } catch { /* counts as undelivered */ }
       // The broker may not have seen this transition: stay conservative until a boundary lands.
       // A location report carries no bridge state, so losing one is not a failed transaction.
-      if (!delivered && type !== 'location_changed') failed = true;
-      else if (boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
+      // Remote OSC has no ACK: true still means a successful local tty write only.
+      const accepted = delivered === true || delivered === 'accepted-changed' || delivered === 'accepted-idempotent';
+      const ignored = delivered === 'ignored-child' || delivered === 'ignored-stale';
+      if (!accepted && !ignored && type !== 'location_changed') failed = true;
+      else if (accepted && boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
     }
     if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
   } finally {

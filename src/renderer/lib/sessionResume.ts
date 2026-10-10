@@ -59,7 +59,7 @@ export async function resumeSessionInMeasuredPane(params: {
       store.addTerminal({
         id: result.id, pid: result.pid, workspaceId, environmentId,
         workingDir: result.workingDir ?? result.checkoutContext?.path ?? workspacePath,
-        harnessId: result.harnessId ?? session.harness, attentionEnabled: result.attentionEnabled === true,
+        harnessId: result.harnessId ?? session.harness, attention: result.attention, attentionEnabled: result.attentionEnabled === true,
         ...(result.checkoutContextId ? { checkoutContextId: result.checkoutContextId } : {}),
       }, workspaceId, paneId, pageId);
       const recorded = useWorkspaceStore.getState().getWorkspaceById(workspaceId);

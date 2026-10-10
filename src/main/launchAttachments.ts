@@ -66,6 +66,7 @@ export interface PreparedLaunchAttachments {
   readonly env: Record<string, string>;
   /** Names of the steps that attached, in order. */
   readonly attached: readonly string[];
+  readonly provided: ReadonlySet<string>;
   /** Idempotent; resolves after every disposal has been attempted; never rejects. */
   dispose(): Promise<void>;
 }
@@ -121,5 +122,5 @@ export async function prepareLaunchAttachments(
     }
   }
 
-  return { args, env: additions, attached: acquired.map((entry) => entry.name), dispose };
+  return { args, env: additions, attached: acquired.map((entry) => entry.name), provided: new Set(provided), dispose };
 }
