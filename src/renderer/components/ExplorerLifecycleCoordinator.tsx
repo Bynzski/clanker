@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { focusedFileCheckout } from '../lib/fileCheckout';
+import { subscribeCheckoutSelection } from '../lib/checkoutSelectionRuntime';
 
 /** Align the single local tree watcher with focus; same-checkout terminal switches are no-ops. */
 export default function ExplorerLifecycleCoordinator() {
@@ -11,7 +12,7 @@ export default function ExplorerLifecycleCoordinator() {
       const state = useWorkspaceStore.getState();
       const workspace = state.getWorkspaceById(state.activeWorkspaceId);
       const root = workspace ? focusedFileCheckout(workspace) : null;
-      const local = workspace && (workspace.environmentId ?? 'local') === 'local';
+      const local = workspace && root?.workspacePath && (workspace.environmentId ?? 'local') === 'local';
       const key = JSON.stringify(local ? [workspace.id, root?.workspacePath, root?.checkoutContextId] : null);
       if (key === previousKey) return;
       previousKey = key;
@@ -23,7 +24,7 @@ export default function ExplorerLifecycleCoordinator() {
       void request?.catch((error) => console.warn('Could not update Explorer watcher:', error));
     };
     sync();
-    const unsubscribe = useWorkspaceStore.subscribe(sync);
+    const unsubscribe = subscribeCheckoutSelection(sync);
     return () => {
       unsubscribe();
       void window.electronAPI.explorerStopWatching?.();

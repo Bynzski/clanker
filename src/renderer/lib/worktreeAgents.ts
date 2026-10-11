@@ -4,6 +4,10 @@ import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import { getCheckoutContext } from './checkoutContexts';
+import { useAgentAttentionStore } from '../store/agentAttentionStore';
+import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
+import { isLiveWorkspaceService } from '../../shared/types/workspaceServices';
+import { pathInFileCheckout } from './fileCheckout';
 
 /**
  * An isolated worktree is a worktree context attached to a workspace besides its own root.
@@ -34,13 +38,11 @@ export function getAgentWorktreeContext(
   return isIsolatedWorktreeContext(workspace, context) ? context : null;
 }
 
-/** Isolated worktree contexts no terminal of the workspace was launched into: inactive, removable
- * checkouts. Judged by launch binding, never by reported location. A missing checkout is not one:
- * there is nothing on disk to remove, and main drops it on its next reconciliation. */
+/** Inactive roots exclude launch bindings, authenticated observed containment (including history)
+ * and live services. Main still makes the authoritative cleanup decision. */
 export function getUnusedWorktreeContexts(workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals'>): CheckoutContext[] {
-  const used = new Set(workspace.terminals.map((terminal) => terminal.checkoutContextId));
   return (workspace.checkoutContexts ?? []).filter((context) =>
-    isIsolatedWorktreeContext(workspace, context) && !context.missing && !used.has(context.id));
+    isIsolatedWorktreeContext(workspace, context) && !context.missing && !isCheckoutContextInUse(workspace, context));
 }
 
 /** Short label for a worktree checkout: its branch, or HEAD when detached/unknown. */
@@ -82,10 +84,22 @@ export function findManagedWorktreeContext(
     && isSameWorkspaceIdentity({ environmentId, path: context.path }, { environmentId, path: worktreePath })) ?? null;
 }
 
-/** Whether any agent of the workspace currently references the context. */
+export function useCheckoutOccupancy(): void {
+  useAgentAttentionStore((state) => state.byTerminalId);
+  useWorkspaceServiceStore((state) => state.services);
+}
+
+/** Whether any live launch, authenticated observation (current or historical) or service references the root. */
 export function isCheckoutContextInUse(
-  workspace: Pick<WorkspaceTab, 'terminals'>,
-  context: Pick<CheckoutContext, 'id'>,
+  workspace: Pick<WorkspaceTab, 'terminals'> & Partial<Pick<WorkspaceTab, 'id'>>,
+  context: Pick<CheckoutContext, 'id'> & Partial<Pick<CheckoutContext, 'path'>>,
 ): boolean {
-  return workspace.terminals.some((terminal) => terminal.checkoutContextId === context.id);
+  const snapshots = useAgentAttentionStore.getState().byTerminalId;
+  return workspace.terminals.some((terminal) => {
+    if (terminal.checkoutContextId === context.id) return true;
+    const location = snapshots[terminal.id]?.location;
+    return !!location && (location.checkoutContextId === context.id
+      || (!!context.path && pathInFileCheckout(context.path, location.path)));
+  }) || useWorkspaceServiceStore.getState().services.some((service) => service.workspaceId === workspace.id
+    && service.checkoutContextId === context.id && isLiveWorkspaceService(service));
 }

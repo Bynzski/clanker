@@ -16,6 +16,8 @@ export interface GitStatus {
 }
 
 export interface GitStatusResult {
+  /** Renderer poll-owner epoch, descriptive ordering only; never execution authority. */
+  presentationGeneration?: number;
   workspacePath?: string;
   workspaceId?: string;
   environmentId?: string;

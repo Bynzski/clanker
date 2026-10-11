@@ -316,7 +316,8 @@ const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirec
           <span className="tree-node-name">{entry.name}</span>
         )}
         {(gitStatus || hasDescendantChange) && !isRenaming && (
-          <span className={`git-status-indicator git-${gitStatus?.status ?? 'modified'}`} />
+          <span className={`git-status-indicator git-${gitStatus?.status ?? 'modified'}${gitStatus?.staged ? ' git-staged' : ''}`}
+            title={gitStatus ? `${gitStatus.staged ? 'Staged ' : ''}${gitStatus.status}` : 'Contains changes'} />
         )}
       </button>
       <TreeNodeChildren

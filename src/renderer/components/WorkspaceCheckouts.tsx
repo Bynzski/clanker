@@ -5,7 +5,7 @@ import { IconButton } from './ui/IconButton';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { WorkspaceTab } from '../store/workspaceTypes';
-import { getUnusedWorktreeContexts, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { getUnusedWorktreeContexts, worktreeBranchLabel, useCheckoutOccupancy } from '../lib/worktreeAgents';
 import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../lib/worktreeCheckoutRemoval';
 
 interface Notice {
@@ -30,6 +30,7 @@ interface WorkspaceCheckoutsProps {
  * already dropped the row, and its message must still be readable.
  */
 export default function WorkspaceCheckouts({ workspace, expanded, label }: WorkspaceCheckoutsProps) {
+  useCheckoutOccupancy();
   const unused = getUnusedWorktreeContexts(workspace);
   const [confirming, setConfirming] = useState<CheckoutContext | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);

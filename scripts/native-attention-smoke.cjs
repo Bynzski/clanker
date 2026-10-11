@@ -75,6 +75,13 @@ async function run(harness) {
       assert(running, `${harness}: turn ${turn + 1} never published Running`);
       assert.equal(broker.snapshot(harness).lastCompletion.turnId, running.turnId);
       assert(broker.snapshot(harness).lastCompletion.revision > running.revision);
+      const nativeLocation = broker.snapshot(harness).location;
+      assert(nativeLocation && path.isAbsolute(nativeLocation.path), `${harness}: native cwd report missing`);
+      // OMP can choose a native project cwd other than the CLI spawn directory. Observation
+      // records that supported native fact; never force it to agree with launch authority.
+      if (harness === 'pi') assert.equal(nativeLocation.path, fs.realpathSync.native(root).split(path.sep).join('/'));
+      assert.equal(broker.snapshot(harness).locationProvenance?.state, 'current', `${harness}: native cwd provenance not current`);
+      assert.equal(broker.snapshot(harness).locationProvenance?.sessionId, broker.snapshot(harness).sessionId);
     }
     if (harness === 'omp') {
       assert(requests >= 11, 'OMP fixture Stop hook did not actually continue');
@@ -110,7 +117,7 @@ async function run(harness) {
     await until(() => requests > before && broker.snapshot(harness)?.runtime.status === 'running', `${harness}: abort turn did not start`);
     await command('abort');
     await until(() => broker.snapshot(harness)?.lastOutcome?.kind === 'interrupted', `${harness}: abort incorrectly settled`);
-    console.log(JSON.stringify({ harness, nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, newSession: 'passed', resume: 'passed', fork: harness === 'pi' ? 'passed' : 'not exercised', wait: harness === 'pi' ? 'native UI confirmed/resolved' : 'no native wait subscription', stopContinuation: harness === 'omp' ? 'passed' : 'not exercised', failedTurn: 'passed', interruptedTurn: 'passed', signals: [...new Set(observed.map(event => event.nativeEvent).filter(Boolean))] }));
+    console.log(JSON.stringify({ harness, nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, nativeCwdProvenance: 'absolute native report with matching session verified each turn (no cross-checkout move)', nativeCwdMatchesSpawn: broker.snapshot(harness)?.location?.path === fs.realpathSync.native(root).split(path.sep).join('/'), newSession: 'passed', resume: 'passed', fork: harness === 'pi' ? 'passed' : 'not exercised', wait: harness === 'pi' ? 'native UI confirmed/resolved' : 'no native wait subscription', stopContinuation: harness === 'omp' ? 'passed' : 'not exercised', failedTurn: 'passed', interruptedTurn: 'passed', signals: [...new Set(observed.map(event => event.nativeEvent).filter(Boolean))] }));
   } finally {
     child?.kill(); if (child && child.exitCode === null) await Promise.race([new Promise(resolve => child.once('exit', resolve)), pause(1000)]);
     await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true });

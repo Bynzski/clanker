@@ -1,11 +1,13 @@
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { WorkspaceTab, EditorTab } from '../store/workspaceTypes';
 import { relativePath } from './pathUtils';
+import { currentCheckoutSelection, checkoutUnavailableMessage, type CheckoutSelection } from './checkoutSelection';
 
 export interface FileCheckout {
   workspacePath: string;
   checkoutContextId?: string;
   checkoutLabel?: string;
+  unavailable?: string;
 }
 
 export function pathInFileCheckout(root: string, filePath: string): boolean {
@@ -13,12 +15,14 @@ export function pathInFileCheckout(root: string, filePath: string): boolean {
   return relative === '' || (relative !== filePath && relative !== '..' && !relative.startsWith('../'));
 }
 
-/** Focus selects a registered launch context, never untrusted shell cwd text. */
+/** File IPC adapter to the canonical surface selector. Unavailable selections have no request root. */
+export function fileCheckoutFromSelection(selection: CheckoutSelection): FileCheckout {
+  if (selection.availability === 'unavailable') return { workspacePath: '', checkoutContextId: selection.contextId ?? undefined, unavailable: checkoutUnavailableMessage(selection.reason) };
+  return selection.contextId === mainCheckoutContextId(selection.workspaceId) ? { workspacePath: selection.root }
+    : { workspacePath: selection.root, checkoutContextId: selection.context.id, checkoutLabel: selection.context.branch || 'HEAD' };
+}
 export function focusedFileCheckout(workspace: Pick<WorkspaceTab, 'id' | 'environmentId' | 'workspacePath' | 'checkoutContexts' | 'activeTerminalId' | 'terminals' | 'fileSurfaceContextId'>): FileCheckout {
-  const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
-  const context = workspace.checkoutContexts?.find((entry) => entry.id === (workspace.fileSurfaceContextId ?? terminal?.checkoutContextId) && entry.workspaceId === workspace.id && entry.environmentId === (workspace.environmentId ?? 'local') && !entry.missing);
-  if (!context || context.id === mainCheckoutContextId(workspace.id)) return { workspacePath: workspace.workspacePath };
-  return { workspacePath: context.path, checkoutContextId: context.id, checkoutLabel: context.branch || 'HEAD' };
+  return fileCheckoutFromSelection(currentCheckoutSelection(workspace));
 }
 
 /** Absolute paths keep identical relative names distinct; the context pins their IPC authority. */

@@ -318,7 +318,7 @@ describe('GitButton', () => {
   // Non-Repo State
   // =========================================================================
   describe('non-repo state', () => {
-    it('shows init git button when not a git repository', () => {
+    it('does not present a failed status as confirmed non-repository', () => {
       mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; isRepo: boolean; changes: unknown[] }) => void) => {
         // Simulate non-repo status
         setTimeout(() => {
@@ -337,7 +337,7 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      expect(screen.getByText('Init Git')).toBeTruthy();
+      expect(screen.getByText('Git…')).toBeTruthy();
     });
 
     it('clears stale git changes when status reports a non-repo workspace', () => {
@@ -382,9 +382,9 @@ describe('GitButton', () => {
       expect(useWorkspaceStore.getState().gitChanges).toEqual([]);
     });
 
-    it('shows init git button when workspace path is empty', () => {
+    it('shows unknown status when workspace path is empty', () => {
       render(<GitButton workspacePath="" />);
-      expect(screen.getByText('Init Git')).toBeTruthy();
+      expect(screen.getByText('Git…')).toBeTruthy();
     });
   });
 
@@ -1078,7 +1078,7 @@ describe('GitButton', () => {
 
       render(<GitButton workspacePath="/workspace" />);
 
-      fireEvent.click(screen.getByText('Init Git'));
+      fireEvent.click(screen.getByRole('button', { name: 'Source Control' }));
       expect(screen.getByText('Git is not installed or not found on PATH')).toBeTruthy();
     });
 

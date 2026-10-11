@@ -128,7 +128,7 @@ describe('Source Control foundation', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Source Control' })).toHaveFocus());
     await user.click(screen.getByRole('button', { name: 'Source Control' }));
-    expect(api.gitStartPolling).toHaveBeenCalledWith('/repo-worktrees/task', 'ws', 'task');
+    expect(api.gitStartPolling).toHaveBeenCalledWith('/repo-worktrees/task', 'ws', 'task', expect.any(Number));
     expect(screen.getByText(/repo-worktrees\/task/)).toBeVisible();
     act(() => { useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, checkoutContexts: entry.checkoutContexts?.map((c) => c.id === 'task' ? { ...c, missing: true } : c) })) })); });
     expect(screen.queryByRole('dialog')).toBeNull();

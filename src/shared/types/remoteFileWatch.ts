@@ -3,6 +3,8 @@ export const REMOTE_WATCH_MAX_DIRECTORIES = 128;
 
 export interface RemoteFileWatchRequest {
   workspaceId: string;
+  /** Presentation epoch only; does not authorize files or expand targets. */
+  selectionGeneration?: number;
   checkoutContextId?: string;
   filePaths: string[];
   directoryPaths: string[];
@@ -21,6 +23,7 @@ export interface RemoteFileSnapshot {
 
 export interface RemoteFilesChangedEvent {
   workspaceId: string;
+  selectionGeneration?: number;
   checkoutContextId?: string;
   /** A scoped poll failed; ask Git to re-verify the context, never infer deletion from SSH errors. */
   reconcileCheckout?: boolean;

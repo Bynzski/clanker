@@ -41,6 +41,7 @@ export class RemoteFileWatcher {
       return true;
     }
     if (!request || typeof request.workspaceId !== 'string') return false;
+    if (request.selectionGeneration !== undefined && (!Number.isSafeInteger(request.selectionGeneration) || request.selectionGeneration < 1)) return false;
     const registry = this.deps.getWorkspaceRegistry();
     const workspace = registry.getWorkspace(request.workspaceId);
     const context = request.checkoutContextId !== undefined ? registry.resolveCheckoutContext(request.workspaceId, request.checkoutContextId) : undefined;
@@ -50,6 +51,7 @@ export class RemoteFileWatcher {
         !workspace.environment.snapshotFiles || !validateSnapshotTargets(root, request)) { this.stop(); return false; }
     const normalized: RemoteFileWatchRequest = {
       workspaceId: request.workspaceId,
+      ...(request.selectionGeneration !== undefined ? { selectionGeneration: request.selectionGeneration } : {}),
       ...(context ? { checkoutContextId: context.id } : {}),
       filePaths: [...new Set(request.filePaths)].sort(),
       directoryPaths: [...new Set(request.directoryPaths)].sort(),
@@ -98,7 +100,7 @@ export class RemoteFileWatcher {
   private applySnapshot(session: WatchSession, snapshot: RemoteFileSnapshot): void {
     const { workspaceId } = session.request;
     const baseline = this.baselines.get(workspaceId) ?? { files: new Map(), directories: new Map() };
-    const event: RemoteFilesChangedEvent = { workspaceId, ...(session.context ? { checkoutContextId: session.context.id } : {}), files: [], directoryPaths: [] };
+    const event: RemoteFilesChangedEvent = { workspaceId, ...(session.request.selectionGeneration !== undefined ? { selectionGeneration: session.request.selectionGeneration } : {}), ...(session.context ? { checkoutContextId: session.context.id } : {}), files: [], directoryPaths: [] };
     const unchangedFilePaths: string[] = [];
     const unchangedDirectoryPaths: string[] = [];
     for (const file of snapshot.files) {
@@ -144,7 +146,7 @@ export class RemoteFileWatcher {
       // SSH/permission failures leave the baseline intact; they are not deletions.
       if (this.active === session && !controller.signal.aborted) {
         this.failures = Math.min(this.failures + 1, 4);
-        if (session.context) this.deps.onChanged({ workspaceId: session.request.workspaceId, checkoutContextId: session.context.id, reconcileCheckout: true, files: [], directoryPaths: [] });
+        if (session.context) this.deps.onChanged({ workspaceId: session.request.workspaceId, ...(session.request.selectionGeneration !== undefined ? { selectionGeneration: session.request.selectionGeneration } : {}), checkoutContextId: session.context.id, reconcileCheckout: true, files: [], directoryPaths: [] });
       }
     } finally {
       this.inFlight = null;

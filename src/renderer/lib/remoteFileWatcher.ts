@@ -4,6 +4,7 @@ import { isEditorOperationPending } from '../store/workspaceStoreHelpers';
 import { handleWorkspaceFileChanged } from './editorFileWatcher';
 import { focusedFileCheckout, pathInFileCheckout } from './fileCheckout';
 import { requestCheckoutReconciliation } from './checkoutReconciliation';
+import { subscribeCheckoutSelection, checkoutSelectionToken } from './checkoutSelectionRuntime';
 
 /** Keep the single main-process remote poller aligned with the active workspace. */
 export function startRemoteFileWatcher(): () => void {
@@ -33,6 +34,9 @@ export function startRemoteFileWatcher(): () => void {
         }
         if (change.processing || state.activeWorkspaceId !== workspace.id ||
             isEditorOperationPending(state, change.file.filePath, workspace.environmentId)) continue;
+        const root = focusedFileCheckout(workspace);
+        const tab = workspace.editorTabs.find((entry) => entry.filePath === change.file.filePath);
+        if (!root.workspacePath || tab?.checkoutContextId !== root.checkoutContextId || !pathInFileCheckout(root.workspacePath, change.file.filePath)) continue;
         change.processing = true;
         const file = change.file;
         void handleWorkspaceFileChanged(workspace, file.filePath, file.deleted, file.initial, change.retryIfIdle).then(() => {
@@ -59,7 +63,7 @@ export function startRemoteFileWatcher(): () => void {
       const directoryPaths = workspace.explorerVisible
         ? [...new Set([root.workspacePath, ...workspace.explorerExpandedPaths.filter((entry) => pathInFileCheckout(root.workspacePath, entry))])].slice(0, REMOTE_WATCH_MAX_DIRECTORIES).sort()
         : [];
-      if (filePaths.length || directoryPaths.length) request = { workspaceId: workspace.id, ...(root.checkoutContextId ? { checkoutContextId: root.checkoutContextId } : {}), filePaths, directoryPaths };
+      if (root.workspacePath && (filePaths.length || directoryPaths.length)) request = { workspaceId: workspace.id, selectionGeneration: checkoutSelectionToken(workspace.id), ...(root.checkoutContextId ? { checkoutContextId: root.checkoutContextId } : {}), filePaths, directoryPaths };
     }
     const key = JSON.stringify(request);
     if (key === previousKey) return;
@@ -68,12 +72,15 @@ export function startRemoteFileWatcher(): () => void {
   };
   const unsubscribeEvents = window.electronAPI.onRemoteFilesChanged((event) => {
     const state = useWorkspaceStore.getState();
-    if (state.activeWorkspaceId !== event.workspaceId) return;
+    if (state.activeWorkspaceId !== event.workspaceId || (event.selectionGeneration !== undefined && event.selectionGeneration !== checkoutSelectionToken(event.workspaceId))) return;
     const workspace = state.workspaces.find((entry) => entry.id === event.workspaceId);
-    if (!workspace || (workspace.environmentId ?? 'local') === 'local' || event.checkoutContextId !== focusedFileCheckout(workspace).checkoutContextId) return;
+    if (!workspace || (workspace.environmentId ?? 'local') === 'local') return;
+    const root = focusedFileCheckout(workspace);
+    if (!root.workspacePath || event.checkoutContextId !== root.checkoutContextId) return;
     if (event.reconcileCheckout) void requestCheckoutReconciliation(workspace.id);
     for (const file of event.files) {
-      if (!workspace.editorTabs.some((tab) => tab.filePath === file.filePath)) continue;
+      if (!pathInFileCheckout(root.workspacePath, file.filePath)
+        || !workspace.editorTabs.some((tab) => tab.filePath === file.filePath && tab.checkoutContextId === root.checkoutContextId)) continue;
       const key = changeKey(workspace.id, file.filePath);
       const pending = pendingChanges.get(key);
       const latestFile = { ...file, initial: file.initial && (pending?.file.initial ?? true) };
@@ -82,13 +89,14 @@ export function startRemoteFileWatcher(): () => void {
     }
     for (const path of event.unchangedFilePaths ?? []) {
       const key = changeKey(workspace.id, path);
-      if (!pendingChanges.has(key) && workspace.editorTabs.some((tab) => tab.filePath === path && !tab.isDirty && tab.hasExternalChange)) {
+      if (pathInFileCheckout(root.workspacePath, path) && !pendingChanges.has(key)
+        && workspace.editorTabs.some((tab) => tab.filePath === path && tab.checkoutContextId === root.checkoutContextId && !tab.isDirty && tab.hasExternalChange)) {
         pendingChanges.set(key, { workspaceId: workspace.id, file: { filePath: path, deleted: false, initial: false }, processing: false, retryIfIdle: true });
       }
     }
     drainChanges();
   });
-  const unsubscribeStore = useWorkspaceStore.subscribe(() => { sync(); drainChanges(); });
+  const unsubscribeStore = subscribeCheckoutSelection(() => { sync(); drainChanges(); });
   sync();
   return () => {
     stopped = true;

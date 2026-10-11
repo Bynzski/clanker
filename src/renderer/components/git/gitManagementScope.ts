@@ -1,4 +1,5 @@
-import { currentVcsCheckoutId } from '../../lib/vcsCheckout';
+import { currentCheckoutSelection, checkoutSelectionKey, checkoutUnavailableMessage } from '../../lib/checkoutSelection';
+import { mainCheckoutContextId } from '../../../shared/checkoutContext';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 export interface GitManagementScope {
@@ -15,13 +16,14 @@ export interface GitManagementScope {
 export function gitManagementScope(workspacePath: string, workspaceId?: string): GitManagementScope {
   const state = useWorkspaceStore.getState();
   const workspace = workspaceId ? state.getWorkspaceById(workspaceId) : undefined;
-  const checkoutId = currentVcsCheckoutId(workspaceId);
-  const checkout = workspace?.checkoutContexts?.find((entry) => entry.id === checkoutId);
+  const selection = workspace ? currentCheckoutSelection(workspace) : null;
+  const checkout = selection?.availability === 'available' ? selection.context : undefined;
+  const checkoutId = checkout?.id === mainCheckoutContextId(workspaceId ?? '') ? undefined : checkout?.id;
   const environmentId = workspace?.environmentId ?? 'local';
   const path = checkout?.path ?? workspace?.workspacePath ?? workspacePath;
   const checkoutContextId = checkoutId ? checkout?.id : undefined;
-  const blocked = checkoutId === null || (checkoutId && (!checkout || checkout.missing))
-    ? 'The selected checkout is unavailable. Select a registered checkout before managing Git.'
+  const blocked = selection?.availability === 'unavailable'
+    ? `The selected checkout is unavailable. ${checkoutUnavailableMessage(selection.reason)}`
     : workspaceId && (!workspace || state.activeWorkspaceId !== workspaceId)
     ? 'Select this workspace before managing its repository.'
     : null;
@@ -34,6 +36,6 @@ export function gitManagementScope(workspacePath: string, workspaceId?: string):
     // Branch metadata is descriptive and may lag Git; it is not checkout identity.
     checkoutLabel: checkout && checkout.path !== workspace?.workspacePath ? 'Isolated checkout'
       : workspace?.checkoutContexts?.some((entry) => entry.path === workspace.workspacePath && entry.kind === 'worktree') ? 'Workspace worktree' : 'Workspace checkout',
-    key: JSON.stringify([workspaceId, workspacePath, workspace?.workspacePath, environmentId, checkoutContextId, checkout?.path, blocked]),
+    key: JSON.stringify([workspaceId, workspacePath, selection ? checkoutSelectionKey(selection) : null, environmentId, checkoutContextId, checkout?.path, blocked]),
   };
 }

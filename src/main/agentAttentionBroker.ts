@@ -115,6 +115,7 @@ interface Registration {
   lastOutcome: AgentAttentionSnapshot['lastOutcome'];
   location: AgentLocation | null;
   locationEvidence?: { sessionId: string; lastReportedAt: number };
+  locationInvalidated?: boolean;
   /** Native delivery batches lifecycle, location and signal health into one publication. */
   deferPublication?: boolean;
   lastAccepted?: AttentionExplanation['lastAccepted'];
@@ -296,13 +297,13 @@ export class AgentAttentionBroker {
   /** Main-only authenticated evidence. A session boundary makes it historical, not proof of vacancy.
    * No timeout proves an idle harness has left its directory; final agent/PTY release removes it. */
   locationObservation(terminalId: string): {
-    location: AgentLocation; sessionId: string; lastReportedAt: number; state: 'current' | 'last-reported';
+    location: AgentLocation; sessionId: string; lastReportedAt: number; state: 'current' | 'last-reported' | 'unavailable';
   } | null {
     const registration = this.current(terminalId);
     if (!registration?.location || !registration.locationEvidence) return null;
     return {
       location: { ...registration.location }, ...registration.locationEvidence,
-      state: registration.rootSessionId === registration.locationEvidence.sessionId ? 'current' : 'last-reported',
+      state: registration.locationInvalidated ? 'unavailable' : registration.rootSessionId === registration.locationEvidence.sessionId ? 'current' : 'last-reported',
     };
   }
 
@@ -328,6 +329,10 @@ export class AgentAttentionBroker {
       lastCompletion: r.lastCompletion ? { ...r.lastCompletion } : null,
       lastOutcome: r.lastOutcome ? { ...r.lastOutcome } : null,
       location: r.location ? { ...r.location } : null,
+      locationProvenance: r.location && r.locationEvidence ? {
+        state: r.locationInvalidated ? 'unavailable' : r.rootSessionId === r.locationEvidence.sessionId ? 'current' : 'last-reported',
+        sessionId: r.locationEvidence.sessionId,
+      } : null,
     };
   }
 
@@ -423,6 +428,7 @@ export class AgentAttentionBroker {
       registration.pending = [];
       registration.status = 'unverified';
       registration.startedAt = null;
+      registration.locationInvalidated = true;
       if (registration.signal) registration.signal = { ...registration.signal, health: 'lost', reason: 'directory-removed' };
     });
     return true;
@@ -578,9 +584,13 @@ export class AgentAttentionBroker {
     const next = event.location;
     if (!next || event.event === 'agent_exited' || event.scope !== 'root' || !event.sessionId) return false;
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return false;
+    const previousSession = registration.locationEvidence?.sessionId;
+    const wasInvalidated = registration.locationInvalidated;
+    registration.locationInvalidated = false;
     registration.locationEvidence = { sessionId: event.sessionId, lastReportedAt: this.now() };
     const current = registration.location;
-    if (current && current.path === next.path && current.checkoutContextId === next.checkoutContextId) return false;
+    if (current && current.path === next.path && current.checkoutContextId === next.checkoutContextId
+      && previousSession === event.sessionId && !wasInvalidated) return false;
     registration.location = { ...next };
     return true;
   }

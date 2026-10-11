@@ -55,6 +55,20 @@ describe('remote file watcher', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
+  it('echoes only the current presentation epoch after same-root A→away→A and rejects invalid epochs', async () => {
+    let resolve!: (value: RemoteFileSnapshot) => void;
+    snapshot.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    expect(watcher.sync({ ...request, selectionGeneration: 1 })).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    watcher.sync(null);
+    expect(watcher.sync({ ...request, selectionGeneration: 3 })).toBe(true);
+    resolve(baseline); await vi.advanceTimersByTimeAsync(0);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed.mock.calls[0][0].selectionGeneration).toBe(3);
+    expect(watcher.sync({ ...request, selectionGeneration: NaN })).toBe(false);
+    expect(watcher.sync({ ...request, selectionGeneration: 0 })).toBe(false);
+  });
+
   it('polls an independently registered checkout and discards a response after its context is released', async () => {
     const environment = registry.getWorkspace('remote')!.environment as SshEnvironment;
     vi.mocked(environment.validateWorkspacePath).mockImplementation(async (dir) => ({ valid: true, resolvedPath: dir }));

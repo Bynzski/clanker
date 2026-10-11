@@ -244,8 +244,8 @@ export interface ElectronAPI {
   onBrowserKeybindingCommand: (callback: (payload: BrowserKeybindingCommandPayload) => void) => () => void;
 
   // Git operations
-  gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<void>;
-  gitStopPolling: (workspaceId?: string, checkoutContextId?: string) => Promise<void>;
+  gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => Promise<void>;
+  gitStopPolling: (workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => Promise<void>;
   generateCommitMessage: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GenerateCommitMessageResult>;
   gitStage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;

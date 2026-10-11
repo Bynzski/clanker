@@ -82,7 +82,7 @@ it('Workspace mode keeps the full toolbar', async () => {
   for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Chat history', 'Settings']) {
     expect(screen.getByRole('button', { name })).toBeInTheDocument();
   }
-  expect(screen.getByTitle(/Git/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Source Control' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Workspace Launch Recipes' })).not.toBeInTheDocument();
 });
 

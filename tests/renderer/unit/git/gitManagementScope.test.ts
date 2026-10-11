@@ -76,7 +76,7 @@ describe('gitManagementScope checkout-aware authorization', () => {
     });
 
     const scope = gitManagementScope('/projects/repo', 'ws-1');
-    expect(scope.blocked).toBe('The selected checkout is unavailable. Select a registered checkout before managing Git.');
+    expect(scope.blocked).toContain('The selected checkout is missing.');
     expect(scope.checkoutContextId).toBeUndefined();
   });
 
@@ -101,6 +101,6 @@ describe('gitManagementScope checkout-aware authorization', () => {
     });
 
     const scope = gitManagementScope('/projects/repo', 'ws-1');
-    expect(scope.blocked).toBe('The selected checkout is unavailable. Select a registered checkout before managing Git.');
+    expect(scope.blocked).toContain('outside this workspace’s registered checkouts');
   });
 });
