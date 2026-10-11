@@ -187,6 +187,9 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
   workspaceId,
   } = props;
 
+  const checkoutContext = <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}<br />
+    {props.scope.checkoutLabel} · <span>Current branch: {props.statusKnown ? props.currentBranchLabel : 'Unknown branch'}</span></p>;
+
   return (
     <ManagementShell busy={busy} onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }} onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
       onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control"
@@ -201,12 +204,11 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         { id: 'merge', label: 'Merge', group: 'Operations' },
       ]}
       selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
-      {page !== 'overview' && page !== 'changes' && <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}</p>}
       {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} onReviewChanges={() => { if (!busy) setPage('changes'); }} /> : page === 'branches' ? <div className="source-control-page">
-      <h2 className="clanker-dialog-title">Branches</h2>
-      <p>Local branches of this repository. Switch changes the workspace checkout, not an agent's working directory. Git checks worktree ownership before deletion.</p>
-      <p>Current checkout: {props.statusKnown ? props.currentBranchLabel : 'Unknown'}. The current branch cannot be deleted or switched to again.</p>
-      <Button disabled={busy || isLoadingBranches} onClick={props.onRefresh}>Refresh branches</Button>
+      <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Branches</h2>
+        <Button size="xs" disabled={busy || isLoadingBranches} onClick={props.onRefresh}>Refresh branches</Button></div>
+      {checkoutContext}
+      <p>Switch or create a branch in the selected checkout. Branches checked out elsewhere are protected by Git; the current branch cannot be deleted.</p>
       {branchError && <FormMessage variant="error">{branchError}</FormMessage>}
       <GitBranchesSection
         activeAction={activeAction}
@@ -233,14 +235,16 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
 
       </div> : page === 'worktrees' ? <div className="source-control-page">
         <h2 className="clanker-dialog-title">Worktrees</h2>
-        <p>Repository-level inspection and cleanup. Main and in-use checkouts are protected; main rechecks agents, terminals and dev servers. Create isolated checkouts through New isolated agent.</p>
+        {checkoutContext}
+        <p>Main and in-use checkouts are protected. Create checkouts through New isolated agent.</p>
         {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
         <GitWorktreesSection management workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey}
           isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />
       </div> : page === 'stashes' ? <div className="source-control-page">
-        <h2 className="clanker-dialog-title">Stashes</h2>
-        <p>Saved changes in this repository. Apply restores changes without removing the stash; Pop restores changes and deletes the stash entry only if Git applies it cleanly.</p>
-        <Button disabled={busy || isLoadingStashes} onClick={props.onRefresh}>Refresh stashes</Button>
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Stashes</h2>
+          <Button size="xs" disabled={busy || isLoadingStashes} onClick={props.onRefresh}>Refresh stashes</Button></div>
+        {checkoutContext}
+        <p>Apply keeps the stash; Pop removes it only after Git applies it cleanly.</p>
         {stashError && <FormMessage variant="error">{stashError}</FormMessage>}
         <GitStashSection
           activeAction={activeAction}
@@ -259,9 +263,10 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           stashes={stashes}
         />
       </div> : page === 'remotes' ? <div className="source-control-page">
-        <h2 className="clanker-dialog-title">Remotes</h2>
-        <p>Configured remote repositories. Fetch and push URLs define sync targets for this local repository.</p>
-        <Button disabled={busy} onClick={onRemotesChanged}>Refresh remotes</Button>
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Remotes</h2>
+          <Button size="xs" disabled={busy} onClick={onRemotesChanged}>Refresh remotes</Button></div>
+        {checkoutContext}
+        <p>Remote configuration is shared by all checkouts of this repository.</p>
         {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
         <GitRemotesSection
           management
@@ -275,10 +280,10 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           onBusyChange={setRemoteBusy}
         />
       </div> : page === 'merge' ? <div className="source-control-page">
-        <h2 className="clanker-dialog-title">Merge</h2>
-        <p>Integrate changes from another branch into your current checkout.</p>
-        <p>Current checkout: {props.statusKnown ? props.currentBranchLabel : 'Unknown'}.</p>
-        <Button disabled={busy || isLoadingOperation} onClick={props.onRefresh}>Refresh merge state</Button>
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Merge</h2>
+          <Button size="xs" disabled={busy || isLoadingOperation} onClick={props.onRefresh}>Refresh merge state</Button></div>
+        {checkoutContext}
+        <p>Integrate another branch into the selected checkout.</p>
         {mergeError && <FormMessage variant="error">{mergeError}</FormMessage>}
         <GitMergeSection
           activeAction={activeAction}
@@ -295,13 +300,10 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           operationState={operationState}
         />
       </div> : <div className="source-control-page source-control-history">
-        <h2 className="clanker-dialog-title">History</h2>
-        <p>Inspect repository commit history and view commit summary statistics. Review working files on Changes.</p>
-        <Button disabled={busy || isLoadingHistory} onClick={props.onRefresh}>
-          Refresh history
-        </Button>
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">History</h2>
+          <Button size="xs" disabled={busy || isLoadingHistory} onClick={props.onRefresh}>Refresh history</Button></div>
+        {checkoutContext}
         {historyError && <FormMessage variant="error">{historyError}</FormMessage>}
-        {diffError && <FormMessage variant="error">{diffError}</FormMessage>}
         <GitHistorySection
           management
           diffError={diffError}

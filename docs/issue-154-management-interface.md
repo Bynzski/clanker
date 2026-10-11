@@ -1,6 +1,95 @@
-# Issue #154 — Inventory and Phase 0–4C decisions
+# Issue #154 — Inventory and Phase 0–4D decisions
 
-## Phase 4C correctness correction — independent review of `7cc4da7`
+## Phase 4D — final management polish
+
+Starts from reviewed `79dcfa046419e61267646c62c9cfd20a55769d93` on
+`feat/154-management-settings`. No structural redesign, new Git/controller path,
+authorization change, Browser internals change, PR or merge.
+
+### Implementation decisions
+
+- Changes keeps its single inline composer, section-owned Stage All/Unstage All
+  and modal DiffViewer. **Go to Commit** is a local scroll/focus affordance before
+  the rows in tab order, not another submit action. Long file rows ellipsize while
+  retaining full accessible labels/tooltips; status badges align consistently.
+  Empty groups no longer repeat a paragraph below their zero-count heading;
+  clean status has one notice. No fixed footer or hidden-file overlay.
+- History uses the shell's content scroller for list and summary, without nested
+  list/summary vertical scrolling. Summary precedes the list; exact commit selection
+  scrolls/focuses its heading. Full SHA, author/date, selected state, Working/Staged
+  read-only summary selectors, bounded Load More and request guards remain.
+- Current Git branch is separate from checkout root identity and descriptive
+  branch metadata. Generic checkout labels cannot show a stale registered branch.
+  Successful branch actions request the existing coalesced main-authoritative
+  reconciliation alongside the controller refresh; branch changes do not re-key
+  the checkout/controller. Branches now accurately explains the selected checkout.
+- Remote hooks distinguish successful Fetch/Pull/Push/Publish from failed UI
+  refresh, retain real errors/rejection, and never automatically repeat Git.
+  Refresh reuses the existing canonical Changes status path, marks failed status
+  unknown, and can clear the warning manually without re-pushing. Checkout scope,
+  synchronous pending lock and stale-generation safeguards are unchanged.
+- Heading-first context, compact page heading/refresh rows and concise operational
+  copy align permanent destinations. Overview removes only navigation-repeating
+  prose; provider/PR/CI unknown/error handling stays truthful. Sync buttons wrap
+  at narrow content widths (caught by the new zoom smoke).
+- SSH Targets puts saved targets before the editor; exact-ID Edit still focuses
+  its existing form. Accounts already remembers the explicitly selected harness
+  in the sole Settings provider, so no competing/persisted selection was added.
+  Return-selection coverage was added instead. Credential handling, Authentication,
+  Search, General and harness capability/availability gating remain unchanged.
+
+### Verification
+
+- Clean-PATH focused Git/Source Control: **43 files / 983 tests passed**,
+  `/tmp/154-4d-git-focused.log` (includes existing real worktree/security suites).
+- Clean-PATH Settings renderer suite: **11 files / 171 tests passed**,
+  `/tmp/154-4d-settings-focused.log`.
+- Final `env PATH=/usr/bin:/bin npm run validate`: **384 files / 7,832 tests passed**;
+  branding, lint, typecheck, Fallow, security-check and build passed. Documented
+  dev-only electron-builder exception and existing build/localStorage warnings
+  remain. Log: `/tmp/154-4d-validate.log`.
+- New regressions: 34 long-file keyboard composer navigation/no duplicate form or
+  poller, isolated Create/Switch branch display/reconciliation, exact History
+  summary focus and Working/Staged identity, all four remote successes followed
+  by refresh failure, manual no-retry recovery, SSH roster order/focus and Accounts
+  return selection. Real Git switches A without changing root identity, main/B
+  branches or dirty A files, then reconciles its descriptive branch.
+- Source Control Electron smoke: **PASS**, all eight pages, real review/staging/
+  commits, native suppression, destructive confirmations, scope dismissal and focus.
+  Includes 34 added long filenames, keyboard Go to Commit, single History scroll,
+  and a selected isolated checkout with 34 files. Settings Electron smoke: **PASS**,
+  all nine available pages, Authentication providers, search focus, Settings
+  relocation, chooser return leases and Browser restoration. Both run Dark/Light/
+  Slate at 1100×760 and 640×480 plus **125% app zoom** at 640×480. Native capturePage
+  screenshots avoid Playwright's CSS-sized zoom crop; representative images inspected.
+- Screenshots: `/tmp/clanker-source-control-visual-v0STgU` and
+  `/tmp/clanker-settings-visual-y3PtQG`; logs `/tmp/154-4d-source-smoke.log` and
+  `/tmp/154-4d-settings-smoke.log`.
+- Renderer Browser smoke: **PASS**, 24 page transitions and existing native view
+  lifecycle/leases (`/tmp/154-4d-browser-smoke.log`).
+- Separate native multi-Browser smoke: **SIGSEGV / exit 139** reproduced again,
+  `/tmp/154-4d-multi-browser.log`; not counted as passing or fixed by polish.
+- PATH: test/validation and Source Control/Browser fixtures use `/usr/bin:/bin`
+  to avoid host-installed harness discovery influencing isolated session tests.
+  Settings smoke uses the inherited developer PATH (including
+  `/home/jay/.npm-global/bin`) so canonical discovery exposes Codex and the existing
+  search-to-MCP focus assertion is meaningful. A clean-PATH Settings run completed
+  the geometry matrix but could not find that unavailable Codex control; no test
+  or capability gating was weakened. No real sign-in/credential mutation is run.
+
+### Final review / remaining limits
+
+Owner interactive smoke remains: main/isolated 30+ files, reviewing/staging then
+composer jump and commit, History keyboard navigation, branch Create/Switch display,
+remote success versus stale-status recovery, long SSH rosters and Accounts return.
+Live SSH, real remote/account authentication, Windows/macOS focus, OS scaling above
+125% and screen readers were not validated here. Scope changes still retire UI
+responses rather than cancel dispatched Git. No new scoped PR-readiness blocker
+observed; final independent review and owner visual acceptance remain gates, with
+native multi-Browser SIGSEGV tracked separately. See the Phase 4D decisions in
+`issue-154-phase-4-ux-assessment.md`. Stop here; no PR/merge.
+
+## Phase 4C correctness correction — independent review of `7cc4da7` (historical)
 
 Focused continuation of #154 on `feat/154-management-settings`; no polish, PR,
 merge or unrelated Browser changes.

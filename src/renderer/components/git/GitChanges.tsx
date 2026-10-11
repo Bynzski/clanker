@@ -24,20 +24,27 @@ export function GitChanges(props: GitRepoMenuProps) {
     </div>
     <p className="source-control-change-identity">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}<br />
       {props.scope.checkoutLabel} · <strong>{props.statusKnown ? props.currentBranchLabel : 'Unknown branch'}</strong> · {props.statusKnown ? `${count} changed file${count === 1 ? '' : 's'}` : 'Changes unavailable'}</p>
+    <Button size="xs" className="source-control-go-commit" disabled={disabled} aria-controls="commit-message"
+      onClick={() => {
+        const input = props.commitComposer.inputRef.current;
+        if (!isScopeCurrent() || !input?.isConnected) return;
+        input.scrollIntoView({ block: 'center' });
+        input.focus({ preventScroll: true });
+      }}>Go to Commit</Button>
     {props.activeAction?.startsWith('stage') && <p role="status">Staging changes…</p>}
     {props.activeAction?.startsWith('unstage') && <p role="status">Unstaging changes…</p>}
     {[props.statusErrorMessage, props.changesError].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {props.isLoadingChanges ? <p role="status">Loading changes…</p> : !props.statusKnown ? <p role="status">Changes unavailable</p> : <>
       {!changes.length && <p className="source-control-change-empty">Working directory is clean</p>}
-      {([{ title: 'Staged changes', items: staged, mode: 'staged' }, { title: 'Unstaged changes', items: working, mode: 'working' }] as const).map((group) => <section key={group.mode} aria-label={group.title}>
+      {changes.length > 0 && ([{ title: 'Staged changes', items: staged, mode: 'staged' }, { title: 'Unstaged changes', items: working, mode: 'working' }] as const).map((group) => <section key={group.mode} aria-label={group.title}>
         <div className="source-control-file-heading">
           <h3>{group.title} ({group.items.length})</h3>
           <Button size="xs" disabled={disabled || !group.items.length}
             onClick={() => void (group.mode === 'staged' ? props.onUnstageAll() : props.onStageAll())}>{group.mode === 'staged' ? 'Unstage All' : 'Stage All'}</Button>
         </div>
-        {!group.items.length ? <p className="source-control-change-empty">No {group.mode === 'staged' ? 'staged' : 'unstaged'} changes</p> : <ul className="source-control-file-list">
+        {group.items.length > 0 && <ul className="source-control-file-list">
           {group.items.map((change) => <li key={`${group.mode}:${change.path}`}>
-            <span className={`source-control-file-status ${change.status}`} title={change.status}>{gitStatusBadge(change.status)}</span>
+            <span className={`source-control-file-status ${change.status}`} title={change.status} aria-label={change.status}>{gitStatusBadge(change.status)}</span>
             <Button variant="ghost" className="source-control-file-path" disabled={disabled}
               aria-label={`Review ${group.mode} changes for ${change.path}`} title={change.path}
               onClick={() => void viewDiff(change.path, group.mode)}>{change.path}</Button>

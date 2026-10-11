@@ -322,6 +322,18 @@ describe('Checkout-aware Git IPC with real Git repository', () => {
     expect(await Promise.all([repoPath, worktreeAPath, worktreeBPath].map(p => git(p, 'status', '--porcelain')))).toEqual(before);
   });
 
+  it('switches A in place and reconciles branch metadata without changing its identity or other checkouts', async () => {
+    const a = await registerA();
+    await git(repoPath, 'branch', 'switch-target', 'feature-a');
+    expect(await invoke('git-switch-branch', repoPath, 'switch-target', 'ws-1', a.id)).toMatchObject({ success: true });
+    await invoke('reconcile-checkout-contexts', 'ws-1');
+    expect(registry.resolveCheckoutContext('ws-1', a.id)).toMatchObject({ id: a.id, path: worktreeAPath, branch: 'switch-target' });
+    expect(await invoke('git-get-branch-state', repoPath, 'ws-1', a.id)).toMatchObject({ currentBranch: 'switch-target' });
+    expect(await git(repoPath, 'branch', '--show-current')).toBe('main');
+    expect(await git(worktreeBPath, 'branch', '--show-current')).toBe('feature-b');
+    expect(fs.readFileSync(path.join(worktreeAPath, 'file-a.txt'), 'utf8')).toBe('content A modified\n');
+  });
+
   it('publishes A with its upstream and default pushes A or main without substituting another branch', async () => {
     const a = await registerA();
     const bare = path.join(tmpDir, 'remote.git');

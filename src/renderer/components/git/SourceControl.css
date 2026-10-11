@@ -1,10 +1,14 @@
-.source-control-overview { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.source-control-overview { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
 .source-control-overview h2, .source-control-overview p { margin: 0; }
 .source-control-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 0; }
 .source-control-identity dd { margin: 0; overflow-wrap: anywhere; }
-.source-control-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-control-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.source-control-overview .git-menu-remote-actions { flex-wrap: wrap; }
 .git-tools-content { min-width: 0; }
-.source-control-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.source-control-page { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.source-control-page-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); }
+.source-control-page-heading h2 { margin: 0; }
+.source-control-location { color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
 .source-control-page > h2, .source-control-page > p { margin: 0; }
 .source-control-page > p { overflow-wrap: anywhere; }
 .source-control-page > button { align-self: flex-start; }

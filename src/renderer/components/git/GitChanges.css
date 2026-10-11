@@ -8,8 +8,10 @@
 .source-control-file-heading h3 { font-size: var(--font-size-md); }
 .source-control-file-list { list-style: none; padding: 0; margin: var(--space-xs) 0; }
 .source-control-file-list li { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; border-bottom: 1px solid var(--border-default); padding-block: var(--space-xs); }
-.source-control-file-path { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; height: auto; white-space: normal; overflow-wrap: anywhere; }
-.source-control-file-status { font-size: var(--font-size-xs); font-weight: 700; padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-sm); min-width: var(--space-md); text-align: center; }
+.source-control-file-path { flex: 1; min-width: 0; display: block; text-align: left; height: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-control-go-commit { align-self: flex-start; }
+.source-control-file-list li > button:not(.source-control-file-path) { flex-shrink: 0; }
+.source-control-file-status { font-size: var(--font-size-xs); font-weight: 700; padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-sm); width: var(--space-lg); flex-shrink: 0; box-sizing: border-box; text-align: center; }
 .source-control-file-status.modified { background: color-mix(in srgb, var(--git-modified) 20%, transparent); color: var(--git-modified); }
 .source-control-file-status.added { background: color-mix(in srgb, var(--git-added) 20%, transparent); color: var(--git-added); }
 .source-control-file-status.deleted { background: color-mix(in srgb, var(--status-error) 20%, transparent); color: var(--git-deleted); }

@@ -73,6 +73,7 @@
 }
 
 .git-diff-title {
+  margin: 0;
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -93,12 +94,8 @@
 }
 
 .source-control-history .git-history-list {
-  max-height: 220px;
-  overflow-y: auto;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-control);
-  padding: 4px;
+  max-height: none;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -151,6 +148,10 @@
   color: var(--text-primary);
 }
 
+.git-commit-hash-full { min-width: 0; overflow-wrap: anywhere; }
+.git-history-meta > span { min-width: 0; overflow-wrap: anywhere; }
+.git-history-meta > span:last-child { flex-shrink: 0; }
+
 .git-commit-hash-full code {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
@@ -175,7 +176,8 @@
 
 .source-control-history .git-diff-output {
   min-height: 120px;
-  max-height: 380px;
+  max-height: none;
+  overflow: visible;
   overflow-wrap: anywhere;
   word-break: break-all;
 }

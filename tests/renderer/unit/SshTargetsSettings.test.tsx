@@ -14,6 +14,15 @@ async function show(initialTargetId?: string) {
   await screen.findByText('Saved Environments (1)'); return view;
 }
 describe('canonical SSH Targets', () => {
+  it('places saved targets before the editor and focuses the exact selected target for editing', async () => {
+    const user = userEvent.setup(); await show();
+    const roster = screen.getByRole('region', { name: 'Saved SSH targets' });
+    const label = screen.getByLabelText('Label');
+    expect(roster.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Edit Host' }));
+    expect(label).toHaveFocus(); expect(label).toHaveValue(config.label);
+    expect(window.electronAPI.sshEnvironmentTest).not.toHaveBeenCalled();
+  });
   it('creates a target with its default root without testing a connection automatically', async () => {
     await show();
     fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'New Host' } });

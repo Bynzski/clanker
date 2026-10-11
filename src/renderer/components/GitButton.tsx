@@ -6,6 +6,7 @@ import { useVcsStore } from '../store/vcsStore';
 import { sameWorkspacePath } from '../lib/pathUtils';
 import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
 import { useAgentLocation } from '../lib/useAgentLocation';
+import { requestCheckoutReconciliation } from '../lib/checkoutReconciliation';
 import { useCommitComposer } from './git/useCommitComposer';
 import { GitAbortOperationDialog } from './git/GitAbortOperationDialog';
 import { GitClearStashesDialog } from './git/GitClearStashesDialog';
@@ -223,15 +224,24 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   }, [workspacePath, loadRemotes]);
 
   const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean) => Promise<void>>(async () => {});
+  const refreshChangesRef = useRef<() => Promise<void>>(async () => {});
   const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
   const refreshAfterAction = useCallback(async () => {
     if (!isCurrent()) return;
     await Promise.all([
       refreshMenuDataRef.current(),
-      window.electronAPI.gitRefresh(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
+      refreshChangesRef.current(),
     ]);
-  }, [workspaceId, scope.checkoutContextId, isCurrent]);
+  }, [isCurrent]);
+
+  const refreshAfterBranchAction = useCallback(async () => {
+    if (!isCurrent()) return;
+    await Promise.all([
+      refreshAfterAction(),
+      ...(workspaceId ? [requestCheckoutReconciliation(workspaceId)] : []),
+    ]);
+  }, [isCurrent, refreshAfterAction, workspaceId]);
 
   const {
     branchError,
@@ -249,7 +259,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     activeAction,
     currentBranch,
     onSetActiveAction: setActiveAction,
-    refreshAfterAction,
+    refreshAfterAction: refreshAfterBranchAction,
     workspacePath: scope.path,
     workspaceId,
     checkoutContextId: scope.checkoutContextId,
@@ -661,6 +671,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     }
   };
 
+  refreshChangesRef.current = refreshChanges;
+
   // All change mutations share a synchronous lock, authoritative status refresh and scope guard.
   const runChangeMutation = async (action: string, run: () => Promise<{ success: boolean; error?: string }>, reportFileError = true) => {
     if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
@@ -876,7 +888,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onPublish={() => { if (isCurrent()) void handlePublish(); }}
             onPull={() => { if (isCurrent()) void handlePull(); }}
             onPush={() => { if (isCurrent()) void handlePush(); }}
-            onRefresh={() => { void refreshAfterAction().catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
+            onRefresh={() => { void refreshAfterAction().then(() => { if (isCurrent()) setRemoteError(null); }).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             onRefreshContext={() => void loadVcsContext(true)}
             onRemotesChanged={() => void loadRemotes()}
             onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}

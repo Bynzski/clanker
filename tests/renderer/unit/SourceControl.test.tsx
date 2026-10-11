@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GitButton from '../../../src/renderer/components/GitButton';
@@ -12,7 +12,11 @@ import type { GitStatusResult } from '../../../src/shared/types/git';
 let api: ReturnType<typeof installElectronApiMock>;
 let status: GitStatusResult;
 let listeners: Array<(value: GitStatusResult) => void>;
+const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+const scroll = vi.fn();
+afterEach(() => { if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScroll); else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView'); });
 beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll }); scroll.mockClear();
   listeners = [];
   status = { success: true, isRepo: true, workspaceId: 'ws', workspacePath: '/repo', environmentId: 'local', currentBranch: 'main', isDetached: false, changes: [], upstream: 'origin/main', ahead: 3, behind: 2 };
   api = installElectronApiMock({
@@ -184,22 +188,22 @@ describe('Permanent Branches and Worktrees', () => {
   it('creates successfully and refreshes authoritative branch state without switching optimistically', async () => {
     const { user } = await branchesPage(); const before = api.gitGetBranchState.mock.calls.length;
     await user.type(screen.getByLabelText('Create Branch'), 'new-task'); await user.click(screen.getByRole('button', { name: 'Create' }));
-    await waitFor(() => expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(before)); expect(screen.getByLabelText('Create Branch')).toHaveValue(''); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+    await waitFor(() => expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(before)); expect(screen.getByLabelText('Create Branch')).toHaveValue(''); expect(screen.getByText(/Current branch: main/)).toBeVisible();
   });
   it('switches only on native acknowledgement and refreshes the shared controller', async () => {
     let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+    const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(screen.getByText(/Current branch: main/)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Worktrees' })).toBeDisabled();
     await act(async () => { status = { ...status, currentBranch: 'feature' }; listeners[0](status); finish({ success: true }); });
-    await waitFor(() => expect(screen.getByText(/Current checkout: feature/)).toBeVisible()); expect(api.gitSwitchBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws');
+    await waitFor(() => expect(screen.getByText(/Current branch: feature/)).toBeVisible()); expect(api.gitSwitchBranch).toHaveBeenCalledWith('/repo', 'feature', 'ws');
     expect(screen.getByRole('button', { name: 'Delete branch feature' })).toBeDisabled();
   });
   it('shows switch failure without fabricating the new branch', async () => {
     api.gitSwitchBranch.mockResolvedValue({ success: false, error: 'Branch is checked out in another worktree' }); const { user } = await branchesPage();
-    await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(await screen.findByText('Branch is checked out in another worktree')).toBeVisible(); expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Switch to branch feature' })); expect(await screen.findByText('Branch is checked out in another worktree')).toBeVisible(); expect(screen.getByText(/Current branch: main/)).toBeVisible();
   });
   it('shows detached HEAD on Branches without marking a local branch current', async () => {
-    status = { ...status, currentBranch: null, isDetached: true }; await branchesPage(); expect(screen.getByText(/Current checkout: Detached HEAD/)).toBeVisible(); expect(screen.queryByText('Current', { exact: true })).toBeNull();
+    status = { ...status, currentBranch: null, isDetached: true }; await branchesPage(); expect(screen.getByText(/Current branch: Detached HEAD/)).toBeVisible(); expect(screen.queryByText('Current', { exact: true })).toBeNull();
   });
   it('cancels normal deletion and holds navigation and the Browser lease while the dialog is open', async () => {
     const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Delete branch feature' })); await screen.findByRole('alertdialog');
@@ -242,7 +246,7 @@ describe('Permanent Branches and Worktrees', () => {
   it.each(['workspace', 'checkout', 'environment'])('discards a pending branch result after a %s change', async (change) => {
     let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; })); const { user } = await branchesPage(); await user.click(screen.getByRole('button', { name: 'Switch to branch feature' }));
     const before = api.gitGetBranchState.mock.calls.length; act(() => { useWorkspaceStore.setState((state) => change === 'workspace' ? { activeWorkspaceId: null } : { workspaces: state.workspaces.map((entry) => change === 'environment' ? { ...entry, environmentId: 'ssh-other' } : { ...entry, fileSurfaceContextId: 'unregistered' }) }); });
-    expect(screen.queryByRole('dialog')).toBeNull(); await act(async () => finish({ success: true })); expect(api.gitGetBranchState).toHaveBeenCalledTimes(before); expect(screen.queryByText(/Current checkout: feature/)).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull(); await act(async () => finish({ success: true })); expect(api.gitGetBranchState).toHaveBeenCalledTimes(before); expect(screen.queryByText(/Current branch: feature/)).toBeNull();
   });
 });
 
@@ -292,22 +296,22 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
 
     // Navigate to History - permanent destination
     await user.click(within(dialog).getByRole('button', { name: 'History' }));
-    expect(within(dialog).getByText(/Inspect repository commit history/)).toBeVisible();
+    expect(within(dialog).getByRole('heading', { name: 'History' })).toBeVisible();
     expect(within(dialog).getByText('Commit Summary')).toBeVisible();
 
     // Navigate to Stashes
     await user.click(within(dialog).getByRole('button', { name: 'Stashes' }));
-    expect(within(dialog).getByText(/Apply restores changes without removing the stash/)).toBeVisible();
+    expect(within(dialog).getByText(/Apply keeps the stash/)).toBeVisible();
     expect(within(dialog).getByText('WIP on feature')).toBeVisible();
 
     // Navigate to Remotes
     await user.click(within(dialog).getByRole('button', { name: 'Remotes' }));
-    expect(within(dialog).getByText(/Configured remote repositories/)).toBeVisible();
+    expect(within(dialog).getByText(/Remote configuration is shared/)).toBeVisible();
     expect(within(dialog).getByText('origin')).toBeVisible();
 
     // Navigate to Merge
     await user.click(within(dialog).getByRole('button', { name: 'Merge' }));
-    expect(within(dialog).getByText(/Integrate changes from another branch/)).toBeVisible();
+    expect(within(dialog).getByText(/Integrate another branch into the selected checkout/)).toBeVisible();
   });
 
   describe('Stashes page', () => {
@@ -506,7 +510,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
 
     it('shows clear merge direction and executes merge into current checkout', async () => {
       const { user } = await mergePage();
-      expect(screen.getByText(/Current checkout: main/)).toBeVisible();
+      expect(screen.getByText(/Current branch: main/)).toBeVisible();
       expect(screen.getByText(/Merge branch/).textContent).toContain('Merge branch feature into main');
 
       await user.click(screen.getByRole('button', { name: 'Merge feature into main' }));
@@ -516,7 +520,7 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
     it('disables merge when current checkout is detached HEAD with explanation', async () => {
       status = { ...status, currentBranch: null, isDetached: true };
       await mergePage();
-      expect(screen.getByText(/Current checkout: Detached HEAD/)).toBeVisible();
+      expect(screen.getByText(/Current branch: Detached HEAD/)).toBeVisible();
       expect(screen.getByText(/detached HEAD state.*Merging into a detached HEAD is disabled/)).toBeVisible();
       expect(screen.getByRole('button', { name: 'Merge branch' })).toBeDisabled();
     });
@@ -653,7 +657,8 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       // Truthful summary label
       expect(within(dialog).getByText('Commit Summary')).toBeVisible();
       expect(within(dialog).getByText('Select a summary to view')).toBeVisible();
-      expect(within(dialog).queryByRole('button', { name: 'Working Tree' })).toBeNull();
+      expect(within(dialog).getByRole('button', { name: 'Working Tree' })).toBeEnabled();
+      expect(within(dialog).getByRole('button', { name: 'Staged' })).toBeEnabled();
     });
 
     it('shows accurate commit statistics, not working-tree patches', async () => {

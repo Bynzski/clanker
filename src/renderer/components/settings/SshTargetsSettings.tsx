@@ -94,6 +94,13 @@ export default function SshTargetsSettings({ initialTargetId, onSaved, onDeleted
     {error && <FormMessage variant="error">{error}</FormMessage>}
     {status && <p role="status">{status}</p>}
     <div className="ssh-targets-actions"><Button disabled={!!busy || loading} onClick={() => { reset(); labelRef.current?.focus(); }}>Add Target</Button><Button disabled={!!busy || loading} onClick={() => void load()}>Refresh Targets</Button></div>
+    <section aria-label="Saved SSH targets"><h3 className="management-page-title">Saved Environments ({environments.length})</h3>
+      {!loading && !environments.length && <p>No saved SSH environments yet.</p>}
+      {environments.map((config) => <div className="ssh-targets-row" key={config.id}>
+        <div id={`ssh-target-info-${config.id}`}><strong>{config.label}</strong><p>{config.target}</p>{config.defaultWorkspaceRoot && <p>{config.defaultWorkspaceRoot}</p>}</div>
+        <div className="ssh-targets-actions"><IconButton variant="ghost" disabled={!!busy || loading} aria-describedby={`ssh-target-info-${config.id}`} aria-label={`Edit ${config.label}`} onClick={() => edit(config)}><Pencil size={14} /></IconButton><IconButton variant="ghost" disabled={!!busy || loading} aria-describedby={`ssh-target-info-${config.id}`} aria-label={`Delete ${config.label}`} onClick={() => setDeleting(config)}><X size={14} /></IconButton></div>
+      </div>)}
+    </section>
     <form className="ssh-targets-form" onSubmit={(event) => { event.preventDefault(); void run('save'); }}>
       <h3 className="management-page-title">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</h3>
       <Field><FieldLabel htmlFor="ssh-target-label">Label</FieldLabel><Input ref={labelRef} id="ssh-target-label" value={label} onChange={(event) => setLabel(event.target.value)} disabled={!!busy || loading} /></Field>
@@ -102,13 +109,6 @@ export default function SshTargetsSettings({ initialTargetId, onSaved, onDeleted
       <p id="ssh-root-help" className="management-page-description">Absolute remote POSIX path. Blank or inaccessible roots fall back to ~/workspaces or home. Opening this page does not connect to a server.</p>
       <div className="ssh-targets-actions"><Button disabled={!!busy || loading} onClick={() => void run('test')}>{busy === 'test' ? 'Testing…' : 'Test Connection'}</Button><Button variant="primary" type="submit" disabled={!!busy || loading}>{busy === 'save' ? 'Saving…' : editingId ? 'Save Changes' : 'Save Target'}</Button>{editingId && <Button disabled={!!busy || loading} onClick={reset}>Cancel Edit</Button>}</div>
     </form>
-    <section aria-label="Saved SSH targets"><h3 className="management-page-title">Saved Environments ({environments.length})</h3>
-      {!loading && !environments.length && <p>No saved SSH environments yet.</p>}
-      {environments.map((config) => <div className="ssh-targets-row" key={config.id}>
-        <div id={`ssh-target-info-${config.id}`}><strong>{config.label}</strong><p>{config.target}</p>{config.defaultWorkspaceRoot && <p>{config.defaultWorkspaceRoot}</p>}</div>
-        <div className="ssh-targets-actions"><IconButton variant="ghost" disabled={!!busy || loading} aria-describedby={`ssh-target-info-${config.id}`} aria-label={`Edit ${config.label}`} onClick={() => edit(config)}><Pencil size={14} /></IconButton><IconButton variant="ghost" disabled={!!busy || loading} aria-describedby={`ssh-target-info-${config.id}`} aria-label={`Delete ${config.label}`} onClick={() => setDeleting(config)}><X size={14} /></IconButton></div>
-      </div>)}
-    </section>
     {deleting && <SettingsDeleteConfirmation title={`Delete SSH target ${deleting.label}?`} description={`Remove saved target ${deleting.target} (${deleting.id}). This does not disconnect or delete a workspace. Main refuses removal while the environment is in use.`} onCancel={() => setDeleting(null)} onConfirm={() => void run('delete', deleting)} />}
   </div>;
 }

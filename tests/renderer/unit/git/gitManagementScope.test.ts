@@ -51,7 +51,7 @@ describe('gitManagementScope checkout-aware authorization', () => {
     expect(scope.blocked).toBeNull();
     expect(scope.checkoutContextId).toBe('ws-1::ckt-worktree');
     expect(scope.path).toBe('/projects/repo-worktrees/feat');
-    expect(scope.checkoutLabel).toBe('feat');
+    expect(scope.checkoutLabel).toBe('Isolated checkout');
   });
 
   it('fails closed when the selected checkout context is marked missing', () => {

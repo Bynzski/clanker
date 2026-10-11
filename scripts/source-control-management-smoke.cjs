@@ -16,7 +16,7 @@ const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['P
 Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'pipe' });
 git('init', '-b', 'main'); git('config', 'user.name', 'Smoke'); git('config', 'user.email', 'smoke@example.invalid');
-fs.writeFileSync(path.join(project, 'README.md'), 'fixture\n'); git('add', '.'); git('commit', '-m', 'fixture');
+fs.writeFileSync(path.join(project, 'README.md'), 'fixture\n'); git('add', '.'); git('commit', '-m', `fixture ${'long history subject '.repeat(8)}`);
 git('worktree', 'add', '-b', 'linked-task', path.join(root, 'linked-task'));
 git('branch', 'cancel-delete'); git('branch', `feature/${'long-branch-name-'.repeat(8)}`);
 git('worktree', 'add', '-b', 'locked', path.join(root, 'locked'));
@@ -32,6 +32,12 @@ fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ worksp
 const server = http.createServer((_request, response) => response.end('<title>Source Control fixture</title><h1>Native Browser</h1>'));
 let app;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Native capture preserves the physical viewport at app zoom; Playwright's
+// CSS-sized capture otherwise crops the right/bottom of a zoomed Electron page.
+const screenshot = options => app.evaluate(async ({ BrowserWindow }, file) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  process.getBuiltinModule('fs').writeFileSync(file, (await win.webContents.capturePage()).toPNG());
+}, options.path);
 async function until(check, message) { for (let i = 0; i < 150; i++) { if (await check()) return; await pause(40); } throw new Error(message); }
 (async () => {
   try {
@@ -48,8 +54,9 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     const views = () => app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; return win.contentView.children.filter(view => view.webContents && view.webContents !== win.webContents).map(view => ({ id: view.webContents.id, url: view.webContents.getURL(), visible: view.getVisible() })); });
     await until(async () => (await views()).some(view => view.visible && view.url === url), 'Browser fixture not visible');
     const browserId = (await views()).find(view => view.url === url).id;
-    for (const [width, height] of [[1100, 760], [640, 480]]) {
-      await app.evaluate(({ BrowserWindow }, size) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); }, [width, height]);
+    for (const [width, height, zoom] of [[1100, 760, 1], [640, 480, 1], [640, 480, 1.25]]) {
+      const shotWidth = zoom === 1 ? `${width}` : `${width}-zoom125`;
+      await app.evaluate(({ BrowserWindow }, { size, zoom }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); win.webContents.setZoomFactor(zoom); }, { size: [width, height], zoom });
       for (const theme of ['Dark', 'Light', 'Slate']) {
         await page.getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('radio', { name: theme, exact: true }).click(); await page.getByRole('button', { name: 'Close Settings' }).click();
         // A real partially staged file: both review sides must stay visible.
@@ -64,7 +71,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         assert((await dialog.locator('.source-control-change-identity').textContent()).includes('Local')); assert.equal(await dialog.getByRole('button', { name: 'Changes', exact: true }).getAttribute('aria-current'), 'page');
         const geometry = await dialog.evaluate(element => { const bounds = element.getBoundingClientRect(); const content = element.querySelector('.management-content'); return { within: bounds.left >= 0 && bounds.top >= 0 && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight, overflow: content.scrollWidth > content.clientWidth }; });
         assert(geometry.within && !geometry.overflow, `Changes geometry ${theme}/${width}`);
-        await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-changes.png`) });
+        await pause(150); await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-changes.png`) });
         for (const mode of ['staged', 'working']) {
           const file = dialog.getByRole('button', { name: `View ${mode} diff for README.md`, exact: true });
           await file.click();
@@ -75,7 +82,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
           assert.equal(content.join('\n').includes('uncommitted agent change'), mode === 'working', 'Staged/working content confused');
           assert.equal(await page.getByRole('dialog', { name: 'Create Commit' }).count(), 0, 'Review entered Commit');
           assert((await views()).every(view => !view.visible), 'Diff exposed Browser');
-          await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${mode}-diff.png`) });
+          await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-${mode}-diff.png`) });
           await page.keyboard.press('Escape');
           await until(() => file.evaluate(element => document.activeElement === element), 'Diff file focus not restored');
           assert(await dialog.isVisible());
@@ -98,7 +105,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         assert.equal(await dialog.getByRole('textbox', { name: 'Commit Message' }).inputValue(), 'feat: reviewed agent changes');
         await dialog.getByRole('textbox', { name: 'Commit Message' }).scrollIntoViewIfNeeded();
         await pause(200); // Capture settled button transitions, not a pending-operation fade.
-        await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-composer.png`) });
+        await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-composer.png`) });
         for (const section of ['History', 'Overview', 'Branches', 'Worktrees', 'Stashes', 'Remotes', 'Merge']) {
           await dialog.getByRole('navigation').getByRole('button', { name: section, exact: true }).click();
           await dialog.getByRole('heading', { name: section, exact: true }).waitFor();
@@ -118,9 +125,12 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: 'Prune missing worktrees…' }).waitFor();
           }
           if (section === 'History') {
-            assert.equal(await dialog.getByRole('button', { name: 'Working Tree', exact: true }).count(), 0);
+            assert.equal(await dialog.getByRole('button', { name: 'Working Tree', exact: true }).count(), 1);
+            assert(await dialog.locator('.git-history-list').evaluate(element => { const style = window.getComputedStyle(element); return style.maxHeight === 'none' && style.overflowY === 'visible'; }), 'History has a competing list scroller');
             await dialog.getByRole('button', { name: /View summary for commit/ }).first().click();
             await dialog.getByText(/Commit Summary ·/).waitFor();
+            assert(await dialog.locator('.git-diff-title').evaluate(element => document.activeElement === element), 'Commit selection did not focus summary');
+            assert(await dialog.locator('.git-diff-output').evaluate(element => window.getComputedStyle(element).overflowY === 'visible'), 'Summary has a competing scroller');
           }
           if (section === 'Stashes') {
             await dialog.getByRole('button', { name: 'Apply stash@{0}' }).waitFor();
@@ -134,7 +144,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: /^Merge / }).waitFor();
           }
           assert(await dialog.evaluate(element => { const content = element.querySelector('.management-content'); return content.scrollWidth <= content.clientWidth; }), `${section} horizontal overflow ${theme}/${width}`);
-          await pause(150); await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${section.toLowerCase().replaceAll(' ', '-')}.png`) });
+          await pause(150); await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-${section.toLowerCase().replaceAll(' ', '-')}.png`) });
           if (section === 'Branches') {
             await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).click(); await page.getByRole('alertdialog').waitFor();
             assert((await views()).every(view => !view.visible), 'Branch confirmation exposed Browser');
@@ -159,6 +169,22 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         assert.equal(await dialog.getByRole('textbox', { name: 'Commit Message' }).inputValue(), 'feat: reviewed agent changes');
         assert.equal(await page.getByRole('dialog', { name: 'Create Commit' }).count(), 0);
         assert((await views()).every(view => !view.visible), 'Inline composer exposed Browser');
+        const largeFiles = Array.from({ length: 34 }, (_, index) => `long-file-${index}-${'developer-workflow-'.repeat(6)}.txt`);
+        for (const file of largeFiles) fs.writeFileSync(path.join(project, file), 'large list fixture\n');
+        await dialog.getByRole('button', { name: 'Refresh changes' }).click();
+        await dialog.getByText(/35 changed files/).waitFor();
+        await until(() => dialog.getByRole('button', { name: 'Refresh changes' }).isEnabled(), 'Large list refresh did not settle');
+        await page.mouse.move(0, 0); await pause(150);
+        await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-large-list.png`) });
+        const jump = dialog.getByRole('button', { name: 'Go to Commit' });
+        await jump.focus(); await page.keyboard.press('Enter');
+        const editor = dialog.getByRole('textbox', { name: 'Commit Message' });
+        assert(await editor.evaluate(element => { const r = element.getBoundingClientRect(); const content = element.closest('.management-content').getBoundingClientRect(); return document.activeElement === element && r.top >= content.top && r.bottom <= content.bottom; }), 'Composer jump did not scroll/focus within content');
+        assert.equal(await dialog.getByRole('textbox', { name: 'Commit Message' }).count(), 1);
+        assert(await dialog.evaluate(element => { const content = element.querySelector('.management-content'); return content.scrollWidth <= content.clientWidth; }), 'Long file list overflow');
+        await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-large-list-composer.png`) });
+        for (const file of largeFiles) fs.rmSync(path.join(project, file));
+        await dialog.getByRole('button', { name: 'Refresh changes' }).click();
         await page.keyboard.press('Escape'); await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Browser did not restore');
         assert(await page.getByRole('button', { name: 'Source Control', exact: true }).evaluate(element => document.activeElement === element), 'Source Control trigger focus not restored');
       }
@@ -224,6 +250,22 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     await page.keyboard.press('Escape');
     await until(() => worktreeDiffBtn.evaluate(element => document.activeElement === element), 'Worktree diff focus not restored');
 
+    // Owner-reported 34-file isolated checkout, at reduced height / 125% zoom.
+    const isolatedFiles = Array.from({ length: 33 }, (_, index) => `isolated-${index}-${'long-checkout-filename-'.repeat(5)}.txt`);
+    for (const file of isolatedFiles) fs.writeFileSync(path.join(root, 'linked-task', file), 'isolated large list\n');
+    await worktreeSource.getByRole('button', { name: 'Refresh changes' }).click();
+    await worktreeSource.getByText(/34 changed files/).waitFor();
+    await until(() => worktreeSource.getByRole('button', { name: 'Refresh changes' }).isEnabled(), 'Isolated list refresh did not settle');
+    await page.mouse.move(0, 0); await pause(150);
+    await screenshot({ path: path.join(screenshots, 'slate-640-zoom125-isolated-34-files.png') });
+    await worktreeSource.getByRole('button', { name: 'Go to Commit' }).focus(); await page.keyboard.press('Enter');
+    assert(await worktreeSource.getByRole('textbox', { name: 'Commit Message' }).evaluate(element => document.activeElement === element), 'Isolated composer jump did not focus');
+    assert((await views()).every(view => !view.visible), 'Isolated composer jump exposed Browser');
+    await screenshot({ path: path.join(screenshots, 'slate-640-zoom125-isolated-composer.png') });
+    for (const file of isolatedFiles) fs.rmSync(path.join(root, 'linked-task', file));
+    await worktreeSource.getByRole('button', { name: 'Refresh changes' }).click();
+    await until(() => worktreeSource.getByRole('button', { name: 'Refresh changes' }).isEnabled(), 'Isolated cleanup refresh did not settle');
+
     // Stage and commit in worktree
     await worktreeSource.getByRole('button', { name: 'Stage worktree-note.txt', exact: true }).click();
     await worktreeSource.getByRole('textbox', { name: 'Commit Message' }).fill('feat: isolated worktree commit');
@@ -265,6 +307,6 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

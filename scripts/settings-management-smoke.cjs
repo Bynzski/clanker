@@ -17,6 +17,11 @@ Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: pat
 const server = http.createServer((_request, response) => { response.end('<title>Settings fixture</title><body><h1>Native Browser</h1></body>'); });
 let app;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Capture the physical native viewport, including at increased application zoom.
+const screenshot = options => app.evaluate(async ({ BrowserWindow }, file) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  process.getBuiltinModule('fs').writeFileSync(file, (await win.webContents.capturePage()).toPNG());
+}, options.path);
 async function until(check, message) {
   for (let i = 0; i < 150; i++) { if (await check()) return; await pause(40); }
   throw new Error(message);
@@ -47,8 +52,9 @@ async function until(check, message) {
       BrowserWindow.getAllWindows()[0].webContents.send(ASSISTANTS_CHANGED, { available: true,
         settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] });
     }, path.join(repo, 'dist/main/shared/ipcChannels.js'));
-    for (const [width, height] of [[1100, 760], [640, 480]]) {
-      await app.evaluate(({ BrowserWindow }, size) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); }, [width, height]);
+    for (const [width, height, zoom] of [[1100, 760, 1], [640, 480, 1], [640, 480, 1.25]]) {
+      const shotWidth = zoom === 1 ? `${width}` : `${width}-zoom125`;
+      await app.evaluate(({ BrowserWindow }, { size, zoom }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); win.webContents.setZoomFactor(zoom); }, { size: [width, height], zoom });
       for (const theme of ['Dark', 'Light', 'Slate']) {
         await page.getByRole('button', { name: 'Settings', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
@@ -85,20 +91,20 @@ async function until(check, message) {
           }), 'Content scrolling moved the navigation/header');
           await page.mouse.move(0, 0);
           await pause(200); // Let the existing primitive hover transition settle before visual review.
-          await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-${section.toLowerCase().replaceAll(/[^a-z]+/g, '-')}.png`) });
+          await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-${section.toLowerCase().replaceAll(/[^a-z]+/g, '-')}.png`) });
           if (section === 'Authentication') {
             await dialog.getByRole('button', { name: 'Access Tokens', exact: true }).click();
             for (const provider of ['github', 'gitlab', 'bitbucket']) {
               await dialog.getByLabel('Provider', { exact: true }).selectOption(provider);
               await pause(200);
-              await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-authentication-${provider}.png`) });
+              await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-authentication-${provider}.png`) });
             }
             await dialog.getByRole('button', { name: 'SSH Keys', exact: true }).click();
           }
         }
         await page.getByRole('searchbox', { name: 'Search Settings' }).fill('MCP');
         await page.getByRole('button', { name: 'Codex · Clanker MCP bridge', exact: true }).waitFor();
-        await page.screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${width}-search-mcp.png`) });
+        await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-search-mcp.png`) });
         await page.keyboard.press('Escape');
         assert(await dialog.isVisible(), 'Search Escape dismissed Settings');
         await dialog.getByRole('button', { name: 'Close Settings' }).click();

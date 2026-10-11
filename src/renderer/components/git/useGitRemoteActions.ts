@@ -48,7 +48,9 @@ export function useGitRemoteActions({
     pending.current = true;
     setRemoteAction(action);
     setRemoteError(null);
-    const fallback = `${action[0].toUpperCase()}${action.slice(1)} failed`;
+    const label = `${action[0].toUpperCase()}${action.slice(1)}`;
+    const fallback = `${label} failed`;
+    let succeeded = false;
     try {
       const result = await execute();
       if (!current()) return;
@@ -56,11 +58,17 @@ export function useGitRemoteActions({
         setRemoteError(result.error || fallback);
         return;
       }
+      succeeded = true;
       await refreshAfterAction();
       if (!current()) return;
       if (action === 'publish') await loadRemotes();
     } catch (error: unknown) {
-      if (current()) setRemoteError(error instanceof Error ? error.message : fallback);
+      if (current()) {
+        const detail = error instanceof Error ? error.message : 'Refresh failed';
+        setRemoteError(succeeded
+          ? `${label} succeeded, but refreshing repository status failed. Status may be stale; use Refresh before continuing. ${detail}`
+          : error instanceof Error ? error.message : fallback);
+      }
     } finally {
       pending.current = false;
       if (current()) setRemoteAction(null);

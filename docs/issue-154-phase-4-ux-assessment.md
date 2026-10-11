@@ -1,10 +1,79 @@
-# Issue #154 — Phase 4 workflow assessment / approved Phase 4A–4C
+# Issue #154 — Phase 4 workflow assessment / approved Phase 4A–4D
 
 Original assessment against reviewed Phase 3D `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
 Phase 4A starts from reviewed correctness commit `50b878b0c6542f79ef386707fb852059af559829`.
 **Owner approved Option A and explicit staged-only versus stage-all commit policy.**
 
-## Phase 4C implementation — Checkout-Aware Source Control
+## Phase 4D — final polish and focused accuracy corrections
+
+Baseline: reviewed `79dcfa046419e61267646c62c9cfd20a55769d93`.
+The functional redesign is complete; this pass does not change navigation,
+controllers, authorization, commit policy, diff backend or Browser internals.
+
+### Decisions
+
+- **Long lists:** Go to Commit appears directly after Changes' checkout/count
+  summary and before any file action in tab order. It scrolls and focuses the
+  existing textarea; it never stages/submits, creates another composer or opens
+  another dialog. No fixed footer. Zero-entry sections keep their count and
+  disabled All action without repeated empty paragraphs; a fully clean list has
+  one clean-state notice. Filenames ellipsize on compact rows, retaining complete
+  title/accessibility labels and the existing keyboard-accessible diff controls.
+- **History:** the management content is the primary scroller, not a bounded list
+  inside another scroller. The summary precedes the commit list, so selecting an
+  exact full-SHA commit scrolls/focuses that summary heading without passing all
+  loaded commits again. Working/Staged controls select explicitly labelled read-only
+  summaries, never file patches or staging. Existing bounded Load More, metadata,
+  request generations and error/loading states remain. Legacy non-management
+  summary layout remains list-then-summary.
+- **Accuracy:** checkout labels describe root identity (Isolated checkout,
+  Workspace checkout/worktree), never a cached branch. Current branch comes from
+  native status/branch state. Successful Create/Switch uses the existing canonical
+  checkout reconciliation path to refresh descriptive metadata without re-keying
+  the controller, checkout or draft. Branches explains selected-checkout switching
+  and Git's other-worktree/current-branch protections accurately.
+- **Remote outcomes:** native errors/rejections remain native failures. A successful
+  remote command followed by failed refresh says the command succeeded, status may
+  be stale and manual Refresh is needed. The existing canonical Changes refresh is
+  reused, so failed status reads mark status unknown. Manual recovery clears the
+  warning without executing the remote command again; pending/stale scope guards
+  remain intact.
+- **Presentation:** headings precede checkout context consistently; page refresh
+  controls share the heading row where applicable. Overview retains repository,
+  branch/upstream/ahead/behind, operation, provider/PR/CI and sync information but
+  drops navigation-repeating copy. Its remote actions wrap at reduced height/zoom.
+  Unknown provider/CI states remain explicit, not invented successes. No decorative
+  card system or added borders.
+- **Settings:** saved SSH roster comes before the editor; Edit still selects the
+  exact target and focuses its label. No automatic connections, secret search or
+  credential-policy changes. Accounts already retains the explicit harness in the
+  one provider; a regression locks this in rather than adding persistence, guessing
+  accounts or introducing another selection owner. First direct entry may still
+  require an explicit supported-harness choice. Authentication, Harnesses, Search
+  and General retain their existing page/control architecture.
+
+### Review evidence and limits
+
+Focused regressions cover 34 long filenames, keyboard composer navigation, exact
+History summary focus and selection, isolated branch Create/Switch display plus
+reconciliation, remote success/refresh failure for all four operations, SSH roster
+ordering and Accounts return selection. Existing checkout/security/worktree,
+keyboard/diff focus, destructive confirmation and Browser lease tests remain.
+
+Both native management smoke matrices include Dark/Light/Slate at 1100×760 and
+640×480 plus 125% app zoom at 640×480. Large-list and isolated 34-file composer
+navigation are exercised without a duplicate form or fixed footer. Native screenshots
+use Electron capturePage to avoid Playwright cropping a zoomed physical viewport.
+Representative screenshots were inspected for overflow, action visibility, row
+alignment, wrapping and composer focus; this is not live assistive-technology testing.
+Exact results/logs/screenshots: `issue-154-management-interface.md` Phase 4D.
+
+Remaining gate: independent final review and owner interactive visual/keyboard smoke,
+including live SSH/auth/remote operations, OS scaling, Windows/macOS and screen readers.
+The native multi-Browser SIGSEGV remains separately reproduced. No new scoped blocker
+was found, but owner/final review is not replaced by headless fixtures. No PR or merge.
+
+## Phase 4C implementation — Checkout-Aware Source Control (historical)
 
 Starts from reviewed `a25bdaa94544dc8affc30189d52a5defe665ae84`.
 Phase 4C addresses the functional limitation where Source Control was unavailable

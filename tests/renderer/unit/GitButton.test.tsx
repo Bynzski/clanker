@@ -125,6 +125,7 @@ vi.mock('../../../src/renderer/components/git/GitHistorySection', () => ({
   GitHistorySection: (props: Record<string, unknown>) => (
     <div data-testid="git-history-section">
       History
+      {typeof props.diffError === 'string' && <div role="alert">{props.diffError}</div>}
       <button type="button" onClick={() => (props.onSelectWorkingDiff as ((mode: string) => void) | undefined)?.('working')}>diff-working</button>
       <button
         type="button"

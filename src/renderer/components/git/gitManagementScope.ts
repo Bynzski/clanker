@@ -31,7 +31,9 @@ export function gitManagementScope(workspacePath: string, workspaceId?: string):
     path,
     environmentId,
     blocked,
-    checkoutLabel: checkout?.branch ?? (workspace?.checkoutContexts?.some((entry) => entry.path === workspace.workspacePath && entry.kind === 'worktree') ? 'Workspace worktree' : 'Workspace checkout'),
+    // Branch metadata is descriptive and may lag Git; it is not checkout identity.
+    checkoutLabel: checkout && checkout.path !== workspace?.workspacePath ? 'Isolated checkout'
+      : workspace?.checkoutContexts?.some((entry) => entry.path === workspace.workspacePath && entry.kind === 'worktree') ? 'Workspace worktree' : 'Workspace checkout',
     key: JSON.stringify([workspaceId, workspacePath, workspace?.workspacePath, environmentId, checkoutContextId, checkout?.path, blocked]),
   };
 }

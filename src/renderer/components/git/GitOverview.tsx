@@ -12,10 +12,10 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
   const foundPr = !vcsContextError && !isLoadingContext && pullRequest?.exists === true && (!pullRequest.outcome || pullRequest.outcome === 'found');
   const noPr = !vcsContextError && !isLoadingContext && (pullRequest?.outcome === 'none' || pullRequest?.exists === false && !pullRequest.outcome);
   return <div className="source-control-overview">
-    <h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
+    <div className="source-control-page-heading"><h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
+      <Button size="xs" disabled={isBusy || isLoadingBranches || isLoadingOperation} onClick={props.onRefresh}>Refresh</Button></div>
     <div className="source-control-actions">
       <Button disabled={isBusy} onClick={props.onReviewChanges}>Review Changes</Button>
-      <Button disabled={isBusy || isLoadingBranches || isLoadingOperation} onClick={props.onRefresh}>Refresh</Button>
     </div>
     {!props.isDetached && <GitRemoteActionsSection currentBranch={props.currentBranch} hasRemotes={props.remotes.length > 0}
       isBusy={isBusy || !statusKnown} remoteAction={remoteAction} upstream={upstream} onFetch={props.onFetch} onPull={props.onPull} onPush={props.onPush} onPublish={props.onPublish} />}
@@ -34,6 +34,5 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
     </dl>
     {[statusErrorMessage, branchError, remoteError, vcsContextError, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
-    <p>Review files on Changes. Branches, Worktrees, History, Stashes, Remotes and Merge have dedicated pages.</p>
   </div>;
 }

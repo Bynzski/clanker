@@ -59,6 +59,19 @@ describe('checkout-bound remote actions', () => {
     expect(result.current.remoteError).toBeNull();
   });
 
+  it.each(['Fetch', 'Pull', 'Push', 'Publish'] as const)('distinguishes successful %s from refresh failure without repeating Git', async label => {
+    const { result, refreshAfterAction } = setup();
+    refreshAfterAction.mockRejectedValueOnce(new Error('Status read failed'));
+    const handler = label === 'Fetch' ? 'handleFetch' : label === 'Pull' ? 'handlePull' : label === 'Push' ? 'handlePush' : 'handlePublish';
+    await act(() => result.current[handler]());
+    expect(result.current.remoteError).toContain(`${label} succeeded, but refreshing repository status failed`);
+    expect(result.current.remoteError).toContain('Status may be stale; use Refresh');
+    expect(result.current.remoteAction).toBeNull();
+    expect(api.gitFetch).toHaveBeenCalledTimes(label === 'Fetch' ? 1 : 0);
+    expect(api.gitPull).toHaveBeenCalledTimes(label === 'Pull' ? 1 : 0);
+    expect(api.gitPush).toHaveBeenCalledTimes(label === 'Push' || label === 'Publish' ? 1 : 0);
+  });
+
   it('does not revive an old request after A → B → A', async () => {
     let finish!: (value: { success: boolean }) => void;
     vi.mocked(api.gitPush).mockReturnValue(new Promise(resolve => { finish = resolve; }));

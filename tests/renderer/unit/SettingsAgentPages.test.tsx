@@ -151,6 +151,17 @@ describe('canonical agent Settings pages', () => {
     expect(window.electronAPI.getHarnessModels).not.toHaveBeenCalled();
   });
 
+  it('retains the meaningful Accounts harness when returning from another page without selecting an account', async () => {
+    const user = userEvent.setup(); await openPage(user, 'Accounts');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Harness' }), 'codex');
+    await screen.findByLabelText('Codex accounts');
+    await user.click(screen.getByRole('button', { name: 'Authentication' }));
+    await user.click(screen.getByRole('button', { name: 'Accounts' }));
+    expect(screen.getByRole('combobox', { name: 'Harness' })).toHaveValue('codex');
+    await screen.findByLabelText('Codex accounts');
+    expect(window.electronAPI.selectHarnessAccount).not.toHaveBeenCalled();
+  });
+
   it('routes harness Manage Accounts into the sole accounts controller and focuses its information', async () => {
     const user = userEvent.setup();
     await openPage(user, 'Harnesses');
