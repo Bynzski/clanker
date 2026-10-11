@@ -66,7 +66,7 @@ Severity reflects user impact. Confidence: **Confirmed** means shown by code plu
 | F1 | Critical | **Confirmed** (Codex native, repo smoke) / Code-confirmed (OpenCode) / Confirmed-if-lost (Pi) | **Permanent root lockout.** `apply()` rejects any event whose `sessionId` differs from `rootSessionId` (`agentAttentionBroker.ts:635`). Only `session_ended` for the old root clears it (`:650`). `session_started` cannot rebind (`:640`). Codex 0.162 TUI `/new` emits `SessionStart source=startup` with no `SessionEnd` (asserted by `scripts/codex-attention-tui-smoke.cjs`). OpenCode emits `session_ended` only on `session.deleted` (`opencode/attention.ts` `classify`), so a new session in the same TUI is rejected. Pi re-imports the extension per session (`moduleCache:false`, Pi `loader.js:478`), so one lost `session_shutdown` delivery for `/new`, `/resume` or `/fork` locks the terminal out. Experiment B2–B4: every later turn returns `rejected-mismatch`. The background UI keeps showing the stale state; the foreground shows only a small "degraded" badge. Tests assert this as correct (`agentAttentionBroker.test.ts:192` "root stays bound"). |
 | F2 | High | **Confirmed** (code + B6) | **Done is invisible for the focused pane and vanishes on switch.** Foreground changes are acknowledged on arrival (`terminalSessionBridge.ts:49` → `merge(..., foreground)`). Becoming visible acknowledges (`:62-70`, `:79-85`). `deriveAttention` shows `turn_complete` only while unseen (`agentAttentionPresentation.ts:178-181`). Unverified, idle, acknowledged and interrupted all return `null`. This is the most common way a user sees "spinner → nothing", and it is why the problem *appears* tied to workspace switching. |
 | F3 | High | Code-confirmed | **Claude, Codex and Antigravity have no completion state.** `Stop` maps to `turn_provisional` (`claude/attention.ts:80-85`, `codex/attention.ts:111-118`, `agy/attentionPlugin.ts:47-51`), and nothing emits `turn_completed` for a root turn. Consequences: (a) the "Stop observed · outcome unknown" alert appears after every turn; (b) `canHandoff` is false (`agentAttentionBroker.ts:401-404`), so annotation handoff is refused after every turn (`terminalIpc.ts:521-524`); (c) every Codex `after-turn` checkout move is cancelled (`isolatedCheckoutService.ts:243-246`). History: before `f9806df` Stop was a completion; between `f9806df` and `e17e1d4` turns stayed Running forever; since `e17e1d4` they end provisional. |
-| F4 | High | Code-confirmed | **No resynchronization: one lost edge persists until the next edge.** A lost settle leaves Running until the next prompt (B8). A lost start blanks that turn (B7). A lost Pi `session_ended` on `/reload` silences the next *N* turns (N = old epoch, up to 32): the new module instance reuses turn IDs "1", "2", … that are still in `retiredTurns` and returns `ignored-stale` (B1, 5 turns ignored). Edge-triggered events with provider-owned counters and no state echo make every loss sticky. |
+| F4 | High | **Confirmed** (B1; reproduced natively in the Pi TUI by `74c84df`) | **No resynchronization: one lost edge persists until the next edge.** A lost settle leaves Running until the next prompt (B8). A lost start blanks that turn (B7). A lost Pi `session_ended` on `/reload` silences the next *N* turns (N = old epoch, up to 32): the new module instance reuses turn IDs "1", "2", … that are still in `retiredTurns` and returns `ignored-stale` (B1, 5 turns ignored). Edge-triggered events with provider-owned counters and no state echo make every loss sticky. |
 | F5 | Medium | **Confirmed** (Experiment A) | **Delivery depends on Electron main's event-loop latency.** The observer has a 500 ms total deadline and the server has a 1 s socket timeout (`attentionSources.ts:39`, `agentAttentionBroker.ts:188`). Measured with an out-of-process hook: a main stall of 0–300 ms delivers. **700 ms**: the event is applied but the hook sees failure, which poisons the bridge. **1500 ms**: the event is **lost**, because the timer destroys the socket before the data is read. No production evidence yet shows such stalls. |
 | F6 | Medium | Code-confirmed | **Claude interrupts are unrepresentable.** Claude has no interrupt hook, so after Esc the pane shows Running until the next prompt (documented in the adapter). Any lost Stop has the same effect. |
 | F7 | Medium | Plausible | **SSH frames can be lost or corrupted silently.** `O_NONBLOCK` `writeSync` to `/dev/tty` (`remoteAttentionTransport.ts:52-53`) throws `EAGAIN` when the remote tty buffer is full, which drops the event. A partial write leaves an unterminated frame, and the filter (`:23-35`) can then swallow the *next* valid frame. There is no ACK, so neither failure is visible. |
@@ -74,6 +74,9 @@ Severity reflects user impact. Confidence: **Confirmed** means shown by code plu
 | F9 | Low | Plausible | Pi runs extension handlers serially and awaited (Pi `runner.js:813-839`). A hung handler in a user extension delays or blocks Clanker's handler. Pi's own errors are isolated. |
 | F10 | Low | Code-confirmed | Stale-ready handoff: after F1 lockout, `handoffState` can still read `ready` from the frozen snapshot, so a message can be pasted into an agent that is actually busy. |
 | F11 | Low | Code-confirmed | Dead complexity: `receiveFallback`/`attentionAuthority.ts` has no producer ("Nothing in production produces this yet"). The poison marker affects only `input_resolved`. The verdict taxonomy is used mainly for diagnostics. |
+| F12 | Medium | Code-confirmed (from `74c84df`, re-verified) | **Acknowledgement ignores OS-window focus.** `isForeground` (`terminalSessionBridge.ts:41-47`) checks the active workspace, terminal and page, but never whether the Clanker window has focus. A completion or request in the active pane of a minimized or unfocused window is marked seen immediately, so the user never sees it. |
+| F13 | Medium | Plausible (from `74c84df`, code re-read) | **The OpenCode plugin's event queue can stall permanently.** Events are serialized through one promise chain (`opencode/attention.ts` `queue = queue.then(...)`). `isRoot` awaits `client.session.get` with no timeout. One hung metadata lookup blocks every later event for that terminal, and nothing reports it. |
+| F14 | Low | Code-confirmed, rarely reachable (from `74c84df`, re-verified) | **Location acceptance is coupled to lifecycle acceptance.** An unresolvable `cwd` rejects the whole event (`agentAttentionBroker.ts:492-495`), including a turn start or settle. Reachability is low: the resolver only rejects non-absolute, oversized or control-character paths (`agentLocation.ts` `canonicalAgentLocation`), and the observer already drops oversized and control-character `cwd` values (`attentionSources.ts:18`). The coupling should still go, because location is descriptive. |
 
 **Not found (bounded):** no code path ties broker state to workspace switching. Main never sees the active workspace; the renderer's workspace logic affects only acknowledgement (F2) and `retire` on actual membership loss. I did not reproduce renderer-side membership flapping, and the prior Electron matrix also did not observe it.
 
@@ -145,7 +148,9 @@ PTY exit ───────────────────────�
                                                                 renderer: mirror + per-row "seen" flag (highlight only)
 ```
 
-1. **Identity = terminal token only.** Keep root/child scope (the provider decides). Drop the session lockout. A root report for a *different* session supersedes the old one when it is a session or turn *start*; non-start reports from a non-current session are dropped as late. This fixes `/new`, `/resume`, `/fork` and `/clear`, plus lost boundaries, uniformly. Ordering per terminal is already serialized (in-process plugins, and the hook lock).
+1. **Identity = terminal token, plus a declared session model per provider.** Keep root/child scope (the provider decides). Replace the blanket session lockout with a capability:
+   - *Single foreground session per process* (Pi, OMP, Claude TUI, Codex TUI). A root report for a different session supersedes the old one when it is a session or turn *start*. Non-start reports from a non-current session are dropped as late. This fixes `/new`, `/resume`, `/fork` and `/clear`, plus lost boundaries, uniformly. Ordering per terminal is already serialized (in-process plugins, and the hook lock).
+   - *Multi-session server* (OpenCode). A new parentless session is **not** a replacement: one server can run several root sessions, so blanket supersede would be wrong (point taken from `74c84df`). Supersede only on an explicit selected-session signal. Without one, report Unknown with the reason "another session selected", never a frozen old state.
 2. **State reports, not edges.** Each emission carries the adapter's complete current view, plus a per-instance nonce and a sequence number. The broker adopts the newest. A lost report is healed by the next one, so F4 disappears and epoch collisions cannot happen (turn IDs become `nonce:epoch`).
 3. **Four phases**, mapped per provider:
    - Pi/OMP/OpenCode: settle → `finished`.
@@ -192,7 +197,7 @@ Harness adapters remain necessary and small: one state-report mapping per provid
 
 1. **Presentation truth (renderer only, low risk):** keep `finished` visible until the next turn, render `unknown` explicitly, and render Stop-provisional as "Finished (unconfirmed)" rather than an alert. Allow handoff after Stop. This immediately removes the largest perceived failure (F2, F3, F8) and makes real failures distinguishable.
 2. **Always-on trace plus a copy action** (§9). Ship it before any further behavior change so the next field report is diagnosable.
-3. **Broker: start-supersedes instead of root lockout** (F1). About 15 lines in `apply()`. Rewrite the tests that assert lockout as correct.
+3. **Broker: start-supersedes instead of root lockout, for single-session providers** (F1, §8.1). About 15 lines in `apply()` plus a provider capability flag. OpenCode instead gets an explicit "selected session" signal, or Unknown. Rewrite the tests that assert lockout as correct.
 4. **Namespace epoch turn IDs with a per-instance nonce** in the Pi, OMP, OpenCode and AGY adapters (F4 reload collision). About one line each.
 5. **Transport timing** (F5): server processes regardless of client timeout; client deadline about 2 s.
 6. **Level-triggered state reports** (§8.2), then delete the poison marker, fallback arbitration and redundant facts.
@@ -221,6 +226,50 @@ Steps 1–4 are small, independent and individually revertible.
   - Codex/OpenCode beyond source and the repo's recorded runs.
   - Whether production Electron main actually stalls for more than 1 s.
   - Renderer membership flapping (no evidence found).
+
+---
+
+## 12. Cross-check with the independent assessment in `74c84df`
+
+`docs/agent-attention-independent-assessment.md` (commit `74c84df`) was produced separately against the same baseline. I re-read the code behind each of its claims rather than taking them on trust.
+
+**Independent agreement (raises confidence):**
+- Pi `/reload` with a lost `session_ended` suppresses later turns as `ignored-stale`. My F4/B1 showed this deterministically; they **reproduced it in the real Pi TUI** by withholding that one delivery, and recovery depended on the retained epoch count. Confidence in F4 is now *Confirmed native*.
+- A lost Pi shutdown before a new session leads to permanent rejection (my F1/B2). Codex `/new` rejection: both of us confirmed it with the installed TUI smoke.
+- Foreground acknowledgement makes "Working → nothing" the expected success path; Unknown is absent (F2, F8).
+- Claude/Codex never prove completion; handoff and Codex after-turn moves are blocked (F3).
+- Tests validate the implementation's own assumptions; native smokes run with retry, compaction and extensions disabled (§6).
+- No mechanism in main ties broker state to workspace switching. Renderer membership retirement is an authority leak, but neither of us saw it fire in practice.
+
+**Adopted from `74c84df`:**
+- F12 (OS-window focus), F13 (OpenCode queue stall), F14 (location/lifecycle coupling), added to §3.
+- The §8.1 identity rule is narrowed. Blanket start-supersede is wrong for OpenCode's multi-session server.
+- Generation fencing for in-process adapters. Namespacing epoch turn IDs (§10 step 4) prevents collisions. The broker should *also* track the newest observer instance per terminal and drop reports from an older instance, so a late in-flight report from a disposed Pi module cannot regress state.
+- Test gaps not in my §6:
+  - The Pi/OpenCode "late settle cannot close the next turn" tests replay an already-numbered wire event. They never inject a late *native* (unnumbered) callback, which would pick up the adapter's current epoch.
+  - `npm run validate` does not run any native or Electron smoke.
+  - The Electron smoke drives a fake Pi that emits canonical events, so it bypasses the real adapters.
+- Instrumentation details for §9:
+  - Record silent adapter returns (events deliberately not emitted), not just broker rejections.
+  - Registration counters are lost on `release()`; keep the last trace after retirement.
+  - Querying main and then the renderer is not an atomic snapshot; compare revisions, not values.
+- Version drift risk: they report the existing OpenCode smoke failing with HTTP 405 on POST `/session` with OpenCode 2.0.26, before any lifecycle step. I did not verify this. If it holds, the plugin's `client.session.get` contract also needs re-verification on 2.x, and installed-version checks belong in the capability contract.
+
+**Remaining difference: how to present a candidate Stop (Claude, Codex, Antigravity).**
+- `74c84df`: candidate Stop is **Unknown** ("stop observed; finality unverified"). Handoff and after-turn operations should be gated on a declared "can prove settlement" capability.
+- This report (§8.3): show it as Finished unless the user has their own Stop hooks configured.
+
+Both agree the current *alert* presentation and "Working" are wrong. The defensible middle is a calm, distinct **"Stopped"** state that claims neither success nor ongoing work, with the finality caveat in its tooltip. Its handoff policy is the owner's decision:
+- Allowing handoff matches what the user can already do by typing into the terminal.
+- Refusing it after every turn makes the feature unusable for Claude/Codex.
+
+Keep conservative cancellation for *automatic* after-turn checkout moves, where an unproven finish has real consequences.
+
+**What this report adds to theirs:**
+- A measured main-loop stall threshold. 700 ms: applied but reported failed. 1500 ms: lost (F5, Experiment A); their fault matrix lists this as untested.
+- The SSH partial-write mechanism that can swallow the following valid frame (F7).
+- Stale-ready handoff after a lockout (F10).
+- Quantified size of the subsystem (§1).
 
 ---
 
