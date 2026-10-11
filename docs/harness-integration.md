@@ -306,7 +306,11 @@ terminal table ends observed occupancy. Unknown recorded directories remain
 fail-closed even if an observation is elsewhere. Cleanup diagnostics tell the
 user to close the terminal; no renderer or MCP observation clears these guards.
 Local removal rechecks activity after its async Git preflight immediately before
-move dispatch; SSH keeps its activity recheck, reservations and host journal.
+move dispatch. Individual missing-worktree metadata cleanup (`forgetMissingWorktree`)
+also rechecks main-owned activity after listing and before Git dispatch, even after
+a context was released; both roots and resource paths resolve missing tails through
+the nearest existing ancestor. A new observed occupant keeps the stale Git record
+and branch intact. SSH keeps its activity recheck, reservations and host journal.
 
 **#147 safety slice / verification limits:** regression tests exercise the common
 broker and occupancy helpers, direct release IPC, real local Git inspection and

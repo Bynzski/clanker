@@ -463,13 +463,10 @@ export class GitService {
 
   private isOpenWorkspace(worktreePath: string, openWorkspacePaths: string[]): boolean {
     const comparable = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
-    const target = comparable(fs.realpathSync.native(worktreePath));
-    const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths() : [];
-    const livePaths = this.getLiveTerminalPaths();
-    // Unknown local resource directories never become proof that an unmanaged checkout is free.
-    if (livePaths === null) return true;
-    return [...registryPaths, ...this.openWorkspaces.values(), ...livePaths, ...openWorkspacePaths].some((openPath) => {
-      let existingPath = openPath;
+    // Resolve missing tails on both sides: metadata cleanup must protect a root even after its
+    // directory disappeared, including roots beneath a symlinked parent. Non-ENOENT errors fail closed.
+    const resolveUsagePath = (usagePath: string): string => {
+      let existingPath = usagePath;
       const missingSegments: string[] = [];
       while (true) {
         try {
@@ -483,7 +480,15 @@ export class GitService {
           existingPath = parent;
         }
       }
-      const relative = path.relative(target, comparable(existingPath));
+      return comparable(existingPath);
+    };
+    const target = resolveUsagePath(worktreePath);
+    const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths() : [];
+    const livePaths = this.getLiveTerminalPaths();
+    // Unknown local resource directories never become proof that an unmanaged checkout is free.
+    if (livePaths === null) return true;
+    return [...registryPaths, ...this.openWorkspaces.values(), ...livePaths, ...openWorkspacePaths].some((openPath) => {
+      const relative = path.relative(target, resolveUsagePath(openPath));
       return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
     });
   }
@@ -589,6 +594,11 @@ export class GitService {
     if (target.isLocked) return { success: false, error: 'This worktree is locked' };
     if (!target.isPrunable) return { success: false, error: 'This worktree\'s directory still exists' };
     try {
+      // A released/missing context is not proof of vacancy. Native observations may arrive during
+      // listing (or after lifecycle release); reread main-owned activity immediately before dispatch.
+      if (this.isOpenWorkspace(target.path, [])) {
+        return { success: false, error: 'A workspace, terminal or dev server is still using this missing checkout; close or stop it before forgetting its Git record' };
+      }
       await this.execGit(workspacePath, ['worktree', 'remove', target.path], 60000);
     } catch (error) {
       return { success: false, error: this.getGitErrorMessage(error, 'Failed to forget the missing worktree') };

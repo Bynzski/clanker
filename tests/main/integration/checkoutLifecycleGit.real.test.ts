@@ -14,6 +14,12 @@ const { mockHandle } = vi.hoisted(() => ({ mockHandle: vi.fn() }));
 vi.mock('electron', () => ({ ipcMain: { handle: mockHandle, on: vi.fn() }, BrowserWindow: vi.fn() }));
 
 import { GitService } from '../../../src/main/gitService';
+import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
+import { createAgentLocationResolver } from '../../../src/main/agentLocation';
+import { checkoutTerminalUsages, localCheckoutUsagePaths } from '../../../src/main/checkoutOccupancy';
+import { releaseCheckoutContext, type TerminalUsage } from '../../../src/main/checkoutContextRelease';
+import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 import { registerGitIpc, type GitIpcController } from '../../../src/main/ipc/gitIpc';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
@@ -76,6 +82,70 @@ describe('Source Control branch deletion safeguards (isolated real Git)', () => 
 });
 
 describe('GitService.forgetMissingWorktree', () => {
+  it('keeps missing Git metadata when an authenticated observation arrives after release during listing', async () => {
+    const dir = await addWorktree('observed');
+    const registry = new WorkspaceRegistry(() => ({
+      id: 'local', kind: 'local', validateWorkspacePath: async (root: string) => ({ valid: true, resolvedPath: root }),
+    }) as unknown as WorkspaceEnvironment);
+    await registry.registerWorkspace({ workspaceId: 'ws', workspacePath: toPosixPath(repo) });
+    const context = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: toPosixPath(dir), kind: 'worktree' })).checkoutContext!;
+    const terminal: TerminalUsage & { workspaceId: string } = {
+      workspaceId: 'ws', checkoutContextId: registry.resolveCheckoutContext('ws')!.id, environmentId: 'local', cwd: repo,
+    };
+    const terminals = new Map([['agent', terminal]]);
+    const broker = new AgentAttentionBroker(() => undefined, () => undefined, Date.now, {
+      resolveLocation: createAgentLocationResolver({ getTerminal: (id) => terminals.get(id), getCheckoutContexts: (id) => registry.getCheckoutContextsForWorkspace(id) }),
+    });
+    try {
+      const env = await broker.register('agent', 'pi');
+      const send = (event: string, cwd?: string) => broker.receive(JSON.stringify({ version: 1, token: env.CLANKER_ATTENTION_TOKEN,
+        harness: 'pi', event, scope: 'root', sessionId: 'session', ...(cwd ? { cwd } : {}) }));
+      send('session_started', toPosixPath(repo));
+      fs.rmSync(dir, { recursive: true, force: true });
+      expect(releaseCheckoutContext({ registry, terminals: terminals.values(), workspaceId: 'ws', checkoutContextId: context.id })).toEqual({ success: true });
+      const target = new GitService(() => undefined, undefined,
+        () => localCheckoutUsagePaths(checkoutTerminalUsages(terminals, (id) => broker.locationObservation(id)?.location ?? null).map(([, usage]) => usage)),
+        () => registry.getLocalOpenWorkspacePaths());
+      const list = target.listWorktrees.bind(target);
+      const spy = vi.spyOn(target, 'listWorktrees').mockImplementationOnce(async (root) => {
+        const result = await list(root);
+        // The context is already released and its directory is gone; a new authenticated native
+        // report has no registered checkout ID but must still block per-path metadata cleanup.
+        expect(registry.getCheckoutContext(context.id)).toBeNull();
+        send('location_changed', toPosixPath(path.join(dir, 'src')));
+        expect(broker.snapshot('agent')?.location?.checkoutContextId).toBeNull();
+        return result;
+      });
+      try {
+        expect(await target.forgetMissingWorktree(repo, dir)).toMatchObject({ success: false, error: expect.stringContaining('still using this missing checkout') });
+      } finally { spy.mockRestore(); }
+      expect((await list(repo)).worktrees.find((entry) => entry.branch === 'observed')).toMatchObject({ isPrunable: true });
+      expect(await git(repo, 'branch', '--list', 'observed')).toContain('observed');
+      expect(terminal.checkoutContextId).toBe(registry.resolveCheckoutContext('ws')!.id);
+      send('agent_exited');
+      expect(await target.forgetMissingWorktree(repo, dir)).toEqual({ success: true });
+      expect(await git(repo, 'branch', '--list', 'observed')).toContain('observed');
+    } finally { broker.close(); }
+  });
+
+  it('fails closed when a local resource directory is unknown', async () => {
+    const dir = await addWorktree('unknown');
+    fs.rmSync(dir, { recursive: true, force: true });
+    const target = new GitService(() => undefined, undefined, () => null);
+    expect(await target.forgetMissingWorktree(repo, dir)).toMatchObject({ success: false });
+    expect((await target.listWorktrees(repo)).worktrees.some((entry) => entry.branch === 'unknown')).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')('protects missing roots through symlinked parents', async () => {
+    const dir = await addWorktree('symlink');
+    const alias = path.join(root, 'alias');
+    fs.symlinkSync(root, alias);
+    fs.rmSync(dir, { recursive: true, force: true });
+    const target = service([path.join(alias, path.basename(dir), 'src')]);
+    expect(await target.forgetMissingWorktree(repo, dir)).toMatchObject({ success: false });
+    expect((await target.listWorktrees(repo)).worktrees.some((entry) => entry.branch === 'symlink')).toBe(true);
+  });
+
   it('drops only the named stale record, leaving other stale records, branches and directories alone', async () => {
     const one = await addWorktree('one');
     const two = await addWorktree('two');
