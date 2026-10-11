@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { describeMeasurement, formatChecked, formatReset, groupMeasurements, measurementLabel, providerDisplayName } from '../../../src/renderer/lib/usageFormat';
-import type { HarnessUsageMeasurementView } from '../../../src/shared/types/harnessUsage';
+import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, measurementLabel, providerDisplayName, usageProblem } from '../../../src/renderer/lib/usageFormat';
+import type { HarnessUsageEntry, HarnessUsageMeasurementView } from '../../../src/shared/types/harnessUsage';
 
 const m = (overrides: Partial<HarnessUsageMeasurementView>): HarnessUsageMeasurementView => ({ kind: 'rate-limit', unit: 'percent', ...overrides });
 const NOW = Date.UTC(2026, 9, 2, 12, 0, 0);
@@ -89,5 +89,17 @@ describe('provider names and grouping', () => {
       m({}),
     ]);
     expect(groups.map((g) => [g.providerId, g.measurements.length])).toEqual([['anthropic', 2], ['openai-codex', 1], [undefined, 1]]);
+  });
+  it('masks account addresses in group metadata but keeps grouping keyed by the real address', () => {
+    const [group] = groupMeasurements([m({ scope: { providerId: 'openai-codex', planLabel: 'Plus', accountLabel: 'jaystabins@gmail.com' } })]);
+    expect(groupMeta(group)).toBe('Plus · j***@gmail.com');
+    expect(groupMeasurements([m({ scope: { accountLabel: 'jay@a.com' } }), m({ scope: { accountLabel: 'jim@a.com' } })])).toHaveLength(2);
+  });
+});
+
+describe('problem text', () => {
+  it('masks any address that reaches a status message', () => {
+    const entry: HarnessUsageEntry = { harnessId: 'codex', status: 'error', measurements: [], error: 'Signed in as jaystabins@gmail.com' };
+    expect(usageProblem(entry)).toBe('Signed in as j***@gmail.com');
   });
 });

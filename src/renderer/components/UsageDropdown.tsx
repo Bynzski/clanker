@@ -1,6 +1,7 @@
 import { CircleAlert, Info, Pin, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { HarnessUsageEntry, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import { maskEmailsInText } from '../lib/emailMask';
 import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName, usageProblem } from '../lib/usageFormat';
 import './UsageDropdown.css';
 
@@ -92,13 +93,15 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse, pinned, onTo
   const problemTitle = problem && [problem, entry?.checkedAt !== undefined ? `last ${formatChecked(entry.checkedAt, now)}` : undefined].filter(Boolean).join(' · ');
   const tone = stale && entry?.status === 'ok' ? 'warning' : STATUS_TONE[entry?.status ?? 'unsupported'];
   const StatusIcon = tone === 'error' ? CircleAlert : tone === 'warning' ? TriangleAlert : Info;
+  // An account without a label is named by its email address, so it is masked like every other address.
+  const accountName = entry?.account ? maskEmailsInText(entry.account.name) : undefined;
   return (
     <section className="usage-harness" aria-label={label} aria-busy={checking}>
       <div className="usage-harness-header">
         <span className="usage-harness-icon"><Icon size={12} strokeWidth={2.5} /></span>
-        <span className="usage-harness-name">{label}{entry?.account ? ` · ${entry.account.name}` : ''}</span>
+        <span className="usage-harness-name">{label}{accountName !== undefined ? ` · ${accountName}` : ''}</span>
         {entry?.account?.selected && <span className="usage-badge">In use</span>}
-        {onUse && <button type="button" className="usage-badge usage-use" onClick={onUse} aria-label={`Use ${entry?.account?.name ?? 'account'} for ${label}`}>Use</button>}
+        {onUse && <button type="button" className="usage-badge usage-use" onClick={onUse} aria-label={`Use ${accountName ?? 'account'} for ${label}`}>Use</button>}
         {meta && <span className="usage-harness-meta" title={meta}>{meta}</span>}
         {problemTitle && <span className={`usage-status-icon usage-status-${tone}`} role="img" tabIndex={0} aria-label={problemTitle} title={problemTitle}>
           <StatusIcon size={12} aria-hidden="true" />{stale && <span className="usage-stale-label">Stale</span>}

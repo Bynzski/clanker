@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Button } from '../ui/Button';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { maskEmailsInText } from '../../lib/emailMask';
 import type { DiffMode, GitDiffResult, GitHistoryEntry } from './types';
 import './GitHistorySection.css';
 
@@ -51,7 +52,7 @@ export function GitHistorySection({
     {management && <p className="git-diff-description">{summaryDescription}</p>}
     {management && selectedDiffRef && selectedDiffMode === 'commit' && <div className="git-commit-details">
       {selectedCommit && <>
-        <span className="git-commit-detail-item">Author: <strong>{selectedCommit.author}</strong></span>
+        <span className="git-commit-detail-item">Author: <strong>{maskEmailsInText(selectedCommit.author)}</strong></span>
         <span className="git-commit-detail-item">Date: <strong>{selectedCommit.date}</strong></span>
       </>}
       <span className="git-commit-detail-item git-commit-hash-full" title={selectedDiffRef}>SHA: <code>{selectedDiffRef}</code></span>
@@ -86,11 +87,11 @@ export function GitHistorySection({
                 summaryRef.current?.focus({ preventScroll: true });
               }
             }} disabled={isBusy}
-            title={`${entry.subject}\nCommit: ${entry.hash}\nAuthor: ${entry.author}\nDate: ${entry.date}`}
+            title={`${entry.subject}\nCommit: ${entry.hash}\nAuthor: ${maskEmailsInText(entry.author)}\nDate: ${entry.date}`}
             aria-label={`View summary for commit ${entry.shortHash}: ${entry.subject}`}
             aria-pressed={selectedDiffMode === 'commit' && selectedDiffRef === entry.hash}>
             <div className="git-history-line"><span className="git-history-hash">{entry.shortHash}</span><span className="git-history-subject">{entry.subject}</span></div>
-            <div className="git-history-meta"><span>{entry.author}</span><span>{entry.date}</span></div>
+            <div className="git-history-meta"><span>{maskEmailsInText(entry.author)}</span><span>{entry.date}</span></div>
           </button>)}
           {hasMoreHistory && onLoadMoreHistory && <Button size="xs" variant="secondary" type="button"
             className="git-history-load-more" onClick={onLoadMoreHistory} disabled={isBusy || isLoadingHistory}>

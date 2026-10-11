@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { Input } from '../ui/Input';
 import { useHarnessAccounts } from '../useHarnessAccounts';
+import { maskEmailsInText } from '../../lib/emailMask';
 import { HARNESS_ACCOUNT_LABEL_MAX, type SafeHarnessAccount } from '../../../shared/types/harnessAccounts';
 
 interface Props {
@@ -18,12 +19,12 @@ interface Props {
 
 function accountName(account: SafeHarnessAccount): string {
   if (account.kind === 'default') return 'Default';
-  return account.label ?? account.email ?? 'Account';
+  return maskEmailsInText(account.label ?? account.email ?? 'Account');
 }
 
 function accountDetail(account: SafeHarnessAccount): string {
   if (account.kind === 'default') return 'Your existing sign-in';
-  return [account.label ? account.email : undefined, account.plan].filter(Boolean).join(' · ');
+  return maskEmailsInText([account.label ? account.email : undefined, account.plan].filter(Boolean).join(' · '));
 }
 
 /**
@@ -54,11 +55,12 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
     if (intent === 'manage') rootRef.current?.focus();
     onIntentConsumed?.();
   }, [intent, listReady, onIntentConsumed]);
-  if (!list) return error ? <p role="alert">{error} <Button onClick={() => void accounts.refresh()}>Retry accounts</Button></p> : <p role="status">Loading accounts…</p>;
+  if (!list) return error ? <p role="alert">{maskEmailsInText(error)} <Button onClick={() => void accounts.refresh()}>Retry accounts</Button></p> : <p role="status">Loading accounts…</p>;
 
   const pending = flow !== null && flow.state.status !== 'connected' && flow.state.status !== 'failed' && flow.state.status !== 'cancelled';
   const multiple = list.accounts.length > 1;
-  const flowMessage = flow?.state.status === 'failed' ? flow.state.message : flow?.state.status === 'cancelled' ? 'Sign-in cancelled.' : null;
+  // Main words failures with account names, which fall back to the email address.
+  const flowMessage = flow?.state.status === 'failed' ? maskEmailsInText(flow.state.message) : flow?.state.status === 'cancelled' ? 'Sign-in cancelled.' : null;
 
   const canAdd = list.managedSupported && !pending && !adding;
 
@@ -119,7 +121,7 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
         </div>
       )}
       {flowMessage && <span className="harness-account-warning" role="alert">{flowMessage}</span>}
-      {error && <span className="harness-account-warning" role="alert">{error}</span>}
+      {error && <span className="harness-account-warning" role="alert">{maskEmailsInText(error)}</span>}
     </div>
   );
 }

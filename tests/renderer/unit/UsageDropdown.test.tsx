@@ -54,7 +54,8 @@ describe('UsageDropdown', () => {
       pct('Codex · weekly', 59, { resetsAt: NOW + (3 * 24 + 6) * 3_600_000, scope: { providerId: 'openai-codex', planLabel: 'Plus', accountLabel: 'alice@example.invalid' } }),
     ] }) });
     const codex = section('Codex');
-    expect(within(codex).getByText('Plus · alice@example.invalid')).toBeInTheDocument();
+    expect(within(codex).getByText('Plus · a***@example.invalid')).toBeInTheDocument();
+    expect(codex.textContent).not.toContain('alice@example.invalid');
     expect(within(codex).getByText('5 hour')).toBeInTheDocument();
     expect(within(codex).getByText('72% remaining')).toBeInTheDocument();
     expect(within(codex).getByText('resets in 1h 42m')).toBeInTheDocument();
@@ -107,7 +108,7 @@ describe('UsageDropdown', () => {
       pct('Credits', 40, { scope: { providerId: 'some-new_vendor' } }),
     ] }) });
     const omp = section('Oh My Pi');
-    expect(within(omp).getByText('Anthropic · Pro · a@example.invalid')).toBeInTheDocument();
+    expect(within(omp).getByText('Anthropic · Pro · a***@example.invalid')).toBeInTheDocument();
     expect(within(omp).getByText('OpenAI Codex · Plus')).toBeInTheDocument();
     expect(within(omp).getByText('Some New Vendor')).toBeInTheDocument();
     expect(omp.querySelector('.usage-harness-meta')).toBeNull(); // multi-group: no single header meta
@@ -165,11 +166,28 @@ describe('UsageDropdown', () => {
     expect(within(section('Codex')).queryByText(/checked/)).not.toBeInTheDocument();
   });
 
-  it('truncates long account labels visually but exposes the full text', () => {
+  it('masks long account labels in both the visible text and the tooltip', () => {
     const long = `${'very-long-account-name'.repeat(5)}@example.invalid`;
-    renderPanel({ codex: entry('codex', { measurements: [pct('Codex · 5 hour', 1, { scope: { accountLabel: long, planLabel: 'Plus' } })] }) });
+    const { container } = renderPanel({ codex: entry('codex', { measurements: [pct('Codex · 5 hour', 1, { scope: { accountLabel: long, planLabel: 'Plus' } })] }) });
     const meta = section('Codex').querySelector('.usage-harness-meta')!;
-    expect(meta).toHaveAttribute('title', `Plus · ${long}`);
+    expect(meta).toHaveAttribute('title', 'Plus · v***@example.invalid');
+    expect(meta).toHaveTextContent('Plus · v***@example.invalid');
+    expect(container.innerHTML).not.toContain('very-long-account-name');
+  });
+
+  it('masks an email-shaped account name in the header', () => {
+    renderPanel({ codex: entry('codex', { account: { id: 'acct_default', name: 'jay@example.invalid', selected: true }, measurements: [] }) });
+    expect(section('Codex').querySelector('.usage-harness-name')).toHaveTextContent(/^Codex · j\*\*\*@example\.invalid$/);
+    expect(section('Codex').textContent).not.toContain('jay@example.invalid');
+  });
+
+  it('masks the email in a Use control while still selecting the real account id', async () => {
+    const onSelectAccount = vi.fn();
+    renderPanel({ codex: entry('codex', { measurements: [] }) }, {
+      onSelectAccount, otherAccounts: { codex: [entry('codex', { account: { id: 'acct_1', name: 'jay@example.invalid', selected: false } })] },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Use j***@example.invalid for Codex' }));
+    expect(onSelectAccount).toHaveBeenCalledWith('codex', 'acct_1');
   });
 
   it('refresh control: accessible name, busy state, disabled with a countdown title', async () => {

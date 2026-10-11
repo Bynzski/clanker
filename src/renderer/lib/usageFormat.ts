@@ -1,4 +1,5 @@
 import type { HarnessUsageEntry, HarnessUsageMeasurementView, HarnessUsageStatus } from '../../shared/types/harnessUsage';
+import { maskEmailsInText } from './emailMask';
 
 /** Presentation-only helpers for the Usage panel. Nothing here influences capability, caching or correlation. */
 
@@ -14,7 +15,7 @@ export function usageProblem(entry: HarnessUsageEntry | undefined): string {
   const stale = entry?.stale === true && entry.measurements.length > 0;
   const status = entry && entry.status !== 'ok' && entry.status !== 'not-installed'
     ? entry.error ?? STATUS_TEXT[entry.status] : undefined;
-  return [stale ? 'Stale usage data' : undefined, status].filter(Boolean).join(' · ');
+  return maskEmailsInText([stale ? 'Stale usage data' : undefined, status].filter(Boolean).join(' · '));
 }
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -140,15 +141,18 @@ export function groupMeasurements(measurements: HarnessUsageMeasurementView[]): 
   return [...groups.values()];
 }
 
-export const groupMeta = (group: MeasurementGroup): string => [group.planLabel, group.accountLabel].filter(Boolean).join(' · ');
+export const groupMeta = (group: MeasurementGroup): string => maskEmailsInText([group.planLabel, group.accountLabel].filter(Boolean).join(' · '));
 
-/** Coarse countdown for the status-bar widget: "35m", "3h", "5d". Never finer than the unit shown. */
+/** `delta` in whole tenths of `unit`, truncated so the figure never overstates the time left. */
+const tenthsOf = (delta: number, unit: number): number => Math.floor((delta * 10) / unit) / 10;
+
+/** Coarse countdown for the status-bar widget: "35m", "3.5h", "6.7d". Minutes under an hour; at most one decimal. */
 export function formatResetShort(resetsAt: number, now: number): string {
   const delta = resetsAt - now;
   if (delta <= 0) return 'now';
   if (delta < HOUR) return `${Math.max(1, Math.ceil(delta / MINUTE))}m`;
-  if (delta < DAY) return `${Math.floor(delta / HOUR)}h`;
-  return `${Math.floor(delta / DAY)}d`;
+  if (delta < DAY) return `${tenthsOf(delta, HOUR)}h`;
+  return `${tenthsOf(delta, DAY)}d`;
 }
 
 export interface WidgetUsage {
