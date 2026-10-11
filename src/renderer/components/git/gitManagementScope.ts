@@ -1,4 +1,4 @@
-import { currentCheckoutSelection, checkoutSelectionKey, checkoutUnavailableMessage } from '../../lib/checkoutSelection';
+import { currentCheckoutSelection, checkoutSelectionKey, checkoutUnavailableMessage, checkoutSelectionNotice } from '../../lib/checkoutSelection';
 import { mainCheckoutContextId } from '../../../shared/checkoutContext';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
@@ -34,8 +34,8 @@ export function gitManagementScope(workspacePath: string, workspaceId?: string):
     environmentId,
     blocked,
     // Branch metadata is descriptive and may lag Git; it is not checkout identity.
-    checkoutLabel: checkout && checkout.path !== workspace?.workspacePath ? 'Isolated checkout'
-      : workspace?.checkoutContexts?.some((entry) => entry.path === workspace.workspacePath && entry.kind === 'worktree') ? 'Workspace worktree' : 'Workspace checkout',
+    checkoutLabel: (selection && checkoutSelectionNotice(selection)) || (checkout && checkout.path !== workspace?.workspacePath ? 'Isolated checkout'
+      : workspace?.checkoutContexts?.some((entry) => entry.path === workspace.workspacePath && entry.kind === 'worktree') ? 'Workspace worktree' : 'Workspace checkout'),
     key: JSON.stringify([workspaceId, workspacePath, selection ? checkoutSelectionKey(selection) : null, environmentId, checkoutContextId, checkout?.path, blocked]),
   };
 }

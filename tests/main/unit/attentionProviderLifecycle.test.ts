@@ -784,6 +784,20 @@ describe('Pi lifecycle', () => {
     expect(drain().map((wire) => wire.event)).toEqual(['turn_started', 'turn_completed']);
   });
 
+  it('binds startup without a prompt, retains genuinely historical shutdown and rebinds only on a native session start', async () => {
+    const handlers = await load(); const { feed, broker } = rig('pi');
+    const at = (id: string) => ({ sessionManager: { getSessionId: () => id }, cwd: '/w/test1' });
+    const run = async (event: string, id: string) => { drain(); await handlers[event]({}, at(id)); const wires = drain(); wires.forEach(feed); return wires; };
+    expect(await run('session_start', 'first')).toEqual([expect.objectContaining({ event: 'session_started', nativeEvent: 'session_start', sessionId: 'first', cwd: '/w/test1' })]);
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'first', locationProvenance: { state: 'current', sessionId: 'first' }, lastCompletion: null });
+    await run('session_start', 'unrelated'); await run('agent_start', 'unrelated'); await run('session_shutdown', 'unrelated');
+    expect(broker.snapshot('term')?.sessionId).toBe('first');
+    await run('session_shutdown', 'first');
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: null, locationProvenance: { state: 'last-reported', sessionId: 'first' } });
+    await run('session_start', 'second');
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'second', locationProvenance: { state: 'current', sessionId: 'second' }, lastCompletion: null });
+  });
+
   // Location: `ctx.cwd` is the session's directory. Commands never move it; replacing the session
   // (resume, new, fork) does: Pi emits session_shutdown for the old one, then session_start with
   // the new session's cwd.

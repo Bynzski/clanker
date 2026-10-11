@@ -728,6 +728,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         </div>
       </div>
       {workspace?.checkoutLabel && <div className="file-explorer-checkout" title={normalizedWorkspacePath}>Checkout: {workspace.checkoutLabel}</div>}
+      {workspace?.selectionNotice && <div className="file-explorer-checkout">{workspace.selectionNotice}</div>}
       {gitAvailability !== 'ready' && <div className="file-explorer-checkout" data-git-state={gitAvailability} role="status">{gitAvailability === 'loading' ? 'Loading Git status…' : 'Git status unavailable'}</div>}
       <div className="file-explorer-filter">
         <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />

@@ -131,7 +131,20 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
     selected(A.path, A.id); loading();
     act(() => listeners.forEach((callback) => callback(result(MAIN.path, MAIN.id, oldMain.generation))));
     selected(A.path, A.id); loading(); await complete(A.path, 2, 'test1');
+    const agreeingGeneration = useCheckoutGitStore.getState().active!.generation;
     report(test1, 'last-reported');
+    selected(A.path, A.id);
+    expect(selectCheckout(workspace(), useAgentAttentionStore.getState().byTerminalId.agent)).toMatchObject({ source: 'launch', historicalLaunchFallback: true });
+    expect(document.querySelector('.status-selection-notice')).toHaveTextContent('Launch checkout · agent location last-reported');
+    expect(useAgentAttentionStore.getState().byTerminalId.agent.locationProvenance?.state).toBe('last-reported');
+    expect(useCheckoutGitStore.getState().active?.generation).toBe(agreeingGeneration);
+    expect(document.querySelector('.git-badge')).toHaveTextContent('2');
+    expect(getUnusedWorktreeContexts(workspace()).map((context) => context.id)).not.toContain(A.id);
+    fireEvent.click(screen.getByRole('button', { name: /Dozin/ }));
+    selected(MAIN.path, MAIN.id); loading(); await complete(MAIN.path, 1, 'main');
+    fireEvent.click(screen.getByRole('button', { name: /Darling/ }));
+    selected(A.path, A.id); loading(); await complete(A.path, 2, 'test1');
+    report(B, 'last-reported'); // Genuine historical disagreement cannot rescue launch A.
     expect(document.querySelector('.status-checkout-unavailable')).toHaveTextContent('historical location');
     expect(document.querySelector('.status-git-availability')).toBeNull();
     expect(api.gitStartPolling).toHaveBeenLastCalledWith(A.path, 'ws', A.id, expect.any(Number));

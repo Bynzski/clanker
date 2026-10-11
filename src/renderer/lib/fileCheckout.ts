@@ -1,13 +1,14 @@
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { WorkspaceTab, EditorTab } from '../store/workspaceTypes';
 import { relativePath } from './pathUtils';
-import { currentCheckoutSelection, checkoutUnavailableMessage, type CheckoutSelection } from './checkoutSelection';
+import { currentCheckoutSelection, checkoutUnavailableMessage, checkoutSelectionNotice, type CheckoutSelection } from './checkoutSelection';
 
 export interface FileCheckout {
   workspacePath: string;
   checkoutContextId?: string;
   checkoutLabel?: string;
   unavailable?: string;
+  selectionNotice?: string;
 }
 
 export function pathInFileCheckout(root: string, filePath: string): boolean {
@@ -18,8 +19,9 @@ export function pathInFileCheckout(root: string, filePath: string): boolean {
 /** File IPC adapter to the canonical surface selector. Unavailable selections have no request root. */
 export function fileCheckoutFromSelection(selection: CheckoutSelection): FileCheckout {
   if (selection.availability === 'unavailable') return { workspacePath: '', checkoutContextId: selection.contextId ?? undefined, unavailable: checkoutUnavailableMessage(selection.reason) };
-  return selection.contextId === mainCheckoutContextId(selection.workspaceId) ? { workspacePath: selection.root }
-    : { workspacePath: selection.root, checkoutContextId: selection.context.id, checkoutLabel: selection.context.branch || 'HEAD' };
+  const selectionNotice = checkoutSelectionNotice(selection);
+  return selection.contextId === mainCheckoutContextId(selection.workspaceId) ? { workspacePath: selection.root, selectionNotice }
+    : { workspacePath: selection.root, checkoutContextId: selection.context.id, checkoutLabel: selection.context.branch || 'HEAD', selectionNotice };
 }
 export function focusedFileCheckout(workspace: Pick<WorkspaceTab, 'id' | 'environmentId' | 'workspacePath' | 'checkoutContexts' | 'activeTerminalId' | 'terminals' | 'fileSurfaceContextId'>): FileCheckout {
   return fileCheckoutFromSelection(currentCheckoutSelection(workspace));

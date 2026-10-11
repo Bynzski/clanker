@@ -24,6 +24,29 @@ describe('canonical registered-checkout selection (not execution authority)', ()
     expect(selectCheckout(workspace(), report)).toMatchObject({ availability: 'unavailable', root: null, reason, contextId: b.id });
     expect(selectCheckout({ ...workspace(), fileSurfaceContextId: a.id }, report)).toMatchObject({ availability: 'available', source: 'explicit', root: a.path });
   });
+  it('uses registered launch authority when historical evidence agrees, without promoting the observation', () => {
+    const ws = workspace(); const report = observed();
+    report.location = { path: `${a.path}/src`, checkoutContextId: a.id };
+    report.locationProvenance = { state: 'last-reported', sessionId: 'ended' };
+    expect(selectCheckout(ws, report)).toMatchObject({ availability: 'available', source: 'launch', root: a.path, contextId: a.id, historicalLaunchFallback: true });
+    expect(report.locationProvenance.state).toBe('last-reported');
+    expect(checkoutSelectionKey(selectCheckout(ws, report))).toBe(checkoutSelectionKey(selectCheckout(ws)));
+    expect(selectCheckout({ ...ws, fileSurfaceContextId: b.id }, report)).toMatchObject({ source: 'explicit', root: b.path });
+    expect(selectCheckout({ ...ws, terminals: [createTerminalFixture({ id: 'agent' })] }, report)).toMatchObject({ reason: 'historical-observation' });
+    const disagreement = { ...report, location: { path: b.path, checkoutContextId: b.id } };
+    expect(selectCheckout(ws, disagreement)).toMatchObject({ reason: 'historical-observation', root: null });
+    expect(selectCheckout({ ...ws, fileSurfaceContextId: a.id }, disagreement)).toMatchObject({ source: 'explicit', availability: 'available', root: a.path });
+    expect(selectCheckout(ws, { ...report, locationProvenance: { state: 'unavailable', sessionId: 'ended' } })).toMatchObject({ reason: 'unavailable-observation' });
+    expect(selectCheckout(ws, { ...report, locationProvenance: null })).toMatchObject({ reason: 'unknown-provenance' });
+  });
+  it.each(['missing', 'released', 'foreign'] as const)('never rescues a %s historical/launch identity', (condition) => {
+    const report = observed(); report.locationProvenance = { state: 'last-reported', sessionId: 'ended' };
+    const ws = { ...workspace(), terminals: [createTerminalFixture({ id: 'agent', checkoutContextId: b.id })],
+      checkoutContexts: condition === 'released' ? [main, a] : [main, a, { ...b, ...(condition === 'missing' ? { missing: true } : { environmentId: 'foreign' }) }] };
+    expect(selectCheckout(ws, report)).toMatchObject({ availability: 'unavailable', reason: condition === 'missing' ? 'missing-checkout' : condition === 'released' ? 'released-checkout' : 'invalid-checkout' });
+    expect(selectCheckout(ws)).toMatchObject({ availability: 'unavailable' });
+  });
+
   it('distinguishes missing, released, unknown and unregistered observations', () => {
     const report = observed(), ws = workspace();
     expect(selectCheckout(ws, { ...report, locationProvenance: null })).toMatchObject({ reason: 'unknown-provenance' });

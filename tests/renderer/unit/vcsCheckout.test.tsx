@@ -29,7 +29,8 @@ describe('canonical registered surface selection', () => {
   });
   it('distinguishes historical and unknown provenance from absent observation', () => {
     const ws = workspace(); const snapshot = observed('/repo-worktrees/topic', 'isolated');
-    expect(selectCheckout(ws, { ...snapshot, locationProvenance: { state: 'last-reported', sessionId: 'old' } })).toMatchObject({ reason: 'historical-observation', root: null });
+    expect(selectCheckout(ws, { ...snapshot, locationProvenance: { state: 'last-reported', sessionId: 'old' } })).toMatchObject({ availability: 'available', source: 'launch', root: '/repo-worktrees/topic', historicalLaunchFallback: true });
+    expect(selectCheckout(ws, { ...observed('/repo', 'ws::main'), locationProvenance: { state: 'last-reported', sessionId: 'old' } })).toMatchObject({ reason: 'historical-observation', root: null });
     expect(selectCheckout(ws, { location: snapshot.location })).toMatchObject({ reason: 'unknown-provenance' });
     expect(selectCheckout(ws, { location: null })).toMatchObject({ availability: 'available', source: 'launch' });
     ws.workspacePath = ''; expect(selectCheckout(ws)).toMatchObject({ reason: 'invalid-workspace' });

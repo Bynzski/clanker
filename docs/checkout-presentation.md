@@ -8,12 +8,15 @@ header dirty counts and status-bar checkout/Git labels:
 1. An explicit file/editor-surface pin.
 2. The focused terminal's **current authenticated observation**, if its checkout
    is registered to this workspace/environment and usable.
-3. Its launch context **only when an observation is absent**.
+3. Its launch context when an observation is absent, or when **historical evidence
+   names that exact independently registered, usable launch context**. This latter
+   case has source `launch`, not `observed`, and displays **Launch checkout · agent
+   location last-reported**. The observation remains historical.
 4. The workspace's registered main root if there is no focused terminal.
 
 Terminal focus clears the explicit pin. Selecting an editor tab pins that tab's
-original context. Unknown provenance, historical/unavailable/unregistered reports,
-and missing/released/invalid contexts show an unavailable reason; they do not
+original context. Unknown provenance, historical disagreement, unavailable/unregistered
+reports, and missing/released/invalid contexts show an unavailable reason; they do not
 silently browse main or appear clean. An explicit valid pin can override an
 unavailable observation. The implicit main root supports legacy workspace state;
 no other root is synthesized or adopted.
@@ -26,8 +29,9 @@ not the selected editor surface's label.
 
 `locationProvenance` is published by the authenticated broker in the same revision
 as lifecycle/location. `current` means matching native session, not instantaneous
-cwd, recent wall-clock time or Running. `last-reported` means retained across a
-native session boundary. Explicit lifecycle loss is `unavailable` until a new
+cwd, recent wall-clock time or Running. `last-reported` means evidence has no matching
+bound native root (including retention across a native session boundary). A location-only
+startup report does not itself bind a session. Explicit lifecycle loss is `unavailable` until a new
 accepted native location report. Children, mismatched sessions and stale retired
 turns cannot refresh it. Idle/Done, history, lifecycle loss and elapsed time never
 prove vacancy. Backend occupancy remains conservative and authoritative.
@@ -92,8 +96,9 @@ Native location observation, resume in another checkout and same-turn live
 relocation are independent. `providerCapabilities` states proven resume/rehome
 support; it does not grant a tool or infer relocation from location. Existing
 rehome transactions still resume the native conversation through their provider
-strategy. Pi remains context-only; #138 remains on hold. No Pi runtime integration,
-terminal-text parsing, automatic adoption or SSH MCP was added.
+strategy. Pi remains context-only; #138 remains on hold. No Pi runtime-control/rehome integration,
+terminal-text parsing, automatic adoption or SSH MCP was added. Fixing the existing
+Pi observer's native startup mapping does not add #138 runtime control/rehome support.
 
 ## PR #160 review corrections and screenshot investigation
 
@@ -158,6 +163,72 @@ all ten focus/provenance/polling transitions, failure/recovery for worktree and 
 stale main response rejection, explicit editor override and occupied-but-unregistered
 worktree rejection. Existing dirty-buffer, SSH and occupancy guards remain intact.
 
+## Pi managed `test1` startup correction
+
+Read-only inspection of `/home/jay/Projects/worktree-tests` confirmed Git lists main
+and linked branch `test1` at
+`/home/jay/Projects/worktree-tests-worktrees/test1-1b4f0e9851971998e732`, neither locked
+nor prunable, with canonical paths and existing dirty files. Persisted provenance also
+contains that exact local/main/test1 relationship. Context registrations and terminal
+IDs are runtime-only; the original dev Electron had exited, so its exact IDs and
+selection cannot be recovered. No user checkout, branch, Git registration or file was
+changed to reproduce this failure.
+
+Before edits, installed Pi **1.1.0** was run in that actual directory with an isolated
+session/config directory, the normal attention attachment and zero model requests.
+Its accepted native `session_start` emitted **`location_changed`**. The resolved ID
+matched the validated launch context, but the broker's bound session was **null** and
+provenance **last-reported**, even before any `session_shutdown`. Native `new_session`
+then emitted shutdown/start with the same classification. The mapping already exists
+on main at `0caf03f`: this is not missing Git registration, a mismatched checkout ID,
+TTL expiry or a sidebar focus bug. **#160 introduced the user-visible failure by
+rejecting all historical evidence despite independently valid agreeing launch authority.**
+
+Two narrow corrections:
+
+- The existing Pi adapter maps its native `session_start` to common **`session_started`**,
+  binding its native root before any prompt/turn. It pins the adapter's root too, so
+  unrelated sessions cannot poison startup. Native shutdown still clears the bound
+  session and keeps genuine historical evidence; only a new accepted native start
+  restores current provenance. No fabricated Running/Done or new observation channel.
+- The canonical selector allows historical/launch **ID agreement** only after normal
+  workspace/environment/root/missing checks pass. It selects the independent launch ID
+  and marks the surface notice; it never promotes that historical report. Disagreeing,
+  unregistered, missing/released/foreign, unknown or lifecycle-lost evidence stays
+  unavailable (unless an authorized explicit pin selects a usable context). No main
+  fallback, terminal rebinding, auto-adoption, grant or occupancy change.
+
+Native built-Electron verification uses the normal existing-worktree launcher twice:
+first attach in the isolated app profile, then close its terminal and **relaunch the
+same managed context**. Actual launch path, validated local/worktree/test1 context ID,
+selected global/workspace terminal, authenticated current provenance and matching
+Git snapshot/poll IDs are queried from main and renderer. Main has **3** dirty paths,
+test1 **34**; header/status/Explorer and Source Control follow the selected root while
+both agent panes remain visible. Native TUI `/new` publishes historical → current,
+without rendering checkout unavailable or changing same-checkout Git generation.
+Closing the terminal retires its evidence; the retained context becomes Available
+and relaunch reuses its ID. A surviving launch shell would still legitimately occupy
+it. After app cleanup, hashes of tracked/unignored files, Git status and worktree list
+are unchanged; zero inference requests. This verifies native startup/session
+replacement, **not cross-checkout relocation**; main OpenCode remains an explicit fixture.
+
+Reproduce without mutating the existing checkout:
+
+```sh
+npm run build
+node scripts/checkout-presentation-smoke.cjs --native-pi \
+  --existing-workspace /home/jay/Projects/worktree-tests
+```
+
+The mode fails closed on Git mutation commands, never runs dirty matrices against the
+existing roots, and uses disposable HOME/app/Pi configuration and session storage.
+Default smoke mode still runs destructive matrices only in its disposable repository.
+Renderer regressions separately prove genuine agreeing-history launch selection and
+its warning, historical disagreement, missing/released/foreign identities, explicit
+pin override, focus switching, unchanged same-root generations, stale-response guards
+and conservative occupied checkout labels. Native adapter/broker tests prove no-prompt
+startup, mismatched-session rejection, historical shutdown and fresh native rebinding.
+
 ## Smoke procedure
 
 Use only a disposable committed repository and two linked worktrees A/B. Follow
@@ -175,8 +246,10 @@ and [remote VPS smoke](remote-vps-smoke-test.md) for a controlled SSH host (pres
   clear expansions. Services and historical observations keep cleanup rows in use.
 - Exercise accepted supported root location reports, child/mismatched/stale events,
   session transition without a fresh cwd, lifecycle loss, deleted worktrees and exit.
-  Unusable evidence must show unavailable; only an absent observation permits launch
-  fallback. Never infer a native cwd move from terminal text.
+  Unusable/disagreeing evidence must show unavailable. Absent observation or genuine
+  historical agreement with usable registered launch authority permits launch selection;
+  agreement never makes historical provenance current. Never infer a native cwd move
+  from terminal text.
 - Switch roots/workspaces/pages rapidly while Git/provider/directory/SSH responses
   are pending; no old result may become current, even on returning to the same root.
   Disconnect/reconnect SSH: no false deletion/clean status; monitoring must recover.
@@ -242,7 +315,12 @@ Initial focused integration run: **18 files / 275 tests passed**, including all 
 integrations, file/observed-checkout/isolated-picker renderer integrations and real
 editor-operation remote watcher/occupancy presentation regressions.
 
-`npm run validate`: **passed — 390 test files / 7,904 tests**, including branding,
+Pi startup correction: **13 files / 283 focused tests passed**; both default fixture
+and native existing-checkout built Electron smokes passed. Native Pi ten-turn loopback
+smoke was re-run after the mapping change: new/resume/fork, native UI wait, failure
+and interruption passed without paid inference.
+
+`npm run validate`: **passed — 390 test files / 7,909 tests**, including branding,
 lint, typecheck, Fallow regression, security gate and build. The only audit exception
 is the already documented dev-only electron-builder chain; no new dependency or
 exception was added.

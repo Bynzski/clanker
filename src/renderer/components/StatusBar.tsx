@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Tag, Circle, GitBranch, Folder, Server } from 'lucide-react';
 import { getRemoteEnvironmentLabel, getRemoteEnvironmentName, getWorkspaceProjectName } from '../lib/workspaceLabels';
-import { selectCheckout, checkoutUnavailableMessage, checkoutUnavailableLabel } from '../lib/checkoutSelection';
+import { selectCheckout, checkoutUnavailableMessage, checkoutUnavailableLabel, checkoutSelectionNotice } from '../lib/checkoutSelection';
 import { checkoutSelectionToken } from '../lib/checkoutSelectionRuntime';
 import { useAgentSnapshot } from '../lib/useAgentLocation';
 import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../store/checkoutGitStore';
@@ -31,6 +31,7 @@ export default function StatusBar() {
   const isRepo = status?.isRepo ?? (metadata ? !isMain || focusedWorkspace?.gitIsRepo === true : false);
   const isDetached = status?.isDetached ?? (metadata ? isMain ? focusedWorkspace?.gitIsDetached === true : !metadata.branch : false);
   const unavailable = selected?.availability === 'unavailable' ? checkoutUnavailableMessage(selected.reason) : null;
+  const selectionNotice = selected ? checkoutSelectionNotice(selected) : undefined;
   const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
   const activeAssistantName = useAssistantsStore((state) => (activeAssistantId ? state.knownAssistants[activeAssistantId]?.displayName ?? activeAssistantId.replace(/^hermes:/, '') : null));
   const [appVersion, setAppVersion] = useState<string>('');
@@ -67,6 +68,7 @@ export default function StatusBar() {
           <span className="status-project-name">{projectName}</span>
         </span>
         {selected?.availability === 'unavailable' && <span className="status-checkout-unavailable" data-checkout-state="unavailable" title={unavailable ?? undefined}>{checkoutUnavailableLabel(selected.reason)}</span>}
+        {selectionNotice && <span className="status-selection-notice" title={selectionNotice}>{selectionNotice}</span>}
         {selected?.availability === 'available' && gitAvailability !== 'ready' && <span className="status-git-availability" data-git-state={gitAvailability} title={gitLabel}>{gitLabel}</span>}
         {isRepo && (
           <span

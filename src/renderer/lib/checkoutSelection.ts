@@ -12,19 +12,25 @@ export type CheckoutSelection = {
   environmentId: string;
   /** Retained for unavailable pins/reports, never execution authority by itself. */
   contextId: string | null;
-} & ({ availability: 'available'; context: CheckoutContext; root: string }
+} & ({ availability: 'available'; context: CheckoutContext; root: string; historicalLaunchFallback?: true }
   | { availability: 'unavailable'; reason: CheckoutUnavailableReason; root: null });
 export type CheckoutSelectionWorkspace = Pick<WorkspaceTab, 'id' | 'environmentId' | 'workspacePath' | 'checkoutContexts' | 'terminals' | 'activeTerminalId' | 'fileSurfaceContextId'>;
 
 /** One selection policy for workspace surfaces, not individual agent labels or launch authority.
- * Explicit pin > current registered observation > launch when no observation > workspace.
- * Existing but unusable observations/pins never silently select main. */
+ * Explicit pin > current registered observation > launch when no observation, or when
+ * historical evidence agrees with the independently registered launch identity > workspace.
+ * Historical disagreement and unusable identities never silently select main. */
 export function selectCheckout(workspace: CheckoutSelectionWorkspace, snapshot?: Pick<AgentAttentionSnapshot, 'location' | 'locationProvenance'> | null): CheckoutSelection {
   const environmentId = workspace.environmentId ?? 'local';
   const mainId = mainCheckoutContextId(workspace.id);
   const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
-  const source: CheckoutSelectionSource = workspace.fileSurfaceContextId ? 'explicit' : snapshot?.location ? 'observed' : terminal ? 'launch' : 'workspace';
-  const contextId = workspace.fileSurfaceContextId ?? (snapshot?.location ? snapshot.location.checkoutContextId : terminal?.checkoutContextId ?? mainId);
+  const historicalAgreesWithLaunch = !workspace.fileSurfaceContextId && !!terminal?.checkoutContextId
+    && snapshot?.locationProvenance?.state === 'last-reported'
+    && snapshot.location?.checkoutContextId === terminal.checkoutContextId;
+  const source: CheckoutSelectionSource = workspace.fileSurfaceContextId ? 'explicit'
+    : historicalAgreesWithLaunch ? 'launch' : snapshot?.location ? 'observed' : terminal ? 'launch' : 'workspace';
+  const contextId = workspace.fileSurfaceContextId ?? (source === 'observed'
+    ? snapshot?.location?.checkoutContextId ?? null : terminal?.checkoutContextId ?? mainId);
   const base = { source, workspaceId: workspace.id, environmentId, contextId };
   const unavailable = (reason: CheckoutUnavailableReason): CheckoutSelection => ({ ...base, availability: 'unavailable', reason, root: null });
   if (!workspace.id || !workspace.workspacePath) return unavailable('invalid-workspace');
@@ -43,7 +49,13 @@ export function selectCheckout(workspace: CheckoutSelectionWorkspace, snapshot?:
   if (resolved.workspaceId !== workspace.id || resolved.environmentId !== environmentId || !resolved.path
     || !/^(\/|[A-Za-z]:\/)/.test(resolved.path)) return unavailable('invalid-checkout');
   if (resolved.missing) return unavailable('missing-checkout');
-  return { ...base, contextId: resolved.id, availability: 'available', context: resolved, root: resolved.path };
+  return { ...base, contextId: resolved.id, availability: 'available', context: resolved, root: resolved.path,
+    ...(historicalAgreesWithLaunch ? { historicalLaunchFallback: true as const } : {}) };
+}
+
+export function checkoutSelectionNotice(selection: CheckoutSelection): string | undefined {
+  return selection.availability === 'available' && selection.historicalLaunchFallback
+    ? 'Launch checkout · agent location last-reported' : undefined;
 }
 
 /** Store-backed adapter with no workspace-store dependency (file actions also call it). */

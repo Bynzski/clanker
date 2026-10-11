@@ -7,7 +7,7 @@ import { localAttention } from '../localAttention';
  * completion; never regress to the lower-level `agent_end`.
  * Location: `ctx.cwd` is the session's directory. A command never moves it; replacing the session
  * (resume, new, fork) does: Pi ends the old session (`session_shutdown`), then starts the new one with
- * its own cwd (`session_start`, reported as `location_changed`). */
+ * its own cwd (`session_start`, reported as `session_started` to bind the native root without a prompt). */
 export const SOURCE = `import { emit } from './observer.mjs';
 // Pi exposes no turn ID. The extension owns one epoch per foreground turn: agent_start opens it
 // and only the matching agent_settled can complete it, so a late settle can never close a newer turn.
@@ -69,8 +69,10 @@ export default function (pi) {
     return emit('session_ended', { scope: 'root', sessionId: sessionId(ctx), nativeEvent: 'session_shutdown' });
   });
   pi.on('session_start', (_event, ctx) => {
-    if (!cwd(ctx)) return;
-    return emit('location_changed', { scope: 'root', sessionId: sessionId(ctx), nativeEvent: 'session_start', cwd: cwd(ctx) });
+    const id = sessionId(ctx);
+    if (!cwd(ctx) || !id || (root && id !== root)) return;
+    root ??= id;
+    return emit('session_started', { scope: 'root', sessionId: id, nativeEvent: 'session_start', cwd: cwd(ctx) });
   });
 }
 `;
