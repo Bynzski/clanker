@@ -12,7 +12,9 @@
     "scripts/workspace-pages-smoke.cjs",
     "scripts/workspace-multi-browser-smoke.cjs",
     "scripts/workspace-page-browser-renderer-smoke.cjs",
-    "scripts/workspace-launch-race-smoke.cjs"
+    "scripts/workspace-launch-race-smoke.cjs",
+    "docs/agent-attention-assessment/experiments/a_transport_stall.cjs",
+    "docs/agent-attention-assessment/experiments/b_sequences.cjs"
   ],
   "ignoreDependencies": [
     "@modelcontextprotocol/sdk",
@@ -38,7 +40,9 @@
         "scripts/pi-bridge-smoke.cjs",
         "scripts/ssh-preview-session-smoke.cjs",
         "scripts/workspace-multi-browser-smoke.cjs",
-        "scripts/workspace-pages-smoke.cjs"
+        "scripts/workspace-pages-smoke.cjs",
+        "docs/agent-attention-assessment/experiments/a_transport_stall.cjs",
+        "docs/agent-attention-assessment/experiments/b_sequences.cjs"
       ],
       "rules": {
         "unresolved-imports": "off"
