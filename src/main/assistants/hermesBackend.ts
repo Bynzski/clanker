@@ -22,13 +22,13 @@ export type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: R
 export type ExternalProbe =
   | { kind: 'none' }
   | { kind: 'unusable'; reason: string }
-  | { kind: 'usable'; port: number; token: string };
+  | { kind: 'usable'; port: number; token: string; host?: '127.0.0.1' | '[::1]' };
 
 async function bounded<T>(fetcher: FetchLike, url: string, timeoutMs: number, read: (response: Awaited<ReturnType<FetchLike>>) => Promise<T>): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetcher(url, { signal: controller.signal });
+    const response = await fetcher(url, { signal: controller.signal, redirect: 'error' });
     return await read(response);
   } finally { clearTimeout(timer); }
 }
@@ -39,8 +39,8 @@ async function bounded<T>(fetcher: FetchLike, url: string, timeoutMs: number, re
  * `window.__HERMES_SESSION_TOKEN__="…";` assignment in a bounded root response. Gated or
  * token-less backends are reported unusable (never killed, never replaced by a second backend).
  */
-export async function probeExternalBackend(fetcher: FetchLike, port = HERMES_DEFAULT_PORT, timeoutMs = 2000): Promise<ExternalProbe> {
-  const base = `http://${HERMES_LOOPBACK_HOST}:${port}`;
+export async function probeExternalBackend(fetcher: FetchLike, port = HERMES_DEFAULT_PORT, timeoutMs = 2000, host: '127.0.0.1' | '[::1]' = HERMES_LOOPBACK_HOST): Promise<ExternalProbe> {
+  const base = `http://${host}:${port}`;
   let status: unknown;
   try {
     status = await bounded(fetcher, `${base}/api/status`, timeoutMs, async (response) => response.ok ? response.json() : null);
@@ -52,7 +52,7 @@ export async function probeExternalBackend(fetcher: FetchLike, port = HERMES_DEF
     const html = await bounded(fetcher, `${base}/`, timeoutMs, async (response) => response.ok ? response.text() : '');
     if (html.length > MAX_BOOTSTRAP_BYTES) return { kind: 'unusable', reason: 'Hermes service returned an unexpected bootstrap page' };
     const match = BOOTSTRAP_TOKEN.exec(html);
-    if (match) return { kind: 'usable', port, token: match[1] };
+    if (match) return { kind: 'usable', port, token: match[1], ...(host !== HERMES_LOOPBACK_HOST ? { host } : {}) };
   } catch { /* fall through */ }
   return { kind: 'unusable', reason: 'Hermes service is running but Clanker could not authenticate to it' };
 }

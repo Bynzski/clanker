@@ -1,4 +1,5 @@
 import { StringDecoder } from 'node:string_decoder';
+import { discoverHermesBackend, readHermesRendezvous } from './hermesDiscovery';
 import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared/types/assistantDetails';
 import { JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
 import {
@@ -12,10 +13,8 @@ import {
 } from '../../shared/types/assistants';
 import { readPersistedAssistantSettings, validateAssistantSettings } from './assistantSettings';
 import {
-  HERMES_DEFAULT_PORT,
   HERMES_LOOPBACK_HOST,
   generateServiceToken,
-  probeExternalBackend,
   spawnHermesServe,
   waitForServeReady,
   type FetchLike,
@@ -33,6 +32,7 @@ export interface HermesAssistantServiceDeps {
   /** Canonical local harness availability for `hermes`. Evaluated once per service lifetime (a restart picks up installs). */
   isHermesAvailable(): boolean;
   fetch?: FetchLike;
+  readRendezvous?: typeof readHermesRendezvous;
   createWebSocket?: WebSocketFactory;
   spawnServe?: SpawnServe;
   generateToken?: () => string;
@@ -71,7 +71,7 @@ interface PtySession {
   generation: number;
 }
 
-type Endpoint = { port: number; token: string; ownership: 'external' | 'clanker' };
+type Endpoint = { port: number; token: string; host?: '127.0.0.1' | '[::1]'; ownership: 'external' | 'clanker' };
 
 /**
  * Main-owned Hermes Assistant integration. Owns settings, backend discovery/adoption, the optional
@@ -243,10 +243,10 @@ export class HermesAssistantService {
       // 2. (Re)discover: adopt a compatible running backend, else optionally start our own.
       let endpoint = this.child && this.child.exitCode === null && this.endpoint?.ownership === 'clanker' ? this.endpoint : undefined;
       if (!endpoint) {
-        const probe = await probeExternalBackend(this.fetcher, HERMES_DEFAULT_PORT);
+        const probe = await discoverHermesBackend(this.fetcher, this.deps.readRendezvous);
         if (!this.current(generation)) return this.get();
         if (probe.kind === 'usable') {
-          endpoint = { port: probe.port, token: probe.token, ownership: 'external' };
+          endpoint = { port: probe.port, token: probe.token, host: probe.host, ownership: 'external' };
         } else if (probe.kind === 'unusable') {
           return this.finish(generation, 'detected-unusable', probe.reason);
         } else if (this.settings.autoStart) {
@@ -316,7 +316,13 @@ export class HermesAssistantService {
       // (so a Retry coalesces onto it) and no replacement can spawn beside a still-live failed child.
       await this.killChild(child);
       if (this.child === child) this.child = undefined;
-      this.finish(generation, 'error', safeMessage(error));
+      if (!this.current(generation)) return undefined;
+      // A host owner can appear between discovery and spawn. New Hermes then attaches and exits
+      // instead of emitting READY. Rediscover after our failed child is cleaned; never claim it.
+      const probe = await discoverHermesBackend(this.fetcher, this.deps.readRendezvous);
+      if (!this.current(generation)) return undefined;
+      if (probe.kind === 'usable') return { port: probe.port, token: probe.token, host: probe.host, ownership: 'external' };
+      this.finish(generation, probe.kind === 'unusable' ? 'detected-unusable' : 'error', probe.kind === 'unusable' ? probe.reason : safeMessage(error));
       return undefined;
     }
   }
@@ -383,7 +389,7 @@ export class HermesAssistantService {
   }
 
   private async connectRpc(generation: number, endpoint: Endpoint): Promise<HermesRpcClient | undefined> {
-    const url = `ws://${HERMES_LOOPBACK_HOST}:${endpoint.port}/api/ws?token=${encodeURIComponent(endpoint.token)}`;
+    const url = `ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/ws?token=${encodeURIComponent(endpoint.token)}`;
     const rpc = new HermesRpcClient(this.createWebSocket(url), () => this.onRpcClosed(rpc));
     this.rpc = rpc;
     await rpc.ready;
@@ -579,7 +585,7 @@ export class HermesAssistantService {
     session.generation++;
     const generation = session.generation;
     const params = new URLSearchParams({ token: endpoint.token, profile: entry.slug, resume: entry.sessionId!, attach: session.attach });
-    const socket = this.createWebSocket(`ws://${HERMES_LOOPBACK_HOST}:${endpoint.port}/api/pty?${params.toString()}`);
+    const socket = this.createWebSocket(`ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/pty?${params.toString()}`);
     socket.binaryType = 'arraybuffer';
     session.socket = socket;
     const live = () => session.socket === socket && session.generation === generation;

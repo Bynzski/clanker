@@ -73,8 +73,8 @@ export async function readSection<T>(read: () => Promise<T>): Promise<AssistantR
 }
 class UnsupportedRead extends Error {}
 /** Fixed loopback REST routes only. No redirects, bounded streamed body, hard timeout, token stays in main. */
-export async function readHermesRest(fetcher: FetchLike, endpoint: { port: number; token: string }, path: string, signal: AbortSignal): Promise<unknown> {
-  const response = await fetcher(`http://${HERMES_LOOPBACK_HOST}:${endpoint.port}${path}`, {
+export async function readHermesRest(fetcher: FetchLike, endpoint: { port: number; token: string; host?: '127.0.0.1' | '[::1]' }, path: string, signal: AbortSignal): Promise<unknown> {
+  const response = await fetcher(`http://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}${path}`, {
     headers: { 'X-Hermes-Session-Token': endpoint.token }, signal, redirect: 'error',
   });
   if (response.status === 404 || response.status === 405 || response.status === 501) throw new UnsupportedRead();

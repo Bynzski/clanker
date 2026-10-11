@@ -14,7 +14,7 @@ function setup(read: (url: string) => Promise<unknown>) {
     const value = await read(url);
     return { ok: true, status: 200, text: async () => JSON.stringify(value), json: async () => value };
   });
-  const service = new HermesAssistantService({ readSettings: () => ({ enabled: true, autoStart: false }), writeSettings: vi.fn(), onChanged: vi.fn(), onPtyData: vi.fn(), isShuttingDown: () => false, isHermesAvailable: () => true, fetch: fetcher, createWebSocket: hermes.createWebSocket });
+  const service = new HermesAssistantService({ readSettings: () => ({ enabled: true, autoStart: false }), writeSettings: vi.fn(), onChanged: vi.fn(), onPtyData: vi.fn(), isShuttingDown: () => false, isHermesAvailable: () => true, fetch: fetcher, readRendezvous: async () => [], createWebSocket: hermes.createWebSocket });
   return { service, hermes, fetcher };
 }
 describe('display-safe read projections', () => {

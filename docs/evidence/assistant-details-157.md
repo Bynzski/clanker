@@ -16,6 +16,20 @@ Checked `tui_gateway/methods_profiles.py`, `tui_gateway/methods_session.py`, `he
 - Timezone and next-run values are optional. Missing fields are shown as **Not reported**, not computed locally.
 - Unknown-method RPC and REST 404/405/501 yield unsupported, separate from errors and genuinely empty lists.
 
+## Follow-up: existing dynamic-port backend adoption
+
+The reported dev connection failure reproduced with a live packaged-Clanker-owned Hermes backend on `127.0.0.1:44173` while nothing listened on 9119. Previous Clanker discovery checked **only** 9119, missed that existing backend, and attempted another `hermes serve`. Modern Hermes may instead attach to its host singleton and exit without the readiness sentinel; the original client treated that as startup failure.
+
+The fix uses Hermes' OS-user rendezvous records, private-owner file checks, token fingerprint and authenticated native identity verification before connecting to a discovered loopback port. Default-port discovery remains for older versions. A startup race re-discovers after exact-child cleanup, adopts the winner as external and never claims/stops it. The upstream CLI bootstrap/dependency failure documented below is not repaired or bypassed in production.
+
+Practical verification against the user's **existing** installed backend (Hermes status `0.21.6`):
+
+- Built `HermesAssistantService.refresh()` with an injected spawn that throws if called: **connected / external**, two profiles, no owned child. Shutdown left the existing backend untouched.
+- Built native Electron with isolated app user data and `autoStart:false`: connected as **External**, opened Settings → Assistants, selected an existing profile, and received **ready** profile/history/routine sections. Closed Settings and the test app successfully. No Assistant chat was opened, no PTY viewer was replaced, no model message was sent, and no job ran.
+- Existing listener/process remained on port 44173 after both tests.
+
+Regression tests cover dynamic ports, identity mismatch, private files/symlinks/size bounds, non-loopback rejection, IPv6, token/record mismatch, recycled Linux PIDs, legacy/dead-listener fallback, sign-in refusal, no-spawn adoption and the owner-appears-during-startup race. This closes the immediate branch-testing connection blocker without requiring the independent installed launcher bootstrap repair.
+
 ## Automated checks
 
 Targeted main/renderer suites cover bounded and redacted projections, profile isolation, unknown IDs, foreign/duplicate jobs, ownership rechecks, removed profiles during a request, out-of-order profile selection, older API, independent failed routine reads, empty/offline states, script-output records and truthful unknown run results. Existing suites cover canonical chat and Browser continuity, zero-workspace destinations, IPC registration and enable/autostart controls.

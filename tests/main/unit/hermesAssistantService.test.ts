@@ -21,6 +21,7 @@ function setup(initial: unknown = { enabled: false, autoStart: false }, override
     isShuttingDown: () => false,
     isHermesAvailable: () => true,
     fetch: hermes.fetch as never,
+    readRendezvous: async () => [],
     createWebSocket: hermes.createWebSocket,
     spawnServe,
     generateToken: () => 'owned-token-0123456789abcdefghijklmnop',
@@ -106,6 +107,21 @@ describe('existing backend adoption', () => {
     expect(snapshot.service).toMatchObject({ state: 'connected', ownership: 'external' });
     expect(hermes.fetched[0]).toBe('http://127.0.0.1:9119/api/status');
     expect(hermes.wsSockets()[0].url).toBe(`ws://127.0.0.1:9119/api/ws?token=${TOKEN}`);
+  });
+  it('adopts a host owner that appears while the owned launch is starting and exits without READY', async () => {
+    const { service, hermes, children, spawnServe } = setup({ enabled: true, autoStart: true });
+    hermes.running = false;
+    const pending = service.refresh();
+    await flush();
+    expect(children).toHaveLength(1);
+    hermes.running = true;
+    children[0].crash(0); // Modern Hermes attaches to the winner, prints an attach message, then exits.
+    expect((await pending).service).toMatchObject({ state: 'connected', ownership: 'external' });
+    expect(service.hasRunningOwnedService()).toBe(false);
+    expect(spawnServe).toHaveBeenCalledOnce();
+    expect(hermes.wsSockets()[0].url).toContain(TOKEN);
+    await service.shutdown();
+    expect(hermes.running).toBe(true);
   });
   it('never stops an external backend on disable or shutdown', async () => {
     const { service, hermes, spawnServe } = setup({ enabled: true, autoStart: true });
