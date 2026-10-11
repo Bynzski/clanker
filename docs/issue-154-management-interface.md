@@ -1,0 +1,1266 @@
+# Issue #154 — Inventory and Phase 0–4D decisions
+
+## Phase 4D — final management polish
+
+Starts from reviewed `79dcfa046419e61267646c62c9cfd20a55769d93` on
+`feat/154-management-settings`. No structural redesign, new Git/controller path,
+authorization change, Browser internals change, PR or merge.
+
+### Implementation decisions
+
+- Changes keeps its single inline composer, section-owned Stage All/Unstage All
+  and modal DiffViewer. **Go to Commit** is a local scroll/focus affordance before
+  the rows in tab order, not another submit action. Long file rows ellipsize while
+  retaining full accessible labels/tooltips; status badges align consistently.
+  Empty groups no longer repeat a paragraph below their zero-count heading;
+  clean status has one notice. No fixed footer or hidden-file overlay.
+- History uses the shell's content scroller for list and summary, without nested
+  list/summary vertical scrolling. Summary precedes the list; exact commit selection
+  scrolls/focuses its heading. Full SHA, author/date, selected state, Working/Staged
+  read-only summary selectors, bounded Load More and request guards remain.
+- Current Git branch is separate from checkout root identity and descriptive
+  branch metadata. Generic checkout labels cannot show a stale registered branch.
+  Successful branch actions request the existing coalesced main-authoritative
+  reconciliation alongside the controller refresh; branch changes do not re-key
+  the checkout/controller. Branches now accurately explains the selected checkout.
+- Remote hooks distinguish successful Fetch/Pull/Push/Publish from failed UI
+  refresh, retain real errors/rejection, and never automatically repeat Git.
+  Refresh reuses the existing canonical Changes status path, marks failed status
+  unknown, and can clear the warning manually without re-pushing. Checkout scope,
+  synchronous pending lock and stale-generation safeguards are unchanged.
+- Heading-first context, compact page heading/refresh rows and concise operational
+  copy align permanent destinations. Overview removes only navigation-repeating
+  prose; provider/PR/CI unknown/error handling stays truthful. Sync buttons wrap
+  at narrow content widths (caught by the new zoom smoke).
+- SSH Targets puts saved targets before the editor; exact-ID Edit still focuses
+  its existing form. Accounts already remembers the explicitly selected harness
+  in the sole Settings provider, so no competing/persisted selection was added.
+  Return-selection coverage was added instead. Credential handling, Authentication,
+  Search, General and harness capability/availability gating remain unchanged.
+
+### Verification
+
+- Clean-PATH focused Git/Source Control: **43 files / 983 tests passed**,
+  `/tmp/154-4d-git-focused.log` (includes existing real worktree/security suites).
+- Clean-PATH Settings renderer suite: **11 files / 171 tests passed**,
+  `/tmp/154-4d-settings-focused.log`.
+- Final `env PATH=/usr/bin:/bin npm run validate`: **384 files / 7,832 tests passed**;
+  branding, lint, typecheck, Fallow, security-check and build passed. Documented
+  dev-only electron-builder exception and existing build/localStorage warnings
+  remain. Log: `/tmp/154-4d-validate.log`.
+- New regressions: 34 long-file keyboard composer navigation/no duplicate form or
+  poller, isolated Create/Switch branch display/reconciliation, exact History
+  summary focus and Working/Staged identity, all four remote successes followed
+  by refresh failure, manual no-retry recovery, SSH roster order/focus and Accounts
+  return selection. Real Git switches A without changing root identity, main/B
+  branches or dirty A files, then reconciles its descriptive branch.
+- Source Control Electron smoke: **PASS**, all eight pages, real review/staging/
+  commits, native suppression, destructive confirmations, scope dismissal and focus.
+  Includes 34 added long filenames, keyboard Go to Commit, single History scroll,
+  and a selected isolated checkout with 34 files. Settings Electron smoke: **PASS**,
+  all nine available pages, Authentication providers, search focus, Settings
+  relocation, chooser return leases and Browser restoration. Both run Dark/Light/
+  Slate at 1100×760 and 640×480 plus **125% app zoom** at 640×480. Native capturePage
+  screenshots avoid Playwright's CSS-sized zoom crop; representative images inspected.
+- Screenshots: `/tmp/clanker-source-control-visual-v0STgU` and
+  `/tmp/clanker-settings-visual-y3PtQG`; logs `/tmp/154-4d-source-smoke.log` and
+  `/tmp/154-4d-settings-smoke.log`.
+- Renderer Browser smoke: **PASS**, 24 page transitions and existing native view
+  lifecycle/leases (`/tmp/154-4d-browser-smoke.log`).
+- Separate native multi-Browser smoke: **SIGSEGV / exit 139** reproduced again,
+  `/tmp/154-4d-multi-browser.log`; not counted as passing or fixed by polish.
+- PATH: test/validation and Source Control/Browser fixtures use `/usr/bin:/bin`
+  to avoid host-installed harness discovery influencing isolated session tests.
+  Settings smoke uses the inherited developer PATH (including
+  `/home/jay/.npm-global/bin`) so canonical discovery exposes Codex and the existing
+  search-to-MCP focus assertion is meaningful. A clean-PATH Settings run completed
+  the geometry matrix but could not find that unavailable Codex control; no test
+  or capability gating was weakened. No real sign-in/credential mutation is run.
+
+### Final review / remaining limits
+
+Owner interactive smoke remains: main/isolated 30+ files, reviewing/staging then
+composer jump and commit, History keyboard navigation, branch Create/Switch display,
+remote success versus stale-status recovery, long SSH rosters and Accounts return.
+Live SSH, real remote/account authentication, Windows/macOS focus, OS scaling above
+125% and screen readers were not validated here. Scope changes still retire UI
+responses rather than cancel dispatched Git. No new scoped PR-readiness blocker
+observed; final independent review and owner visual acceptance remain gates, with
+native multi-Browser SIGSEGV tracked separately. See the Phase 4D decisions in
+`issue-154-phase-4-ux-assessment.md`. Stop here; no PR/merge.
+
+## Phase 4C correctness correction — independent review of `7cc4da7` (historical)
+
+Focused continuation of #154 on `feat/154-management-settings`; no polish, PR,
+merge or unrelated Browser changes.
+
+### Corrected execution paths
+
+- **Create Branch:** `useGitBranchActions` now appends the selected checkout ID to
+  the existing positional preload contract. Main resolves that ID through
+  `WorkspaceRegistry`; `GitService.createBranch` runs its existing validation and
+  `git switch -c` in that checkout, not the parent. Existing main callers retain
+  their argument positions and default root. Failed/blocked creation does not
+  switch any other checkout or change its working files.
+- **Push/Publish:** the existing remote-action hook appends the checkout ID.
+  Default Push uses Git's branch/configuration in the authorized checkout; Publish
+  supplies the selected branch and remote with the existing upstream flag. Main
+  never substitutes its current parent branch. Native rejection/error handling
+  and branch/worktree restrictions are unchanged. Pull stays checkout-specific;
+  Fetch and remote configuration management are deliberately repository-wide.
+- **Repository-wide authorization:** explicit originating checkout IDs are checked
+  for ownership, environment, missing/released state and removal reservations
+  **before** selecting the workspace's registered execution root. Shared operations
+  also validate the originating directory through its registered environment and
+  require its canonical path to remain unchanged (native local paths normalized
+  to POSIX). Registry identity/reservations are rechecked after that await and
+  before subsequent scoped Git commands via an operation-local validation callback.
+  The callback preserves origin authority independently of the execution identity;
+  it does not turn the originating checkout into the repository execution root.
+  Foreign/removed origins cannot authorize a shared mutation. No arbitrary-path
+  authorization or parent fallback is introduced.
+- **Poll/refresh identity:** one canonical active poller remains. Stop compares
+  checkout identity even when the requested main checkout has no ID; an old main
+  Stop cannot stop A, nor A stop B. Refresh rejects mismatched identities, including
+  legacy unscoped main refresh while an isolated checkout is active. Delayed results
+  are checked against the live workspace/root/checkout before return, with existing
+  poll generation checks retained. No per-worktree background polling.
+- **Remote async lifecycle:** a synchronous pending lock prevents overlapping calls
+  in the controller. Its existing scope-current predicate plus a scope generation
+  guards success, error, refresh, Publish follow-up and final state updates, including
+  A → B → A reuse. Scope changes retire UI responses, not already-dispatched Git
+  processes; a successful operation is not rolled back because focus changed.
+
+### Coverage and verification
+
+- Real-Git checkout fixture now has **11 tests** using one main checkout and two
+  linked worktrees, plus disposable bare remotes/clones for Push/Publish/Pull.
+  Coverage includes checkout-only creation, duplicate-branch failure, main-only
+  creation/Push, A upstream/default Push and remote rejection, repository-root
+  Fetch versus A Pull, invalid/foreign/missing/released/physically removed origins,
+  reservation and validation-await races, rapid main → A → B → main Stop/Refresh,
+  and registered SSH execution roots. No real user remote is contacted.
+- Added **7 renderer tests** for branch and remote argument propagation, overlapping
+  requests, stale success/failure/exception completion, A → B → A, and Publish
+  follow-up suppression after a scope change during refresh.
+- Expanded focused Git/Source Control suite: **41 files / 943 tests passed**
+  (`/tmp/154-correction-focused-cleanpath.log`), including main Git IPC/security,
+  branch/remote service tests and real checkout integration.
+- `env PATH=/usr/bin:/bin npm run validate`: **383 files / 7,820 tests passed**;
+  branding, lint, typecheck, Fallow, security-check and build passed. Existing
+  documented dev-only electron-builder audit exception and bundle warnings remain.
+  Log: `/tmp/154-correction-validate-cleanpath.log`.
+- PATH adjustment: the inherited developer PATH exposes installed harness CLIs;
+  the first validation had **3 sessionWorktreeHistory timeout failures** (382 files
+  passed / 7,815 tests passed). They reproduced alone on inherited PATH, then passed
+  **3/3** with `/usr/bin:/bin`; the clean-PATH full pipeline passed. No timeout or
+  unrelated session test code was changed. Node `/usr/bin/node` is v26.11.1.
+- Source Control Electron smoke: **PASS**, three themes/two sizes, main and linked
+  checkout changes/diffs/staging/commits, scope dismissal and native Browser
+  suppression/restoration; screenshots `/tmp/clanker-source-control-visual-EVUDna`.
+  Log: `/tmp/154-correction-source-smoke.log`.
+- Renderer Browser smoke: **PASS**, including 24 page transitions and native view
+  lifecycle (`/tmp/154-correction-browser-smoke.log`).
+- Separate native multi-Browser runner: **SIGSEGV / exit 139**, still independently
+  reproduced (`/tmp/154-correction-multi-browser.log`); not reported as passing.
+
+Remaining owner smoke: interactively Create Branch and Push/Publish from an isolated
+checkout, confirm main/other checkout branches and working files stay untouched,
+and rapidly switch Source Control between main/A/B. Live SSH Git operations and
+real-account remote auth/rejection remain owner checks; tests simulate SSH transport.
+Automated Electron smoke exercises checkout inspection/staging/commit, not live
+remote publishing. Runtime contexts are not durable task records, and scope changes
+cannot cancel an already-running native Git command. Stop for independent review.
+
+## Phase 4C — Checkout-Aware Source Control (historical)
+
+Starts from reviewed `a25bdaa94544dc8affc30189d52a5defe665ae84` on
+`feat/154-management-settings`. Prior phase descriptions/results below are historical.
+No PR, merge, Settings or Browser redesign, new diff engine or release cleanup.
+
+### Problem solved
+
+When an active agent is operating inside a registered isolated worktree, opening
+Source Control previously displayed:
+> Git operations currently authorize the workspace checkout only. This selected checkout is not substituted with its parent. Open it as a workspace to manage its Git tools.
+
+This restriction was intentionally introduced during Phase 3A to prevent operations
+from accidentally targeting the parent checkout. Phase 4C natively and safely integrates
+Source Control with the application's existing first-class checkout contexts
+(`WorkspaceRegistry.resolveCheckoutContext`), allowing inspection, file diffs, staging,
+inline commits, and repository operations on registered isolated worktrees without
+requiring the user to open every worktree as a separate workspace.
+
+### Architecture, execution scope and lifecycle
+
+- **Authoritative execution scope:** `GitManagementScope` in the renderer identifies
+  `workspaceId`, optional `checkoutContextId`, `environmentId`, `path`, `blocked`,
+  `checkoutLabel`, and a cache/invalidation `key`. When an isolated checkout context
+  is active and valid, `blocked` is cleared and `checkoutContextId` is carried.
+- **Main-process authority:** The renderer cannot authorize execution by passing an
+  arbitrary filesystem path. Main independently validates and resolves `checkoutContextId`
+  via `WorkspaceRegistry.resolveCheckoutContext(workspaceId, checkoutContextId)`.
+  If the context is missing, belongs to a different workspace, has an environment
+  mismatch, or is reserved for removal, Git IPC fails closed. The parent checkout
+  is never substituted silently.
+- **Checkout-specific versus repository-wide operations:**
+  - *Checkout-specific operations* (status, polling, staging, unstage, commit,
+    file diffs, current branch state, branch switching, merge, abort, stash
+    operations, commit history, and AI commit generation) are scoped to the
+    authorized checkout root (`context.path`).
+  - *Repository-level operations* (worktree listing, creation, inspection, removal,
+    pruning, unlocking, remotes management, and branch deletion) always execute
+    against the registered repository root (`ws.location.path`), preserving
+    repository-level ownership and destructive-operation safeguards.
+- **Single polling ownership and status isolation:** `GitService` maintains a single
+  active polling identity tracking `checkoutContextId`. Emitted `GitStatusResult`
+  objects carry `checkoutContextId`, `workspacePath`, `environmentId`, and `workspaceId`.
+  `GitButton.applyStatus` strictly validates that status for checkout A never populates
+  checkout B. Main workspace store branch info is not overwritten when an isolated
+  worktree is being inspected.
+- **Scope switching and management dismissal:** When the focused agent or checkout
+  changes, `scope.key` changes. React unmounts `GitController`, safely closing the
+  dialog and aborting in-flight requests. Reopening Source Control initializes a clean
+  controller targeting the newly focused checkout with its own polling identity.
+- **Commit success versus refresh failure:** Narrowly distinguished: if a native
+  commit succeeds but the subsequent status refresh fails, the submitted composer draft
+  is settled/cleared (preventing accidental resubmission), `statusKnown` is set to
+  `false` to disable further submission until recovery, and an explicit explanation
+  is displayed instructing the user to refresh changes before continuing.
+- **Diffs and AI commit generation:** Remote SSH `gitGetFileDiff` uses `ws.environment.readFile`
+  scoped to the remote worktree root. Local AI commit message generation is extended
+  to registered local worktrees, running inference with `cwd: context.path` and
+  collecting prompt diffs from that checkout. Remote AI commit generation remains
+  explicitly disabled with a helpful error.
+
+### Verification and review gate
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **382 files / 7,807 tests passed**;
+  branding, lint, typecheck, Fallow dead-code check, security-check (documented
+  dev-only electron-builder exception), build and full tests pass.
+- Expanded clean-PATH focused suite: **40 files / 930 tests passed**. Command:
+  `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/SourceControl.test.tsx
+  tests/renderer/unit/ChangesWorkflow.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/git/ tests/renderer/unit/DiffViewer.test.tsx
+  tests/renderer/unit/geometryContract.test.ts tests/main/unit/gitService/
+  tests/main/unit/gitIpc.test.ts tests/main/integration/gitService.real.test.ts
+  tests/main/integration/gitCheckoutContext.real.test.ts`.
+- Real-Git integration tests in `gitCheckoutContext.real.test.ts` (5 comprehensive
+  tests with real isolated temporary git repositories: 1 main + 2 linked worktrees
+  with different branches and dirty states), verifying main targeting, worktree A
+  vs B targeting, staging/commit isolation, file diffs, status events, fail-closed
+  security, repository-wide operations, and remote SSH routing.
+- Source Control Electron smoke (`scripts/source-control-management-smoke.cjs`):
+  **PASS**, covers main checkout Source Control, linked worktree Source Control with
+  real dirty file, file review and diff in worktree, staging and inline commit in
+  worktree, confirmed commit in worktree without affecting main, switching between
+  checkout contexts, management dismissal on context change, restoring to main
+  checkout Source Control, and native Browser suppression/restoration across Dark,
+  Light, Slate themes and 1100×760, 640×480 sizes. Screenshots reviewed in
+  `/tmp/clanker-source-control-visual-JPNU08`.
+- Settings Electron smoke: **PASS**, screenshots `/tmp/clanker-settings-visual-fA6GEy`.
+- Full-renderer native Browser smoke: **PASS**.
+- Separate native multi-Browser runner: **FAIL**, Electron SIGSEGV, exit 1,
+  the independently documented preexisting failure.
+- Logs: `/tmp/154-4c-validate.log`, `/tmp/154-4c-source-smoke.log`,
+  `/tmp/154-4c-settings-smoke.log`, `/tmp/154-4c-browser-smoke.log`,
+  `/tmp/154-4c-multi-browser.log`.
+- Stop after Phase 4C for independent code review and owner visual testing.
+
+## Phase 4B — one Changes review and commit workspace (historical)
+
+Starts from reviewed `34b24caa75ed8ccb18298efd22c333ab671032f6` on
+`feat/154-management-settings`. This supersedes Phase 4A's nested commit composer;
+prior phase descriptions/results below are historical. No PR, merge, Settings or
+Browser redesign, Git authorization change, new diff engine or release cleanup.
+
+### Workflow, cleanup and ownership
+
+- **Changes is the sole commit workspace:** compact environment/root/branch/count
+  identity and refresh, separate staged/unstaged sections, then a permanently
+  visible labeled multiline message field and commit actions. Each section owns
+  its single Stage All/Unstage All action. Rows retain status/path review plus an
+  explicit Eye/View Diff affordance and their own Stage/Unstage action. No second
+  list, checkbox-selection workflow, help wall or commit navigation page.
+- With staged entries, **Commit Staged** is primary and never stages anything;
+  **Stage All & Commit** is secondary when working entries also exist. With only
+  working entries, staged-only submission is disabled and explicit stage-all is
+  primary. Empty messages/clean or unknown status cannot submit. Counts distinguish
+  index/working entries (including both sides of a partially staged path); unknown
+  status says composer counts unavailable rather than claiming a clean index.
+  Rejected, failed or mismatched refreshes invalidate known status until recovery;
+  they cannot leave commit enabled against an unverified snapshot.
+- `GitButton` remains the only status poller/controller and mutation owner. One
+  synchronous lock covers optional stage-all, successful-stage check, native
+  commit/hooks and canonical refresh. Stage failure or an obsolete scope cannot
+  dispatch commit; late native results cannot refresh another repository. No
+  optimistic success or presentation-owned Git IPC.
+- Focused `CommitComposer` presentation and `useCommitComposer` draft/inference
+  lifecycle replace `CommitDialog.tsx` and its CSS. The hook lives in the scoped
+  controller, not the conditionally mounted Changes page: navigation through
+  History/Overview and closing/reopening preserves the same-context draft. Scope
+  replacement/unmount drops it; confirmed success clears it, failure retains it.
+  No persisted drafts or second Git store/controller.
+- Optional Generate retains the existing enabled setting, configured backend
+  harness/model and main failure/capability checks. It is local-only, never stages
+  or submits, and uses the existing generation IPC. Request/draft/status/scope
+  generations reject superseded or stale results (including A → B → A), protect
+  typing during inference, and retain failures without deleting the draft.
+  Navigation does not cancel valid same-context inference or steal another page's
+  focus. Main's existing all-change prompt context is unchanged: generated text
+  must still be reviewed for a staged-only commit. No live AI CLI smoke is claimed.
+- Overview's **Review Changes** navigates inside the same shell; old Commit Changes
+  callbacks/modal paths are removed. No existing dedicated commit shortcut was
+  found, and none is added. The feature screenshot capture now uses Changes and
+  its inline composer rather than the obsolete Git-menu/CommitDialog path.
+- The unchanged `useFileDiffReview`/`FileDiffReview`/modal DiffViewer path retains
+  local/SSH authorization, selection/revision invalidation, binary/no-diff and
+  empty new/deleted content. Source Control holds one native Browser suppression
+  lease; file review adds only its own nested lease. Escape closes the top viewer
+  and returns to the same row/page. Git mutation blocks conflicting actions,
+  navigation and dismissal, with staging/hooks progress. Successful submission
+  focuses the enabled message field; closing Source Control restores its trigger.
+
+### Verification and review gate
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **380 files / 7,796 tests
+  passed**; branding, lint, typecheck, Fallow, security-check (unchanged documented
+  dev-only exception), build and full tests pass.
+- Expanded clean-PATH focused suite: **38 files / 919 tests passed**. Command:
+  `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/SourceControl.test.tsx
+  tests/renderer/unit/ChangesWorkflow.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/git/ tests/renderer/unit/DiffViewer.test.tsx
+  tests/renderer/unit/geometryContract.test.ts tests/main/unit/gitService/
+  tests/main/unit/gitIpc.test.ts tests/main/integration/gitService.real.test.ts`.
+- Former CommitDialog regressions are migrated, not bypassed: counts/status/row
+  staging/diffs/errors/scope/dismissal live in ChangesWorkflow, SourceControl,
+  GitButton and the existing diff-lifecycle/DiffViewer suites; validation/AI/draft/
+  duplicate/failure/focus/request guards live in CommitComposer tests. Separate
+  modal visibility/cancel and duplicated file-list assertions are obsolete because
+  that surface is removed. Real Git staging/commit and IPC suites remain unchanged.
+- Source Control Electron smoke: **PASS**, real disposable partially staged file,
+  per-file/all staging, single composer/no Create Commit dialog, retained drafts,
+  Overview routing, real staged-only then explicit all commit, clear/focus after
+  success, native Browser suppression/restoration, eight pages, three themes and
+  1100×760/640×480. Changes/composer images reviewed in
+  `/tmp/clanker-source-control-visual-d5zCsG`; no overlap/horizontal overflow.
+- Settings Electron smoke: **PASS**, inherited PATH for installed harness discovery;
+  screenshots `/tmp/clanker-settings-visual-fWjtgf`. Full-renderer native Browser
+  smoke: **PASS**. Separate native multi-Browser smoke: **FAIL**, Electron SIGSEGV,
+  exit 1, the independently documented preexisting failure; no workaround or unrelated
+  Browser/platform changes to conceal it.
+- Logs: `/tmp/154-4b-validate.log`, `/tmp/154-4b-focused.log`,
+  `/tmp/154-4b-source-smoke.log`, `/tmp/154-4b-settings-smoke.log`,
+  `/tmp/154-4b-browser-smoke.log`, `/tmp/154-4b-multi-browser.log`.
+- HEAD → working/index semantics, modal-next-file review, no hunk staging and
+  isolated-checkout Git unavailability remain. Live SSH, live configured AI CLI,
+  real agent edits under load, high zoom/OS scaling, screen readers and native
+  Windows/macOS focus remain owner smoke. Stop after Phase 4B for independent code
+  review and owner visual testing before further implementation.
+
+## Phase 4A — Changes-first review, staging and commit (historical)
+
+Starts from reviewed `50b878b0c6542f79ef386707fb852059af559829` on
+`feat/154-management-settings`. Implements approved Option A only; no PR, merge,
+inline diff, isolated-checkout authorization, Settings redesign or release cleanup.
+
+### Workflow and ownership
+
+- The existing ManagementShell initially lands on **Changes**. Repository order:
+  Changes, History, Overview, Branches, Worktrees. Operations remains Stashes,
+  Remotes, Merge. Returning from DiffViewer/Commit preserves the underlying page.
+- `GitChanges.tsx` is presentation: checkout/environment/root/branch, unique file
+  count, staged/unstaged groups, status badges, actual file review, per-file Stage/
+  Unstage, Stage All/Unstage All, commit composer entry and refresh. Errors and
+  loading are explicit; selection alone performs no mutation.
+- `GitButton` retains its one status subscription/poller and authoritative
+  snapshots. All change mutations go through one synchronous pending lock, scope
+  guard and canonical status refresh. No presentation-owned Git execution or
+  optimistic staging. Scope changes reject late mutation results/refreshes.
+- `useFileDiffReview` provides one reusable request lifecycle for Changes and
+  CommitDialog: clear before fetch, monotonic request generation, close/unmount,
+  status revision and workspace/root invalidation, local/SSH workspace identity.
+  `FileDiffReview` reuses the unchanged modal DiffViewer and `gitGetFileDiff`.
+  Binary, new/deleted, loading and failure states retain the backend semantics.
+- Small canonical status correction: porcelain index/working sides both appear
+  for partially staged ordinary and renamed paths. For example MM has staged M
+  and working M entries, while MD has staged M and working D. Shared presentation
+  counts unique paths but never deduplicates the review entries. Renderer Git
+  types now re-export the existing shared IPC types rather than redefining them.
+- **Commit Staged** is primary with indexed changes. It calls the existing commit
+  callback without staging. **Stage All & Commit** is a separately labelled,
+  explicit convenience which checks stage-all success before using that same
+  callback. Only unstaged files require deliberate staging or that convenience;
+  ordinary form submission never auto-stages. Empty commits are disabled.
+  Message validation, local-only AI, hooks and failure/draft recovery remain.
+- Nested dialogs retain the Source Control Browser lease; each modal adds/removes
+  its own lease. Escape dismisses only the top surface, commit operations guard
+  Escape/outside dismissal, and focus returns to the initiating control (the page
+  heading if that control is disabled after committing the last changes). No
+  Browser internals were changed.
+- Overview retains repository identity, sync/provider/PR/CI/operation data and
+  loses obsolete migration copy. Management History now shows commit history and
+  exact-hash summaries only (the reviewed generation/refresh/50-entry protections
+  remain), not the working-file workflow.
+
+### Verification and evidence
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **380 files / 7,812 tests
+  passed**; branding, lint, typecheck, Fallow, security-check (unchanged documented
+  dev-only exception), build and full tests pass.
+- Focused Git/Source Control, CommitDialog/DiffViewer, request lifecycle and main
+  status/staging/commit/file-diff/IPC suite: **25 files / 596 tests passed**.
+  Command: `env PATH=/usr/bin:/bin npm run test --
+  tests/renderer/unit/SourceControl.test.tsx tests/renderer/unit/ChangesWorkflow.test.tsx
+  tests/renderer/unit/CommitDialog.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/DiffViewer.test.tsx tests/renderer/unit/git/
+  tests/main/unit/gitService/getStatus.test.ts tests/main/unit/gitService/stageCommit.test.ts
+  tests/main/unit/gitService/fileDiff.test.ts tests/main/unit/gitIpc.test.ts`.
+  Coverage includes partial-file index/working separation, real staged-only
+  commits, explicit stage-all failure, duplicate/pending actions, error recovery,
+  pending file switching/close/reopen, scope changes, binary/new/deleted content,
+  canonical refresh, leases and restored focus. Existing Git/checkout checks run
+  in the full suite; no assertions were removed to bypass them.
+- `env PATH=/usr/bin:/bin npm run smoke:source-control`: **PASS**. Updated runner
+  uses a unique local repository and real partially staged README: reads actual
+  staged/working CodeMirror contents without entering Commit, stages/unstages
+  per-file/all, commits indexed content without working content, then explicitly
+  stages/commits all. All eight destinations, maintenance cancellation, Browser
+  suppression/restoration and focus pass across Dark/Light/Slate at 1100×760 and
+  640×480. Changes and modal diff screenshots inspected; no horizontal overflow.
+  Screenshots: `/tmp/clanker-source-control-visual-NhjFrd`.
+- `npm run smoke:settings`: **PASS**, inherited PATH; screenshots:
+  `/tmp/clanker-settings-visual-o4rI6I`. The unchanged fixture needs installed
+  harness discovery. Validation and focused Git tests retain clean system-only
+  PATH to exclude installed harness shims from process-resolution fixtures.
+- `env PATH=/usr/bin:/bin node scripts/workspace-page-browser-renderer-smoke.cjs`:
+  **PASS**, including all 24 page transitions and renderer/native lease lifecycle.
+- Separate native multi-Browser smoke:
+  `env PATH=/usr/bin:/bin node_modules/.bin/electron --ozone-platform=headless
+  scripts/workspace-multi-browser-smoke.cjs`: **FAIL**, Electron SIGSEGV, exit 1;
+  independently reproduced prior failure, not counted as passing.
+- Logs: `/tmp/154-4a-validate.log`, `/tmp/154-4a-focused.log`,
+  `/tmp/154-4a-source-smoke.log`, `/tmp/154-4a-settings-smoke.log`,
+  `/tmp/154-4a-browser-smoke.log`, `/tmp/154-4a-multi-browser.log`.
+
+### Limits and owner review
+
+Diffs remain **HEAD → working file** or **HEAD → index**, not index → working;
+reviewing another file closes the modal first. No hunk staging or full commit
+patch backend. Isolated checkout Source Control stays explicitly unavailable,
+never substituted with its parent. SSH uses existing registered-environment
+authorization and manual commits; AI commit generation stays local-only.
+Live SSH, real agent edits under load, high zoom/OS scaling, native OS focus and
+screen-reader checks remain owner smoke. Independent code review and visual owner
+testing are required before any further Phase 4 work. Approved decisions and the
+original alternatives remain in [the UX assessment](issue-154-phase-4-ux-assessment.md).
+
+## Phase 3D correctness follow-up / Phase 4 owner review
+
+Based on reviewed `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
+Phase 4 proposals are in [the focused UX assessment](issue-154-phase-4-ux-assessment.md).
+No UX implementation, PR or merge in this assignment.
+
+- Summary fetches immediately clear the previous result, show loading, and keep
+  the existing monotonic generation and scope checks. Only successful responses
+  can show an empty-state message; failures show unavailable/error, never old output.
+  General refresh errors no longer overwrite independently selected summary state.
+- Refresh retains the explicit full commit hash even outside the bounded list;
+  the authorized summary backend resolves that exact object or reports failure.
+  Off-list selections show their SHA without unrelated list metadata. Returning
+  to a window containing that hash restores its selected row.
+- Load More uses the last successful limit without changing the open-management
+  refresh callback identity. One action makes one history request, not a full
+  branch/stash/remote refresh. Failed attempts retain the old limit/list and can
+  be retried; synchronous loading protection and request generations reject
+  duplicates/late results. The 50-entry bound is unchanged.
+- Regressions cover delayed/rapid mode and commit selections, rejection/failure
+  and recovery, selection outside a refreshed ten-entry window, exact SHA,
+  request counts, Load More recovery, stable selection and the fifty-entry cap.
+
+### Verification
+
+- `env PATH=/usr/bin:/bin npm run validate`: branding, lint, typecheck, Fallow,
+  security-check (existing documented dev-only exception), build and full tests
+  pass: **378 files / 7,786 tests**.
+- Focused `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/git/
+  tests/renderer/unit/SourceControl.test.tsx tests/renderer/unit/GitButton.test.tsx`:
+  **17 files / 323 tests passed**.
+- `env PATH=/usr/bin:/bin npm run smoke:source-control`: **PASS**, three themes,
+  two sizes, all seven permanent destinations, real CommitDialog, native Browser
+  suppression/restoration and focus. Screenshots:
+  `/tmp/clanker-source-control-visual-7bJgMy`.
+- `npm run smoke:settings`: **PASS** with inherited PATH (screenshots:
+  `/tmp/clanker-settings-visual-x08tnn`). A system-only PATH attempt timed out
+  locating `Clanker bridge for Codex`; this unchanged fixture needs installed
+  harness discovery. Clean PATH remains required for validation/focused Git tests
+  to exclude installed harness shims from process-resolution fixtures.
+- `env PATH=/usr/bin:/bin node scripts/workspace-page-browser-renderer-smoke.cjs`:
+  **PASS**; 24 page transitions, renderer leases, native forms/JS, delayed creation,
+  geometry, overlay cleanup, window lifecycle, persistence and disposal.
+- Separate `env PATH=/usr/bin:/bin node_modules/.bin/electron
+  --ozone-platform=headless scripts/workspace-multi-browser-smoke.cjs`:
+  **FAIL**, Electron **SIGSEGV**, exit 1; same independent failure recorded in
+  Phase 3D, not counted as a passing smoke and no unrelated Browser changes.
+- Logs: `/tmp/154-corrections-validate.log`, `/tmp/154-history-focused.log`,
+  `/tmp/154-corrections-source-smoke.log`, `/tmp/154-corrections-settings-smoke.log`,
+  `/tmp/154-corrections-browser-smoke.log`, `/tmp/154-corrections-multi-browser.log`.
+  Live SSH/account, high zoom and assistive-technology checks remain owner review.
+
+## Phase 3D — permanent History and Diffs
+
+Starts from reviewed `c61a6c6825c553905e9aab7b015749f2e3f2c608` on
+`feat/154-management-settings`. No Phase 4, PR, merge or unrelated Browser work.
+
+### Final Source Control navigation
+
+Transitional and legacy destinations have been completely eliminated. The permanent
+navigation structure consists solely of canonical destinations in `ManagementShell`:
+
+**Repository**
+- Overview
+- Branches
+- Worktrees
+- History
+
+**Operations**
+- Stashes
+- Remotes
+- Merge
+
+`Advanced — Transitional` and `Existing Git Tools` are removed from the navigation model,
+DOM, and component tree.
+
+### History and diff presentation architecture
+
+- History and change inspection are unified on the permanent **History** page.
+- **Truthful summary semantics**: Existing Git backend operations return statistical summaries
+  (`git diff --stat --summary` for working tree, `git diff --cached --stat --summary` for staged,
+  and `git show --stat --summary --format=medium` for commits), not full patch hunks. The UI
+  accurately communicates this via explicit labels:
+  - **Working Changes Summary**
+  - **Staged Changes Summary**
+  - **Commit Summary · `<shortHash>`**
+  No changed lines, file contents, or patch hunks are invented or misrepresented as source diffs.
+- **Commit metadata & full identity**: Selecting a commit displays its commit subject, author,
+  date, and a dedicated metadata bar showing the exact 40-character commit SHA.
+- **Expanded viewport**: The previous 220px max-height constraint from the dropdown view has
+  been replaced with an expanded management viewer (up to 380px max-height with scrolling,
+  monospace typography, and word-break wrapping), preventing horizontal overflow at 640×480.
+
+### History depth and bounded retrieval
+
+- The controller initializes with a bounded batch of 10 commits.
+- Bounded **Load more commits** requests an additional batch within the Git service's
+  supported 50-commit limit.
+- If the repository has fewer commits than requested or has reached 50, "Load more" is not
+  rendered, preventing false promises of further history.
+- Unbounded history queries, separate caching layers, and redundant network requests are avoided.
+
+### Single-owner diff selection lifecycle & race protection
+
+- Previously, `refreshMenuData` and `loadDiff` used independent request generations, allowing
+  in-flight general refreshes to overwrite newer explicit commit selections with older working diffs.
+- Phase 3D unifies diff retrieval under a single monotonic generation counter (`diffGeneration`):
+  - Every explicit mode or commit click increments `diffGeneration` and starts `fetchDiff`.
+  - When `refreshMenuData` completes its metadata reads, it checks whether `diffGeneration`
+    was modified during its execution. If the user initiated an explicit selection while refresh
+    was in flight, the refresh does not dispatch an overlapping diff fetch.
+  - An in-flight request resolving with an outdated generation is discarded immediately.
+  - Failures clear previous output and display explicit error states (`diffError`) rather than
+    falsely displaying "No diff to display".
+  - Scope changes (workspace switch, inactive checkout) immediately invalidate pending requests
+    and reset selection state.
+
+### Repository identity enforcement
+
+- All history and diff requests route strictly through registered workspace identity,
+  confining Git operations to the canonical root on local and SSH hosts alike.
+- Selected isolated checkouts remain fail-closed without silent parent root substitution.
+
+### Verification and results
+
+- Full validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,783 tests passed**
+  (branding, lint, typecheck, Fallow dead-code, security audit, build, and full tests).
+- Focused regression tests (`tests/renderer/unit/git/`, `SourceControl.test.tsx`, `GitButton.test.tsx`):
+  **17 files / 320 tests passed**.
+- Source Control Electron smoke: passed across Dark, Light, Slate at 1100×760 and 640×480
+  verifying Overview, Branches, Worktrees, History, Stashes, Remotes, and Merge; verified
+  absence of Existing Git Tools; tested working and staged toggle buttons and commit selection.
+- Settings Electron smoke and renderer Browser smoke passed.
+- Multi-Browser smoke runner continues to exit with independent SIGSEGV (unaltered).
+
+### Remaining limitations and Phase 4 scope
+
+- Full patch hunk viewing (interactive side-by-side or unified code diffs) is reserved for
+  a future dedicated diff viewer contract.
+- Live SSH network operations remain owner-smoke items.
+- Phase 4 will handle final design polish, keyboard shortcut audits, and release preparation.
+
+## Phase 3C — permanent Stashes, Remotes, and Merge
+
+Starts from reviewed `22c184d87edd52f50a82e30688d3e3ede87fac58` on
+`feat/154-management-settings`. No Phase 3D/4, PR, merge or unrelated Browser work.
+
+### Navigation and ownership
+
+Source Control navigation now provides:
+- **Repository**: Overview, Branches, Worktrees
+- **Operations**: Stashes, Remotes, Merge
+- **Advanced — Transitional**: Existing Git Tools (strictly History and Diff)
+
+`GitButton` remains the sole canonical Git controller: polling, branch/stash/remote/merge
+state, action hooks, busy state and scoped VCS metadata are owned there. `GitRepoMenu`
+owns page selection and section composition. Navigation across all permanent destinations
+is non-mutating, adds no duplicate polling or state caches, and uses the shell's content
+scroll. Migrated sections are not duplicated inside Existing Git Tools.
+
+### Stashes page and identity safeguards
+
+- The permanent Stashes page preserves stash creation (with optional message and untracked
+  toggle), listing of saved stashes, Apply, Pop, Drop, and Clear All.
+- Action distinctions are clear: Apply restores changes while preserving the stash; Pop
+  applies changes and only removes the stash if Git applies cleanly without conflict; Drop
+  permanently deletes one stash entry; Clear All deletes the repository's stash collection.
+  The UI does not imply that Pop always deletes if conflicts occur, and never reports success
+  until Git confirms it.
+- Full `GitStash` object identity (`{ ref, hash, message }`) is passed directly from the
+  visible row into `onApplyStash`, `onPopStash`, and `onDropStash`. The previous empty-hash
+  fallback was eliminated: an actual verified commit identity is strictly required before
+  presenting or executing any operation.
+- Replaced JavaScript `window.confirm()` with dedicated `GitDropStashDialog` and
+  `GitClearStashesDialog` built on Clanker's shared `AlertDialog` primitive. Confirmations
+  identify exact stash reference, commit hash, and message; Cancel leaves stashes intact;
+  Escape is guarded while busy; Browser overlay leases are held continuously.
+- **Main-process stash identity verification**: Positional Git references (e.g. `stash@{0}`)
+  can shift if background operations alter the reflog. The main process now executes an
+  immediate `git rev-parse --verify <stashRef>^{commit}` check against `expectedHash` before
+  dispatching `git stash drop`, `git stash pop`, or `git stash apply`. If the reference shifted
+  or the stash no longer exists, the operation fails closed with an actionable error and does
+  not silently retarget or mutate an unexpected stash.
+- **External concurrency limitations**: Native Git does not provide compare-and-swap primitives
+  on stash reflog modifications. While pre-dispatch reference verification intercepts shifts
+  before the Git CLI invocation, concurrent external Git mutations occurring in the sub-millisecond
+  OS process dispatch gap between `rev-parse` and Git command execution cannot be locked by
+  Git's CLI architecture. The implementation guarantees strict pre-dispatch CAS rejection and
+  avoids silent retargeting.
+- **Guarded Clear All**: When opening Clear All confirmation, the controller snapshots the
+  visible stash collection's commit hashes. `gitClearStashes` validates the current repository
+  reflog against those `expectedHashes`. If new stashes were created or existing stashes changed
+  while confirmation was open, `clearStashes` rejects the request with an explicit requirement
+  to re-confirm, preventing silent loss of newly created stashes.
+
+### Remotes page and lifecycle
+
+- The permanent Remotes page preserves remote listing, names, fetch URLs, distinct push
+  URLs, add remote (with suggestions and format validation), rename, and remove.
+- Long HTTPS and SSH URLs wrap without horizontal overflow (`overflow-wrap: anywhere; word-break: break-all`).
+- Replaced JavaScript `confirm()` with `GitRemoveRemoteDialog` (`AlertDialog`), displaying
+  exact remote name, fetch URL, push URL, and local repository consequence warning.
+- Scope guards (`isScopeCurrent`) protect add, rename, and remove operations: stale responses
+  are discarded after scope changes; form drafts reset if the targeted remote is dropped
+  or reloaded; and `onBusyChange` coordinates with the management shell to disable navigation
+  during submissions or open dialogs.
+
+### Merge page and fail-closed state guards
+
+- The permanent Merge page shows current checkout identity, available merge targets,
+  merge-in-progress state, conflict details, rebase/merge operation status, and abort.
+- Merge direction is unambiguous: explicitly displays `Merge branch <target> into <current>`
+  and configures action labels accordingly.
+- Detached HEAD disables merge with a clear explanation to prevent unreferenced commits.
+- **Fail-closed operation discovery**:
+  - Initial unknown state (`operationState === null`) and discovery failures (`operationState.success === false`)
+    fail closed: merge controls and abort controls are not rendered, count badge displays `—`,
+    and an actionable failure/retry notice is displayed.
+  - Merge controls are rendered only when authoritative state confirms clean state (`success && !inProgress`).
+  - Abort controls are rendered only when authoritative state confirms an active operation (`success && inProgress`).
+  - `useGitMergeActions` reinforces these guards at the controller boundary: direct invocations
+    from unknown or non-clean states refuse execution with an explicit error.
+  - Refresh remains available at all times.
+- Aborting an in-progress merge or rebase discards unresolved conflict work. Replaced inline
+  abort with `GitAbortOperationDialog` (`AlertDialog`), detailing mode and conflicted files,
+  requiring explicit confirmation, and cancelling cleanly with zero mutation.
+- Pending merge and abort operations guard continuations with `isCurrent()`: scope changes
+  discard responses without retargeting or false reporting.
+
+### Management lifecycle and verification
+
+All confirmation dialogs (`GitDeleteBranchDialog`, `GitDropStashDialog`, `GitClearStashesDialog`,
+`GitRemoveRemoteDialog`, `GitAbortOperationDialog`, worktree confirmations) use `AlertDialogContent`
+with continuous `BrowserOverlayLease` acquisition, topmost Escape trapping, and default Cancel focus.
+`ManagementShell busy={busy}` locks navigation during active operations and open confirmations.
+
+- Validation pipeline (`env PATH=/usr/bin:/bin npm run validate`): **378 files / 7,772 tests passed**;
+  branding check, lint, typecheck, Fallow dead-code check, security check, and build all clean.
+- Focused Git/VCS/Source Control regressions: real Git fixtures in `stashOperations.test.ts`
+  verify pre-dispatch identity checks for drop, apply, pop, and collection guards for clear;
+  unit tests in `useGitStashActions.test.ts` and `useGitMergeActions.test.ts` cover fail-closed
+  behavior, empty-hash refusal, collection mismatch, and unknown operation states;
+  `SourceControl.test.tsx` and `GitMergeSection.test.tsx` verify UI and lifecycle boundaries.
+- Source Control Electron smoke: passed across Dark, Light, Slate at 1100×760 and 640×480 with
+  Overview, Branches, Worktrees, Stashes, Remotes, Merge, and Existing Git Tools, verifying
+  cancel-only confirmations, real CommitDialog handoff, Browser suppression/restoration, and focus.
+- Unchanged Settings Electron smoke and full renderer Browser smoke passed.
+- Separate native multi-Browser runner continues to exit SIGSEGV independently.
+
+### Remaining Phase 3D and Phase 4 work
+
+- **Phase 3D**: Redesign History and Diff into permanent Source Control page(s), retire
+  the transitional Existing Git Tools destination.
+- **Phase 4**: Final design polish, shortcut verification, cleanup, and documentation.
+
+## Phase 3B — permanent Branches and Worktrees
+
+Starts from reviewed `a93b5e376d0e096603af61462a2856ed2838eccd` on
+`feat/154-management-settings`. No Phase 3C/3D, PR, merge or unrelated Browser work.
+
+### Navigation and ownership
+
+Repository now contains **Overview / Branches / Worktrees**. **Advanced —
+Transitional → Existing Git Tools** contains **only Stashes, Remotes, Merge and
+History**, using their unchanged implementations. Branches and Worktrees have no
+copies in that destination. Later Phase 3C/3D work must migrate those remaining
+sections and perform final cleanup/polish, not create another Git controller.
+
+`GitButton` still owns polling, branch/status lists, action hooks, errors, busy
+state and scoped VCS metadata. `GitRepoMenu` owns page selection only. Branches
+reuses `GitBranchesSection` and `useGitBranchActions`; Worktrees mounts one
+`GitWorktreesSection`, only on that page. Navigation dispatches no mutation, adds
+no polling or reconciliation subscription, and retains the app's one existing
+reconciliation owner. Loading/empty/error states are explicit. Lists use the
+shell's content scroll, not a tiny dropdown-height list; long names and paths wrap.
+
+### Branch guards
+
+- The page identifies the native current branch / detached HEAD, shows all local
+  branches and contextual Switch/Delete controls, and explains the current-branch
+  and other-worktree restrictions. Create retains main's branch-name validation;
+  failed drafts and Git errors remain available. Pending actions never manufacture
+  a current branch: successful operations refresh native status and branch state.
+- The existing `GitDeleteBranchDialog` still separates ordinary deletion from
+  explicit force escalation. Only `blockedByUnmergedCommits` offers force; Cancel
+  never mutates, and a worktree-protected branch cannot be forced by the UI. Both
+  entry and confirmation refuse the current branch, including one that became
+  current while confirmation was open. Git remains the authoritative last check.
+- The hook prevents overlapping dispatches, checks scope after awaited calls and
+  never refreshes or publishes a late old-scope acknowledgement. Provider badges,
+  validated deep links and provider refresh stay on Branches; unknown/loading or
+  authorization failures do not offer a guessed Create PR action.
+
+### Worktree guards and reconciliation
+
+- The permanent page includes Git's **main checkout** as a protected inspection
+  row, plus linked managed/unmanaged/in-use/locked/missing checkouts. The compact
+  isolated-agent repair consumer still excludes main. No creation UI was added;
+  creation remains New isolated agent. Renderer usage is advisory: main rechecks
+  terminals, agents, dev services, open roots and equivalent SSH hosts.
+- Managed removal remains `removeWorktreeCheckout`: release acknowledged by main,
+  remove the renderer context, inspect, then remove with native branch identity.
+  A failure after release leaves files/branch intact and the checkout unmanaged;
+  no automatic adoption or rollback. Unmanaged removal remains
+  `removeUnmanagedWorktree`, which refuses attached contexts and main. Dirty,
+  untracked/ignored files, reservations/journals/recovery and backend ownership
+  restrictions remain intact. No force removal or permission widening.
+- Unlock is separately confirmed, with the lock reason and intentional-lock
+  warning. It never automatically removes anything. Prune removes Git's stale
+  repository records, not branches/files; Forget re-runs main reconciliation and
+  only forgets unused, still-gone Clanker registrations. The confirmations keep
+  their existing exact semantics and default Cancel focus.
+- Each local worktree operation re-lists once and requests the existing coalesced
+  reconciliation. Its parent refreshes authoritative Git data **without** bumping
+  the worktree reload key again. Explicit Refresh worktrees uses that same section
+  loader. No unattended SSH poll was introduced. Unmounted/superseded list results
+  cannot publish data or launch a follow-up reconciliation.
+- Sequential removal helpers now recheck the workspace environment/root between
+  release, inspection and removal so an old acknowledgement cannot dispatch the
+  next step into a replacement root. Central reconciliation similarly rejects
+  results for a replaced environment/root. Main authorization is unchanged.
+
+### Scope distinctions and remaining restriction
+
+| Operation / location | Authoritative scope and Phase 3B behavior |
+| --- | --- |
+| Repository-level worktree inspection | Git lists the repository relationship via a registered workspace ID and scoped Git executor; listed paths select entries, never grant filesystem authority. Main checkout is inspection-only. |
+| Workspace checkout branch/commit/switch operations | Existing Git IPC resolves the registered workspace's own root/environment. The displayed path is descriptive only. |
+| Selected isolated checkout | `gitManagementScope` continues explicit fail-closed restriction, including Worktrees navigation. This intentionally does not substitute parent-repository inspection or mutations. Open the checkout as a workspace to use the existing authorized path. |
+| Agent-specific directory | Main-reported registered checkout identity influences selection, not execution binding. Arbitrary reported cwd, launcher choice, `mainCheckoutPath` or branch name never authorizes Git or removal. |
+
+Direct selected-checkout operations require a separately reviewed IPC contract:
+resolve `workspaceId + checkoutContextId` in main to the exact registered context,
+validate its own canonical root/environment and reservations, preserve that identity
+across async execution/status/polling, and distinguish repository inspection from
+checkout mutations. Agent location must not silently rebind the transaction. This
+phase adds no such contract, broadens no IPC permissions, and installs no remote
+helper/daemon. Scope changes retain Phase 3A's close/reset policy.
+
+### Management lifecycle and verification
+
+The shared Dialog/AlertDialog still owns focus, topmost Escape and Browser leases.
+Navigation/close/outside dismissal is blocked while a branch confirmation or
+worktree confirmation/operation is active; scope changes still close/reset and
+never retarget requests. Nested confirmations keep the parent mounted/suppressed,
+Cancel returns to its page, and normal close restores the live toolbar trigger.
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **372 files / 7,708 tests
+  passed**; branding, lint, typecheck, Fallow, security and build passed
+  (`/tmp/154-3b-validate-final.log`). Existing audit exception and bundle warning
+  remain unchanged. The normal inherited-PATH run passed all checks except three
+  real session-history test timeouts: its globally installed OpenCode CLI invokes
+  bounded native history discovery under an isolated HOME. A diagnostic 60-second
+  timeout run passed in 97 seconds; the same tests at their **unchanged default
+  timeout** passed with system-only PATH in under one second. No unrelated test,
+  timeout, session-discovery code or installed CLI was modified to conceal this.
+  Final validation excludes optional global harness CLIs, as ordinary CI does.
+- Focused Git/VCS/checkout/Source Control/CommitDialog/Header/Settings regressions:
+  **60 files / 1,382 tests passed** with the same isolated PATH
+  (`/tmp/154-3b-focused-final.log`). New tests cover navigation/single polling,
+  branch validation/current/detached/switch acknowledgement, delete/cancel/force
+  escalation/errors/late scope changes, PR deep links, protected main/managed/
+  unmanaged/in-use rows, one unlock reload, stale lists, cross-root sequential
+  removal and reconciliation. Existing dirty/untracked/ignored, release/refusal,
+  unlock/prune/forget and SSH ownership tests retain their destructive assertions.
+  Isolated **real Git** fixtures additionally check normal-vs-force deletion,
+  current/other-worktree protection, validation and switching failures.
+- Source Control Electron smoke passes all four destinations, long names/paths,
+  main/unmanaged/locked/missing rows, nested branch/worktree Cancel, real
+  CommitDialog, native Browser suppression/restoration and trigger focus in
+  Dark/Light/Slate at 1100×760 and 640×480. Reviewed screenshots in
+  `/tmp/clanker-source-control-visual-hzN6iY`; content scrolls independently and
+  controls remain reachable without horizontal overflow. Log:
+  `/tmp/154-3b-source-smoke-final.log`. Native fixture mutations are confined to
+  its temporary repository; UI destructive confirmations are cancel-only.
+- Unchanged Settings Electron smoke and full-renderer Browser smoke pass
+  (`/tmp/154-3b-settings-smoke.log`, `/tmp/154-3b-browser.log`).
+- Separate native multi-Browser runner still exits **SIGSEGV**
+  (`/tmp/154-3b-multi.log`); it is not counted as a passing smoke.
+
+Real authenticated provider PR/CI, live SSH mutations/recovery, Windows/macOS
+desktop focus, high zoom/OS scaling and screen readers remain owner smoke. No
+unrelated Browser internals were changed. No Phase 3C/3D, PR or merge is included.
+
+## Reviewed Phase 3A
+
+Scope: application Settings through Phase 2B and Source Control foundation / Overview through Phase 3A. Phase 3A starts from reviewed
+`18348cabfebd6bb4aa11d7973a35348ad1205e1c` on `feat/154-management-settings`.
+No Phase 3B, PR or merge was included in that reviewed commit.
+
+## Phase 3A — Source Control foundation
+
+- The toolbar's **Source Control** opens a separate shared Dialog / ManagementShell,
+  initially **Overview**. It is not a Settings page. Git Preferences and
+  Authentication remain application preferences / credential management in Settings.
+- `GitButton` remains the sole Git controller: existing polling, action hooks,
+  scoped VCS snapshot and main Git APIs remain authoritative. There is no new Git
+  store, persistence, service, IPC, subprocess or authorization path. Removed
+  `GitMenuHeader` and the dropdown's outside/Escape/viewport/suppression ownership;
+  shared Dialog owns those responsibilities. The ManagementShell type now omits
+  native DOM `onSelect` so its navigation callback has one unambiguous signature.
+- Overview presents the actual working root, environment ID, checkout context,
+  current branch / detached HEAD, upstream, ahead/behind, file count, operation,
+  provider repository and native PR/CI metadata. Commit / Refresh and the existing
+  Fetch / Pull / Push / Publish controls are prominent. Unavailable status,
+  authorization errors, unsupported providers and failed discovery never become
+  confirmed PR absence or guessed checks. No new provider action is synthesized.
+- **Existing Git Tools** is the explicit transitional destination for the complete
+  existing branches, worktrees, stashes, remotes, merge/abort and history/diff
+  implementations. It is intentionally not the Phase 3B page redesign. Destructive
+  confirmations, notifications, validated external links, checkout removal guards,
+  SSH host/reservation protections and main-owned execution remain unchanged.
+- `gitManagementScope` is descriptive, not authority. Git IPC currently authorizes
+  the registered **workspace root**, while provider metadata can target a checkout.
+  For a selected isolated checkout this phase fails closed with an explanation:
+  it does **not** silently run parent-repository Git operations. Opening that
+  checkout as its own workspace remains supported. Unregistered/missing selections
+  and inactive workspaces are also refused. `mainCheckoutPath` grants no access.
+- Scope identity includes workspace, environment, canonical selected root and
+  selected checkout. A changed scope remounts the controller and closes all its
+  dialogs; old async results cannot update the new UI or scoped VCS snapshot.
+  Action entry points and post-action refresh recheck liveness/scope. Request
+  generations discard superseded metadata/diff responses. Initial remote discovery
+  uses the existing single loader rather than a second startup read.
+- Non-repositories retain explicit initialization and main/master selection through
+  the existing `gitInit` path. Unknown status disables initialization. Existing
+  CommitDialog is nested over Source Control, preserving continuous Browser
+  suppression and returning to Overview on cancel. Shared primitives trap focus,
+  own topmost Escape and portal confirmation dismissal; closing returns focus to
+  the live Source Control trigger. There is no custom Browser visibility code.
+- New `SourceControl.test.tsx` covers truthful metadata, actual remote-hook calls,
+  publish failure, init, nested real CommitDialog leases, focus, scope reset and
+  rejection of parent substitution. Existing GitButton and real worktree ownership
+  tests navigate the transitional destination; inspect/remove/unlock/prune/stale
+  checkout assertions are preserved.
+- `npm run smoke:source-control` uses an isolated local Git repository/profile and
+  a real native Browser. It checks Dark/Light/Slate at 1100×760 and 640×480,
+  Overview geometry, transitional worktree confirmation (Cancel only), real
+  CommitDialog, continuous native suppression/restoration and trigger focus.
+  It neither authenticates nor exercises real network fetch/pull/push.
+
+### Phase 3A verification and remaining owner checks
+
+- Full `npm run validate`: **372 files / 7,681 tests passed**, including branding,
+  lint, typecheck, Fallow, security and build (final log:
+  `/tmp/154-3a-validate-final.log`).
+- Focused Git/VCS/checkout/renderer regression suite: **60 files / 1,355 tests
+  passed** (`/tmp/154-3a-focused-final.log`). An initial parallel run timed out in
+  the real session-worktree history test; its isolated retry and subsequent complete
+  focused run passed without changing that test or its timeout.
+- Source Control Electron smoke, unchanged Settings Electron smoke and full-renderer
+  Browser smoke passed. Reviewed responsive theme screenshots in
+  `/tmp/clanker-source-control-visual-W7Mt2p` (primary actions remain visible at
+  640×480). Logs: `/tmp/154-3a-source-smoke-final.log`,
+  `/tmp/154-3a-settings-smoke.log`, `/tmp/154-3a-browser-renderer-final.log`.
+- Separate native multi-Browser smoke: **SIGSEGV**, reproduced again
+  (`/tmp/154-3a-multi-browser.log`); not counted as a passing smoke.
+
+Real authenticated provider PR/CI, local/SSH network Git operations, Windows/macOS
+focus, high zoom / OS scaling and screen-reader checks remain owner tests. The
+separate multi-Browser native smoke remains an independently reproduced SIGSEGV;
+this phase does not alter unrelated Browser internals to conceal it.
+
+## Earlier Settings phases
+
+Scope: application Settings foundation through Phase 2B. Phase 2B starts from reviewed
+`2c9a207787111e4961606a478096a51583b168a9` on `feat/154-management-settings`.
+Authentication, SSH Targets and control-level search are canonical Settings surfaces;
+Legacy Settings and the competing credential/SSH dialogs are removed. Git operation
+redesign remains a later phase. No main IPC, credential storage, SSH persistence,
+provider API, instance authorization or launch-capability semantics change here.
+
+## Source → destination and ownership
+
+| Existing surface | Scope / state and persistence owner | Destination / extraction decision |
+| --- | --- | --- |
+| Appearance theme swatches | Application; `theme/themeStore.ts` → preload `setTheme` → main store. `themeRuntime.ts`, `terminalTheme.ts`, `editorTheme.ts` propagate the same identity. `global.css` supplies Dark/Light/Slate semantic roles, including scoped swatch previews. | Appearance reuses `ThemePicker`; no new theme state. |
+| Appearance workspace Sidebar/Tabs | Application; `store/workspaceNavigationStore.ts` → `setWorkspaceNavigationMode`, main store. App chooses the toolbar placement. | Workspaces & Layout; extract `WorkspaceLayoutSettings`, keep the same SegmentedControl/store. |
+| Keyboard Shortcuts dialog | Application; `store/keybindingStore.ts` → `setKeybindingOverrides`; shared keybindings own effective bindings, safety, formatting and conflict detection. Search/capture/pending conflict are ephemeral editor state. | Keyboard Shortcuts; extract the complete editor into `KeyboardShortcutsContent`, remove the obsolete dialog wrapper. Unmount clears capture listeners/state. |
+| Harness Defaults (visibility, default model/favorites, flags, attention, MCP, Usage visibility) | App preferences in main `harnessDefaults`; `useHeaderSettings` loads/saves and discovers environment capabilities/models. `HarnessDefaultsSection` composes per-harness details; existing model picker owns search/favorite interaction. | Canonical Harnesses selector/detail view. `HarnessDefaultsSection` retains the existing model picker and saves; no account controller or accordion. No remote catalog probe on opening a page or changing theme. |
+| Harness Accounts (default/managed, select/add/reconnect/remove) | Environment + harness; `HarnessAccountsRow`, main `accounts/harnessAccountService.ts` and account IPC own metadata, account homes/auth and selection. SSH managed accounts remain unsupported. | Canonical Accounts page only. Harnesses and Usage navigate there with exact harness/intent. No account controller remains in Harnesses or Legacy Settings. Existing account controller resets on environment/harness change, cancels old auth and ignores stale results/events. |
+| Hermes Assistants enable/autostart/status | Local app service; `assistantsStore` snapshot/configure/refresh and main `assistants/`. Feature availability is still owned by existing component/service. | Reuse `AssistantsSettings` on the availability-gated Assistants page. |
+| Git AI commit enable/provider/model | App preferences; `useHeaderSettings` → settings IPC/main store; `aiCommit.ts` generation is local-only. | Existing controls extracted into canonical Git Preferences. Not a Git operation redesign. |
+| VCS SSH keys / provider PATs | Local credentials, main `credentialService`/`sshKeyService`, credential IPC; `CredentialSettings` and `vcsStore` compose status/action feedback. Secrets never move into renderer persistence. | Canonical Source Control → Authentication, composed by `AuthenticationSettings`; main owns all key/token operations and secret storage. Only public-key/status/validation metadata enters the shared VCS store; an entered token is temporary component state. |
+| SSH target add/edit/test/remove/default root | Saved environment IDs in main; `SshEnvironmentManager` → SSH environment IPC/service. `OpenWorkspaceDialog` owns chooser selection and saved-list refresh, not the target's authoritative configuration. | Canonical Connections → SSH Targets, composed by `SshTargetsSettings` with the same validated configuration shape and main APIs. Open Workspace add/edit/server-root affordances deep-link here; no standalone manager remains. |
+
+### Original Git inventory (Phase 0–2B; Phase 3A changes documented above)
+
+All operations go through existing preload Git methods and main `gitIpc` /
+`gitService`, with workspace/checkout validation and local/SSH execution. The
+menu's scope comes from `GitButton`, `vcsCheckout` and authoritative agent location,
+not a newly derived display path. `mainCheckoutPath` is not access authority.
+
+| Current composition | Owner / behavior to preserve in eventual Source Control |
+| --- | --- |
+| `GitInitMenu` | GitButton init/default-branch state, non-repository empty state. |
+| `GitMenuHeader`, `ProviderBadge`, `ProviderMenu`, `GitRemoteActionsSection` | GitButton status/branch/upstream/ahead/behind/errors/refresh; `useGitRemoteActions` owns fetch/pull/push/publish. VCS scoped snapshot/generation guards and truthful unknown/error provider states remain authoritative (#145). Commit opens existing `CommitDialog`. |
+| `GitBranchesSection`, `GitDeleteBranchDialog` | `useGitBranchActions` plus GitButton listing/selection; create/switch/delete and destructive confirmations. |
+| `GitWorktreesSection` | Its own reload/inspection/confirmation composition; checkout reconciliation and existing removal/release helpers, unlock/prune guards, context/terminal/service usage and SSH reservations remain unchanged. Its portal confirmation reports `onModalOpenChange` to the menu owner. |
+| `GitStashSection` | `useGitStashActions`, GitButton list state; create with untracked/apply/pop/drop/clear and confirmations. |
+| `GitRemotesSection` | Existing scoped preload operations, local edit/list feedback and callbacks; add/edit/rename/remove. |
+| `GitMergeSection` | GitButton merge-target/operation/conflict/error state and existing merge/abort handlers. |
+| `GitHistorySection` | GitButton history/diff state and loaders; working/commit diffs, loading/errors. |
+
+`GitRepoMenu` is the section composition extraction point, not a second Git
+controller. Before Phase 3A, GitButton had its own outside/Escape handling, viewport
+placement, suppression count and modal-count guard. Those need deliberate review
+in the Git phase, **not** changes during Phase 1.
+
+## Overlay and interaction contracts
+
+- `ui/README.md`, `Dialog`, `AlertDialog`, `Popover`, their CSS and
+  `dialogLifecycle.tsx` are authoritative. Radix owns traps, topmost Escape,
+  dismissal and nested portals; shared layer is 1000. Feature CSS owns composition,
+  not a second palette/radius/control styling system.
+- `BrowserOverlayLease` uses `useBrowserOverlaySuppression` and Assistant browser
+  suppression. Store counts are the sole suppression owner. Global Settings omits
+  an explicit workspace ID so its one lease follows the current workspace; closing
+  or unmounting releases only that lease. Assistant-native views are also covered
+  by the existing primitive. No force-mounted hidden content.
+- `ApplicationSettingsProvider`, mounted once beneath App's stable
+  WorkspacePaneDragProvider, owns the Settings dialog, page, Usage intent, search
+  destination context and bounded Open Workspace handoff. It invokes the existing `useHeaderSettings` preference /
+  discovery controller exactly once; Header reads launcher visibility and invokes
+  the same entry point through a small React context. The hook no longer owns
+  dialog presentation state. Page selection and account-harness intent live in that
+  same provider. Authentication and SSH Targets are content, not competing modal
+  owners; credential/key/target deletion uses the existing nested AlertDialog.
+- Toolbar and `app.openSettings` (Ctrl/Cmd+,) invoke this stable app-owned state path.
+  A fresh opening starts at Appearance; an already-open Settings keeps its page.
+  Usage opens Accounts and selects its harness and requested Manage/Add intent.
+  Settings is now modal: background toolbar controls cannot be activated until it
+  closes. Navigation uses native buttons in `nav`, `aria-current="page"` and
+  `aria-controls`; Tab/Shift+Tab and Enter/Space work without a new keyboard handler.
+- `ManagementShell` is a small DialogContent composition with title/close,
+  caller-owned grouped navigation and content, optional header-actions slot,
+  independent navigation/content scroll. No settings schema, persistence,
+  discovery, action controller or source-control identity logic lives there.
+- Open Workspace → Settings acquires the incoming Settings lease before suspending
+  chooser content. Return refreshes saved targets and mounts/focuses the same live
+  chooser before releasing Settings. The local draft lives outside suspended Dialog
+  content and is also retained when selecting a newly saved remote target and then
+  returning to This PC. Exact IDs, not labels/order, identify targets; a removed
+  target or refresh error safely falls back to local. A removed originating chooser
+  is never reopened. Repeated returns and busy operation retargets are refused.
+  Settings otherwise restores the provider's live toolbar ref, never a disconnected
+  Header trigger. Shared Dialog primitives own traps/autofocus/dismissal; no manual
+  native Browser visibility manipulation is introduced. Chat History and recipes
+  remain Header-owned.
+- Global pages stay open across workspace switches. Canonical accounts explicitly
+  display their environment and reuse the controller's existing safe scope reset /
+  rebind policy; workspace change clears Usage intent. No old authentication result
+  is accepted into the new environment. These safeguards remain unchanged.
+- Sidebar/Tabs takes effect immediately through the existing App layout. Header
+  still remounts in its new location, but Settings and its navigation remain mounted
+  under their independent app owner. Workspaces & Layout stays selected with the
+  saved choice reflected immediately; the same Browser lease remains held until
+  actual dismissal. No extra mounted dialog, persistent open-state storage, generic
+  routing framework, second preference controller or new keyboard handler exists.
+
+## Contextual surfaces remain contextual
+
+Chat History stays workspace-filtered (`useConversationHistory`, late-result
+protection, resume/recovery). Isolated Agent stays a fast checkout-bound launcher
+and uses the existing Git management repairs. Workspace/tab/agent selection,
+restore, Explorer menus, pane controls, Browser SSH previews/forwarding/dev services,
+Usage quick monitor, Notification Center, Launch Recipes and checkout dev-server
+configuration remain in their existing scopes and entry points. Open Workspace
+remains the chooser; only its target-configuration affordances navigate to canonical
+SSH Targets. None of its workspace browsing/opening capabilities become Settings actions.
+
+## Verification and remaining owner smoke
+
+Baseline was source/test behavior inspection, not pre-change screenshots. Reviewed
+Header/HeaderRightControls/useHeaderSettings, Settings and Git compositions,
+primitive/overlay/token/theme files and focused tests. Phase 1 screenshots come
+from the isolated built-app `npm run smoke:settings` fixture (1100×760 and 640×480,
+all four pages, all three themes). It asserts viewport bounds/no horizontal
+content overflow, real native Browser hiding/restoration and trigger focus, plus
+Ctrl+, and Escape. Screenshots are written to a reported temporary directory,
+not production profiles. Run after build.
+
+Automated interaction coverage includes theme DOM/persistence, navigation-mode
+persistence, shortcut search/capture/safe binding/conflicts/reset/save errors,
+page changes clearing capture, workspace-switch leases, account local/SSH scope
+and auth cancellation, Usage Add/Manage, nested model pickers and credentials.
+The existing full renderer/native Browser smoke remains applicable.
+
+Owner interactive smoke still required: real SSH connections and real-account
+sign-in/reconnect/cancel, Usage handoff with live readings, Windows/macOS key and
+focus behavior, OS/display scaling and high zoom, screen reader use, and Assistant
+native Browser with real Hermes. These are not claimed by fixture tests.
+
+### Original Phase 0–1 results (reviewed commit `48ac61b`)
+
+- `npm run validate`: passed (branding, lint, typecheck, Fallow, security, build,
+  **368 test files / 7,605 tests**). Security retains only the project's existing
+  documented dev-only electron-builder exception; Vite reports its existing large
+  bundle warning.
+- Focused Vitest run: **10 files / 217 tests passed** — SettingsManagement,
+  HeaderOverlays, HeaderAccounts, KeyboardShortcutsContent, AppearanceSettings,
+  Header, HeaderUsage, AssistantWithoutWorkspace, HarnessDefaultsSection, Dialog.
+- `npm run smoke:settings`: passed, including immediate navigation-mode relocation
+  and reopening with the saved choice. Visually inspected representative captured
+  screenshots across Dark/Light/Slate and desktop/reduced dimensions; no horizontal
+  overflow or overlapping controls observed. This is headless Electron screenshot
+  review, not a live human OS/display or real SSH/account smoke.
+- `node scripts/workspace-page-browser-renderer-smoke.cjs`: passed — real renderer
+  leases/native views, 24 page transitions, stale geometry/delayed creation,
+  overlay cleanup, minimize/restore/maximize/hide and workspace disposal.
+- Existing `electron --ozone-platform=headless scripts/workspace-multi-browser-smoke.cjs`
+  could not complete in this environment: Electron exited with SIGSEGV. Retries
+  with GPU flags/clean environment also failed; the clean attempt logged X display /
+  EGL initialization errors. No edits were made to that runner. Owner must rerun
+  it on a supported desktop. The full built-app native Browser runner above and
+  the new Settings-native fixture both passed.
+
+### Focused ownership correction
+
+Regression tests mirror App's conditional Header locations beneath one stable
+provider and assert the actual TitleBar navigation mode/Header placement, the same
+single dialog DOM node/page, selected radio, unchanged preference loading and
+balanced suppression. They cover Tabs → Sidebar → Tabs with and without Browser,
+close-time focus to the replacement trigger, Credentials handoff and Usage
+Manage/Add after relocation. Existing local/SSH account tests remain in place.
+The real Electron Settings smoke now verifies that relocation retains the same
+dialog/page and hides the same native Browser, then restores that Browser and the
+new toolbar trigger on close. It also tests Credentials after relocation and the
+existing Ctrl+, route.
+
+Correction verification:
+- `npm run validate`: **368 files / 7,609 tests passed**, including lint,
+  typecheck, build, Fallow, branding and the existing security policy.
+- Focused component/integration run: **15 files / 306 tests passed** (App,
+  SettingsManagement, Header/Accounts/Overlays/Usage/LaunchOwnership, Assistants,
+  Appearance, Dialog, preference controller, shortcuts and isolated-agent integration).
+- `npm run smoke:settings`: passed, including real native Browser suppression,
+  same-dialog identity across both toolbar relocations, close-time focus and
+  Credentials after relocation.
+- `node scripts/workspace-page-browser-renderer-smoke.cjs`: passed again.
+- The separate `electron --ozone-platform=headless scripts/workspace-multi-browser-smoke.cjs`
+  was retried and still exits with SIGSEGV in this environment; owner desktop rerun
+  remains required. No real account authentication or SSH connection was performed.
+
+## Phase 2A — permanent agent and Git preference pages
+
+- **Harnesses:** compact, wrapping selector with one detail panel. Visibility,
+  model/favorites, flags, attention, supported MCP and Usage preferences use the
+  existing `useHeaderSettings` owner. Missing/unavailable selection shows an inert
+  fallback, not a substituted harness. Local/SSH scope is explicit. Remote catalogs
+  are not probed here; saved selections/favorites and existing provider-native
+  text/custom model entry remain available.
+- **Accounts:** `AccountsSettings` mounts only the selected, available capability's
+  existing `HarnessAccountsRow` / `useHarnessAccounts` workflow. Harness details
+  contain only a Manage Accounts navigation action. Usage goes directly to Accounts;
+  Add enters the existing form without starting auth, Manage focuses account info.
+  A page/environment/harness change unmounts the old workflow and cancels its auth.
+  Lifetime tokens also cancel an auth-start response arriving after unmount and
+  reject stale list/mutation acknowledgements (including an A → B → A scope cycle).
+  Loading failures are visible and expose an explicit Retry.
+- **Assistants:** appears only for an available snapshot from the existing shared
+  Assistants store; disappearance falls back to Appearance. Configuration, retry,
+  status and lifecycle stay store/main-owned. Navigating the page configures or
+  starts nothing. Ordinary Hermes harness configuration remains independent.
+- **Git Preferences:** existing AI-commit enable/provider/model persistence only;
+  saved unavailable models remain visible, and failures are reported. Generation
+  stays local-only; no Git operation, repository, VCS credential or provider API
+  implementation was changed.
+- Serialisable harness descriptors now describe existing model presentation and
+  attention transports, with registry parity tests against provider implementations.
+  The renderer gates capabilities through descriptors, not a local harness-ID policy.
+  The existing model loader ignores responses from old environment epochs and
+  reports catalog/save failures; favorites return save rejections to the picker
+  without rolling back a newer acknowledged preference snapshot.
+- A minimal shared native `Checkbox` replaces repeated boolean-control styling in
+  Harnesses, Assistants and Git Preferences; geometry/colors/focus remain centrally
+  token-owned. Feature CSS adds layout/wrapping only. Obsolete accordion CSS removed.
+- Legacy Settings now offers **Authentication (existing Credentials dialog)** and
+  **SSH Targets (original Open Workspace manager route)** only. Phase 2B must move
+  those to canonical pages/deep-links, eliminate Legacy Settings, and complete
+  the lightweight control-level search specified by the issue. Neither Phase 2B
+  nor the Source Control redesign was begun.
+
+Phase 2A verification:
+- `npm run validate`: **369 files / 7,623 tests passed** (branding, lint, typecheck,
+  Fallow, security, build, full tests; existing dev-only audit exception unchanged).
+- Focused regression suite: **19 files / 398 tests passed**, including permanent
+  pages, account ownership/stale auth, remote saved favorites, descriptor parity,
+  dialogs/focus, Usage routing, relocation and isolated-agent integration.
+- `npm run smoke:settings`: all eight pages across Dark/Light/Slate at 1100×760 and
+  640×480; native Browser hide/restore, viewport/overflow, independent scrolling,
+  Sidebar/Tabs relocation, focus, Credentials and Ctrl+, route. Assistants uses an
+  explicitly synthetic availability snapshot for presentation; no service launch
+  or real auth is claimed. Accounts reads the isolated fixture profile's default.
+- Screenshot review covered new destinations at both sizes and all three themes.
+  The reduced-height navigation scrolls independently; controls remain reachable.
+- `node scripts/workspace-page-browser-renderer-smoke.cjs`: passed again.
+- Separate native multi-Browser runner still exits with SIGSEGV on this environment;
+  owner desktop rerun is required. Real SSH and account auth/reconnect/removal,
+  real Hermes startup, high zoom, platform focus and screen-reader smoke remain
+  owner checks. Automated auth/account tests use safe mocked IPC projections.
+
+## Phase 2A review corrections (after `5ee43b8`)
+
+- Capability preferences are application-wide configuration, not permission to
+  activate a capability in the focused workspace. Hermes attention is editable
+  from Local and SSH Settings, with explicit SSH-only support guidance. Descriptor
+  attention transport metadata determines the explanation and whether any launch
+  supports it. The MCP preference is editable from both contexts for descriptor-
+  eligible providers, with the existing local-only launch explanation. No per-host
+  preference copies, extra toggles, or runtime attention/MCP gate changes.
+- AI commit availability now has its own **local** capability snapshot inside the
+  existing settings controller. Initial desktop discovery shares an in-flight
+  `getHarnessOptions` request with local launcher discovery. Focus changes never
+  substitute an SSH result or clear that snapshot. Existing launcher discovery on
+  returning to Local can refresh it; equal provider availability does not refetch
+  models. There is no new polling, global cache, or remote discovery path.
+- AI commit models still use desktop `getHarnessModels` only. Saved provider/model
+  values remain intact on discovery/model failures and unavailable providers; local
+  discovery failure is reported explicitly. Persistence and its error reporting
+  are unchanged. Regression coverage checks both opposite Local/SSH Codex
+  availability combinations, pending SSH focus transitions, single initial local
+  discovery, stable models, unavailable saved selections, and no remote model probe.
+- Correction verification: `npm run validate` **369 files / 7,631 tests**; focused
+  renderer/integration/descriptor regressions **19 files / 406 tests**. Settings
+  Electron and full-renderer Browser smokes pass; separate native multi-Browser
+  SIGSEGV and the previously documented live/platform coverage limits remain.
+
+The preceding results describe the reviewed Phase 2A state. Phase 2B below adds
+Settings search and the final configuration destinations; Git redesign remains untouched.
+
+## Phase 2B — final Settings configuration surfaces
+
+- **Authentication:** one embedded SSH-key or provider-token workflow. Existing
+  credential IPC/services still own generation/deletion, encrypted tokens,
+  supported-provider validation and public-key reads. Fingerprints are displayed
+  when supplied by the existing API. Copy copies only the public key. Tokens are
+  password inputs held only by the selected provider's temporary component state;
+  Cancel, page/provider change and closing clear that entry. Save/remove results
+  cannot update another provider or an unmounted workflow. Main-returned scopes
+  and validation metadata are displayed as such, never guessed as `repo` or
+  treated as repository authorization. Provider help/docs use the existing
+  validated external-open path; GitLab explicitly distinguishes gitlab.com from
+  separately authorized self-managed origins (#145). Git's SSH/credential helper
+  remains separate from provider API tokens.
+- The existing global credential status API performs provider validation. The
+  Authentication content shares only an **in-flight metadata promise**, including
+  across page/provider remounts, and drains it before a credential write. This
+  avoids concurrent stale validation publications without changing main services
+  or adding a persisted cache/controller. Failed retrieval is unknown/error, not
+  an invented empty credential list; failed writes retain the entered draft.
+- **SSH Targets:** single canonical list/add/edit/delete/test/default-root content.
+  Shared SSH validation and the existing main endpoints retain the configuration
+  format, transport/security policy, exact IDs and authoritative in-use rejection.
+  Loading and mutation errors are explicit; failed edits retain their draft,
+  refreshing the list does not reset it, and only explicit Test initiates SSH.
+  Mutations disable navigation/search/close until complete; late results after
+  unmount publish nothing. Duplicate labels have target descriptions for accessible
+  disambiguation. The selected opaque ID is remembered for search navigation, not
+  used as backend authority or copied into another configuration store.
+- **Destructive actions:** key/token/target removal uses the shared AlertDialog,
+  default Cancel focus and explicit confirmation. Cancel, Escape and opted-in
+  backdrop dismissal never mutate. No JavaScript confirm/alert is introduced.
+- **Search:** a small Popover/Input/Button composition, with static semantic
+  control descriptors composed from existing harness and keybinding metadata.
+  It spans theme/layout, individual shortcut editors, harness controls/accounts,
+  available Assistants, Git preferences, keys/provider tokens and SSH target/root
+  controls. No token, account name, saved target label/address/path or private
+  configuration value is indexed. Results retain harness/provider/current
+  environment and selected SSH entity context. Selecting reveals, scrolls and
+  focuses stable IDs; it never clicks a control, changes a preference or starts
+  auth, a process, service, SSH test or Git operation. Search-based Authentication
+  navigation defers credential retrieval/validation until explicit refresh. Existing
+  lightweight account/saved-target metadata loading remains with its page owner.
+  Disabled/unavailable controls retain gating explanations rather than being forced
+  interactive. A bounded observer stops on success, navigation or user focus movement.
+  Arrow keys/Enter navigate; Escape first dismisses search without closing Settings.
+- **Cleanup:** `LegacySettingsContent`, `CredentialSettings` and its lookalike CSS,
+  `SshEnvironmentManager` and obsolete styles/tests are removed. No alternative
+  workflow, new dependency, settings schema, Git controller or backend policy exists.
+  The original Git inventory and Phase 2A local discovery/capability contracts above
+  remain intact.
+
+Phase 2B verification:
+- Final `npm run validate`: **371 files / 7,666 tests passed**; branding, lint,
+  typecheck, Fallow, security and build all passed. The existing documented
+  dev-only electron-builder audit exception and Vite bundle-size warning remain.
+- Focused component/integration/backend-policy tests: **32 files / 743 tests passed**.
+  This includes credential and SSH IPC/service safety, provider origin boundaries,
+  stale responses, pending validation/write cancellation, explicit confirmations,
+  chooser drafts/IDs/return ownership, search focus/no-actions, shortcuts, toolbar
+  relocation, account/Usage routing and prior settings/discovery regressions.
+- Settings Electron smoke and full-renderer native Browser smoke passed. Settings
+  covers all nine available pages, three token providers and search in Dark/Light/
+  Slate at 1100×760 and 640×480; independent scrolling/viewport/overflow, same-dialog
+  relocation, exact search focus, chooser acquire/return leases/focus, Ctrl+, and
+  Browser restoration are asserted. Representative final screenshots reviewed in
+  `/tmp/clanker-settings-visual-jNs9Uu`; no overlap/horizontal overflow observed.
+  Assistants availability remains a synthetic presentation snapshot, not real service
+  startup. Credential/target mutations and real authentication are not exercised by
+  that isolated native fixture.
+- Separate native multi-Browser runner retried and still exits with **SIGSEGV**;
+  `/tmp/154-2b-multi-browser.log`. No unrelated Browser internals changed to hide it.
+- Owner checks remain: real SSH test/save/in-use rejection against a live host,
+  real credential save/remove/OS keychain and key generation, account auth, real
+  Hermes, Windows/macOS desktop focus/key behavior, high zoom/OS scaling and screen
+  readers. Main security/backend tests simulate boundaries; they do not establish
+  live platform/credential correctness.
+- No PR, merge or Git redesign. Stop here for independent architectural review.

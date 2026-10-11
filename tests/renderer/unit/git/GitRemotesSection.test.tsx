@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GitRemotesSection from '../../../../src/renderer/components/git/GitRemotesSection';
 import { installElectronApiMock } from '../../../setup/electron';
@@ -59,15 +59,32 @@ describe('GitRemotesSection shared controls', () => {
     expect(screen.queryByLabelText('URL')).toBeNull();
   });
 
-  it('preserves native removal confirmation and reports failures', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const { onError } = fixture();
+  it('opens confirmation dialog on remove, cancels cleanly, and removes on confirm', async () => {
+    const withinDialogRemoveButton = () => within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove remote' });
+    const { onError, onRemotesChanged } = fixture();
     fireEvent.click(screen.getByRole('button', { name: 'Remove remote' }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(/Remove remote 'origin'\?/)).toBeInTheDocument();
+    expect(screen.getByText(/Fetch URL: https:\/\/host\/repo\.git/)).toBeInTheDocument();
+
+    // Cancel leaves remote unchanged
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(window.electronAPI.gitRemoveRemote).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
+
+    // Reopen and confirm removal failure
     vi.mocked(window.electronAPI.gitRemoveRemote).mockResolvedValue({ success: false, error: 'host unavailable' });
     fireEvent.click(screen.getByRole('button', { name: 'Remove remote' }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.click(withinDialogRemoveButton());
     await waitFor(() => expect(onError).toHaveBeenCalledWith('host unavailable'));
     expect(window.electronAPI.gitRemoveRemote).toHaveBeenCalledWith('/repo', 'origin', 'ws');
+
+    // Confirm removal success
+    vi.mocked(window.electronAPI.gitRemoveRemote).mockResolvedValue({ success: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove remote' }));
+    fireEvent.click(withinDialogRemoveButton());
+    await waitFor(() => expect(onRemotesChanged).toHaveBeenCalled());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

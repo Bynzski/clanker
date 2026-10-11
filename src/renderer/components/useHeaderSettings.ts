@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AI_COMMIT_PROVIDER_IDS,
   HARNESS_OPTIONS,
@@ -26,6 +26,8 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     setTransition({ environmentId, epoch: transition.epoch + 1 });
   }
   const epoch = transition.epoch;
+  const liveEpoch = useRef(epoch);
+  liveEpoch.current = epoch;
   const [discovery, setDiscovery] = useState<{ epoch: number; status: 'ready' | 'failed'; ids: string[] } | null>(null);
   const currentDiscovery = discovery?.epoch === epoch && transition.environmentId === environmentId ? discovery : null;
   /** 'loading' until the current transition's own discovery answers. */
@@ -35,17 +37,50 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     () => (currentDiscovery?.status === 'ready' ? currentDiscovery.ids : ['']),
     [currentDiscovery],
   );
-  const [showSettings, setShowSettings] = useState(false);
-  const [showCredentialModal, setShowCredentialModal] = useState(false);
+  // AI commit is desktop-owned. Share an in-flight local query with launcher discovery,
+  // but never reset this snapshot merely because the focused workspace changes host.
+  const [localHarnessIds, setLocalHarnessIds] = useState<string[]>(['']);
+  const [aiCommitDiscoveryError, setAiCommitDiscoveryError] = useState('');
+  const localRequest = useRef<Promise<Record<string, unknown>> | null>(null);
+  const loadLocalOptions = useCallback(() => {
+    if (!localRequest.current) {
+      const request = window.electronAPI.getHarnessOptions();
+      localRequest.current = request;
+      void request.then(() => { localRequest.current = null; }, () => { localRequest.current = null; });
+    }
+    return localRequest.current;
+  }, []);
+  const publishLocalOptions = useCallback((options: Record<string, unknown>) => {
+    const ids = resolveAvailableHarnessIds(options);
+    setLocalHarnessIds((current) => current.length === ids.length && current.every((id, i) => id === ids[i]) ? current : ids);
+    setAiCommitDiscoveryError('');
+  }, []);
+  useEffect(() => {
+    if (!includeAiCommit) return;
+    let cancelled = false;
+    void loadLocalOptions().then((options) => {
+      if (!cancelled) publishLocalOptions(options);
+    }, () => {
+      if (!cancelled) {
+        setLocalHarnessIds(['']);
+        setAiCommitDiscoveryError('Could not discover local AI commit providers. Saved preferences are preserved.');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [includeAiCommit, loadLocalOptions, publishLocalOptions]);
   const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
   const [aiCommitProvider, setAiCommitProvider] = useState<string>('');
+  const aiCommitProviderAvailable = localHarnessIds.includes(aiCommitProvider);
   const [aiCommitModel, setAiCommitModel] = useState('');
   const [aiCommitModels, setAiCommitModels] = useState<ModelOption[]>([]);
   const [isLoadingAiCommitModels, setIsLoadingAiCommitModels] = useState(false);
+  const [aiCommitModelsError, setAiCommitModelsError] = useState('');
   const [hasLoadedAiCommitSettings, setHasLoadedAiCommitSettings] = useState(false);
   const [harnessDefaults, setHarnessDefaultsState] = useState<HarnessDefaultsMap | null>(null);
   /** Persisted preferences (e.g. Show in Usage) are only trustworthy once this is 'ready'. */
   const [harnessDefaultsStatus, setHarnessDefaultsStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [settingsError, setSettingsError] = useState('');
+  const [harnessModelError, setHarnessModelError] = useState<Record<string, string>>({});
   const [expandedHarness, setExpandedHarness] = useState<string | null>(null);
   const [harnessModelCache, setHarnessModelCache] = useState<Record<string, ModelOption[]>>({});
   const [harnessModelLoading, setHarnessModelLoading] = useState<Record<string, boolean>>({});
@@ -56,6 +91,8 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
 
   useEffect(() => {
     setHarnessModelCache({});
+    setHarnessModelLoading({});
+    setHarnessModelError({});
   }, [environmentId]);
 
   useEffect(() => {
@@ -64,13 +101,18 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     const loadHarnessOptions = async () => {
       try {
         const options = environmentId === 'local'
-          ? await window.electronAPI.getHarnessOptions()
+          ? await (includeAiCommit ? loadLocalOptions() : window.electronAPI.getHarnessOptions())
           : await window.electronAPI.getEnvironmentHarnessOptions(environmentId);
         if (cancelled) return;
         setDiscovery({ epoch, status: 'ready', ids: resolveAvailableHarnessIds(options) });
+        if (environmentId === 'local' && includeAiCommit) publishLocalOptions(options);
       } catch {
         if (!cancelled) {
           setDiscovery({ epoch, status: 'failed', ids: [''] });
+          if (environmentId === 'local' && includeAiCommit) {
+            setLocalHarnessIds(['']);
+            setAiCommitDiscoveryError('Could not discover local AI commit providers. Saved preferences are preserved.');
+          }
         }
       }
     };
@@ -80,7 +122,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     return () => {
       cancelled = true;
     };
-  }, [environmentId, epoch]);
+  }, [environmentId, epoch, includeAiCommit, loadLocalOptions, publishLocalOptions]);
 
   useEffect(() => {
     // Selection is only judged by a successful discovery of the current environment: pending or failed
@@ -128,8 +170,10 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     let cancelled = false;
 
     const loadAiCommitModels = async () => {
-      if (!aiCommitProvider || !availableHarnessIds.includes(aiCommitProvider)) {
+      setAiCommitModelsError('');
+      if (!aiCommitProvider || !aiCommitProviderAvailable) {
         setAiCommitModels([]);
+        setIsLoadingAiCommitModels(false);
         return;
       }
 
@@ -143,6 +187,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
         console.error('Failed to load AI commit models:', error);
         if (!cancelled) {
           setAiCommitModels([]);
+          setAiCommitModelsError('Could not load provider models. The saved model is preserved.');
         }
       } finally {
         if (!cancelled) {
@@ -156,38 +201,45 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     return () => {
       cancelled = true;
     };
-  }, [aiCommitProvider, availableHarnessIds, hasLoadedAiCommitSettings]);
+  }, [aiCommitProvider, aiCommitProviderAvailable, hasLoadedAiCommitSettings]);
 
   const handleToggleAiCommit = async (checked: boolean) => {
+    setSettingsError('');
     try {
       await window.electronAPI.setAiCommitEnabled(checked);
       setAiCommitEnabled(checked);
     } catch (err) {
+      setSettingsError('Could not save AI commit setting.');
       console.error('Failed to save AI commit setting:', err);
     }
   };
 
   const handleAiCommitProviderChange = async (provider: string) => {
+    setSettingsError('');
     try {
       await window.electronAPI.setAiCommitProvider(provider);
       setAiCommitProvider(provider);
       setAiCommitModel('');
       await window.electronAPI.setAiCommitModel('');
     } catch (err) {
+      setSettingsError('Could not save AI commit provider.');
       console.error('Failed to save AI commit provider:', err);
     }
   };
 
   const handleAiCommitModelChange = async (model: string) => {
+    setSettingsError('');
     try {
       await window.electronAPI.setAiCommitModel(model);
       setAiCommitModel(model);
     } catch (err) {
+      setSettingsError('Could not save AI commit model.');
       console.error('Failed to save AI commit model:', err);
     }
   };
 
   const handleSetHarnessFlags = async (harnessId: string, flags: string) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -200,11 +252,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      setSettingsError('Could not save harness flags.');
       console.error('Failed to save harness flags:', err);
     }
   };
 
   const handleSetHarnessVisible = async (harnessId: string, visible: boolean) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -220,11 +274,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      setSettingsError('Could not save harness visibility.');
       console.error('Failed to save harness visibility:', err);
     }
   };
 
   const handleSetHarnessAttention = async (harnessId: string, attentionEnabled: boolean) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -234,11 +290,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      setSettingsError('Could not save agent attention setting.');
       console.error('Failed to save agent attention setting:', err);
     }
   };
 
   const handleSetHarnessAgentBridge = async (harnessId: string, agentBridgeEnabled: boolean) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -248,11 +306,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      setSettingsError('Could not save Clanker bridge setting.');
       console.error('Failed to save Clanker bridge setting:', err);
     }
   };
 
   const handleSetHarnessUsageVisible = async (harnessId: string, usageVisible: boolean) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -263,11 +323,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
       await window.electronAPI.setHarnessDefaults(newDefaults);
       notifyUsagePreferenceSaved();
     } catch (err) {
+      setSettingsError('Could not save Usage visibility.');
       console.error('Failed to save usage visibility:', err);
     }
   };
 
   const handleSetDefaultModel = async (harnessId: string, modelId: string) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
@@ -280,11 +342,13 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      setSettingsError('Could not save default model.');
       console.error('Failed to save default model:', err);
     }
   };
 
   const handleToggleFavorite = async (harnessId: string, modelId: string) => {
+    setSettingsError('');
     if (!harnessDefaults) return;
     const currentFavorites = harnessDefaults[harnessId]?.favorites ?? [];
     const isFavorite = currentFavorites.includes(modelId);
@@ -302,7 +366,11 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     try {
       await window.electronAPI.setHarnessDefaults(newDefaults);
     } catch (err) {
+      // A newer full preference snapshot may already have saved these favorites.
+      setHarnessDefaultsState((current) => current === newDefaults ? harnessDefaults : current);
+      setSettingsError('Could not save model favorites.');
       console.error('Failed to save harness favorites:', err);
+      throw err;
     }
   };
 
@@ -311,43 +379,48 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
       setHarnessModelCache((prev) => ({ ...prev, [harnessId]: [] }));
       return;
     }
-    if (!refresh && harnessModelCache[harnessId] !== undefined) return;
+    if (harnessModelLoading[harnessId] || (!refresh && harnessModelCache[harnessId] !== undefined)) return;
+    const owner = epoch;
+    setHarnessModelError((prev) => ({ ...prev, [harnessId]: '' }));
     setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: true }));
     try {
       const models = refresh && harnessId === 'hermes'
         ? await window.electronAPI.getHarnessModels(harnessId, true)
         : await window.electronAPI.getHarnessModels(harnessId);
+      if (liveEpoch.current !== owner) return;
       setHarnessModelCache((prev) => ({ ...prev, [harnessId]: models }));
     } catch (err) {
+      if (liveEpoch.current !== owner) return;
       console.error(`Failed to load models for ${harnessId}:`, err);
+      setHarnessModelError((prev) => ({ ...prev, [harnessId]: 'Could not load models. Retry to refresh the catalog.' }));
       if (!refresh) setHarnessModelCache((prev) => ({ ...prev, [harnessId]: [] }));
     } finally {
-      setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: false }));
+      if (liveEpoch.current === owner) setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: false }));
     }
   };
 
   const aiCommitProviderOptions = useMemo(
     () => HARNESS_OPTIONS
       .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as (typeof AI_COMMIT_PROVIDER_IDS)[number]))
-      .filter((option) => availableHarnessIds.includes(option.id) || option.id === aiCommitProvider)
-      .map((option) => availableHarnessIds.includes(option.id) ? option : { ...option, label: `${option.label} (unavailable)` }),
-    [availableHarnessIds, aiCommitProvider],
+      .filter((option) => localHarnessIds.includes(option.id) || option.id === aiCommitProvider)
+      .map((option) => localHarnessIds.includes(option.id) ? option : { ...option, label: `${option.label} (unavailable)` }),
+    [localHarnessIds, aiCommitProvider],
   );
 
   return {
+    settingsError,
+    harnessModelError,
     harnessDefaultsStatus,
     harnessDiscoveryStatus,
     availableHarnessIds,
     visibleHarnessIds,
-    showSettings,
-    setShowSettings,
-    showCredentialModal,
-    setShowCredentialModal,
     aiCommitEnabled,
     aiCommitProvider,
     aiCommitModel,
     aiCommitModels,
     isLoadingAiCommitModels,
+    aiCommitModelsError,
+    aiCommitDiscoveryError,
     harnessDefaults,
     expandedHarness,
     setExpandedHarness,

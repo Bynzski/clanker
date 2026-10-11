@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { openSettings } from '../../../src/renderer/lib/keybindingDispatcher';
 import UsageWidget from '../../../src/renderer/components/UsageWidget';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -44,7 +44,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it.each(['Settings', 'Chat history', 'Usage'])('%s dismisses on outside interaction', async (name) => {
+    it.each(['Chat history', 'Usage'])('%s dismisses on outside interaction', async (name) => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name }));
@@ -101,10 +101,12 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(count()).toBe(1);
     });
 
-    it('makes sibling popovers mutually exclusive in both directions', async () => {
+    it('closes Chat history when Settings opens; Settings blocks background controls', async () => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(document.body).toHaveStyle({ pointerEvents: 'none' });
+      await user.keyboard('{Escape}');
       await user.click(screen.getByRole('button', { name: 'Chat history' }));
       expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(screen.getByRole('dialog', { name: 'Chat history' })).toBeInTheDocument();
@@ -115,14 +117,14 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(count()).toBe(1);
     });
 
-    it('makes Chat history, Usage and Settings mutually exclusive in every direction, keeping exactly one lease', async () => {
+    it('makes contextual Chat history and Usage popovers mutually exclusive, keeping exactly one lease', async () => {
       const user = userEvent.setup();
       renderHeader();
-      const names = ['Chat history', 'Usage', 'Settings'];
+      const names = ['Chat history', 'Usage'];
       const counts: number[] = [];
       const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
       try {
-        for (const [from, to] of [[0, 1], [1, 2], [2, 0], [0, 2], [2, 1], [1, 0]]) {
+        for (const [from, to] of [[0, 1], [1, 0]]) {
           await user.click(screen.getByRole('button', { name: names[from] }));
           expect(screen.getByRole('dialog', { name: names[from] })).toBeInTheDocument();
           await user.click(screen.getByRole('button', { name: names[to] }));
@@ -167,73 +169,61 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.length).toBeGreaterThan(0);
     });
 
-    it('opens the existing Settings popover from the keybinding dispatcher', async () => {
+    it('opens Settings from the keybinding dispatcher', async () => {
       renderHeader();
       expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       act(() => openSettings());
       expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: 'Settings', hidden: true })).toHaveAttribute('aria-expanded', 'true');
     });
 
-    it('hands Settings off to Keyboard Shortcuts and restores Settings trigger focus on close', async () => {
+    it('navigates to Keyboard Shortcuts without changing the lease and restores focus on close', async () => {
       const user = userEvent.setup();
       renderHeader();
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
       expect(count()).toBe(1);
-      await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
-      expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
-      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Keyboard Shortcuts' }));
+      expect(screen.getByRole('searchbox', { name: 'Search shortcuts' })).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
       expect(count()).toBe(1);
       await user.keyboard('{Escape}');
-      expect(screen.queryByRole('dialog', { name: 'Keyboard Shortcuts' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(count()).toBe(0);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it.each([0, 1])('hands Settings off to Credentials without releasing browser suppression (other owners: %s)', async (otherOwners) => {
+    it.each([0, 1])('navigates to canonical Authentication without releasing or duplicating suppression (other owners: %s)', async (otherOwners) => {
       const user = userEvent.setup();
       if (otherOwners) useWorkspaceStore.getState().pushBrowserOverlay('ws-1');
       renderHeader();
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
-      expect(count()).toBe(otherOwners + 1);
+      const dialog = screen.getByRole('dialog', { name: 'Settings' });
       const counts: number[] = [];
       const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
-      const focusTargets: EventTarget[] = [];
-      const recordFocus = (event: FocusEvent) => { if (event.target) focusTargets.push(event.target); };
-      document.addEventListener('focusin', recordFocus);
       try {
-        await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
-        const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
-        expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
-        expect(dialog.contains(document.activeElement)).toBe(true);
-        expect(focusTargets).not.toContain(trigger);
+        await user.click(screen.getByRole('button', { name: 'Authentication' }));
+        expect(screen.getByRole('dialog', { name: 'Settings' })).toBe(dialog);
+        expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).toBeNull();
         expect(count()).toBe(otherOwners + 1);
-        expect(counts).toContain(otherOwners + 2);
-        expect(Math.min(...counts)).toBe(otherOwners + 1);
+        expect(counts.every((value) => value === otherOwners + 1)).toBe(true);
         await user.keyboard('{Escape}');
         expect(count()).toBe(otherOwners);
-        expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).not.toBeInTheDocument();
         await waitFor(() => expect(trigger).toHaveFocus());
-        expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      } finally {
-        unsubscribe();
-        document.removeEventListener('focusin', recordFocus);
-        if (otherOwners) useWorkspaceStore.getState().popBrowserOverlay('ws-1');
-      }
+      } finally { unsubscribe(); if (otherOwners) useWorkspaceStore.getState().popBrowserOverlay('ws-1'); }
     });
 
-    it.each(['close button', 'backdrop'])('Credentials closes via %s after handoff', async (method) => {
+    it.each(['close button', 'backdrop'])('Authentication closes through Settings via %s', async (method) => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
-      await user.click(screen.getByRole('button', { name: 'Manage VCS credentials' }));
-      const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
-      expect(within(dialog).getByRole('heading', { name: 'VCS Credentials' })).toBeInTheDocument();
-      if (method === 'close button') await user.click(within(dialog).getByRole('button', { name: 'Close VCS Credentials' }));
-      else await user.click(document.querySelector('.credential-settings-overlay')!);
-      expect(screen.queryByRole('dialog', { name: 'VCS Credentials' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Authentication' }));
+      const dialog = screen.getByRole('dialog', { name: 'Settings' });
+      expect(within(dialog).getByRole('heading', { name: 'Authentication' })).toBeInTheDocument();
+      if (method === 'close button') await user.click(within(dialog).getByRole('button', { name: 'Close Settings' }));
+      else await user.click(document.querySelector('.clanker-dialog-overlay')!);
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(count()).toBe(0);
       await waitFor(() => expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus());
     });
@@ -299,6 +289,7 @@ const renderHeader = () => render(<><Header /><UsageWidget /></>);
       renderHeader();
       await user.click(screen.getByRole('button', { name: 'Settings' }));
       const panel = screen.getByRole('dialog', { name: 'Settings' });
+      await user.click(within(panel).getByRole('button', { name: 'Harnesses' }));
       await user.click(await within(panel).findByRole('button', { name: 'Codex' }));
       await user.click(within(panel).getByRole('checkbox', { name: 'Agent attention for Codex' }));
       expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ attentionEnabled: true }) }));

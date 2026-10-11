@@ -953,3 +953,94 @@ describe('stash regression tests for original bugs', () => {
     expect(stashes).toHaveLength(1);
   });
 });
+
+describe('guarded stash identity and collection checks with real git', () => {
+  it('dropStash succeeds when expectedHash matches', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'modified');
+    await service.stashChanges(repo.path, 'test stash');
+
+    const stashes = await service.listStashes(repo.path);
+    expect(stashes).toHaveLength(1);
+    const expectedHash = stashes[0].hash;
+
+    const result = await service.dropStash(repo.path, 'stash@{0}', expectedHash);
+    expect(result.success).toBe(true);
+    expect(await getStashCount(repo.path)).toBe(0);
+  });
+
+  it('dropStash fails closed when expectedHash does not match (reference shifted)', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'first mod');
+    await service.stashChanges(repo.path, 'first stash');
+    const firstStash = (await service.listStashes(repo.path))[0];
+
+    // Another stash is created, shifting stash@{0} to the second stash
+    await modifyFile(repo.path, 'file.ts', 'second mod');
+    await service.stashChanges(repo.path, 'second stash');
+
+    // Attempting to drop stash@{0} with firstStash.hash fails closed
+    const result = await service.dropStash(repo.path, 'stash@{0}', firstStash.hash);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Stash reference 'stash@{0}' changed");
+
+    // Both stashes remain intact!
+    expect(await getStashCount(repo.path)).toBe(2);
+  });
+
+  it('applyStash fails closed when expectedHash does not match', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'first mod');
+    await service.stashChanges(repo.path, 'first stash');
+
+    const result = await service.applyStash(repo.path, 'stash@{0}', 'wronghash00000000000000000000000000000000');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('changed');
+    expect(await fileContent(repo.path, 'file.ts')).toBe('original');
+  });
+
+  it('popStash fails closed when expectedHash does not match and does not remove stash', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'mod');
+    await service.stashChanges(repo.path, 'stash');
+
+    const result = await service.popStash(repo.path, 'stash@{0}', 'wronghash00000000000000000000000000000000');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('changed');
+    expect(await getStashCount(repo.path)).toBe(1);
+    expect(await fileContent(repo.path, 'file.ts')).toBe('original');
+  });
+
+  it('clearStashes succeeds when expectedHashes matches collection', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'mod1');
+    await service.stashChanges(repo.path, 'stash1');
+    await modifyFile(repo.path, 'file.ts', 'mod2');
+    await service.stashChanges(repo.path, 'stash2');
+
+    const stashes = await service.listStashes(repo.path);
+    const hashes = stashes.map((s) => s.hash);
+
+    const result = await service.clearStashes(repo.path, hashes);
+    expect(result.success).toBe(true);
+    expect(await getStashCount(repo.path)).toBe(0);
+  });
+
+  it('clearStashes fails closed when collection changed after confirmation was opened', async () => {
+    repo = await createTempGitRepo({ initialFiles: { 'file.ts': 'original' } });
+    await modifyFile(repo.path, 'file.ts', 'mod1');
+    await service.stashChanges(repo.path, 'stash1');
+    const confirmedHashes = (await service.listStashes(repo.path)).map((s) => s.hash);
+
+    // New stash appears before confirmation resolves
+    await modifyFile(repo.path, 'file.ts', 'mod2');
+    await service.stashChanges(repo.path, 'stash2');
+
+    const result = await service.clearStashes(repo.path, confirmedHashes);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Stash collection changed');
+
+    // Both stashes remain untouched!
+    expect(await getStashCount(repo.path)).toBe(2);
+  });
+});

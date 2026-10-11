@@ -299,16 +299,66 @@
   }
 }
 
-.git-delete-overlay {
+.git-delete-overlay,
+.git-stash-overlay,
+.git-remote-overlay,
+.git-abort-overlay {
   z-index: 3000;
 }
 
-.clanker-dialog-content.git-delete-dialog {
+.clanker-dialog-content.git-delete-dialog,
+.clanker-dialog-content.git-stash-dialog,
+.clanker-dialog-content.git-remote-dialog,
+.clanker-dialog-content.git-abort-dialog {
   z-index: 3000;
   width: min(420px, 92vw);
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+.git-stash-dialog-warning,
+.git-remote-dialog-warning,
+.git-abort-dialog-warning {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.git-stash-dialog-message {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  background: var(--surface-control);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.git-remote-dialog-url {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.git-abort-conflicts {
+  margin-top: 8px;
+}
+
+.git-abort-conflict-list {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .git-delete-dialog-branch {

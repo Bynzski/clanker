@@ -1,53 +1,13 @@
-import type { VcsProvider } from '../../../shared/types/vcs';
-
-export type { VcsProvider };
-
-export interface GitStatus {
-  path: string;
-  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
-  staged: boolean;
-}
-
-export interface GitBranch {
-  name: string;
-  isCurrent: boolean;
-}
-
-export interface GitRemote {
-  name: string;
-  fetchUrl: string;
-  pushUrl: string;
-}
-
-export interface GitOperationState {
-  success: boolean;
-  isRepo: boolean;
-  inProgress: boolean;
-  mode: 'none' | 'merge' | 'rebase';
-  conflicts: string[];
-  message: string;
-  error?: string;
-}
-
-export interface GitStash {
-  hash: string;
-  ref: string;
-  message: string;
-}
-
-export interface GitHistoryEntry {
-  hash: string;
-  shortHash: string;
-  author: string;
-  date: string;
-  subject: string;
-}
-
-export interface GitDiffResult {
-  success: boolean;
-  output: string;
-  title: string;
-  error?: string;
-}
+// Git presentation uses the canonical IPC types; do not redefine the status contract here.
+export type { VcsProvider } from '../../../shared/types/vcs';
+export type {
+  GitStatus,
+  GitBranch,
+  GitRemote,
+  GitOperationStateResult as GitOperationState,
+  GitStash,
+  GitHistoryEntry,
+  GitDiffResult,
+} from '../../../shared/types/git';
 
 export type DiffMode = 'working' | 'staged' | 'commit';

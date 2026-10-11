@@ -33,7 +33,7 @@ export function getInvalidWorkspaceResult() {
 export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promise<void> {
   const pending = new Map<string, { controller: AbortController; done: Promise<void> }>();
   let shuttingDown = false;
-  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (event, workspacePath: string, workspaceId?: string) => {
+  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (event, workspacePath: string, workspaceId?: string, checkoutContextId?: string) => {
     if (shuttingDown) return { success: false, error: 'Application is shutting down' };
     const registry = deps.getWorkspaceRegistry?.();
     const ws = workspaceId ? registry?.getWorkspace(workspaceId) : null;
@@ -41,9 +41,25 @@ export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promis
     if (ws && ws.location.environmentId !== 'local') {
       return { success: false, error: 'AI commit message generation is not supported for remote workspaces in this version' };
     }
-    const root = getValidatedWorkspacePath(ws?.location.path ?? workspacePath);
+    let targetContext = null;
+    let contextRoot: string | undefined;
+    if (ws && checkoutContextId) {
+      if (typeof checkoutContextId !== 'string' || !checkoutContextId.trim()) {
+        return { success: false, error: 'Invalid checkout context identity' };
+      }
+      targetContext = registry?.resolveCheckoutContext(ws.workspaceId, checkoutContextId) ?? null;
+      if (!targetContext || targetContext.workspaceId !== ws.workspaceId || targetContext.environmentId !== 'local' || targetContext.missing) {
+        return { success: false, error: 'The selected checkout is unavailable for AI commit message generation' };
+      }
+      if (deps.getGitService().isWorktreeBeingRemoved(targetContext.path)) {
+        return { success: false, error: 'This worktree is being removed' };
+      }
+      contextRoot = targetContext.path;
+    }
+    const resolvedPath = contextRoot ?? ws?.location.path ?? workspacePath;
+    const root = getValidatedWorkspacePath(resolvedPath);
     if (!root) return getInvalidWorkspaceResult();
-    const key = workspaceId ?? root;
+    const key = `${workspaceId ?? root}:${targetContext?.id ?? 'main'}`;
     if (pending.has(key)) return { success: false, error: 'Commit message generation is already running for this workspace' };
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -51,7 +67,9 @@ export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promis
     let finish!: () => void;
     const done = new Promise<void>((resolve) => { finish = resolve; });
     pending.set(key, { controller, done });
-    const isCurrent = () => !controller.signal.aborted && (!ws || registry?.getWorkspace(ws.workspaceId) === ws);
+    const isCurrent = () => !controller.signal.aborted
+      && (!ws || registry?.getWorkspace(ws.workspaceId) === ws)
+      && (!targetContext || (registry?.resolveCheckoutContext(ws!.workspaceId, targetContext.id) === targetContext && !targetContext.missing));
     try {
       const store = deps.getStore();
       if (!store.get('aiCommitEnabled')) return { success: false, error: 'AI commit message generation is disabled' };
@@ -65,10 +83,13 @@ export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promis
         executeHarnessCommand: (request, signal) => executeLocalHarnessCommand(request, signal, 90_000),
       }, binding?.environment, controller.signal);
       const git = deps.getGitService();
-      const gitPath = ws?.location.path ?? root;
+      const gitPath = root;
       const collectContext = () => git.getCommitPromptContext(gitPath, 'all');
       const context = ws ? await git.withWorkspace({
-        workspaceId: ws.workspaceId, workspacePath: gitPath, environmentId: ws.location.environmentId,
+        workspaceId: ws.workspaceId,
+        workspacePath: gitPath,
+        environmentId: ws.location.environmentId,
+        ...(targetContext ? { checkoutContextId: targetContext.id } : {}),
       }, collectContext) : await collectContext();
       if (!context.success) return { success: false, error: context.error || 'Unable to build commit context' };
       const diffSummary = await buildCommitDiffContext(root, context.diffSummary, context.changes);

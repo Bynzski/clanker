@@ -36,6 +36,7 @@ export interface GitStatusResult {
   workspacePath?: string;
   workspaceId?: string;
   environmentId?: string;
+  checkoutContextId?: string;
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;
@@ -129,6 +130,7 @@ export interface GitWorkspaceIdentity {
   workspaceId: string;
   environmentId: string;
   checkoutContextId?: string;
+  validateIdentity?: () => void;
   readFile?: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string; errorCode?: string }>;
 }
 
@@ -141,6 +143,7 @@ export class GitService {
   private currentWorkspacePath: string | null = null;
   private currentWorkspaceId: string | null = null;
   private currentEnvironmentId: string | null = null;
+  private currentCheckoutContextId: string | null = null;
   private pollIntervalMs = 30000;
   private pollGeneration = 0;
   private pollRequested: { path: string; generation: number } | null = null;
@@ -178,6 +181,7 @@ export class GitService {
     workspaceId?: string,
   ): Promise<{ stdout: string; stderr: string }> {
     const scoped = this.workspaceContext.getStore();
+    scoped?.validateIdentity?.();
     if (scoped && scoped.environmentId !== 'local' && scoped.workspacePath !== workspacePath) {
       throw new Error('Git command targets a different remote workspace');
     }
@@ -687,6 +691,15 @@ export class GitService {
     return { path, status, staged };
   }
 
+  private parseStatusSides(xy: string, path: string): GitStatusEntry[] {
+    const entry = this.parseStatusEntry(xy, path);
+    // Porcelain reports index and working changes independently (e.g. MM, AM, RM).
+    // Keep both identities so selective staging never hides the working side.
+    return entry.staged && xy[1] !== '.' && xy[1] !== ' '
+      ? [entry, this.parseStatusEntry(`.${xy[1]}`, path)]
+      : [entry];
+  }
+
   private parseGitStatusV2(output: string): GitStatusEntry[] {
     const changes: GitStatusEntry[] = [];
     const lines = output.split('\n').filter(Boolean);
@@ -701,7 +714,7 @@ export class GitService {
         if (parts.length < 9) continue;
         const xy = parts[1];
         const path = parts.slice(8).join(' ');
-        changes.push(this.parseStatusEntry(xy, path));
+        changes.push(...this.parseStatusSides(xy, path));
       } else if (line.startsWith('2 ')) {
         // Rename/copy entry: 2 XY SUB MH MI MW HH HI SCORE PATH<TAB>ORIG
         const parts = line.split(' ');
@@ -710,7 +723,7 @@ export class GitService {
         const pathOrig = parts.slice(9).join(' ');
         const tabIndex = pathOrig.indexOf('\t');
         const path = tabIndex >= 0 ? pathOrig.slice(0, tabIndex) : pathOrig;
-        changes.push(this.parseStatusEntry(xy, path));
+        changes.push(...this.parseStatusSides(xy, path));
       } else if (line.startsWith('? ')) {
         // Untracked: ? PATH
         changes.push({ path: line.slice(2), status: 'untracked', staged: false });
@@ -938,7 +951,35 @@ export class GitService {
     }
   }
 
-  async applyStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async verifyStashIdentity(workspacePath: string, stashRef: string, expectedHash: string): Promise<{ success: boolean; error?: string }> {
+    const trimmedHash = expectedHash.trim();
+    if (!trimmedHash) {
+      return { success: false, error: 'Expected stash commit identity is required' };
+    }
+    try {
+      const { stdout } = await this.execGit(workspacePath, ['rev-parse', '--verify', `${stashRef}^{commit}`]);
+      const currentHash = stdout.trim();
+      if (currentHash.toLowerCase() !== trimmedHash.toLowerCase()) {
+        return {
+          success: false,
+          error: `Stash reference '${stashRef}' changed (expected commit ${trimmedHash.slice(0, 7)}, found ${currentHash.slice(0, 7)}). The operation was cancelled to avoid acting on the wrong stash.`,
+        };
+      }
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error: `Stash reference '${stashRef}' no longer exists in this repository.`,
+      };
+    }
+  }
+
+  async applyStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'apply', stashRef]);
       return { success: true };
@@ -950,7 +991,12 @@ export class GitService {
     }
   }
 
-  async popStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async popStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'pop', stashRef]);
       return { success: true };
@@ -962,7 +1008,12 @@ export class GitService {
     }
   }
 
-  async dropStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
+  async dropStash(workspacePath: string, stashRef: string, expectedHash?: string): Promise<{ success: boolean; error?: string }> {
+    if (expectedHash) {
+      const verification = await this.verifyStashIdentity(workspacePath, stashRef, expectedHash);
+      if (!verification.success) return verification;
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'drop', stashRef]);
       return { success: true };
@@ -974,7 +1025,19 @@ export class GitService {
     }
   }
 
-  async clearStashes(workspacePath: string): Promise<{ success: boolean; error?: string }> {
+  async clearStashes(workspacePath: string, expectedHashes?: string[]): Promise<{ success: boolean; error?: string }> {
+    if (Array.isArray(expectedHashes)) {
+      const currentStashes = await this.listStashes(workspacePath);
+      const currentHashes = currentStashes.map((s) => s.hash);
+      const isMatch = currentHashes.length === expectedHashes.length && currentHashes.every((h, i) => h.toLowerCase() === expectedHashes[i]?.toLowerCase());
+      if (!isMatch) {
+        return {
+          success: false,
+          error: 'Stash collection changed since confirmation was opened. Re-confirm to clear all stashes.',
+        };
+      }
+    }
+
     try {
       await this.execGit(workspacePath, ['stash', 'clear']);
       return { success: true };
@@ -1699,11 +1762,12 @@ export class GitService {
     }
   }
 
-  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string): void {
+  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string, checkoutContextId?: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
     this.currentWorkspaceId = workspaceId ?? null;
     this.currentEnvironmentId = environmentId ?? null;
+    this.currentCheckoutContextId = checkoutContextId ?? null;
     this.requestStatusUpdate();
     this.pollingInterval = setInterval(() => {
       this.requestStatusUpdate();
@@ -1724,6 +1788,7 @@ export class GitService {
     this.currentWorkspacePath = null;
     this.currentWorkspaceId = null;
     this.currentEnvironmentId = null;
+    this.currentCheckoutContextId = null;
     this.pollRequested = null;
     this.pollGeneration += 1;
   }
@@ -1747,6 +1812,7 @@ export class GitService {
       workspacePath: this.currentWorkspacePath,
       workspaceId: this.currentWorkspaceId,
       environmentId: this.currentEnvironmentId,
+      ...(this.currentCheckoutContextId ? { checkoutContextId: this.currentCheckoutContextId } : {}),
     };
   }
 
@@ -1777,6 +1843,7 @@ export class GitService {
         status.workspacePath = request.path;
         status.workspaceId = identity?.workspaceId;
         status.environmentId = identity?.environmentId;
+        status.checkoutContextId = identity?.checkoutContextId;
         if (request.path === this.currentWorkspacePath) {
           this.emitStatus(status);
         }

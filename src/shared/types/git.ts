@@ -19,6 +19,7 @@ export interface GitStatusResult {
   workspacePath?: string;
   workspaceId?: string;
   environmentId?: string;
+  checkoutContextId?: string;
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;

@@ -7,7 +7,7 @@ import { Input } from './ui/Input';
 import { IconButton } from './ui/IconButton';
 import { WorkspaceTargetPicker } from './workspaceOpen/WorkspaceTargetPicker';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
-import SshEnvironmentManager from './SshEnvironmentManager';
+import { openSshTargetSettings } from '../lib/settingsHandoff';
 import { clankerMascot } from '../lib/branding';
 import DirectorySuggestionList from './DirectorySuggestionList';
 import { useDirectorySuggestions, withTrailingSlash, withoutTrailingSlash } from '../lib/useDirectorySuggestions';
@@ -20,15 +20,26 @@ interface Props {
   onOpen: (location: WorkspaceLocation) => Promise<unknown>;
 }
 
-function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
+function WorkspaceLocationForm({ onClose, onOpen }: Props) {
   const [environments, setEnvironments] = useState<SshEnvironmentConfig[]>([]);
   const [environmentId, setEnvironmentId] = useState('local');
-  const [path, setPath] = useState('');
+  const [path, setPathState] = useState('');
+  const pathRef = useRef('');
+  const localDraft = useRef('');
+  const locationId = useRef('local');
+  const setPath = (value: string) => { pathRef.current = value; setPathState(value); };
+  const selectLocation = (id: string) => {
+    if (locationId.current === 'local') localDraft.current = pathRef.current;
+    locationId.current = id; setEnvironmentId(id); setPath(id === 'local' ? localDraft.current : '');
+  };
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const mounted = useRef(true);
   const [error, setError] = useState('');
-  const [manager, setManager] = useState<string | null | undefined>(undefined);
+  const [suspended, setSuspended] = useState(false);
+  const handingOff = useRef(false);
+  const returnFinish = useRef<(() => void) | null>(null);
+  const locationRef = useRef<HTMLButtonElement>(null);
   const [startSaved, setStartSaved] = useState(false);
   const editedRef = useRef(false);
   const [localFocused, setLocalFocused] = useState(false);
@@ -41,9 +52,31 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
     void window.electronAPI.sshEnvironmentList().then((list) => { if (mounted.current) setEnvironments(list); })
       .catch((reason: unknown) => { if (mounted.current) setError(String(reason)); });
     // Local starting directory (the saved base directory) pre-fills the box, like a remote host's default root.
-    void window.electronAPI.getBaseDirectory().then((base) => { if (mounted.current && base && !editedRef.current) setPath(base); }).catch(() => undefined);
+    void window.electronAPI.getBaseDirectory().then((base) => { if (mounted.current && base && !editedRef.current) { localDraft.current = base; if (locationId.current === 'local') setPath(base); } }).catch(() => undefined);
     return () => { mounted.current = false; };
   }, []);
+  const openTargets = (id: string | null) => {
+    handingOff.current = true;
+    const opened = openSshTargetSettings({ environmentId: id, onAcquired: () => { if (mounted.current) setSuspended(true); },
+      onReturn: (selectedId, finish) => {
+        if (!mounted.current) return false;
+        returnFinish.current = finish;
+        void window.electronAPI.sshEnvironmentList().then((list) => {
+          if (!mounted.current) { finish(false); return; }
+          setEnvironments(list);
+          const next = selectedId ?? environmentId;
+          if (next !== 'local' && !list.some((entry) => entry.id === next)) selectLocation('local');
+          else if (next !== locationId.current) selectLocation(next);
+          else if (selectedId && next !== 'local') setPath('');
+          setError(''); setSuspended(false);
+        }, (reason: unknown) => {
+          if (!mounted.current) { finish(false); return; }
+          selectLocation('local'); setError(`Could not refresh saved targets: ${String(reason)}`); setSuspended(false);
+        });
+        return true;
+      } });
+    if (!opened) { handingOff.current = false; setError('Application Settings is unavailable.'); }
+  };
   const selectFolder = async () => {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
@@ -57,18 +90,8 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      if (environmentId === 'local') {
-        const chosen = await window.electronAPI.openBaseDirectoryDialog();
-        if (chosen && mounted.current) { editedRef.current = true; setPath(chosen); setStartSaved(true); }
-      } else {
-        const environment = environments.find((entry) => entry.id === environmentId);
-        const root = withoutTrailingSlash(path.trim());
-        if (!environment || !root.startsWith('/')) throw new Error('Enter an absolute path to use as the starting directory.');
-        const result = await window.electronAPI.sshEnvironmentSave({ ...environment, defaultWorkspaceRoot: root });
-        if (!result.success || !result.config) throw new Error(result.error || 'Could not save the starting directory.');
-        const saved = result.config;
-        if (mounted.current) { setEnvironments((list) => list.map((entry) => entry.id === saved.id ? saved : entry)); setStartSaved(true); }
-      }
+      const chosen = await window.electronAPI.openBaseDirectoryDialog();
+      if (chosen && mounted.current) { editedRef.current = true; setPath(chosen); setStartSaved(true); }
     } catch (reason) { if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
@@ -84,14 +107,25 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
       if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
-  return <div className="open-workspace-form" aria-busy={busy}>
+  return <Dialog open={!suspended} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DialogContent className="open-workspace-dialog" aria-describedby={undefined}
+      onCloseAutoFocus={(event) => { if (handingOff.current) event.preventDefault(); }}
+      onOpenAutoFocus={(event) => {
+        if (returnFinish.current) {
+          event.preventDefault(); locationRef.current?.focus();
+          const finish = returnFinish.current; returnFinish.current = null; handingOff.current = false; finish();
+        }
+      }}>
+      <div className="clanker-dialog-header"><DialogTitle className="clanker-dialog-title">Open Workspace</DialogTitle>
+        <DialogClose asChild><IconButton variant="ghost" aria-label="Close"><X size={14} /></IconButton></DialogClose></div>
+      <div className="open-workspace-form" aria-busy={busy}>
     <div className="open-workspace-hero">
       <img src={clankerMascot} alt="" width={96} height={96} draggable={false} />
       <p>Where are we working today?</p>
     </div>
-    <WorkspaceTargetPicker value={environmentId} environments={environments} disabled={busy}
-      onSelect={(id) => { local.wake(); setEnvironmentId(id); setPath(''); setError(''); setStartSaved(false); editedRef.current = id !== 'local'; }}
-      onAddServer={() => setManager(null)} onSettings={() => setManager(environmentId)} />
+    <WorkspaceTargetPicker value={environmentId} environments={environments} disabled={busy} returnFocusRef={locationRef}
+      onSelect={(id) => { local.wake(); selectLocation(id); setError(''); setStartSaved(false); }}
+      onAddServer={() => openTargets(null)} onSettings={() => openTargets(environmentId)} />
     {environmentId === 'local' ? <div className="remote-path-field"><div className="input-wrapper">
       <IconButton type="button" className="cog-button start-button" disabled={busy} aria-label="Set starting directory"
       title={environmentId === 'local' ? 'Choose the folder this dialog starts in' : 'Save this path as the starting directory for this server'}
@@ -121,9 +155,9 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
       onChoose={(entry) => { local.settle(); setPath(withTrailingSlash(entry.path)); }} />}</div> : <fieldset disabled={busy}>
       <RemoteWorkspacePath key={environmentId} environmentId={environmentId} path={path}
         onPathChange={(next) => { setStartSaved(false); setPath(next); }} onSubmit={() => { void submit(); }}
-        leadingAction={<IconButton type="button" className="cog-button start-button" disabled={busy} aria-label="Set starting directory"
-        title={environmentId === 'local' ? 'Choose the folder this dialog starts in' : 'Save this path as the starting directory for this server'}
-        onClick={() => { void setStartingDirectory(); }}>
+        leadingAction={<IconButton type="button" className="cog-button start-button" disabled={busy} aria-label="Server settings"
+        title="Edit this server and its default root in Settings"
+        onClick={() => openTargets(environmentId)}>
         {startSaved ? <Check size={16} /> : <Settings size={16} />}
     </IconButton>} />
     </fieldset>}
@@ -131,25 +165,8 @@ function WorkspaceLocationForm({ onClose, onOpen }: Omit<Props, 'isOpen'>) {
     <Button type="button" variant="primary" className="open-workspace-submit" disabled={busy || !path.trim()} onClick={() => { void submit(); }}>
       {busy ? 'Opening…' : <>Open Workspace <ArrowRight size={14} aria-hidden="true" /></>}
     </Button>
-    {manager !== undefined && <SshEnvironmentManager environments={environments} initialEnvironment={environments.find((env) => env.id === manager)}
-      onClose={() => setManager(undefined)} onSaved={(config) => {
-        setEnvironments((list) => [...list.filter((env) => env.id !== config.id), config]);
-        setEnvironmentId(config.id); setPath(''); setManager(undefined);
-      }} onDeleted={(id) => {
-        setEnvironments((list) => list.filter((env) => env.id !== id));
-        if (environmentId === id) { setEnvironmentId('local'); setPath(''); }
-        setManager(undefined);
-      }} />}
-  </div>;
+    </div></DialogContent></Dialog>;
 }
 export default function OpenWorkspaceDialog({ isOpen, onClose, onOpen }: Props) {
-  return <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="open-workspace-dialog" aria-describedby={undefined}>
-      <div className="clanker-dialog-header">
-        <DialogTitle className="clanker-dialog-title">Open Workspace</DialogTitle>
-        <DialogClose asChild><IconButton variant="ghost" aria-label="Close"><X size={14} /></IconButton></DialogClose>
-      </div>
-      <WorkspaceLocationForm onClose={onClose} onOpen={onOpen} />
-    </DialogContent>
-  </Dialog>;
+  return isOpen ? <WorkspaceLocationForm isOpen onClose={onClose} onOpen={onOpen} /> : null;
 }

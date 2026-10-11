@@ -1,35 +1,42 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { DeleteDialogState } from './gitButtonTypes';
 
 interface UseGitBranchActionsParams {
+  isCurrent?: () => boolean;
   activeAction: string | null;
   currentBranch: string | null;
   onSetActiveAction: (action: string | null) => void;
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
 }
 
 export function useGitBranchActions({
+  isCurrent = () => true,
   activeAction,
   currentBranch,
   onSetActiveAction,
   refreshAfterAction,
   workspacePath,
   workspaceId,
+  checkoutContextId,
 }: UseGitBranchActionsParams) {
+  const pending = useRef(false);
+  const canAct = () => isCurrent() && !pending.current && !activeAction;
   const [branchError, setBranchError] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
   const [newBranchName, setNewBranchName] = useState('');
 
   const handleCreateBranch = async (event: React.FormEvent) => {
     event.preventDefault();
-
+    if (!canAct()) return;
     if (!newBranchName.trim()) {
       setBranchError('Enter a branch name');
       return;
     }
 
+    pending.current = true;
     onSetActiveAction('create');
     setBranchError(null);
 
@@ -38,9 +45,10 @@ export function useGitBranchActions({
         workspacePath,
         newBranchName,
         currentBranch ?? undefined,
-        workspaceId
+        workspaceId,
+        ...(checkoutContextId ? [checkoutContextId] : [])
       );
-
+      if (!isCurrent()) return;
       if (result.success) {
         setNewBranchName('');
         await refreshAfterAction();
@@ -48,37 +56,44 @@ export function useGitBranchActions({
         setBranchError(result.error || 'Failed to create branch');
       }
     } catch (error: unknown) {
-      setBranchError(error instanceof Error ? error.message : 'Failed to create branch');
+      if (isCurrent()) setBranchError(error instanceof Error ? error.message : 'Failed to create branch');
     } finally {
-      onSetActiveAction(null);
+      pending.current = false;
+      if (isCurrent()) onSetActiveAction(null);
     }
   };
 
   const handleSwitchBranch = async (branchName: string) => {
+    if (!canAct() || branchName === currentBranch) return;
+    pending.current = true;
     onSetActiveAction(`switch:${branchName}`);
     setBranchError(null);
 
     try {
-      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId);
+      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
+      if (!isCurrent()) return;
       if (result.success) {
         await refreshAfterAction();
       } else {
         setBranchError(result.error || 'Failed to switch branch');
       }
     } catch (error: unknown) {
-      setBranchError(error instanceof Error ? error.message : 'Failed to switch branch');
+      if (isCurrent()) setBranchError(error instanceof Error ? error.message : 'Failed to switch branch');
     } finally {
-      onSetActiveAction(null);
+      pending.current = false;
+      if (isCurrent()) onSetActiveAction(null);
     }
   };
 
   const handleDeleteBranch = (branchName: string) => {
+    if (!canAct()) return;
+    if (branchName === currentBranch) { setBranchError('The current branch cannot be deleted'); return; }
     setBranchError(null);
     setDeleteDialog({ branch: branchName, stage: 'confirm' });
   };
 
   const closeDeleteDialog = () => {
-    if (activeAction) {
+    if (activeAction || pending.current) {
       return;
     }
 
@@ -86,11 +101,13 @@ export function useGitBranchActions({
   };
 
   const performDeleteBranch = async (forceDelete = false) => {
-    if (!workspacePath || !deleteDialog) {
+    if (!canAct() || !workspacePath || !deleteDialog || (forceDelete && deleteDialog.stage !== 'force')) {
       return;
     }
 
     const branchName = deleteDialog.branch;
+    if (branchName === currentBranch) { setDeleteDialog(null); setBranchError('The current branch cannot be deleted'); return; }
+    pending.current = true;
     const actionKey = forceDelete ? `force-delete:${branchName}` : `delete:${branchName}`;
     onSetActiveAction(actionKey);
     setBranchError(null);
@@ -99,7 +116,7 @@ export function useGitBranchActions({
       const result = forceDelete
         ? await window.electronAPI.gitForceDeleteBranch(workspacePath, branchName, workspaceId)
         : await window.electronAPI.gitDeleteBranch(workspacePath, branchName, workspaceId);
-
+      if (!isCurrent()) return;
       if (result.success) {
         setDeleteDialog(null);
         await refreshAfterAction();
@@ -118,10 +135,10 @@ export function useGitBranchActions({
       setDeleteDialog(null);
       setBranchError(result.error || 'Failed to delete branch');
     } catch (error: unknown) {
-      setDeleteDialog(null);
-      setBranchError(error instanceof Error ? error.message : 'Failed to delete branch');
+      if (isCurrent()) { setDeleteDialog(null); setBranchError(error instanceof Error ? error.message : 'Failed to delete branch'); }
     } finally {
-      onSetActiveAction(null);
+      pending.current = false;
+      if (isCurrent()) onSetActiveAction(null);
     }
   };
 

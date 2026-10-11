@@ -1,6 +1,7 @@
 import type { GitWorktree } from '../../shared/types/git';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
+import { isWorktreeRemovalWorkspaceCurrent } from './worktreeRemovalScope';
 import { findManagedWorktreeContext } from './worktreeAgents';
 
 export type UnmanagedWorktreeRemovalResult =
@@ -26,7 +27,7 @@ export async function removeUnmanagedWorktree(
   const environmentId = workspace.environmentId || 'local';
 
   const live = useWorkspaceStore.getState().getWorkspaceById(workspace.id);
-  if (!live || (live.environmentId || 'local') !== environmentId) return fail('validate', 'The workspace is no longer open');
+  if (!isWorktreeRemovalWorkspaceCurrent(workspace) || !live) return fail('validate', 'The workspace is no longer open');
   if (worktree.isMain) return fail('validate', 'The main checkout cannot be removed');
   if (findManagedWorktreeContext(live, worktree.path)) {
     return fail('validate', 'This checkout is attached to this workspace and is removed through its checkout row, not directly');
@@ -41,6 +42,7 @@ export async function removeUnmanagedWorktree(
   let stage: 'inspect' | 'remove' = 'inspect';
   try {
     const inspection = await window.electronAPI.gitInspectWorktree(workspace.workspacePath, worktree.path, openPaths, workspace.id);
+    if (!isWorktreeRemovalWorkspaceCurrent(workspace)) return fail('inspect', 'Workspace identity changed during inspection; checkout kept');
     if (!inspection.success || !inspection.worktree || typeof inspection.hasChanges !== 'boolean') {
       return fail('inspect', inspection.error || 'Could not inspect worktree');
     }

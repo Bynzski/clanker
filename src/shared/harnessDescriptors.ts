@@ -6,6 +6,10 @@ export interface HarnessDescriptor {
   readonly name: string;
   readonly iconKey: HarnessId;
   readonly legacyIcon: string;
+  /** Settings presentation of the provider's existing model interface. */
+  readonly modelSelection: 'text' | 'catalog' | 'catalog-or-custom';
+  /** Verified attention transports; preferences do not grant unsupported launch capabilities. */
+  readonly attention: { readonly local: boolean; readonly remote: boolean };
   readonly aiCommit?: { readonly support: 'native' | 'emulated' };
   /** Present only for harnesses with a verified provider usage capability (see defineHarness). */
   readonly usage?: { readonly support: 'native' | 'emulated' };
@@ -15,13 +19,13 @@ export interface HarnessDescriptor {
   readonly agentBridge?: { readonly support: 'native' };
 }
 export const HARNESS_DESCRIPTORS = {
-  codex: { id: 'codex', name: 'Codex', iconKey: 'codex', legacyIcon: '🧠', aiCommit: { support: 'native' }, usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
-  opencode: { id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
-  pi: { id: 'pi', name: 'Pi', iconKey: 'pi', legacyIcon: 'π', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
-  omp: { id: 'omp', name: 'Oh My Pi', iconKey: 'omp', legacyIcon: 'π', aiCommit: { support: 'native' }, usage: { support: 'native' } },
-  claude: { id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨', usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
-  hermes: { id: 'hermes', name: 'Hermes', iconKey: 'hermes', legacyIcon: '☿', usage: { support: 'native' } },
-  agy: { id: 'agy', name: 'Antigravity', iconKey: 'agy', legacyIcon: '🪐', aiCommit: { support: 'native' }, usage: { support: 'native' } },
+  codex: { modelSelection: 'catalog', attention: { local: true, remote: true }, id: 'codex', name: 'Codex', iconKey: 'codex', legacyIcon: '🧠', aiCommit: { support: 'native' }, usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
+  opencode: { modelSelection: 'catalog', attention: { local: true, remote: true }, id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
+  pi: { modelSelection: 'catalog', attention: { local: true, remote: true }, id: 'pi', name: 'Pi', iconKey: 'pi', legacyIcon: 'π', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
+  omp: { modelSelection: 'catalog', attention: { local: true, remote: true }, id: 'omp', name: 'Oh My Pi', iconKey: 'omp', legacyIcon: 'π', aiCommit: { support: 'native' }, usage: { support: 'native' } },
+  claude: { modelSelection: 'text', attention: { local: true, remote: true }, id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨', usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
+  hermes: { modelSelection: 'catalog-or-custom', attention: { local: false, remote: true }, id: 'hermes', name: 'Hermes', iconKey: 'hermes', legacyIcon: '☿', usage: { support: 'native' } },
+  agy: { modelSelection: 'catalog', attention: { local: true, remote: true }, id: 'agy', name: 'Antigravity', iconKey: 'agy', legacyIcon: '🪐', aiCommit: { support: 'native' }, usage: { support: 'native' } },
 } as const satisfies Record<HarnessId, HarnessDescriptor>;
 
 export type AiCommitHarnessId = {

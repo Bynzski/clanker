@@ -1,121 +1,92 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GitRemote } from './types';
 import type { RemoteAction } from './gitButtonTypes';
 
 interface UseGitRemoteActionsParams {
+  isCurrent?: () => boolean;
   currentBranch: string | null;
   loadRemotes: () => Promise<void>;
   refreshAfterAction: () => Promise<void>;
   remotes: GitRemote[];
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
 }
 
 export function useGitRemoteActions({
+  isCurrent = () => true,
   currentBranch,
   loadRemotes,
   refreshAfterAction,
   remotes,
   workspacePath,
   workspaceId,
+  checkoutContextId,
 }: UseGitRemoteActionsParams) {
   const [remoteAction, setRemoteAction] = useState<RemoteAction>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
-
-  const handleFetch = async () => {
-    setRemoteAction('fetch');
+  const pending = useRef(false);
+  // Also protect standalone consumers when props change without remounting.
+  const scope = JSON.stringify([workspacePath, workspaceId, checkoutContextId]);
+  const liveScope = useRef({ key: scope, generation: 0 });
+  if (liveScope.current.key !== scope) {
+    liveScope.current = { key: scope, generation: liveScope.current.generation + 1 };
+  }
+  const generation = liveScope.current.generation;
+  const current = () => isCurrent() && liveScope.current.generation === generation;
+  useEffect(() => {
+    setRemoteAction(null);
     setRemoteError(null);
+  }, [scope]);
+  const checkoutArgs = checkoutContextId ? [checkoutContextId] : [];
 
+  const run = async (
+    action: Exclude<RemoteAction, null>,
+    execute: () => Promise<{ success: boolean; error?: string }>,
+  ) => {
+    if (!current() || pending.current) return;
+    pending.current = true;
+    setRemoteAction(action);
+    setRemoteError(null);
+    const label = `${action[0].toUpperCase()}${action.slice(1)}`;
+    const fallback = `${label} failed`;
+    let succeeded = false;
     try {
-      const result = await window.electronAPI.gitFetch(workspacePath, undefined, workspaceId);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Fetch failed');
+      const result = await execute();
+      if (!current()) return;
+      if (!result.success) {
+        setRemoteError(result.error || fallback);
+        return;
       }
+      succeeded = true;
+      await refreshAfterAction();
+      if (!current()) return;
+      if (action === 'publish') await loadRemotes();
     } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Fetch failed');
+      if (current()) {
+        const detail = error instanceof Error ? error.message : 'Refresh failed';
+        setRemoteError(succeeded
+          ? `${label} succeeded, but refreshing repository status failed. Status may be stale; use Refresh before continuing. ${detail}`
+          : error instanceof Error ? error.message : fallback);
+      }
     } finally {
-      setRemoteAction(null);
+      pending.current = false;
+      if (current()) setRemoteAction(null);
     }
   };
 
-  const handlePull = async () => {
-    setRemoteAction('pull');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPull(workspacePath, undefined, workspaceId);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Pull failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Pull failed');
-    } finally {
-      setRemoteAction(null);
-    }
-  };
-
-  const handlePush = async () => {
-    setRemoteAction('push');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPush(workspacePath, undefined, undefined, undefined, undefined, workspaceId);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Push failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Push failed');
-    } finally {
-      setRemoteAction(null);
-    }
-  };
-
+  const handleFetch = () => run('fetch', () =>
+    window.electronAPI.gitFetch(workspacePath, undefined, workspaceId, ...checkoutArgs));
+  const handlePull = () => run('pull', () =>
+    window.electronAPI.gitPull(workspacePath, undefined, workspaceId, ...checkoutArgs));
+  const handlePush = () => run('push', () =>
+    window.electronAPI.gitPush(workspacePath, undefined, undefined, undefined, undefined, workspaceId, ...checkoutArgs));
   const handlePublish = async () => {
-    if (!currentBranch) {
-      return;
-    }
-
-    const targetRemote = remotes[0]?.name ?? 'origin';
-
-    setRemoteAction('publish');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPush(
-        workspacePath,
-        targetRemote,
-        currentBranch,
-        false,
-        true,
-        workspaceId
-      );
-      if (result.success) {
-        await refreshAfterAction();
-        await loadRemotes();
-        setRemoteError(null);
-      } else {
-        setRemoteError(result.error || 'Publish failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Publish failed');
-    } finally {
-      setRemoteAction(null);
-    }
+    if (!currentBranch) return;
+    await run('publish', () => window.electronAPI.gitPush(
+      workspacePath, remotes[0]?.name ?? 'origin', currentBranch, false, true, workspaceId, ...checkoutArgs,
+    ));
   };
 
-  return {
-    handleFetch,
-    handlePublish,
-    handlePull,
-    handlePush,
-    remoteAction,
-    remoteError,
-    setRemoteError,
-  };
+  return { handleFetch, handlePublish, handlePull, handlePush, remoteAction, remoteError, setRemoteError };
 }

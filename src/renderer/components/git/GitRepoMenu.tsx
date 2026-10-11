@@ -1,8 +1,14 @@
+import { Button } from '../ui/Button';
+import { FormMessage } from '../ui/Field';
 import { GitBranchesSection } from './GitBranchesSection';
 import { GitHistorySection } from './GitHistorySection';
-import { GitMenuHeader } from './GitMenuHeader';
+import { useState } from 'react';
+import { ManagementShell } from '../ui/ManagementShell';
+import { GitOverview } from './GitOverview';
+import { GitChanges } from './GitChanges';
+import type { useCommitComposer } from './useCommitComposer';
+import type { gitManagementScope } from './gitManagementScope';
 import { GitMergeSection } from './GitMergeSection';
-import { GitRemoteActionsSection } from './GitRemoteActionsSection';
 import GitRemotesSection from './GitRemotesSection';
 import { GitStashSection } from './GitStashSection';
 import { GitWorktreesSection } from './GitWorktreesSection';
@@ -14,11 +20,19 @@ import type {
   GitOperationState,
   GitRemote,
   GitStash,
+  GitStatus,
   VcsProvider,
 } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
 
-interface GitRepoMenuProps {
+export interface GitRepoMenuProps {
+  scope: ReturnType<typeof gitManagementScope>;
+  statusKnown: boolean;
+  branchConfirmationOpen: boolean;
+  stashConfirmationOpen?: boolean;
+  mergeConfirmationOpen?: boolean;
+  isScopeCurrent: () => boolean;
+  onWorktreesChanged: () => void;
   activeAction: string | null;
   ahead: number;
   availableMergeTargets: string[];
@@ -26,12 +40,22 @@ interface GitRepoMenuProps {
   branchError: string | null;
   branches: GitBranch[];
   changeCount: number;
+  changes: GitStatus[];
+  changesError: string | null;
+  isLoadingChanges: boolean;
+  reviewRevision: number;
+  onRefreshChanges: () => Promise<void>;
+  onStageFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onStageAll: () => Promise<{ success: boolean; error?: string }>;
+  onUnstageFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onUnstageAll: () => Promise<{ success: boolean; error?: string }>;
   createBranchInputRef: React.RefObject<HTMLInputElement | null>;
   currentBranch: string | null;
   currentBranchLabel: string;
   deepLinks: DeepLink[];
   diffError: string | null;
   diffResult: GitDiffResult | null;
+  hasMoreHistory?: boolean;
   history: GitHistoryEntry[];
   historyError: string | null;
   includeUntracked: boolean;
@@ -47,18 +71,18 @@ interface GitRepoMenuProps {
   mergeTargetBranch: string;
   newBranchName: string;
   onAbortOperation: () => void;
-  onApplyStash: (stashRef: string) => void;
+  onApplyStash: (stash: GitStash) => void;
   onClearStashes: () => void;
-  onClose: () => void;
-  /** Reports a menu-owned portal modal opening/closing so the host does not treat clicks in it as outside clicks. */
-  onModalOpenChange?: (open: boolean) => void;
+  onLoadMoreHistory?: () => void;
+  onRestoreFocus: () => void;
   onCreateBranch: (event: React.FormEvent) => void;
   onDeleteBranch: (branchName: string) => void;
-  onDropStash: (stashRef: string) => void;
+  onDropStash: (stash: GitStash) => void;
   onFetch: () => void;
   onMergeBranch: () => void;
-  onOpenCommitDialog: () => void;
-  onPopStash: (stashRef: string) => void;
+  commitComposer: ReturnType<typeof useCommitComposer>;
+  commitProgress: string | null;
+  onPopStash: (stash: GitStash) => void;
   onPublish: () => void;
   onPull: () => void;
   onPush: () => void;
@@ -97,17 +121,18 @@ interface GitRepoMenuProps {
   workspaceId?: string;
 }
 
-export function GitRepoMenu({
+export function GitRepoMenu(props: GitRepoMenuProps) {
+  const [page, setPage] = useState('changes');
+  const [worktreeBusy, setWorktreeBusy] = useState(false);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const busy = props.isBusy || props.branchConfirmationOpen || props.stashConfirmationOpen || props.mergeConfirmationOpen || worktreeBusy || remoteBusy;
+  const {
   activeAction,
-  ahead,
   availableMergeTargets,
-  behind,
   branchError,
   branches,
-  changeCount,
   createBranchInputRef,
   currentBranch,
-  currentBranchLabel,
   deepLinks,
   diffError,
   diffResult,
@@ -128,19 +153,11 @@ export function GitRepoMenu({
   onAbortOperation,
   onApplyStash,
   onClearStashes,
-  onClose,
-  onModalOpenChange,
   onCreateBranch,
   onDeleteBranch,
   onDropStash,
-  onFetch,
   onMergeBranch,
-  onOpenCommitDialog,
   onPopStash,
-  onPublish,
-  onPull,
-  onPush,
-  onRefresh,
   onRefreshContext,
   onRemotesChanged,
   onSelectCommitDiff,
@@ -157,7 +174,6 @@ export function GitRepoMenu({
   providerContext,
   pullRequest,
   refreshKey = 0,
-  remoteAction,
   remoteError,
   remotes,
   selectedCommit,
@@ -166,70 +182,42 @@ export function GitRepoMenu({
   stashError,
   stashMessage,
   stashes,
-  statusErrorMessage,
-  upstream,
-  upstreamLabel,
   vcsContextError,
   workspacePath,
   workspaceId,
-}: GitRepoMenuProps) {
-  const errors = [
-    statusErrorMessage,
-    branchError,
-    mergeError,
-    stashError,
-    historyError,
-    diffError,
-    remoteError,
-  ].filter((error): error is string => Boolean(error));
+  } = props;
+
+  const checkoutContext = <p className="source-control-location">{props.scope.environmentId === 'local' ? 'Local' : `SSH · ${props.scope.environmentId}`} · {props.scope.path}<br />
+    {props.scope.checkoutLabel} · <span>Current branch: {props.statusKnown ? props.currentBranchLabel : 'Unknown branch'}</span></p>;
 
   return (
-    <div className="git-menu" role="menu" aria-label="Git actions">
-      <GitMenuHeader
-        ahead={ahead}
-        behind={behind}
-        changeCount={changeCount}
-        currentBranch={currentBranch}
-        currentBranchLabel={currentBranchLabel}
-        isBusy={isBusy}
-        isDetached={isDetached}
-        isLoadingBranches={isLoadingBranches}
-        isLoadingHistory={isLoadingHistory}
-        isLoadingOperation={isLoadingOperation}
-        onClose={onClose}
-        onOpenCommitDialog={onOpenCommitDialog}
-        onRefresh={onRefresh}
-        operationState={operationState}
-        provider={provider}
-        upstream={upstream}
-        upstreamLabel={upstreamLabel}
-      />
-
-      {errors.map((error) => (
-        <div key={error} className="git-menu-error">{error}</div>
-      ))}
-
-      {!isDetached && (
-        <GitRemoteActionsSection
-          currentBranch={currentBranch}
-          hasRemotes={remotes.length > 0}
-          isBusy={isBusy}
-          onFetch={onFetch}
-          onPublish={onPublish}
-          onPull={onPull}
-          onPush={onPush}
-          remoteAction={remoteAction}
-          upstream={upstream}
-        />
-      )}
-
+    <ManagementShell busy={busy} onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }} onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
+      onCloseAutoFocus={(event) => { event.preventDefault(); props.onRestoreFocus(); }} title="Source Control"
+      items={[
+        { id: 'changes', label: 'Changes', group: 'Repository' },
+        { id: 'history', label: 'History', group: 'Repository' },
+        { id: 'overview', label: 'Overview', group: 'Repository' },
+        { id: 'branches', label: 'Branches', group: 'Repository' },
+        { id: 'worktrees', label: 'Worktrees', group: 'Repository' },
+        { id: 'stashes', label: 'Stashes', group: 'Operations' },
+        { id: 'remotes', label: 'Remotes', group: 'Operations' },
+        { id: 'merge', label: 'Merge', group: 'Operations' },
+      ]}
+      selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
+      {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} onReviewChanges={() => { if (!busy) setPage('changes'); }} /> : page === 'branches' ? <div className="source-control-page">
+      <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Branches</h2>
+        <Button size="xs" disabled={busy || isLoadingBranches} onClick={props.onRefresh}>Refresh branches</Button></div>
+      {checkoutContext}
+      <p>Switch or create a branch in the selected checkout. Branches checked out elsewhere are protected by Git; the current branch cannot be deleted.</p>
+      {branchError && <FormMessage variant="error">{branchError}</FormMessage>}
       <GitBranchesSection
         activeAction={activeAction}
         branches={branches}
         createBranchInputRef={createBranchInputRef}
         currentBranch={currentBranch}
-        isBusy={isBusy}
+        isBusy={isBusy || isLoadingBranches || !props.statusKnown}
         isLoadingBranches={isLoadingBranches}
+        management
         newBranchName={newBranchName}
         onCreateBranch={onCreateBranch}
         onDeleteBranch={onDeleteBranch}
@@ -245,57 +233,94 @@ export function GitRepoMenu({
         workspaceId={workspaceId}
       />
 
-      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} onModalOpenChange={onModalOpenChange} />
-
-      <GitStashSection
-        activeAction={activeAction}
-        includeUntracked={includeUntracked}
-        isBusy={isBusy}
-        isLoadingStashes={isLoadingStashes}
-        onApplyStash={onApplyStash}
-        onClearStashes={onClearStashes}
-        onDropStash={onDropStash}
-        onPopStash={onPopStash}
-        onSetIncludeUntracked={onSetIncludeUntracked}
-        onSetStashMessage={onSetStashMessage}
-        onStash={onStash}
-        stashMessage={stashMessage}
-        stashes={stashes}
-      />
-
-      <GitRemotesSection
-        workspacePath={workspacePath}
-        workspaceId={workspaceId}
-        remotes={remotes}
-        provider={provider}
-        onRemotesChanged={onRemotesChanged}
-        onError={onSetRemoteError}
-      />
-
-      <GitMergeSection
-        activeAction={activeAction}
-        availableMergeTargets={availableMergeTargets}
-        isBusy={isBusy}
-        isLoadingOperation={isLoadingOperation}
-        mergeTargetBranch={mergeTargetBranch}
-        onAbortOperation={onAbortOperation}
-        onMergeBranch={onMergeBranch}
-        onSetMergeTargetBranch={onSetMergeTargetBranch}
-        operationState={operationState}
-      />
-
-      <GitHistorySection
-        diffResult={diffResult}
-        history={history}
-        isBusy={isBusy}
-        isLoadingDiff={isLoadingDiff}
-        isLoadingHistory={isLoadingHistory}
-        onSelectCommitDiff={onSelectCommitDiff}
-        onSelectWorkingDiff={onSelectWorkingDiff}
-        selectedCommit={selectedCommit}
-        selectedDiffMode={selectedDiffMode}
-        selectedDiffRef={selectedDiffRef}
-      />
-    </div>
+      </div> : page === 'worktrees' ? <div className="source-control-page">
+        <h2 className="clanker-dialog-title">Worktrees</h2>
+        {checkoutContext}
+        <p>Main and in-use checkouts are protected. Create checkouts through New isolated agent.</p>
+        {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
+        <GitWorktreesSection management workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey}
+          isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />
+      </div> : page === 'stashes' ? <div className="source-control-page">
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Stashes</h2>
+          <Button size="xs" disabled={busy || isLoadingStashes} onClick={props.onRefresh}>Refresh stashes</Button></div>
+        {checkoutContext}
+        <p>Apply keeps the stash; Pop removes it only after Git applies it cleanly.</p>
+        {stashError && <FormMessage variant="error">{stashError}</FormMessage>}
+        <GitStashSection
+          activeAction={activeAction}
+          includeUntracked={includeUntracked}
+          isBusy={isBusy || isLoadingStashes}
+          isLoadingStashes={isLoadingStashes}
+          management
+          onApplyStash={onApplyStash}
+          onClearStashes={onClearStashes}
+          onDropStash={onDropStash}
+          onPopStash={onPopStash}
+          onSetIncludeUntracked={onSetIncludeUntracked}
+          onSetStashMessage={onSetStashMessage}
+          onStash={onStash}
+          stashMessage={stashMessage}
+          stashes={stashes}
+        />
+      </div> : page === 'remotes' ? <div className="source-control-page">
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Remotes</h2>
+          <Button size="xs" disabled={busy} onClick={onRemotesChanged}>Refresh remotes</Button></div>
+        {checkoutContext}
+        <p>Remote configuration is shared by all checkouts of this repository.</p>
+        {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
+        <GitRemotesSection
+          management
+          workspacePath={workspacePath}
+          workspaceId={workspaceId}
+          remotes={remotes}
+          provider={provider}
+          onRemotesChanged={onRemotesChanged}
+          onError={onSetRemoteError}
+          isScopeCurrent={props.isScopeCurrent}
+          onBusyChange={setRemoteBusy}
+        />
+      </div> : page === 'merge' ? <div className="source-control-page">
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Merge</h2>
+          <Button size="xs" disabled={busy || isLoadingOperation} onClick={props.onRefresh}>Refresh merge state</Button></div>
+        {checkoutContext}
+        <p>Integrate another branch into the selected checkout.</p>
+        {mergeError && <FormMessage variant="error">{mergeError}</FormMessage>}
+        <GitMergeSection
+          activeAction={activeAction}
+          availableMergeTargets={availableMergeTargets}
+          currentBranch={currentBranch}
+          isBusy={isBusy || isLoadingOperation}
+          isDetached={isDetached}
+          isLoadingOperation={isLoadingOperation}
+          management
+          mergeTargetBranch={mergeTargetBranch}
+          onAbortOperation={onAbortOperation}
+          onMergeBranch={onMergeBranch}
+          onSetMergeTargetBranch={onSetMergeTargetBranch}
+          operationState={operationState}
+        />
+      </div> : <div className="source-control-page source-control-history">
+        <div className="source-control-page-heading"><h2 className="clanker-dialog-title">History</h2>
+          <Button size="xs" disabled={busy || isLoadingHistory} onClick={props.onRefresh}>Refresh history</Button></div>
+        {checkoutContext}
+        {historyError && <FormMessage variant="error">{historyError}</FormMessage>}
+        <GitHistorySection
+          management
+          diffError={diffError}
+          diffResult={diffResult}
+          history={history}
+          isBusy={isBusy}
+          isLoadingDiff={isLoadingDiff}
+          isLoadingHistory={isLoadingHistory}
+          hasMoreHistory={props.hasMoreHistory}
+          onLoadMoreHistory={props.onLoadMoreHistory}
+          onSelectCommitDiff={onSelectCommitDiff}
+          onSelectWorkingDiff={onSelectWorkingDiff}
+          selectedCommit={selectedCommit}
+          selectedDiffMode={selectedDiffMode}
+          selectedDiffRef={selectedDiffRef}
+        />
+      </div>}
+    </ManagementShell>
   );
 }

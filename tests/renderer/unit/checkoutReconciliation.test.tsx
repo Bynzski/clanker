@@ -65,6 +65,13 @@ describe('checkout reconciliation requests', () => {
     await waitFor(() => expect(reconcileMock()).toHaveBeenCalledTimes(2));
   });
 
+  it('discards a response for a replaced workspace root', async () => {
+    open(); let finish!: (value: ReconcileCheckoutContextsResult) => void;
+    reconcileMock().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const pending = requestCheckoutReconciliation('ws');
+    useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, workspacePath: '/different-repo' })) }));
+    finish({ success: true, contexts: [], dropped: [GONE.id] }); await pending; expect(contexts()).toContainEqual(GONE);
+  });
   it('survives a failed request', async () => {
     open();
     reconcileMock().mockRejectedValueOnce(new Error('ipc down'));

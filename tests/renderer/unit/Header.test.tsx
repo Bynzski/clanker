@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -501,27 +501,21 @@ describe('Header', () => {
   // =========================================================================
 
   // =========================================================================
-  // Settings Dropdown
+  // Settings management
   // =========================================================================
-  describe('settings dropdown', () => {
-    it('opens settings dropdown when Settings button is clicked', async () => {
+  describe('settings management', () => {
+    it('opens Settings from the toolbar', async () => {
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.getByText('AI commit messages')).toBeTruthy();
+      fireEvent.click(await screen.findByTitle('Settings'));
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy();
     });
 
-    it('closes settings dropdown when clicked again', async () => {
+    it('closes Settings with its close control', async () => {
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.getByText('AI commit messages')).toBeTruthy();
-      fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.queryByText('AI commit messages')).toBeNull();
+      fireEvent.click(await screen.findByTitle('Settings'));
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Close Settings' }));
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull();
     });
 
     it('exposes Settings trigger open state', async () => {
@@ -540,7 +534,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
-      expect(document.querySelector('.settings-dropdown')).toBeTruthy();
+      expect(document.querySelector('.management-shell')).toBeTruthy();
     });
 
     it('places Appearance first and keeps Settings open while switching themes', async () => {
@@ -548,15 +542,15 @@ describe('Header', () => {
       useThemeStore.setState({ theme: 'dark' });
       renderHeader();
       fireEvent.click(screen.getByTitle('Settings'));
-      const dropdown = document.querySelector('.settings-dropdown');
-      expect(dropdown?.firstElementChild).toHaveAttribute('aria-label', 'Appearance');
+      const dropdown = document.querySelector('.management-shell');
+      expect(screen.getByRole('button', { name: 'Appearance' })).toHaveAttribute('aria-current', 'page');
       fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
       expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true');
-      expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
-      expect(screen.getByText('AI commit messages')).toBeVisible();
+      expect(document.querySelector('.management-shell')).toBe(dropdown);
+      expect(screen.queryByText('AI commit messages')).toBeNull();
       fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
       expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
-      expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
+      expect(document.querySelector('.management-shell')).toBe(dropdown);
     });
 
     it('persists harness visibility changes from settings', async () => {
@@ -565,6 +559,8 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Harnesses' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Codex' }));
 
       const checkbox = await screen.findByLabelText('Hide Codex');
       fireEvent.click(checkbox);
@@ -585,10 +581,8 @@ describe('Header', () => {
   describe('AI commit settings', () => {
     it('shows AI commit messages checkbox', async () => {
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(await screen.findByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       expect(screen.getByText('AI commit messages')).toBeTruthy();
     });
 
@@ -598,6 +592,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       const checkbox = screen.getByRole('checkbox', { name: /AI commit messages/i }) as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
     });
@@ -608,6 +603,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       expect(window.electronAPI.setAiCommitEnabled).toHaveBeenCalledWith(true);
     });
@@ -618,6 +614,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       expect(screen.getByText('Provider')).toBeTruthy();
     });
@@ -628,6 +625,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       expect(screen.getByText('Model')).toBeTruthy();
     });
@@ -638,23 +636,25 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       const selects = screen.getAllByRole('combobox');
       expect(selects.length).toBe(2); // Provider and Model; Appearance uses radio groups
-      expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeTruthy();
-      expect(screen.getByRole('radiogroup', { name: 'Workspaces' })).toBeTruthy();
+      expect(screen.queryByRole('radiogroup', { name: 'Theme' })).toBeNull();
+      expect(screen.queryByRole('radiogroup', { name: 'Workspaces' })).toBeNull();
     });
 
     it('uses shared settings selects and persists provider/model selection', async () => {
       (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ codex: true, pi: true });
       renderHeader();
       fireEvent.click(await screen.findByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       const provider = screen.getByRole('combobox', { name: 'AI commit provider' });
       const model = screen.getByRole('combobox', { name: 'AI commit model' });
       expect(provider).toHaveClass('clanker-select');
       expect(model).toHaveClass('clanker-select');
-      expect(screen.getByRole('button', { name: 'Manage VCS credentials' })).toHaveClass('clanker-button');
+      expect(screen.queryByRole('button', { name: 'Manage VCS credentials' })).toBeNull();
       await screen.findByRole('option', { name: 'Pi' });
       fireEvent.change(provider, { target: { value: 'pi' } });
       await waitFor(() => expect(window.electronAPI.setAiCommitProvider).toHaveBeenCalledWith('pi'));
@@ -674,10 +674,8 @@ describe('Header', () => {
     it('handles setAiCommitEnabled failure gracefully', async () => {
       (window.electronAPI.setAiCommitEnabled as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to save'));
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(await screen.findByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       await waitFor(() => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
@@ -690,6 +688,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       await waitFor(() => {
         expect(window.electronAPI.getHarnessModels).toHaveBeenCalled();
@@ -708,6 +707,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       // Should show loading state
       await waitFor(() => {
@@ -724,10 +724,8 @@ describe('Header', () => {
     it('handles model loading failure gracefully', async () => {
       (window.electronAPI.getHarnessModels as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to load models'));
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
+      fireEvent.click(await screen.findByTitle('Settings'));
+      fireEvent.click(screen.getByRole('button', { name: 'Git Preferences' }));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       await waitFor(() => {
         expect(screen.getByTitle('Settings')).toBeTruthy();

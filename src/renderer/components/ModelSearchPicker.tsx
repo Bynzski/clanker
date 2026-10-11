@@ -27,6 +27,7 @@ interface ModelSearchPickerProps {
   pinDefaultFirst?: boolean;
   disabled?: boolean;
   triggerLabel?: string;
+  triggerId?: string;
   onEnterCustom?: () => void;
 }
 
@@ -65,7 +66,7 @@ export function ModelSearchPicker(props: ModelSearchPickerProps) {
     <SearchablePicker label="Models" items={items} value={props.model} favorites={props.favorites}
       open={props.open && !props.disabled} onOpenChange={props.onOpenChange} onSelect={props.onSelect}
       onToggleFavorite={props.onToggleFavorite} emptyText={props.refreshing || props.loading ? 'Discovering models…' : 'No models found'}
-      trigger={<button type="button" className="model-pill" disabled={props.disabled} title={fullLabel || defaultLabel} aria-label={props.triggerLabel ?? `${props.harness} model`}>
+      trigger={<button id={props.triggerId} type="button" className="model-pill" disabled={props.disabled} title={fullLabel || defaultLabel} aria-label={props.triggerLabel ?? `${props.harness} model`}>
         <span className={`model-pill-label ${unresolved ? 'unresolved' : ''}`}>
           {triggerLabel}
         </span>

@@ -1,0 +1,4 @@
+.clanker-checkbox { display: flex; align-items: center; gap: var(--space-sm); color: var(--text-secondary); font-size: var(--font-size-md); min-height: var(--control-height-md); cursor: pointer; }
+.clanker-checkbox input { flex-shrink: 0; width: 1em; height: 1em; margin: 0; accent-color: var(--accent-interactive); cursor: inherit; }
+.clanker-checkbox:has(input:disabled) { color: var(--text-muted); cursor: not-allowed; }
+.clanker-checkbox input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

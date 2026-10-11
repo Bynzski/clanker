@@ -51,9 +51,10 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
   useEffect(() => {
     if (!intent || !listReady) return;
     rootRef.current?.scrollIntoView?.({ block: 'nearest' });
+    if (intent === 'manage') rootRef.current?.focus();
     onIntentConsumed?.();
   }, [intent, listReady, onIntentConsumed]);
-  if (!list) return null;
+  if (!list) return error ? <p role="alert">{error} <Button onClick={() => void accounts.refresh()}>Retry accounts</Button></p> : <p role="status">Loading accounts…</p>;
 
   const pending = flow !== null && flow.state.status !== 'connected' && flow.state.status !== 'failed' && flow.state.status !== 'cancelled';
   const multiple = list.accounts.length > 1;
@@ -62,7 +63,7 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
   const canAdd = list.managedSupported && !pending && !adding;
 
   return (
-    <div ref={rootRef} className="harness-defaults-field harness-accounts" aria-label={`${harnessLabel} accounts`}>
+    <div ref={rootRef} role="group" tabIndex={-1} className="harness-defaults-field harness-accounts" aria-label={`${harnessLabel} accounts`}>
       <div className="harness-accounts-header">
         <span className="harness-defaults-field-label">{multiple ? 'Accounts' : 'Account'}</span>
         {canAdd && (

@@ -3,6 +3,7 @@ import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { AssistantNotice } from '../assistants/AssistantsRoster';
 import { IconButton } from '../ui/IconButton';
+import { Checkbox } from '../ui/Checkbox';
 import '../assistants/AssistantsRoster.css';
 
 const PROBLEM: Record<string, string> = {
@@ -31,23 +32,18 @@ export default function AssistantsSettings() {
     : transition ?? PROBLEM[service.state] ?? 'Not connected';
   const info = `Uses a local Hermes service (hermes serve). Ordinary Hermes harness usage is independent. Status: ${statusText}.`;
   return (
-    <div className="settings-section" aria-label="Hermes Assistants">
+    <div id="setting-assistants" tabIndex={-1} className="settings-section" aria-label="Hermes Assistants">
       <div className="assistants-settings-header">
         <div className="settings-section-title">Hermes Assistants</div>
         <IconButton size="xs" variant="ghost" aria-label="Hermes Assistants information" title={info}>
           <Info size={12} strokeWidth={2} />
         </IconButton>
       </div>
-      <label className="settings-option">
-        <input type="checkbox" checked={settings.enabled} disabled={busy}
-          onChange={(event) => void configure({ ...settings, enabled: event.target.checked })} />
-        <span>Enable Hermes Assistants</span>
-      </label>
-      <label className="settings-option">
-        <input type="checkbox" checked={settings.autoStart} disabled={!settings.enabled || busy}
-          onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })} />
-        <span>Start Hermes service when needed</span>
-      </label>
+      <p className="management-page-description">{info}</p>
+      <Checkbox checked={settings.enabled} disabled={busy}
+        onChange={(event) => void configure({ ...settings, enabled: event.target.checked })}>Enable Hermes Assistants</Checkbox>
+      <Checkbox checked={settings.autoStart} disabled={!settings.enabled || busy}
+        onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })}>Start Hermes service when needed</Checkbox>
       {transition && <AssistantNotice tone="info" message={transition} />}
       {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
       {!settings.enabled && error && <AssistantNotice tone="error" message={error} />}

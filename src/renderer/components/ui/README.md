@@ -97,7 +97,11 @@ this directory. Common controls centrally own:
 - Error state (`aria-invalid="true"`, `var(--status-error)`)
 
 Use `Field` to group a `FieldLabel`, control (`Input`, `Textarea`, `Select`), and
-optional `FormMessage`. Use `InputGroup` for input controls that contain leading
+optional `FormMessage`. Use `Checkbox` for a labelled native boolean control;
+it owns token-based form spacing, disabled text and focus treatment while the
+browser owns checkbox interaction. It was added for the permanent Harnesses,
+Assistants and Git Preferences pages to replace repeated feature-owned checkbox
+styling, not to introduce a new switch/configuration system. Use `InputGroup` for input controls that contain leading
 or trailing icons or inline action buttons.
 
 ## Popover
@@ -114,11 +118,23 @@ at the feature boundary and explicitly focus the new dialog's intended control.
 Radix supplies runtime width/height variables for collision-aware sizing; these
 are positioning data, separate from Clanker's semantic theme tokens.
 
-Settings and Chat History are interactive panels: use Popover, not menu semantics.
-Use Dialog for modal workflows such as VCS Credentials. For a handoff with no
+Chat History is an interactive contextual panel: use Popover, not menu semantics.
+Application Settings uses the modal ManagementShell composition. Use Dialog for modal workflows such as VCS Credentials. For a handoff with no
 parent lease, keep the outgoing Popover open until the Dialog's open-autofocus
 callback (its content lease is already acquired), then close it and prevent its
 close-autofocus. Restore focus to a deliberate surviving origin on Dialog close.
+
+## Management destinations
+
+`ManagementShell` composes DialogContent, the standard header/close anatomy and
+native Button navigation (`nav`, `aria-current="page"`, `aria-controls`). Supply
+an enclosing Dialog root and own selection and feature content in the caller.
+Tab/Shift+Tab traverse navigation and controls; Enter/Space activate a page.
+The content region is focusable and scrolls independently of the navigation.
+The optional header-actions slot permits destination-specific controls without
+adding a search engine. The shell owns no persistence, discovery or scope policy.
+Its selected-navigation treatment and responsive geometry use existing tokens;
+Dialog still owns all dismissal, focus, portal and Browser lease behavior.
 
 ## Searchable choices
 

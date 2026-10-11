@@ -207,10 +207,10 @@ describe('GitHistorySection', () => {
       expect(document.querySelector('.git-diff-output')).toBeTruthy();
     });
 
-    it('shows "No diff to display" when no diff result', () => {
+    it('prompts for a summary when no request has succeeded', () => {
       render(<GitHistorySection {...defaultProps} diffResult={null} />);
       
-      expect(screen.getByText('No diff to display')).toBeTruthy();
+      expect(screen.getByText('Select a summary to view')).toBeTruthy();
     });
 
     it('displays diff output when available', () => {

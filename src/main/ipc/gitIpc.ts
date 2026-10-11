@@ -144,7 +144,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_LIST_WORKTREES]: 1,
     [GIT_GET_OPERATION_STATE]: 1,
     [GIT_GET_STASHES]: 1,
-    [GIT_CLEAR_STASHES]: 1,
+    [GIT_CLEAR_STASHES]: 2,
     [GIT_ABORT_OPERATION]: 1,
     [GIT_GET_REMOTES]: 1,
     [GIT_GET_HISTORY]: 2,
@@ -155,9 +155,9 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_DELETE_BRANCH]: 2,
     [GIT_FORCE_DELETE_BRANCH]: 2,
     [GIT_MERGE_BRANCH]: 2,
-    [GIT_APPLY_STASH]: 2,
-    [GIT_POP_STASH]: 2,
-    [GIT_DROP_STASH]: 2,
+    [GIT_APPLY_STASH]: 3,
+    [GIT_POP_STASH]: 3,
+    [GIT_DROP_STASH]: 3,
     [GIT_FETCH]: 2,
     [GIT_PULL]: 2,
     [GIT_REMOVE_REMOTE]: 2,
@@ -178,6 +178,24 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_PUSH]: 5,
   };
 
+  const repositoryWideChannels = new Set([
+    GIT_LIST_WORKTREES,
+    GIT_CREATE_WORKTREE,
+    GIT_INSPECT_WORKTREE,
+    GIT_REMOVE_WORKTREE,
+    GIT_PRUNE_WORKTREES,
+    GIT_UNLOCK_WORKTREE,
+    ADOPT_WORKTREE_CHECKOUT_CONTEXT,
+    RECONCILE_CHECKOUT_CONTEXTS,
+    GIT_GET_REMOTES,
+    GIT_FETCH,
+    GIT_ADD_REMOTE,
+    GIT_REMOVE_REMOTE,
+    GIT_RENAME_REMOTE,
+    GIT_DELETE_BRANCH,
+    GIT_FORCE_DELETE_BRANCH,
+  ]);
+
   const registerGitHandler = (channel: string, handler: Parameters<typeof ipcMain.handle>[1]): void => {
     const idPosition = workspaceIdPositions[channel];
     if (idPosition === undefined) {
@@ -185,25 +203,113 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return;
     }
     ipcMain.handle(channel, async (event, ...args) => {
-      const workspaceId: unknown = args[idPosition];
-      if (workspaceId === undefined) return handler(event, ...args);
+      const target: unknown = args[idPosition];
+      let workspaceId: unknown = target;
+      let checkoutContextId: string | undefined;
+
+      if (typeof target === 'object' && target !== null && 'workspaceId' in target) {
+        const scopeObj = target as { workspaceId?: unknown; checkoutContextId?: unknown };
+        workspaceId = scopeObj.workspaceId;
+        if (scopeObj.checkoutContextId !== undefined) {
+          if (typeof scopeObj.checkoutContextId !== 'string' || !scopeObj.checkoutContextId.trim()) throw new Error('Invalid checkout identity');
+          checkoutContextId = scopeObj.checkoutContextId.trim();
+        }
+      } else if (channel !== GIT_CREATE_WORKTREE && channel !== ADOPT_WORKTREE_CHECKOUT_CONTEXT && args[idPosition + 1] !== undefined) {
+        const checkout = args[idPosition + 1];
+        if (typeof checkout !== 'string' || !checkout.trim()) throw new Error('Invalid checkout identity');
+        checkoutContextId = checkout.trim();
+      }
+
+      if (workspaceId === undefined) {
+        if (channel === GIT_CLEAR_STASHES && typeof args[1] === 'string') {
+          workspaceId = args[1];
+          if (typeof args[2] === 'string' && args[2].trim()) checkoutContextId = args[2].trim();
+        } else if (
+          (channel === GIT_DROP_STASH || channel === GIT_POP_STASH || channel === GIT_APPLY_STASH) &&
+          typeof args[2] === 'string' &&
+          !/^[0-9a-f]{7,64}$/i.test(args[2])
+        ) {
+          workspaceId = args[2];
+          if (typeof args[3] === 'string' && args[3].trim()) checkoutContextId = args[3].trim();
+        }
+      }
+      if (workspaceId === undefined) {
+        if (checkoutContextId) throw new Error('Invalid workspace identity');
+        return handler(event, ...args);
+      }
       if (typeof workspaceId !== 'string' || !workspaceId.trim()) {
         throw new Error('Invalid workspace identity');
       }
       const ws = getWorkspaceRegistry?.().getWorkspace(workspaceId);
       if (!ws) throw new Error('Workspace identity is no longer registered');
+
+      const isRepoWide = repositoryWideChannels.has(channel);
+      const effectiveCheckoutContextId = checkoutContextId;
+
+      let authorizedRoot = ws.location.path;
+      let targetContextId: string | undefined;
+      let validateOrigin: (() => void) | undefined;
+
+      if (effectiveCheckoutContextId) {
+        const reg = getWorkspaceRegistry?.();
+        if (!reg) throw new Error('Workspace registry is unavailable');
+        const context = reg.resolveCheckoutContext(workspaceId, effectiveCheckoutContextId);
+        if (!context || context.workspaceId !== ws.workspaceId || context.environmentId !== ws.location.environmentId) {
+          throw new Error('Checkout context is not registered for this workspace');
+        }
+        if (context.missing) {
+          throw new Error('The selected checkout is missing or has been removed');
+        }
+        if (ws.location.environmentId === 'local' && gitService.isWorktreeBeingRemoved(context.path)) {
+          throw new Error('This worktree is being removed');
+        }
+        if (ws.location.environmentId !== 'local' && reg.isRemotePathReserved(ws.location.environmentId, context.path)) {
+          throw new Error('This remote worktree is being removed or awaiting completion verification');
+        }
+        validateOrigin = () => {
+          if (reg.getWorkspace(workspaceId) !== ws || reg.resolveCheckoutContext(ws.workspaceId, context.id) !== context || context.missing) {
+            throw new Error('Checkout context is no longer registered');
+          }
+          if (ws.location.environmentId === 'local' ? gitService.isWorktreeBeingRemoved(context.path)
+            : reg.isRemotePathReserved(ws.location.environmentId, context.path)) {
+            throw new Error('This worktree is being removed or awaiting completion verification');
+          }
+        };
+        // Repository-wide routing must not make a physically removed originating
+        // checkout usable while reconciliation has yet to mark it missing.
+        if (isRepoWide) {
+          const validation = await ws.environment.validateWorkspacePath(context.path);
+          if (!validation.valid || !validation.resolvedPath || toPosixPath(validation.resolvedPath) !== context.path) {
+            throw new Error('The selected checkout is missing or has been removed');
+          }
+          validateOrigin();
+        }
+        // Validate the originating identity before deliberately routing shared
+        // repository operations to the registered workspace root.
+        if (!isRepoWide) {
+          authorizedRoot = context.path;
+          targetContextId = context.id;
+        }
+      }
+
       const identity: GitWorkspaceIdentity = {
-        workspacePath: ws.location.path,
+        workspacePath: authorizedRoot,
         workspaceId: ws.workspaceId,
         environmentId: ws.location.environmentId,
+        ...(targetContextId ? { checkoutContextId: targetContextId } : {}),
+        ...(validateOrigin ? { validateIdentity: validateOrigin } : {}),
       };
       if (channel === GIT_GET_FILE_DIFF && ws.location.environmentId !== 'local') {
         identity.readFile = (filePath) => {
           if (getWorkspaceRegistry?.().getWorkspace(ws.workspaceId) !== ws) {
             throw new Error('Workspace identity is no longer registered');
           }
+          if (targetContextId) {
+            const liveCtx = getWorkspaceRegistry?.().resolveCheckoutContext(ws.workspaceId, targetContextId);
+            if (!liveCtx || liveCtx.missing) throw new Error('Checkout context is no longer registered');
+          }
           return ws.environment.readFile({
-            workspacePath: ws.location.path,
+            workspacePath: authorizedRoot,
             workspaceId: ws.workspaceId,
             filePath,
           });
@@ -229,24 +335,39 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     const scoped = gitService.getScopedWorkspaceIdentity?.();
     if (scoped) {
       const registered = resolveWorkspace(scoped.workspaceId);
-      if (!registered || registered.location.path !== scoped.workspacePath ||
-          registered.location.environmentId !== scoped.environmentId) return;
+      if (!registered || registered.location.environmentId !== scoped.environmentId) return;
+      if (scoped.checkoutContextId) {
+        const ctx = getWorkspaceRegistry?.().resolveCheckoutContext(scoped.workspaceId, scoped.checkoutContextId);
+        if (!ctx || ctx.path !== scoped.workspacePath || ctx.missing) return;
+      } else {
+        if (registered.location.path !== scoped.workspacePath) return;
+      }
       status.workspaceId = scoped.workspaceId;
       status.environmentId = scoped.environmentId;
+      status.checkoutContextId = scoped.checkoutContextId;
     }
     status.workspacePath = workspacePath;
     getMainWindow()?.webContents.send(GIT_STATUS_UPDATE, status);
   };
 
-  registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string) => {
-    const ws = resolveWorkspace(workspaceId);
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string, checkoutContextId?: string) => {
+    const scoped = gitService.getScopedWorkspaceIdentity?.();
+    const ws = resolveWorkspace(scoped?.workspaceId ?? workspaceId);
+    const safeWorkspacePath = scoped?.workspacePath ?? getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) return;
-    gitService.startPolling(safeWorkspacePath, ws?.workspaceId, ws?.location.environmentId ?? 'local');
+    gitService.startPolling(
+      safeWorkspacePath,
+      scoped?.workspaceId ?? ws?.workspaceId,
+      scoped?.environmentId ?? ws?.location.environmentId ?? 'local',
+      scoped?.checkoutContextId ?? checkoutContextId,
+    );
   });
 
-  registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string) => {
-    if (workspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== workspaceId) return;
+  registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string, checkoutContextId?: string) => {
+    const current = gitService.getCurrentWorkspaceIdentity?.();
+    if (workspaceId && current?.workspaceId !== workspaceId) return;
+    // An omitted checkout ID denotes main, not whichever poller is active.
+    if (current?.checkoutContextId !== checkoutContextId) return;
     gitService.stopPolling();
   });
 
@@ -635,73 +756,106 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     return result;
   });
 
-  registerGitHandler(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.applyStash(safeWorkspacePath, stashRef);
+    const result = await gitService.applyStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.popStash(safeWorkspacePath, stashRef);
+    const result = await gitService.popStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => {
+    let hash = expectedHash;
+    if (hash && !workspaceId && !/^[0-9a-f]{7,64}$/i.test(hash)) {
+      hash = undefined;
+    }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.dropStash(safeWorkspacePath, stashRef);
+    const result = await gitService.dropStash(safeWorkspacePath, stashRef, hash);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_CLEAR_STASHES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_CLEAR_STASHES, async (_, workspacePath: string, expectedHashes?: string[] | string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const result = await gitService.clearStashes(safeWorkspacePath);
+    const hashes = Array.isArray(expectedHashes) ? expectedHashes : undefined;
+    const result = await gitService.clearStashes(safeWorkspacePath, hashes);
     if (result.success) {
       await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  registerGitHandler(GIT_REFRESH, async (_, workspaceId?: string) => {
-    if (workspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== workspaceId) return null;
+  registerGitHandler(GIT_REFRESH, async (_, workspaceId?: string, checkoutContextId?: string) => {
+    const scoped = gitService.getScopedWorkspaceIdentity?.();
+    const targetWorkspaceId = scoped?.workspaceId ?? workspaceId;
+    const targetCheckoutContextId = scoped?.checkoutContextId ?? checkoutContextId;
+
+    if (targetWorkspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== targetWorkspaceId) return null;
+    // Legacy/main refreshes must not read a selected isolated checkout's status.
+    if (gitService.getCurrentWorkspaceIdentity?.()?.checkoutContextId !== targetCheckoutContextId) return null;
+
     const workspacePath = gitService.getCurrentWorkspace();
     if (!workspacePath) return null;
     const identity = gitService.getCurrentWorkspaceIdentity?.();
     if (identity) {
       const ws = getWorkspaceRegistry?.().getWorkspace(identity.workspaceId);
-      if (!ws || ws.location.path !== identity.workspacePath ||
-          ws.location.environmentId !== identity.environmentId) {
+      if (!ws || ws.location.environmentId !== identity.environmentId) {
         gitService.stopPolling();
         throw new Error('Workspace identity is no longer registered');
       }
+      if (identity.checkoutContextId) {
+        const ctx = getWorkspaceRegistry?.().resolveCheckoutContext(identity.workspaceId, identity.checkoutContextId);
+        if (!ctx || ctx.path !== identity.workspacePath || ctx.missing) {
+          gitService.stopPolling();
+          throw new Error('Checkout context is no longer registered');
+        }
+      } else {
+        if (ws.location.path !== identity.workspacePath) {
+          gitService.stopPolling();
+          throw new Error('Workspace identity is no longer registered');
+        }
+      }
       return gitService.withWorkspace(identity, async () => {
-        const status = await gitService.getStatus(ws.location.path);
+        const status = await gitService.getStatus(identity.workspacePath);
         if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== identity.workspaceId ||
+            gitService.getCurrentWorkspaceIdentity?.()?.checkoutContextId !== identity.checkoutContextId ||
             gitService.getCurrentWorkspace() !== identity.workspacePath) return null;
-        status.workspacePath = ws.location.path;
-        status.workspaceId = ws.workspaceId;
-        status.environmentId = ws.location.environmentId;
+        status.workspacePath = identity.workspacePath;
+        status.workspaceId = identity.workspaceId;
+        status.environmentId = identity.environmentId;
+        status.checkoutContextId = identity.checkoutContextId;
         return status;
       });
     }

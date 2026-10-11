@@ -58,7 +58,7 @@ export function GitRemoteActionsSection({
             type="button"
             className="header-btn git-menu-action"
             onClick={onPublish}
-            disabled={remoteAction !== null || !hasRemotes}
+            disabled={isBusy || remoteAction !== null || !hasRemotes}
             title={!hasRemotes ? 'Add a remote to publish this branch' : undefined}
           >
             <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />

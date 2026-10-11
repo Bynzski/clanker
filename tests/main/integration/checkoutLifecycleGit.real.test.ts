@@ -46,6 +46,35 @@ const addWorktree = async (branch: string) => {
   return fs.realpathSync.native(dir);
 };
 
+describe('Source Control branch deletion safeguards (isolated real Git)', () => {
+  it('distinguishes normal and explicit force deletion of unmerged work', async () => {
+    await git(repo, 'switch', '-c', 'unmerged'); await commit(repo, 'unmerged-work'); await git(repo, 'switch', 'main');
+    const normal = await service().deleteBranch(repo, 'unmerged');
+    expect(normal.success).toBe(false); expect(normal.blockedByUnmergedCommits).toBe(true); expect(normal.error).toBeTruthy();
+    expect(await git(repo, 'branch', '--list', 'unmerged')).toContain('unmerged');
+    expect((await service().forceDeleteBranch(repo, 'unmerged')).success).toBe(true);
+    expect(await git(repo, 'branch', '--list', 'unmerged')).toBe('');
+  });
+  it('refuses normal and force deletion of the current branch and a branch attached to another worktree', async () => {
+    const linked = await addWorktree('attached');
+    for (const force of [false, true]) for (const name of ['main', 'attached']) {
+      const result = force ? await service().forceDeleteBranch(repo, name) : await service().deleteBranch(repo, name);
+      expect(result.success).toBe(false); expect(result.blockedByUnmergedCommits).not.toBe(true); expect(result.error).toBeTruthy();
+      expect(await git(repo, 'branch', '--list', name)).toContain(name);
+    }
+    expect(fs.existsSync(linked)).toBe(true);
+  });
+  it('creates and switches only on Git success, retaining identity on invalid/attached branch errors', async () => {
+    const target = service(); const linked = await addWorktree('attached');
+    expect((await target.createBranch(repo, 'bad name', 'main')).success).toBe(false);
+    expect((await target.createBranch(repo, 'new-task', 'main')).success).toBe(true);
+    expect((await target.switchBranch(repo, 'new-task')).success).toBe(true);
+    expect(await target.getCurrentBranch(repo)).toBe('new-task');
+    expect((await target.switchBranch(repo, 'attached')).success).toBe(false);
+    expect(await target.getCurrentBranch(repo)).toBe('new-task'); expect(fs.existsSync(linked)).toBe(true);
+  });
+});
+
 describe('GitService.forgetMissingWorktree', () => {
   it('drops only the named stale record, leaving other stale records, branches and directories alone', async () => {
     const one = await addWorktree('one');

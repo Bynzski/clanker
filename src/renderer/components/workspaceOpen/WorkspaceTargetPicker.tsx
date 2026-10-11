@@ -1,7 +1,7 @@
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { useId, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, RefObject } from 'react';
 import { Check, ChevronDown, Monitor, Plus, Search, Server, Settings } from 'lucide-react';
 import type { SshEnvironmentConfig } from '../../../shared/types/environments';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
@@ -14,11 +14,12 @@ interface Props {
   onSelect: (id: string) => void;
   onAddServer: () => void;
   onSettings: () => void;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }
 
 /** A location is a machine with a starting directory, not a project catalog. */
 export function WorkspaceTargetPicker({ value, environments, disabled,
-  onSelect, onAddServer, onSettings }: Props) {
+  onSelect, onAddServer, onSettings, returnFocusRef }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -53,7 +54,7 @@ export function WorkspaceTargetPicker({ value, environments, disabled,
   return <div className="workspace-target-picker">
       <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) { setQuery(''); handingOff.current = false; } }}>
         <PopoverTrigger asChild>
-          <button ref={triggerRef} type="button" className="workspace-target-trigger" aria-label={`Choose location: ${name}`} disabled={disabled}>
+          <button ref={(element) => { triggerRef.current = element; if (returnFocusRef) returnFocusRef.current = element; }} type="button" className="workspace-target-trigger" aria-label={`Choose location: ${name}`} disabled={disabled}>
             <SelectedIcon size={13} aria-hidden="true" />
             <span className="workspace-target-name">{name}</span>
             <ChevronDown size={12} aria-hidden="true" />

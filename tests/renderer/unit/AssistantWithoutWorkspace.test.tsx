@@ -33,7 +33,7 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({ default: 
 
 import { closeWorkspaceWithCleanup } from '../../../src/renderer/lib/workspaceClose';
 import App from '../../../src/renderer/App';
-import Header from '../../../src/renderer/components/Header';
+import Header from '../../setup/HeaderWithSettings';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
 import WorkspaceRail from '../../../src/renderer/components/WorkspaceRail';
@@ -211,7 +211,7 @@ describe('zero-workspace Assistant shell', () => {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(await screen.findByText('Appearance')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
   });
 

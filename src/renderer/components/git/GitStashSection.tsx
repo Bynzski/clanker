@@ -9,15 +9,16 @@ interface GitStashSectionProps {
   includeUntracked: boolean;
   isBusy: boolean;
   isLoadingStashes: boolean;
-  onApplyStash: (stashRef: string) => void;
+  onApplyStash: (stash: GitStash) => void;
   onClearStashes: () => void;
-  onDropStash: (stashRef: string) => void;
-  onPopStash: (stashRef: string) => void;
+  onDropStash: (stash: GitStash) => void;
+  onPopStash: (stash: GitStash) => void;
   onSetIncludeUntracked: (value: boolean) => void;
   onSetStashMessage: (value: string) => void;
   onStash: () => void;
   stashMessage: string;
   stashes: GitStash[];
+  management?: boolean;
 }
 
 export function GitStashSection({
@@ -34,9 +35,10 @@ export function GitStashSection({
   onStash,
   stashMessage,
   stashes,
+  management = false,
 }: GitStashSectionProps) {
   return (
-    <div className="git-menu-section">
+    <div className={`git-menu-section${management ? ' source-control-stashes' : ''}`}>
       <div className="git-menu-section-header">
         Stash
         <span className="git-menu-count">{stashes.length}</span>
@@ -79,6 +81,7 @@ export function GitStashSection({
             variant="ghost"
             type="button"
             className="git-stash-clear"
+            title="Permanently delete all stashes in this repository"
             onClick={onClearStashes}
             disabled={isBusy}
           >
@@ -97,6 +100,7 @@ export function GitStashSection({
             <div key={stash.ref} className="git-stash-item">
               <div className="git-stash-meta">
                 <span className="git-stash-ref">{stash.ref}</span>
+                {stash.hash ? <span className="git-stash-hash">{stash.hash.slice(0, 7)}</span> : null}
                 <span className="git-stash-message">{stash.message}</span>
               </div>
               <div className="git-stash-actions">
@@ -105,7 +109,9 @@ export function GitStashSection({
                   variant="ghost"
                   type="button"
                   className="git-branch-action"
-                  onClick={() => onApplyStash(stash.ref)}
+                  title="Restore changes without deleting the stash entry"
+                  aria-label={`Apply ${stash.ref}`}
+                  onClick={() => onApplyStash(stash)}
                   disabled={isBusy}
                 >
                   Apply
@@ -115,7 +121,9 @@ export function GitStashSection({
                   variant="ghost"
                   type="button"
                   className="git-branch-action"
-                  onClick={() => onPopStash(stash.ref)}
+                  title="Apply changes and delete stash entry if applied cleanly without conflict"
+                  aria-label={`Pop ${stash.ref}`}
+                  onClick={() => onPopStash(stash)}
                   disabled={isBusy}
                 >
                   Pop
@@ -125,7 +133,9 @@ export function GitStashSection({
                   variant="ghost"
                   type="button"
                   className="git-branch-action danger"
-                  onClick={() => onDropStash(stash.ref)}
+                  title="Permanently delete this stash entry"
+                  aria-label={`Drop ${stash.ref}`}
+                  onClick={() => onDropStash(stash)}
                   disabled={isBusy}
                 >
                   Drop
