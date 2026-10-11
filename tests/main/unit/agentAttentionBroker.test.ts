@@ -9,7 +9,7 @@ afterEach(() => {
   brokers.length = 0;
 });
 
-function setup(options?: { rootSessionId?: string }) {
+function setup(options?: { rootSessionId?: string; sessionModel?: 'process' | 'shared' }) {
   const recorder = attentionRecorder();
   const updates = recorder.changes;
   const diagnostics: AttentionDiagnostic[] = [];
@@ -189,7 +189,6 @@ describe('AgentAttentionBroker turn interruption', () => {
     expect(broker.canHandoff('term-a')).toBe(true);
     expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('ignored-stale');
     expect(send('input_resolved', { sessionId: 'A', turnId: 'T1', inputId: 'w1' })).toBe('ignored-stale');
-    expect(send('turn_started', { sessionId: 'B', turnId: 'T2' })).toBe('rejected-mismatch'); // root stays bound
     expect(send('turn_started', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
     expect(labels).toEqual(['turn_started', 'input_requested', 'turn_interrupted', 'turn_started']);
   });
@@ -306,11 +305,11 @@ describe('AgentAttentionBroker trusted resume identity', () => {
     expect(broker.handoffState('term-a')).toBe('needs_input');
   });
 
-  it('seeds the validated root so other sessions cannot bind first', () => {
+  it('seeds the validated root, which binds the resumed session without waiting for its first event', () => {
     const { broker, send } = setup({ rootSessionId: 'resumed' });
-    expect(send('turn_started', { sessionId: 'hidden-title-thread', turnId: 'turn-1' })).toBe('rejected-mismatch');
-    expect(broker.handoffState('term-a')).toBe('unverified');
+    expect(broker.snapshot('term-a')?.sessionId).toBe('resumed');
     expect(send('turn_started', { sessionId: 'resumed', turnId: 'turn-1' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('running');
   });
 
   it('starts unbound when no trusted identity is supplied (fresh launch or fork)', () => {
@@ -502,5 +501,149 @@ describe('AgentAttentionBroker lost lifecycle source', () => {
     expect(broker.markLifecycleLost('nobody')).toBe(false);
     expect(recorder.revisions().length).toBe(revisions);
     expect(broker.handoffState('term-a')).toBe('ready');
+  });
+});
+
+describe('AgentAttentionBroker session ownership', () => {
+  it('recovers a process-scoped root after a lost session boundary and publishes the boundary as its own fact', () => {
+    const { broker, send, updates } = setup({ sessionModel: 'process' });
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('turn_completed', { sessionId: 'A', turnId: 'T1' });
+    const before = updates.length;
+    expect(send('turn_started', { sessionId: 'B', turnId: 'T1' })).toBe('accepted');
+    const published = updates.slice(before).map((update) => update.snapshot);
+    expect(published[0]).toMatchObject({ sessionId: 'B', runtime: { status: 'unverified' }, lastOutcome: { kind: 'session_ended' } });
+    expect(published[published.length - 1]).toMatchObject({ sessionId: 'B', runtime: { status: 'running', turnId: 'T1' } });
+    // The replaced root's late events change nothing; its old turn IDs no longer collide.
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('rejected-mismatch');
+    expect(broker.handoffState('term-a')).toBe('running');
+    expect(send('turn_completed', { sessionId: 'B', turnId: 'T1' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('ready');
+  });
+
+  it('never lets another session take a shared terminal during execution, a wait, or provisional Stop', () => {
+    const { broker, send } = setup();
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    expect(send('session_started', { sessionId: 'B' })).toBe('rejected-mismatch');
+    send('input_requested', { sessionId: 'A', turnId: 'T1', inputId: 'w' });
+    expect(send('turn_started', { sessionId: 'B', turnId: 'X' })).toBe('rejected-mismatch');
+    expect(broker.snapshot('term-a')?.sessionId).toBe('A');
+    send('turn_provisional', { sessionId: 'A', turnId: 'T1' });
+    // Non-actionable history is not proof that another root was selected.
+    expect(send('session_started', { sessionId: 'B' })).toBe('rejected-mismatch');
+    expect(send('turn_started', { sessionId: 'B', turnId: 'X' })).toBe('rejected-mismatch');
+    expect(broker.snapshot('term-a')).toMatchObject({ sessionId: 'A', runtime: { status: 'provisional' } });
+  });
+
+  it('always follows the newest session for one-session-per-process providers, even after a lost settle', () => {
+    const { broker, send } = setup({ sessionModel: 'process' });
+    send('turn_started', { sessionId: 'A', turnId: 'i1.1' });
+    // Invalid starts and non-starts cannot replace even a process-scoped root.
+    expect(send('turn_started', { sessionId: 'B' })).toBe('rejected-ambiguous');
+    expect(send('turn_completed', { sessionId: 'B', turnId: 'i2.1' })).toBe('rejected-mismatch');
+    expect(broker.snapshot('term-a')?.sessionId).toBe('A');
+    // The settle was lost; Pi then replaced the session (its old runtime is gone).
+    expect(send('session_started', { sessionId: 'B' })).toBe('accepted');
+    expect(send('turn_started', { sessionId: 'B', turnId: 'i2.1' })).toBe('accepted');
+    expect(broker.snapshot('term-a')).toMatchObject({ sessionId: 'B', runtime: { status: 'running', turnId: 'i2.1' } });
+  });
+
+  it('protects a seeded shared root even after it reports; only a proven replacement changes it', () => {
+    const { broker, send } = setup({ rootSessionId: 'resumed' });
+    expect(send('turn_started', { sessionId: 'auxiliary', turnId: 'x' })).toBe('rejected-mismatch');
+    expect(send('session_started', { sessionId: 'resumed' })).toBe('accepted');
+    expect(send('session_started', { sessionId: 'next' })).toBe('rejected-mismatch');
+    expect(send('session_replaced', { sessionId: 'next', previousSessionId: 'wrong' })).toBe('rejected-mismatch');
+    expect(send('session_replaced', { sessionId: 'next', previousSessionId: 'resumed' })).toBe('accepted');
+    expect(send('turn_started', { sessionId: 'next', turnId: 'n1' })).toBe('accepted');
+    expect(broker.snapshot('term-a')?.sessionId).toBe('next');
+  });
+
+  it('rejects the idle A → background B takeover and continues tracking A after rejected reports', () => {
+    const { broker, send, updates } = setup();
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('turn_completed', { sessionId: 'A', turnId: 'T1' });
+    const before = updates.length;
+    for (const event of ['session_started', 'turn_started', 'turn_completed']) {
+      expect(send(event, { sessionId: 'B', turnId: 'B1' })).toBe('rejected-mismatch');
+    }
+    expect(updates).toHaveLength(before);
+    expect(broker.snapshot('term-a')?.sessionId).toBe('A');
+    expect(send('turn_started', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('ignored-stale');
+    expect(broker.handoffState('term-a')).toBe('running');
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
+  });
+
+  it('does not allow cached readiness after identity rejection; the bound root can restore it', () => {
+    const { broker, send } = setup();
+    broker.setCapability('term-a', { requested: true, attachment: 'prepared' });
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('turn_completed', { sessionId: 'A', turnId: 'T1' });
+    expect(broker.canHandoff('term-a')).toBe(true);
+    send('session_started', { sessionId: 'B' });
+    send('turn_started', { sessionId: 'B', turnId: 'B1' });
+    expect(broker.handoffState('term-a')).toBe('unavailable');
+    expect(broker.canHandoff('term-a')).toBe(false);
+    send('turn_started', { sessionId: 'A', turnId: 'T2' });
+    expect(broker.handoffState('term-a')).toBe('running');
+    send('turn_completed', { sessionId: 'A', turnId: 'T2' });
+    expect(broker.canHandoff('term-a')).toBe(true);
+  });
+
+  it('does not guess a selected shared session after an incorrect first root report', () => {
+    const { broker, send } = setup();
+    send('session_started', { sessionId: 'incorrect' });
+    expect(send('turn_started', { sessionId: 'selected', turnId: 'T1' })).toBe('rejected-mismatch');
+    // Recovery needs provider-proven identity, not another most-recent report.
+    expect(send('session_replaced', { sessionId: 'selected', previousSessionId: 'incorrect' })).toBe('accepted');
+    expect(send('turn_started', { sessionId: 'selected', turnId: 'T1' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('running');
+  });
+});
+
+describe('AgentAttentionBroker stop presentation and trace', () => {
+  it('refuses a pending handoff at Stop without retiring the turn, and accepts subsequent native activity', () => {
+    const { broker, send, updates } = setup();
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('turn_provisional', { sessionId: 'A', turnId: 'T1' });
+    const stopped = broker.snapshot('term-a');
+    const before = updates.length;
+    expect(broker.canHandoff('term-a')).toBe(false);
+    broker.markSubmitted('term-a'); // Even a stale caller cannot retire a provisional turn.
+    expect(broker.snapshot('term-a')).toEqual(stopped);
+    expect(updates).toHaveLength(before);
+    expect(send('turn_activity', { sessionId: 'A', turnId: 'T1' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('running');
+    expect(send('turn_started', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('ignored-stale');
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
+    expect(broker.canHandoff('term-a')).toBe(true);
+  });
+
+  it('keeps the stop revision stable across unrelated revisions while stopped', () => {
+    const { broker, send } = setup();
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('turn_provisional', { sessionId: 'A', turnId: 'T1' });
+    const stopped = broker.snapshot('term-a')!;
+    expect(stopped.runtime.stopRevision).toBe(stopped.revision);
+    broker.setCapability('term-a', { requested: true, attachment: 'prepared' });
+    expect(broker.snapshot('term-a')!.revision).toBeGreaterThan(stopped.revision);
+    expect(broker.snapshot('term-a')!.runtime.stopRevision).toBe(stopped.revision);
+    send('turn_activity', { sessionId: 'A', turnId: 'T1' });
+    expect(broker.snapshot('term-a')!.runtime).not.toHaveProperty('stopRevision');
+  });
+
+  it('records a bounded, content-free trace that survives release', () => {
+    const { broker, send } = setup();
+    send('turn_started', { sessionId: 'SECRET-SESSION', turnId: 'SECRET-TURN' });
+    send('turn_completed', { sessionId: 'other', turnId: 'x' });
+    broker.release('term-a');
+    const trace = broker.trace('term-a');
+    expect(trace.map((entry) => entry.semantic)).toEqual(['registered', 'turn_started', 'turn_completed', 'released']);
+    expect(trace.map((entry) => entry.verdict)).toEqual([undefined, 'accepted-changed', 'rejected-mismatch', undefined]);
+    expect(JSON.stringify(trace)).not.toMatch(/SECRET/);
+    for (let i = 0; i < 100; i++) send('turn_started', { sessionId: 'x', turnId: String(i) });
+    expect(broker.trace('term-a').length).toBeLessThanOrEqual(64);
   });
 });

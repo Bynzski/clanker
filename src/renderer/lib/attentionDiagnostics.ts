@@ -7,10 +7,11 @@ import { currentCheckoutSelection } from './checkoutSelection';
 import { checkoutSelectionToken } from './checkoutSelectionRuntime';
 import { matchingCheckoutGit, checkoutGitAvailability, useCheckoutGitStore } from '../store/checkoutGitStore';
 
-/** Query-only developer view. Nothing here alters authority, acknowledges a turn or starts a timer. */
+/** Query-only view, always installed as `window.clankerAttention.explain(terminalId)`. Nothing here
+ * alters authority, acknowledges a turn or starts a timer. */
 export async function explainTerminalAttention(terminalId: string) {
   const main = await window.electronAPI.getAgentAttentionDiagnostics(terminalId);
-  if (!main) return null; // Main enforces the debug gate too.
+  if (!main) return null;
   const store = useAgentAttentionStore.getState();
   const state = useWorkspaceStore.getState();
   const workspace = state.workspaces.find((entry) => entry.terminals.some((terminal) => terminal.id === terminalId));
@@ -44,7 +45,7 @@ export async function explainTerminalAttention(terminalId: string) {
       },
       indicator: eligible ? view?.display ?? null : null,
       suppressed: !eligible ? 'capability-disabled-or-terminal-absent' : view ? null
-        : snapshot?.runtime.status === 'idle' && snapshot.lastCompletion && (seen?.completion ?? 0) >= snapshot.lastCompletion.revision ? 'acknowledged-idle'
+        : (snapshot?.runtime.status === 'idle' || snapshot?.runtime.status === 'provisional') && (seen?.completion ?? 0) > 0 ? 'acknowledged-idle'
         : snapshot ? 'no-displayable-lifecycle-fact' : 'no-snapshot',
       workspaceMember: Boolean(workspace), residency: workspace?.runtimeState.residencyState ?? null,
       terminalPanePresented: Boolean(workspace && pane && workspace.id === state.activeWorkspaceId && !useAssistantNavStore.getState().activeAssistantId && paneIsPresented(workspace, pane.id)),

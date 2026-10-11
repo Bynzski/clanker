@@ -4,7 +4,7 @@ import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { AttentionSeen } from '../store/agentAttentionStore';
 
 /** What an agent's attention indicator shows; `null` view means nothing is shown. */
-export type AttentionDisplay = 'provisional' | 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
+export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
 
 export interface AttentionView {
   display: AttentionDisplay;
@@ -16,9 +16,11 @@ export interface AttentionView {
 
 /**
  * Pure projection of canonical facts onto presentation. It never correlates sessions, infers
- * turn boundaries or replays events. A provisional stop explicitly supersedes work/wait claims.
- * Otherwise precedence: an actionable request, then active work, then a
- * proven failure, then a completion that is both the latest outcome and not yet acknowledged.
+ * turn boundaries or replays events. Precedence: an actionable request, then active work, then a
+ * proven failure, then a finished turn the user has not seen yet. A finished turn is either a proven
+ * completion that is the latest outcome, or the provider's own stop (Claude, Codex, Antigravity),
+ * which ends the turn unless another Stop hook continues it; continued work returns to Running.
+ * A seen finish shows nothing: going to the agent clears it.
  * Because active work outranks completion, an old completion needs no explicit clearing, and
  * because Done requires the latest outcome to be that completion, an older one can never
  * resurface after a newer turn was interrupted, failed or ended.
@@ -37,10 +39,11 @@ export function deriveAttention(
   let view: AttentionView | null = null;
   if (snapshot) {
     const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
-    if (runtime.status === 'provisional') view = { display: 'provisional', unseen: false, description: pendingRequest
-      ? 'A candidate Stop was observed; execution may continue; request resolution and final outcome are unknown. Check the agent terminal.'
-      : 'A candidate Stop was observed; execution may continue. Final outcome is unknown. Check the agent terminal.' };
-    else if (pendingRequest && !pendingRequest.resolutionUnknown) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
+    if (runtime.status === 'provisional') {
+      if ((runtime.stopRevision ?? snapshot.revision) > (seen?.completion ?? 0)) {
+        view = { display: 'turn_complete', unseen: true, description: 'Turn complete (the agent stopped; a Stop hook may still continue it)' };
+      }
+    } else if (pendingRequest && !pendingRequest.resolutionUnknown) view = { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
     else if (runtime.status === 'starting' || runtime.status === 'running') view = { display: 'running', unseen: false };
     else if (runtime.status === 'failed') view = { display: 'failed', unseen: false };
     else if (runtime.status === 'idle' && lastCompletion && lastOutcome?.kind === 'completed'
@@ -56,7 +59,6 @@ export function deriveAttention(
 /** Shared label/icon semantics for a displayed attention state. */
 export function getAttentionPresentation(display: AttentionDisplay) {
   switch (display) {
-    case 'provisional': return { label: 'Stop observed · outcome unknown', Icon: CircleAlert };
     case 'signal_unavailable': return { label: 'Native attention unavailable', Icon: CircleAlert };
     case 'signal_degraded': return { label: 'Native attention degraded', Icon: CircleAlert };
     case 'needs_input': return { label: 'Needs input', Icon: CircleAlert };

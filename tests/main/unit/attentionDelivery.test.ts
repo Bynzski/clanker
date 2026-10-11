@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { OBSERVER } from '../../../src/main/harnesses/attentionSources';
+import { SOURCE as PI } from '../../../src/main/harnesses/pi/attention';
 import { ATTENTION_ACK_PREFIX } from '../../../src/shared/attentionProtocol';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { deriveAttention } from '../../../src/renderer/lib/agentAttentionPresentation';
@@ -84,6 +85,71 @@ describe('local attention delivery contract', () => {
     useAgentAttentionStore.getState().hydrate([first], () => false);
     expect(view()).toBe(null);
     expect(await emit('turn_started', root)).toBe('rejected-auth');
+  });
+
+  it.each(['lost-ack', 'lost-envelope'] as const)('Pi resends an unacknowledged settlement once and advances despite %s, through socket/broker/renderer', async (fault) => {
+    // Generated Pi extension, real observer/socket and canonical renderer projection.
+    // Native event invocation is a fixture, not evidence of upstream Pi emission.
+    const verdicts: string[] = [];
+    const broker = new AgentAttentionBroker((change) => useAgentAttentionStore.getState().applyChange(change, true), (event) => { if (event.verdict) verdicts.push(event.verdict); });
+    cleanup.push(() => broker.close());
+    const env = await broker.register('pi', 'pi');
+    const seenTurnIds: string[] = [];
+    const sockets = new Set<net.Socket>();
+    const server = net.createServer({ allowHalfOpen: true }, (socket) => {
+      sockets.add(socket);
+      socket.on('error', () => undefined);
+      socket.on('close', () => sockets.delete(socket));
+      let body = '';
+      socket.on('data', (chunk) => { body += chunk.toString(); });
+      socket.on('end', () => {
+        const wire = JSON.parse(body) as { event: string; turnId: string };
+        seenTurnIds.push(wire.turnId);
+        if (wire.event === 'turn_completed') {
+          if (fault === 'lost-ack') broker.receive(body);
+          socket.end(); // No ACK, whether or not main received the completion.
+          return;
+        }
+        socket.end(`${ATTENTION_ACK_PREFIX}${broker.receive(body)}\n`);
+      });
+    });
+    cleanup.push(() => { sockets.forEach((socket) => socket.destroy()); server.close(); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-pi-delivery-'));
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(dir, 'observer.mjs'), OBSERVER);
+    fs.writeFileSync(path.join(dir, 'pi.mjs'), PI);
+    fs.writeFileSync(path.join(dir, 'run.mjs'), `import register from './pi.mjs';
+const handlers = {};
+register({ on: (name, handler) => { handlers[name] = handler; } });
+const ctx = { sessionManager: { getSessionId: () => 'root' }, cwd: '/fixture' };
+const first = await handlers.agent_start({}, ctx);
+const settled = await handlers.agent_settled({}, ctx);
+const second = await handlers.agent_start({}, ctx);
+console.log(JSON.stringify({ first, settled, second }));`);
+    const result = await new Promise<unknown>((resolve, reject) => {
+      const child = spawn(process.execPath, [path.join(dir, 'run.mjs')], {
+        env: { ...process.env, ...env, CLANKER_ATTENTION_PORT: String((server.address() as net.AddressInfo).port) }, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      cleanup.push(() => { if (child.exitCode === null) child.kill(); });
+      let output = '';
+      child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code !== 0) { reject(new Error(`Pi fixture exited ${code}`)); return; }
+        try { resolve(JSON.parse(output)); } catch (error) { reject(error); }
+      });
+    });
+    expect(result).toEqual({ first: true, settled: false, second: true });
+    // The unacknowledged completion is resent once; a duplicate of an applied settle is harmlessly stale.
+    expect(seenTurnIds.map((turnId) => String(turnId).split('.').pop())).toEqual(['1', '1', '1', '2']);
+    expect(new Set(seenTurnIds.map((turnId) => String(turnId).split('.')[0])).size).toBe(1);
+    expect(verdicts).toEqual(fault === 'lost-ack'
+      ? ['accepted-changed', 'accepted-changed', 'ignored-stale', 'accepted-changed'] : ['accepted-changed', 'accepted-changed']);
+    const store = useAgentAttentionStore.getState();
+    expect(store.byTerminalId.pi.runtime).toMatchObject({ status: 'running', turnId: expect.stringMatching(/\.2$/) });
+    expect(deriveAttention(store.byTerminalId.pi, store.seenByTerminalId.pi)?.display).toBe('running');
+    expect(store.byTerminalId.pi.revision).toBe(broker.snapshot('pi')?.revision);
   });
 
   it('returns bounded truthful ACKs for invalid/auth/transport failures and never echoes input', async () => {

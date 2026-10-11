@@ -47,10 +47,21 @@ export async function emit(event, fields) {
   if (!token || !harness) return false;
   const payload = JSON.stringify({version: 1, token, harness, ...envelope(event, fields)});
   if (Buffer.byteLength(payload) > 2048) return false;
+  // The frame must reach the tty whole: a short write would leave an unterminated frame that can
+  // swallow the next one. A full tty buffer (EAGAIN) is waited out briefly, never indefinitely.
+  const frame = Buffer.from('\\x1b]777;clanker-attention;' + Buffer.from(payload).toString('base64') + '\\x07');
+  const deadline = Date.now() + 1000;
   let fd;
   try {
     fd = fs.openSync('/dev/tty', fs.constants.O_WRONLY | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
-    fs.writeSync(fd, '\\x1b]777;clanker-attention;' + Buffer.from(payload).toString('base64') + '\\x07');
+    let offset = 0;
+    while (offset < frame.length) {
+      try { offset += fs.writeSync(fd, frame, offset); }
+      catch (error) {
+        if (error.code !== 'EAGAIN' || Date.now() > deadline) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
     return true;
   } catch { return false; }
   finally { if (fd !== undefined) fs.closeSync(fd); }

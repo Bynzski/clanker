@@ -170,6 +170,11 @@ export interface HarnessAttentionCapability {
    * directory is gone no lifecycle event can arrive (Codex: verified). Its agents reported inside a
    * checkout Git no longer has are then taken off Running rather than left there forever. */
   readonly hooksRunInAgentDirectory?: boolean;
+  /** How native root sessions relate to the terminal. `process`: the harness runs exactly one
+   * foreground session per process, observed in-process, so a newly started root session always
+   * replaces the previous one (Pi, OMP). Absent means `shared`: starts alone never prove selection;
+   * changing a bound root requires an explicit native boundary/replacement/continuation. */
+  readonly sessionModel?: 'process' | 'shared';
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;
   readonly local?: HarnessLocalAttention;

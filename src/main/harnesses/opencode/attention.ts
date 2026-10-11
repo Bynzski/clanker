@@ -13,6 +13,10 @@ import { localAttention } from '../localAttention';
 export const SOURCE = `import { emit } from '../observer.mjs';
 const trusted = process.env.CLANKER_ATTENTION_SESSION_ID || null;
 const parentage = new Map();
+// Turn IDs are unique to this module instance: a restarted plugin host would otherwise restart them at 1
+// and collide with retired turns, so a bare counter would restart at 1 and collide with retired turns.
+const instance = Math.random().toString(36).slice(2, 10);
+const turnOf = (n) => instance + '.' + n;
 const MAX_SESSIONS = 256;
 const directories = new Map();
 export const ClankerAttention = async ({ client, directory }) => {
@@ -29,10 +33,15 @@ export const ClankerAttention = async ({ client, directory }) => {
   const isRoot = async (id) => {
     if (trusted && id === trusted) return true;
     if (!parentage.has(id)) {
+      // Bounded: every later event waits behind this lookup, so a hung request must not stall them all.
+      let timer;
       try {
-        const result = await client.session.get({ path: { id } });
+        const result = await Promise.race([
+          client.session.get({ path: { id } }),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 2000); }),
+        ]);
         remember(result?.data ?? result);
-      } catch { /* unknown parentage fails closed */ }
+      } catch { /* unknown parentage fails closed */ } finally { clearTimeout(timer); }
     }
     return parentage.get(id);
   };
@@ -91,7 +100,7 @@ export const ClankerAttention = async ({ client, directory }) => {
     } else if (!turn.open) return;
     if (kind === 'turn_completed') { turn.open = false; kind = turn.outcome ?? kind; }
     const cwd = kind === 'turn_started' || kind === 'turn_completed' ? located(sessionId) : undefined;
-    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
+    await emit(kind, { ...fields, turnId: turnOf(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
   };
   let queue = Promise.resolve();
   return { event: ({ event }) => (queue = queue.then(() => handle(event)).catch(() => undefined)) };

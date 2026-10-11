@@ -6,6 +6,18 @@ import { paneIsPresented } from '../store/workspacePages';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { applyAgentCheckoutTransition } from './agentCheckoutTransition';
 
+/** The user can only be looking at an agent while the Clanker window itself has focus. */
+const windowHasFocus = (): boolean => typeof document.hasFocus !== 'function' || document.hasFocus();
+
+/** The terminal the user is looking at right now, if any: active workspace, active pane, presented page. */
+function presentedActiveTerminalId(): string | null {
+  if (useAssistantNavStore.getState().activeAssistantId) return null;
+  const state = useWorkspaceStore.getState();
+  const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+  const pane = active?.panes.find((entry) => entry.terminalId === active.activeTerminalId);
+  return active?.activeTerminalId && pane && (!active.pages || paneIsPresented(active, pane.id)) ? active.activeTerminalId : null;
+}
+
 /**
  * Keep terminal output flowing even when the owning workspace is unmounted.
  *
@@ -37,14 +49,10 @@ export function startTerminalSessionBridge(): () => void {
 
   // Main owns the lifecycle. Subscribe first, then hydrate: revision ordering in the store makes
   // the two safe in either arrival order, and a recreated renderer recovers the live state.
+  // A change the user is watching (focused window, presented active pane) is seen on arrival; any
+  // other completion or wait lights up until the user goes to that agent.
   if (typeof window.electronAPI?.onAgentAttentionChanged === 'function') {
-    const isForeground = (terminalId: string): boolean => {
-      const state = useWorkspaceStore.getState();
-      const workspace = state.workspaces.find((entry) => entry.terminals.some((terminal) => terminal.id === terminalId));
-      const pane = workspace?.panes.find((entry) => entry.terminalId === terminalId);
-      return !useAssistantNavStore.getState().activeAssistantId && workspace?.id === state.activeWorkspaceId
-        && workspace?.activeTerminalId === terminalId && Boolean(pane && (!workspace.pages || paneIsPresented(workspace, pane.id)));
-    };
+    const isForeground = (terminalId: string): boolean => windowHasFocus() && presentedActiveTerminalId() === terminalId;
     disposers.push(window.electronAPI.onAgentAttentionChanged((change) => {
       useAgentAttentionStore.getState().applyChange(change, isForeground(change.terminalId));
     }));
@@ -59,10 +67,18 @@ export function startTerminalSessionBridge(): () => void {
     }
   }
 
+  // Returning to the window is going to the agent on screen: clear what it was showing.
+  const onWindowFocus = () => {
+    const terminalId = presentedActiveTerminalId();
+    if (terminalId) useAgentAttentionStore.getState().acknowledge(terminalId);
+  };
+  window.addEventListener('focus', onWindowFocus);
+  disposers.push(() => window.removeEventListener('focus', onWindowFocus));
+
   disposers.push(useWorkspaceStore.subscribe((state, previous) => {
     const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
     const prior = previous.workspaces.find((workspace) => workspace.id === previous.activeWorkspaceId);
-    if (!useAssistantNavStore.getState().activeAssistantId && active?.activeTerminalId) {
+    if (!useAssistantNavStore.getState().activeAssistantId && active?.activeTerminalId && windowHasFocus()) {
       const pane = active.panes.find((entry) => entry.terminalId === active.activeTerminalId);
       const wasVisible = prior?.id === active.id && prior.activeTerminalId === active.activeTerminalId
         && prior.panes.some((entry) => entry.terminalId === active.activeTerminalId && (!prior.pages || paneIsPresented(prior, entry.id)));
@@ -77,11 +93,9 @@ export function startTerminalSessionBridge(): () => void {
   }));
 
   disposers.push(useAssistantNavStore.subscribe((state, previous) => {
-    if (!previous.activeAssistantId || state.activeAssistantId) return;
-    const workspaceState = useWorkspaceStore.getState();
-    const active = workspaceState.workspaces.find((workspace) => workspace.id === workspaceState.activeWorkspaceId);
-    const pane = active?.panes.find((entry) => entry.terminalId === active.activeTerminalId);
-    if (active?.activeTerminalId && pane && (!active.pages || paneIsPresented(active, pane.id))) useAgentAttentionStore.getState().acknowledge(active.activeTerminalId);
+    if (!previous.activeAssistantId || state.activeAssistantId || !windowHasFocus()) return;
+    const terminalId = presentedActiveTerminalId();
+    if (terminalId) useAgentAttentionStore.getState().acknowledge(terminalId);
   }));
 
   return () => {

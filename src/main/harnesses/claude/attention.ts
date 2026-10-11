@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention, hookNodeExecutable, interpreterPath } from '../localAttention';
 
-export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged'] as const;
+export const CLAUDE_HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged'] as const;
 
 /** Provider-owned meaning of Claude hooks (fields per the Claude Code hooks reference):
  * - root identity `session_id`; turn identity `prompt_id` (Claude Code >= 2.1.196); child scope:
@@ -24,6 +24,8 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'Permission
  *   `StopFailure` is explicit failure evidence and becomes `turn_failed`, never a completion;
  *   the error is never forwarded. Neither background task counts nor crons prove settlement.
  *   Claude has no user-interrupt hook, so an interrupted turn stays Running until the next prompt.
+ * - `SessionStart` (any source) reports the root session it starts so a replaced conversation is
+ *   tracked from its first moment; `SessionEnd` still ends the old one when Claude sends it.
  * `Notification` is unused: no turn or request identity.
  * - Location: every hook carries `cwd`, Claude's tracked working directory, which a Bash `cd` moves
  *   while the process itself never changes directory (an agent can leave, and even remove, the
@@ -52,6 +54,12 @@ export default function interpret(input, hook, store) {
   const current = sameSession && turnId !== undefined && state.turn === turnId;
   const settle = (type) => { if (current) store.write({ session: sessionId, turn: turnId, pending: false }); return event(type, { turnId, cwd }); };
   switch (hook) {
+    case 'SessionStart':
+      // startup, resume, clear, compact or fork: binds (or, once the old one is idle, replaces) the
+      // terminal's root session. It proves no turn.
+      if (!sessionId) return null;
+      if (!sameSession) store.write({ session: sessionId, pending: false });
+      return event('session_started', { cwd });
     case 'UserPromptSubmit':
       store.write({ session: sessionId, turn: turnId, pending: false });
       return event('turn_started', { turnId, cwd });
@@ -99,7 +107,7 @@ export function claudeAttentionSettings(command: string, platform: NodeJS.Platfo
 } {
   const nodeCommand = hookNodeExecutable(platform);
   const hooks = Object.fromEntries(CLAUDE_HOOK_EVENTS.map((name) => [
-    name, [{ hooks: [{ type: 'command', command: nodeCommand, args: [command, interpreter, name], timeout: 3 }] }],
+    name, [{ hooks: [{ type: 'command', command: nodeCommand, args: [command, interpreter, name], timeout: 5 }] }],
   ]));
   return { hooks };
 }

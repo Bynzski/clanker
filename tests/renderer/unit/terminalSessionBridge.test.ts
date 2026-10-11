@@ -298,5 +298,29 @@ describe('terminal session bridge', () => {
       expect(view('b')?.display).toBe('turn_complete');
       stop();
     });
+
+    it('lights up a finish in the active pane while the window is unfocused, and clears it when the user comes back', async () => {
+      const first = createWorkspaceFixture({
+        id: 'ws', terminals: [{ id: 'a', pid: 1, workingDir: '/' }], panes: [{ id: 'pane-a', terminalId: 'a' }], activeTerminalId: 'a',
+        layoutRoot: { type: 'leaf', nodeId: 'la', paneId: 'pane-a' },
+      });
+      useWorkspaceStore.setState({ workspaces: [first], activeWorkspaceId: first.id, activeTerminalId: 'a', terminals: first.terminals, panes: first.panes, layoutRoot: first.layoutRoot });
+      const { listener } = attentionApi(async () => []);
+      const stop = startTerminalSessionBridge();
+      await flush();
+      let focused = false;
+      document.hasFocus = () => focused;
+      listener.current?.(change(snapshot('a', 'running', 2)));
+      listener.current?.(change(snapshot('a', 'completed', 3)));
+      expect(view('a')).toMatchObject({ display: 'turn_complete', unseen: true }); // not looked at: lit
+      focused = true;
+      window.dispatchEvent(new Event('focus'));
+      expect(view('a')).toBeNull(); // went to it: cleared
+      listener.current?.(change(snapshot('a', 'running', 4)));
+      expect(view('a')?.display).toBe('running');
+      listener.current?.(change(snapshot('a', 'completed', 5)));
+      expect(view('a')).toBeNull(); // watched while it finished: nothing to clear
+      stop();
+    });
   });
 });

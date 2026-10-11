@@ -111,9 +111,9 @@ export function attentionLaunchOptions(
 }
 
 /** Source authority a provider declares for its structured lifecycle; the broker arbitrates with it. */
-export function attentionSourceOptions(harness: string): { authority: 'full' | 'partial'; quality: 'native' | 'hook' } {
+export function attentionSourceOptions(harness: string): { authority: 'full' | 'partial'; quality: 'native' | 'hook'; sessionModel: 'process' | 'shared' } {
   const attention = findHarnessProvider(harness)?.attention;
-  return { authority: attention?.authority ?? 'full', quality: attention?.source ?? 'hook' };
+  return { authority: attention?.authority ?? 'full', quality: attention?.source ?? 'hook', sessionModel: attention?.sessionModel ?? 'shared' };
 }
 
 /** Native session identity Clanker itself validated for a non-fork resume. A fork creates

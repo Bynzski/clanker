@@ -42,6 +42,9 @@ export interface AgentAttentionSnapshot {
     /** Native turn, or a provider-owned epoch; `null` while `starting` or without a foreground turn. */
     turnId: string | null;
     startedAt: number | null;
+    /** Present only while `provisional`: the revision at which the candidate stop was observed, so
+     * presentation can show and acknowledge it like a completion. */
+    stopRevision?: number;
   };
   /** Request evidence, retained until matching resolution or a final turn boundary.
    * resolutionUnknown retains history without claiming the user still needs to act. */

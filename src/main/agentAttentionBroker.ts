@@ -1,6 +1,6 @@
 import { HOOK_DIAGNOSTICS, type HookDiagnostic, type NativeAttentionCapability, type AttentionSignal, type AttentionSignalDiagnostics } from '../shared/types/attentionSignal';
 import { ATTENTION_ACK_PREFIX, type AttentionVerdict } from '../shared/attentionProtocol';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import * as net from 'node:net';
 import type {
   AgentAttentionChange, AgentAttentionEvidence, AgentAttentionSnapshot, AgentLocation, AgentPendingRequestKind, AgentRuntimeStatus,
@@ -28,6 +28,11 @@ const EVENT_FIELDS = new Set([
 ]);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
+/** Always-on bounded trace: enough to classify a field report without a debug build. */
+const MAX_TRACE_ENTRIES = 64;
+const MAX_TRACED_TERMINALS = 64;
+/** Generous so a busy main loop processes a delivered event instead of dropping it unread. */
+const SOCKET_IDLE_TIMEOUT_MS = 10_000;
 
 /** Provider-asserted subject of an event. Anything other than an explicit root fails closed. */
 type Scope = 'root' | 'child';
@@ -57,6 +62,20 @@ export interface AttentionRegistrationOptions {
    * which keeps every lower-confidence source suppressed. */
   authority?: StructuredAuthority;
   quality?: SourceQuality;
+  /** See `HarnessAttentionCapability.sessionModel`. Defaults to `shared`. */
+  sessionModel?: 'process' | 'shared';
+}
+
+/** One bounded, content-free trace entry. Session and turn identities are short hashes. */
+export interface AttentionTraceEntry {
+  at: number;
+  semantic: string;
+  nativeEvent?: string;
+  verdict?: string;
+  revision: number;
+  status: AgentRuntimeStatus | 'retired';
+  session?: string;
+  turn?: string;
 }
 
 export type AttentionEffectiveState = 'unverified' | 'idle' | 'working' | 'needs_input' | 'provisional' | 'failed';
@@ -100,7 +119,13 @@ interface Registration {
   transport: 'local' | 'remote';
   authority: StructuredAuthority;
   quality: SourceQuality;
+  sessionModel: 'process' | 'shared';
+  /** The root was seeded from a validated resume and has not reported yet. Until it does, no other
+   * session may replace it (an auxiliary thread starting first must not take the terminal). */
+  seedUnconfirmed?: boolean;
   revision: number;
+  /** Revision at which the current candidate stop was observed (status `provisional`). */
+  provisionalRevision?: number;
   rootSessionId?: string;
   /** Foreground turn identity: native, or a provider-owned epoch for harnesses without one. */
   activeTurnId?: string;
@@ -156,6 +181,8 @@ function defaultDiagnostics(diagnostic: AttentionDiagnostic): void {
 }
 
 const isActive = (registration: Registration): boolean => registration.status === 'starting' || registration.status === 'running';
+const traceId = (value: string | undefined): string | undefined => value
+  ? createHash('sha256').update(value).digest('hex').slice(0, 8) : undefined;
 
 /** Lifecycle authority for agent attention. A terminal token proves which terminal
  * emitted an event; root-session and turn correlation decide whether it may
@@ -168,6 +195,10 @@ export class AgentAttentionBroker {
   private readonly tokensByTerminal = new Map<string, string>();
   /** Highest revision ever issued per terminal, so a replaced registration never goes backwards. */
   private readonly revisionFloors = new Map<string, number>();
+  /** Per-terminal trace, retained after release so a retirement can still be explained. */
+  private readonly traces = new Map<string, AttentionTraceEntry[]>();
+  /** Envelopes that could not be attributed to any terminal (bad token, malformed). */
+  private unattributed = 0;
   private server: net.Server | null = null;
   private startPromise: Promise<number> | null = null;
   private readonly resolveLocation: AgentLocationResolver;
@@ -185,7 +216,7 @@ export class AgentAttentionBroker {
     if (this.startPromise) return this.startPromise;
     this.startPromise = new Promise<number>((resolve, reject) => {
       const server = net.createServer({ allowHalfOpen: true }, (socket) => {
-        socket.setTimeout(1000, () => socket.destroy());
+        socket.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => socket.destroy());
         let body = '';
         socket.on('data', (chunk: Buffer) => {
           if (Buffer.byteLength(body) + chunk.length > MAX_MESSAGE_BYTES) {
@@ -239,12 +270,13 @@ export class AgentAttentionBroker {
       ...(options.capability ? { signal: { ...options.capability, health: 'unverified' as const } } : {}),
       received: 0, verdicts: {}, hooks: {},
       terminalId, harness, transport, retiredTurns: [], status: 'unverified', startedAt: null, pending: [],
-      authority: options.authority ?? 'full', quality: options.quality ?? 'hook',
+      authority: options.authority ?? 'full', quality: options.quality ?? 'hook', sessionModel: options.sessionModel ?? 'shared',
       lastCompletion: null, lastOutcome: null, location: null,
       revision: this.issueRevision(terminalId),
-      ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
+      ...(options.rootSessionId ? { rootSessionId: options.rootSessionId, seedUnconfirmed: true } : {}),
     });
     this.tokensByTerminal.set(terminalId, token);
+    this.record(this.registrations.get(token)!, { semantic: 'registered' });
     return token;
   }
 
@@ -261,12 +293,39 @@ export class AgentAttentionBroker {
     this.tokensByTerminal.delete(terminalId);
     if (!registration) return;
     registration.revision = this.issueRevision(terminalId);
+    this.traceEntry(terminalId, { at: Date.now(), semantic: 'released', revision: registration.revision, status: 'retired' });
     this.onChange({ terminalId, revision: registration.revision, snapshot: null });
+  }
+
+  /** Bounded trace of what this terminal's attention received and decided, newest last. */
+  trace(terminalId: string): AttentionTraceEntry[] {
+    return (this.traces.get(terminalId) ?? []).map((item) => ({ ...item }));
+  }
+
+  private record(registration: Registration, entry: Pick<AttentionTraceEntry, 'semantic' | 'nativeEvent' | 'verdict' | 'session' | 'turn'>): void {
+    this.traceEntry(registration.terminalId, { at: Date.now(), revision: registration.revision, status: registration.status, ...entry });
+  }
+
+  private traceEntry(terminalId: string, entry: AttentionTraceEntry): void {
+    const clean = Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined)) as unknown as AttentionTraceEntry;
+    const list = this.traces.get(terminalId) ?? [];
+    this.traces.delete(terminalId);
+    this.traces.set(terminalId, [...list, clean].slice(-MAX_TRACE_ENTRIES));
+    if (this.traces.size > MAX_TRACED_TERMINALS) {
+      const oldest = this.traces.keys().next().value;
+      if (oldest !== undefined) this.traces.delete(oldest);
+    }
+  }
+
+  /** Envelopes no terminal could be blamed for (invalid or unauthenticated). */
+  unattributedCount(): number {
+    return this.unattributed;
   }
 
   close(): void {
     this.registrations.clear();
     this.tokensByTerminal.clear();
+    this.traces.clear();
     this.server?.close();
     this.server = null;
     this.startPromise = null;
@@ -319,7 +378,10 @@ export class AgentAttentionBroker {
       ...(r.signal ? { signal: { ...r.signal } } : {}),
       revision: r.revision,
       sessionId: r.rootSessionId ?? null,
-      runtime: { status: r.status, turnId: r.activeTurnId ?? null, startedAt: r.startedAt },
+      runtime: {
+        status: r.status, turnId: r.activeTurnId ?? null, startedAt: r.startedAt,
+        ...(r.status === 'provisional' && r.provisionalRevision !== undefined ? { stopRevision: r.provisionalRevision } : {}),
+      },
       // Prefer the oldest actionable wait; otherwise retain the oldest unresolved history.
       pendingRequest: request ? {
         ...(request.resolutionUnknown ? { resolutionUnknown: true } : {}),
@@ -393,11 +455,16 @@ export class AgentAttentionBroker {
   handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'provisional' | 'unavailable' {
     const registration = this.current(terminalId);
     if (!registration) return 'unavailable';
+    // After ambiguous identity evidence the cached root may not be the visible conversation.
+    // Never let its old completion authorize a write; accepted turn evidence restores health.
+    if (registration.signal?.reason === 'identity-rejected') return 'unavailable';
     if (registration.status === 'provisional') return 'provisional';
     if (isActive(registration)) return registration.pending.some(request => !request.resolutionUnknown) ? 'needs_input' : 'running';
     return registration.status === 'idle' && registration.lastOutcome?.kind === 'completed' ? 'ready' : 'unverified';
   }
 
+  /** Finished presentation is not input readiness: another Stop hook may continue this turn.
+   * Preserve the existing explicit user choice for an unverified, non-active agent. */
   canHandoff(terminalId: string): boolean {
     const state = this.handoffState(terminalId);
     return state === 'unverified' || state === 'ready';
@@ -406,13 +473,18 @@ export class AgentAttentionBroker {
   /** Clanker itself submitted a prompt: a new foreground turn starts without a native event. */
   markSubmitted(terminalId: string): void {
     const registration = this.current(terminalId);
-    if (!registration || this.handoffState(terminalId) !== 'ready') return;
+    const state = this.handoffState(terminalId);
+    if (!registration || state !== 'ready') return;
     // The native start event must establish the turn identity before anything can settle it.
     this.commit(registration, () => {
+      // Only established readiness may retire the previous turn.
+      if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
+      registration.pending = [];
       registration.status = 'starting';
       registration.activeTurnId = undefined;
       registration.startedAt = this.now();
     });
+    this.record(registration, { semantic: 'submitted' });
   }
 
   /** The provider can no longer deliver lifecycle events for this terminal (for example its hooks
@@ -431,6 +503,7 @@ export class AgentAttentionBroker {
       registration.locationInvalidated = true;
       if (registration.signal) registration.signal = { ...registration.signal, health: 'lost', reason: 'directory-removed' };
     });
+    this.record(registration, { semantic: 'lifecycle-lost' });
     return true;
   }
 
@@ -512,6 +585,7 @@ export class AgentAttentionBroker {
   private receiveEvent(raw: string, remoteTerminalId?: string): AttentionVerdict {
     const accepted = this.parse(raw, remoteTerminalId);
     if (typeof accepted === 'string') {
+      this.unattributed = Math.min(Number.MAX_SAFE_INTEGER, this.unattributed + 1);
       if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted);
       return accepted;
     }
@@ -525,6 +599,7 @@ export class AgentAttentionBroker {
         this.commit(registration, () => { registration.signal = { ...registration.signal!, health: 'degraded', reason: 'envelope-invalid' }; });
       }
       if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', JSON.stringify({ terminalId: registration.terminalId, verdict: rejection, revision: registration.revision }));
+      this.record(registration, { semantic: 'invalid-envelope', verdict: rejection });
       return rejection;
     }
     const { registration, parsed } = accepted;
@@ -568,6 +643,10 @@ export class AgentAttentionBroker {
       : decision;
     registration.lastVerdict = verdict;
     registration.verdicts[verdict] = Math.min(Number.MAX_SAFE_INTEGER, (registration.verdicts[verdict] ?? 0) + 1);
+    this.record(registration, {
+      semantic: parsed.event, verdict, ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}),
+      session: traceId(parsed.sessionId), turn: traceId(parsed.turnId),
+    });
     this.onDiagnostic({
       harness: registration.harness, terminalId: registration.terminalId,
       ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}),
@@ -605,6 +684,7 @@ export class AgentAttentionBroker {
     if (event.scope === 'child') return 'ignored-child';
     if (event.scope !== 'root') return 'rejected-ambiguous';
     if (!event.sessionId) return 'rejected-ambiguous';
+    if (registration.rootSessionId === event.sessionId) registration.seedUnconfirmed = undefined;
     if (event.event === 'session_replaced') {
       // Provider-proven explicit replacement (Codex SessionStart source=clear), never an
       // unrelated root start. Name exactly the old root before replacing any authority.
@@ -612,6 +692,7 @@ export class AgentAttentionBroker {
       if (event.previousSessionId !== registration.rootSessionId || event.sessionId === registration.rootSessionId) return 'rejected-mismatch';
       this.commit(registration, revision => {
         registration.rootSessionId = event.sessionId;
+        registration.seedUnconfirmed = undefined;
         registration.activeTurnId = undefined;
         registration.retiredTurns = [];
         registration.pending = [];
@@ -632,6 +713,14 @@ export class AgentAttentionBroker {
       return 'accepted';
     }
 
+    // Process-scoped providers prove that the old session runtime was replaced, even if its end
+    // was lost. Shared providers do not: an idle root, token possession, or a root start says nothing
+    // about which conversation the user selected. They need an explicit boundary/replacement above.
+    if (registration.rootSessionId && registration.rootSessionId !== event.sessionId
+      && (event.event === 'session_started' || event.event === 'turn_started') && this.maySupersede(registration)) {
+      if (event.event === 'turn_started' && !event.turnId) return 'rejected-ambiguous';
+      this.supersede(registration, event.sessionId);
+    }
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return 'rejected-mismatch';
 
     // A provider's native root session start can restore identity after a boundary, including a
@@ -656,6 +745,7 @@ export class AgentAttentionBroker {
         || registration.pending.length > 0 || registration.lastOutcome !== null;
       this.commit(registration, (revision) => {
         registration.rootSessionId = undefined;
+        registration.seedUnconfirmed = undefined;
         registration.activeTurnId = undefined;
         registration.retiredTurns = [];
         registration.pending = [];
@@ -718,8 +808,9 @@ export class AgentAttentionBroker {
       case 'turn_provisional':
         // Keep correlation and historical waits for a later native outcome. This is neither
         // active execution nor success, and cannot authorize a handoff or checkout move.
-        if (registration.status !== 'provisional') this.commit(registration, () => {
+        if (registration.status !== 'provisional') this.commit(registration, (revision) => {
           registration.status = 'provisional';
+          registration.provisionalRevision = revision;
           registration.pending = registration.pending.map(request => ({ ...request, resolutionUnknown: true }));
         });
         return 'accepted';
@@ -760,6 +851,29 @@ export class AgentAttentionBroker {
         return 'accepted';
       default:
         return 'rejected-ambiguous';
+    }
+  }
+
+  private maySupersede(registration: Registration): boolean {
+    return !registration.seedUnconfirmed && registration.sessionModel === 'process';
+  }
+
+  /** The old root is over: retire its turns and waits, record a session boundary, and bind the new
+   * root. Published at once so boundary consumers (checkout moves) see it as its own fact. */
+  private supersede(registration: Registration, sessionId: string): void {
+    const previous = registration.rootSessionId;
+    this.commit(registration, (revision) => {
+      registration.rootSessionId = sessionId;
+      registration.activeTurnId = undefined;
+      registration.retiredTurns = [];
+      registration.pending = [];
+      registration.status = 'unverified';
+      registration.startedAt = null;
+      registration.lastOutcome = { kind: 'session_ended', turnId: null, revision, at: this.now() };
+    });
+    this.record(registration, { semantic: 'session-superseded', session: traceId(previous) });
+    if (this.current(registration.terminalId) === registration) {
+      this.onChange({ terminalId: registration.terminalId, revision: registration.revision, snapshot: this.toSnapshot(registration) });
     }
   }
 

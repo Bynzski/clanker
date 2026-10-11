@@ -524,7 +524,7 @@ if (${JSON.stringify(harness)} === 'pi') {
       : harness === 'omp' ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_started', 'turn_provisional']);
     expect(JSON.stringify(events)).not.toContain('private');
     if (harness === 'pi') {
-      expect(events[2]).toMatchObject({ inputId: (events[1] as { inputId?: string }).inputId, turnId: '1' });
+      expect(events[2]).toMatchObject({ inputId: (events[1] as { inputId?: string }).inputId, turnId: expect.stringMatching(/\.1$/) });
     }
     expect(events.filter(event => event.event !== 'observer_diagnostic').every((event) => event.scope === 'root' && event.sessionId === 'session-a')).toBe(true);
     // Both ends of a turn carry the same turn identity (native, or a provider-owned epoch).

@@ -22,21 +22,34 @@ function envelope(event, fields) {
 
 /** emit keeps the provider-facing boolean API; the serialized command requests a detailed
  * verdict so ignored events neither poison state nor count as an accepted recovery boundary.
- * Old/unframed ACKs fail closed. TCP chunk boundaries have no protocol meaning. */
+ * Old/unframed ACKs fail closed. TCP chunk boundaries have no protocol meaning.
+ *
+ * A send with no verdict (busy app, dropped connection) is retried once within a fixed total budget.
+ * Resending is safe: the broker treats a repeated start, wait or settle of the same turn as an
+ * idempotent duplicate, and a stale one as ignored, so a retry can only repair a lost delivery. */
 export const OBSERVER = `import net from 'node:net';
 ${OBSERVER_FIELDS}
+const ATTEMPT_MS = [1000, 500];
 export async function emit(event, fields, detailed = false) {
   const port = Number(process.env.CLANKER_ATTENTION_PORT);
   const token = process.env.CLANKER_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_ATTENTION_HARNESS;
   if (!token || !harness || !Number.isInteger(port) || port < 1 || port > 65535) return false;
   const payload = JSON.stringify({ version: 1, token, harness, ...envelope(event, fields) });
-  const verdict = await new Promise((resolve) => {
+  let verdict = false;
+  for (const limit of ATTEMPT_MS) {
+    verdict = await send(port, payload, limit);
+    if (verdict !== false) break;
+  }
+  return detailed ? verdict : verdict === 'accepted-changed' || verdict === 'accepted-idempotent';
+}
+function send(port, payload, limit) {
+  return new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
     let response = '';
     let ended = false;
     let invalid = false;
-    const deadline = setTimeout(() => socket.destroy(), 500);
+    const deadline = setTimeout(() => socket.destroy(), limit);
     socket.on('data', (chunk) => {
       if (Buffer.byteLength(response) + chunk.length > ${MAX_ATTENTION_ACK_BYTES}) { invalid = true; socket.destroy(); return; }
       response += chunk.toString('utf8');
@@ -50,7 +63,6 @@ export async function emit(event, fields, detailed = false) {
       resolve(!invalid && ended && response.startsWith(prefix) && response.endsWith('\\n') && ${JSON.stringify(ATTENTION_VERDICTS)}.includes(value) ? value : false);
     });
   });
-  return detailed ? verdict : verdict === 'accepted-changed' || verdict === 'accepted-idempotent';
 }
 `;
 
@@ -66,8 +78,8 @@ export async function emit(event, fields, detailed = false) {
  * holding a pid:nonce owner record, released in a finally; a holder that is dead or older than the
  * bound is stale and is replaced only if its record is unchanged. Waiting is bounded and is
  * synchronization only; elapsed time never decides agent state. Delivery itself is bounded
- * (loopback ack timeout, non-blocking tty write), and the lock wait plus delivery fit inside the
- * 3 s hook timeouts Clanker configures.
+ * (loopback ack budget of 1.5 s including one retry, bounded tty write), and in the normal case the
+ * lock wait plus delivery fit inside the hook timeouts Clanker configures.
  *
  * Fail closed: if the transaction cannot be established (lock, unreadable/corrupt/oversized or
  * unwritable state) the interpreter runs against empty state, a private poison marker is set, and

@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
+import type { HarnessId } from '../../../src/shared/harnessIds';
 import { CLAUDE_HOOK_EVENTS } from '../../../src/main/harnesses/claude/attention';
 import { OBSERVER_FIELDS } from '../../../src/main/harnesses/attentionSources';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
@@ -29,13 +30,13 @@ afterEach(() => {
 });
 
 interface Wire { event: string; [key: string]: unknown }
-function rig(harness: string, rootSessionId?: string) {
+function rig(harness: HarnessId, rootSessionId?: string) {
   const recorder = attentionRecorder();
   const updates = recorder.changes;
   const decisions: AttentionDiagnostic['decision'][] = [];
   const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => decisions.push(diagnostic.decision));
   brokers.push(broker);
-  const token = broker.registerRemote('term', harness, { rootSessionId });
+  const token = broker.registerRemote('term', harness, { rootSessionId, sessionModel: getHarnessProvider(harness).attention.sessionModel });
   const feed = (wire: Wire | null | undefined) => {
     if (wire) broker.receiveRemote('term', JSON.stringify({ version: 1, token, harness, ...wire }));
   };
@@ -51,6 +52,8 @@ async function importSource(source: string, location = 'source.mjs') {
   return import(/* @vite-ignore */ `${pathToFileURL(path.join(dir, location)).href}?${Math.random()}`);
 }
 const locationOf = (broker: AgentAttentionBroker) => broker.snapshot('term')?.location?.path ?? null;
+/** Epoch providers prefix turn IDs with a per-instance nonce; this is the per-instance counter. */
+const epochOf = (turnId: unknown) => String(turnId).split('.').pop();
 function drain(): Wire[] {
   const emitted = (globalThis as { __emitted?: Wire[] }).__emitted ?? [];
   return emitted.splice(0);
@@ -71,28 +74,44 @@ async function interpreter(harness: 'codex' | 'claude' | 'agy') {
 }
 
 describe('Codex lifecycle', () => {
-  it('replaces the root only on explicit native clear source, never ordinary startup or fork', async () => {
-    const hook = await interpreter('codex'); const { feed, broker, state } = rig('codex');
+  it('rejects unproven startup replacement even at Stop; explicit native clear still switches the root', async () => {
+    const hook = await interpreter('codex'); const { feed, broker, state, decisions } = rig('codex');
     feed(hook('SessionStart', { session_id: 'root', source: 'startup' }));
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
     feed(hook('PermissionRequest', { session_id: 'root', turn_id: 't1', tool_name: 'Bash', tool_input: { command: 'x' } }));
-    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
-    feed(hook('SessionStart', { session_id: 'unrelated', source: 'startup' }));
-    feed(hook('SessionStart', { session_id: 'fork', source: 'fork' }));
+    // A live wait belongs to the bound root: another session cannot take the terminal.
+    feed(hook('SessionStart', { session_id: 'intruder', source: 'startup' }));
     expect(broker.snapshot('term')?.sessionId).toBe('root');
-    feed(hook('SessionStart', { session_id: 'replacement', source: 'clear' }));
-    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'replacement', runtime: { status: 'unverified' }, pendingRequest: null, lastCompletion: null });
+    expect(decisions).toContain('rejected-mismatch');
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    // /new's startup is indistinguishable from an auxiliary root. Do not guess selection.
+    feed(hook('SessionStart', { session_id: 'replacement', source: 'startup' }));
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'provisional' }, lastCompletion: null });
     feed(hook('UserPromptSubmit', { session_id: 'replacement', turn_id: 't2' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    // A rejected auxiliary prompt must not prevent the next actual root prompt/Stop from tracking.
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't3' }));
+    feed(hook('Stop', { session_id: 'root', turn_id: 't3' }));
+    expect(state()).toBe('provisional');
+    feed(hook('SessionStart', { session_id: 'replacement', source: 'clear' }));
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'replacement', runtime: { status: 'unverified' }, pendingRequest: null, lastCompletion: null, lastOutcome: { kind: 'session_ended' } });
+    feed(hook('UserPromptSubmit', { session_id: 'replacement', turn_id: 't4' }));
     expect(state()).toBe('running');
+    // Late events of the replaced root change nothing.
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
     feed(hook('SessionEnd', { session_id: 'root' }));
     expect(broker.snapshot('term')?.sessionId).toBe('replacement');
-    feed(hook('Stop', { session_id: 'replacement', turn_id: 't2' }));
+    expect(state()).toBe('running');
+    feed(hook('Stop', { session_id: 'replacement', turn_id: 't4' }));
     expect(state()).toBe('provisional');
+    // Explicit clear still replaces directly.
+    feed(hook('SessionStart', { session_id: 'cleared', source: 'clear' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('cleared');
   });
 
   it('recovers a cleared resume binding from native SessionStart without inventing a turn', async () => {
     const hook = await interpreter('codex');
-    const { broker, feed, state, decisions } = rig('codex', 'root');
+    const { broker, feed, state } = rig('codex', 'root');
     feed(hook('SessionEnd', { session_id: 'root', cwd: '/repo' }));
     expect(broker.snapshot('term')?.sessionId).toBeNull();
     // SessionStart carries identity and source, but no turn_id (native Codex contract).
@@ -102,12 +121,15 @@ describe('Codex lifecycle', () => {
     feed(hook('Stop', { session_id: 'root', turn_id: 'old' }));
     expect(state()).toBe('unverified');
     feed(hook('SessionStart', { session_id: 'child', source: 'resume', agent_id: 'worker' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    // A root auxiliary session cannot claim an idle terminal. The next real prompt still works.
     feed(hook('SessionStart', { session_id: 'other', source: 'resume' }));
     expect(broker.snapshot('term')?.sessionId).toBe('root');
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 'new' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    expect(state()).toBe('running');
     feed(hook('Stop', { session_id: 'root', turn_id: 'new' }));
     expect(state()).toBe('provisional');
-    expect(decisions).toContain('rejected-mismatch');
   });
 
   // Native hook fields (Codex hooks source): root identity `session_id`; turn identity `turn_id`;
@@ -654,7 +676,7 @@ describe('Pi lifecycle', () => {
     await handlers.agent_start({}, ctx);
     await handlers.agent_settled({}, ctx);
     const settledOne = drain();
-    expect(settledOne.map((wire) => wire.turnId)).toEqual(['1', '1']);
+    expect(settledOne.map((wire) => epochOf(wire.turnId))).toEqual(['1', '1']);
     settledOne.forEach(feed);
     await handlers.agent_start({}, ctx);
     drain().forEach(feed);
@@ -664,10 +686,89 @@ describe('Pi lifecycle', () => {
     expect(decisions[decisions.length - 1]).toBe('ignored-stale');
     await handlers.agent_settled({}, ctx);
     const settledTwo = drain();
-    expect(settledTwo[0].turnId).toBe('2');
+    expect(epochOf(settledTwo[0].turnId)).toBe('2');
     settledTwo.forEach(feed);
     expect(state()).toBe('ready');
   });
+  it('does not invent a new epoch when agent_start repeats without native settlement', async () => {
+    const handlers = await load(); const { feed, broker } = rig('pi');
+    drain();
+    await handlers.agent_start({}, ctx); drain().forEach(feed);
+    const revision = broker.snapshot('term')?.revision;
+    await handlers.agent_start({}, ctx);
+    const repeated = drain();
+    expect(repeated[0]).toMatchObject({ event: 'turn_started', turnId: expect.stringMatching(/\.1$/) });
+    repeated.forEach(feed);
+    expect(broker.snapshot('term')?.revision).toBe(revision);
+    await handlers.agent_settled({}, ctx); drain().forEach(feed);
+    await handlers.agent_start({}, ctx);
+    expect(drain()[0]).toMatchObject({ event: 'turn_started', turnId: expect.stringMatching(/\.2$/) });
+  });
+
+  it('allows a freshly loaded extension epoch only after the old native reload boundary', async () => {
+    const before = await load(); const { feed, broker, state } = rig('pi');
+    const context = { ...ctx, cwd: '/fixture' };
+    drain();
+    await before.session_start({}, context);
+    await before.agent_start({}, context);
+    await before.agent_settled({}, context);
+    const firstWires = drain();
+    const firstTurn = firstWires.find((wire) => wire.event === 'turn_started')?.turnId;
+    firstWires.forEach(feed);
+    expect(state()).toBe('ready');
+    await before.session_shutdown({ reason: 'reload' }, context); drain().forEach(feed);
+    const after = await load();
+    await after.session_start({ reason: 'reload' }, context); drain().forEach(feed);
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'unverified', turnId: null } });
+    await after.agent_start({}, context);
+    const start = drain();
+    expect(epochOf(start[0].turnId)).toBe('1'); // New extension state, not an invented broker epoch.
+    expect(start[0].turnId).not.toBe(firstTurn); // ...and unique to this instance.
+    start.forEach(feed);
+    expect(state()).toBe('running');
+    await after.agent_settled({}, context); drain().forEach(feed);
+    expect(state()).toBe('ready');
+  });
+
+  it('keeps tracking after a reload whose session_ended never reached main (field loss)', async () => {
+    const before = await load(); const { feed, state } = rig('pi');
+    const context = { ...ctx, cwd: '/fixture' };
+    drain();
+    await before.session_start({}, context);
+    for (let turn = 0; turn < 5; turn++) {
+      await before.agent_start({}, context);
+      await before.agent_settled({}, context);
+    }
+    drain().forEach(feed);
+    await before.session_shutdown({ reason: 'reload' }, context);
+    drain(); // the old instance's session_ended is lost
+    const after = await load();
+    await after.session_start({ reason: 'reload' }, context); drain().forEach(feed);
+    for (let turn = 0; turn < 3; turn++) {
+      await after.agent_start({}, context); drain().forEach(feed);
+      expect(state()).toBe('running');
+      await after.agent_settled({}, context); drain().forEach(feed);
+      expect(state()).toBe('ready');
+    }
+  });
+
+  it('follows a new session whose old session_ended never reached main', async () => {
+    const before = await load(); const { feed, broker, state } = rig('pi');
+    drain();
+    await before.session_start({}, { ...ctx, cwd: '/fixture' });
+    await before.agent_start({}, ctx); await before.agent_settled({}, ctx);
+    drain().forEach(feed);
+    await before.session_shutdown({ reason: 'new' }, ctx); drain(); // lost
+    const after = await load();
+    const next = { sessionManager: { getSessionId: () => 'next' }, cwd: '/fixture' };
+    await after.session_start({ reason: 'new' }, next); drain().forEach(feed);
+    expect(broker.snapshot('term')?.sessionId).toBe('next');
+    await after.agent_start({}, next); drain().forEach(feed);
+    expect(state()).toBe('running');
+    await after.agent_settled({}, next); drain().forEach(feed);
+    expect(state()).toBe('ready');
+  });
+
   it('does not emit a completion when no foreground turn is open', async () => {
     const handlers = await load();
     drain();
@@ -697,7 +798,7 @@ describe('Pi lifecycle', () => {
     expect(drain()).toEqual([]);
     await handlers.ui_prompt_end({ kind }, ctx);
     const resolved = drain();
-    expect(resolved[0]).toMatchObject({ event: 'input_resolved', inputId: requested[0].inputId, turnId: '1' });
+    expect(resolved[0]).toMatchObject({ event: 'input_resolved', inputId: requested[0].inputId, turnId: expect.stringMatching(/\.1$/) });
     resolved.forEach(feed);
     expect(broker.snapshot('term')?.pendingRequest).toBeNull();
     expect(state()).toBe('running');
@@ -727,7 +828,7 @@ describe('Pi lifecycle', () => {
     expect(state()).toBe('running');
     await handlers.agent_settled({ aborted }, ctx);
     const wires = drain();
-    expect(wires[0]).toMatchObject({ event, turnId: '1' });
+    expect(wires[0]).toMatchObject({ event, turnId: expect.stringMatching(/\.1$/) });
     expect(JSON.stringify(wires)).not.toContain('secret');
     wires.forEach(feed);
     expect(broker.snapshot('term')?.lastOutcome?.kind).toBe(outcome);
@@ -865,10 +966,10 @@ describe('Oh My Pi lifecycle', () => {
     const main = { sessionManager: { getSessionId: () => 'main' }, agent: { kind: 'main' } };
     const { feed, broker } = rig('omp'); drain();
     await handlers.agent_start({}, main); await handlers.agent_end({ messages: [] }, main);
-    const wires = drain(); expect(wires[wires.length - 1]).toMatchObject({ event: 'turn_provisional', sessionId: 'main', turnId: '1' }); wires.forEach(feed);
+    const wires = drain(); expect(wires[wires.length - 1]).toMatchObject({ event: 'turn_provisional', sessionId: 'main', turnId: expect.stringMatching(/\.1$/) }); wires.forEach(feed);
     expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'provisional' }, lastOutcome: null });
     await handlers.agent_start({}, main); await handlers.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, main); drain().forEach(feed);
-    expect(broker.snapshot('term')?.lastCompletion?.turnId).toBe('2');
+    expect(epochOf(broker.snapshot('term')?.lastCompletion?.turnId)).toBe('2');
   });
   it('does not complete twice or without an open main turn', async () => {
     const omp = await importSource(OMP);
@@ -907,7 +1008,7 @@ describe('Oh My Pi lifecycle', () => {
   });
 });
 
-describe.each([['pi', PI, 'agent_settled'], ['omp', OMP, 'agent_end']])('%s root bookkeeping', (harness, source, settle) => {
+describe.each([['pi', PI, 'agent_settled'], ['omp', OMP, 'agent_end']] as const)('%s root bookkeeping', (harness, source, settle) => {
   it('cannot be poisoned by unrelated start/shutdown after idle or during work', async () => {
     const module = await importSource(source);
     const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
@@ -920,9 +1021,9 @@ describe.each([['pi', PI, 'agent_settled'], ['omp', OMP, 'agent_end']])('%s root
     await run('agent_start', 'root'); await run(settle, 'root');
     await run('agent_start', 'unrelated'); await run('session_shutdown', 'unrelated');
     await run('agent_start', 'root');
-    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'running', turnId: '2' } });
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'running', turnId: expect.stringMatching(/\.2$/) } });
     await run('session_shutdown', 'unrelated'); await run(settle, 'root');
-    expect(broker.snapshot('term')?.lastCompletion?.turnId).toBe('2');
+    expect(epochOf(broker.snapshot('term')?.lastCompletion?.turnId)).toBe('2');
     await run('session_shutdown', 'root'); await run('agent_start', 'next'); await run(settle, 'next');
     expect(broker.snapshot('term')).toMatchObject({ sessionId: 'next', runtime: { status: 'idle' } });
   });
@@ -944,6 +1045,22 @@ describe('OpenCode lifecycle', () => {
     return async (type: string, properties: Record<string, unknown>) => { await instance.event({ event: { type, properties } }); };
   }
   const status = (sessionID: string, type: string) => ['session.status', { sessionID, status: { type } }] as const;
+
+  it('does not confuse parentless background busy with selected-session ownership after root idle', async () => {
+    const send = await plugin(); const { feed, broker, decisions } = rig('opencode'); drain();
+    const step = async (...args: Parameters<typeof send>) => { await send(...args); drain().forEach(feed); };
+    await step(...status('root', 'busy'));
+    await step(...status('root', 'idle'));
+    await step('session.created', { info: { id: 'background' } });
+    await step(...status('background', 'busy'));
+    await step(...status('background', 'idle'));
+    expect(decisions.slice(-2)).toEqual(['rejected-mismatch', 'rejected-mismatch']);
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    await step(...status('root', 'busy'));
+    expect(broker.snapshot('term')?.runtime.status).toBe('running');
+    await step(...status('root', 'idle'));
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('completed');
+  });
 
   it('settles explicit errors and aborts at idle, without turning compaction recovery into failure', async () => {
     const send = await plugin(); const { feed, broker } = rig('opencode'); drain();
@@ -990,7 +1107,7 @@ describe('OpenCode lifecycle', () => {
     await send(...status('root', 'busy'));
     await send(...status('root', 'idle'));
     const first = drain();
-    expect(first.map((wire) => wire.turnId)).toEqual(['1', '1']);
+    expect(first.map((wire) => epochOf(wire.turnId))).toEqual(['1', '1']);
     first.forEach(feed);
     await send(...status('root', 'busy'));
     drain().forEach(feed);
@@ -1304,7 +1421,7 @@ describe('native tool activity after candidate Stop', () => {
     expect(hook('PreToolUse', { ...tool, prompt_id: 'old', turn_id: 'old' })).toBeNull();
     feed(hook('PreToolUse', { ...tool, tool_use_id: 'continued' }));
     expect(state()).toBe('running');
-    expect(broker.snapshot('term')!.runtime).toEqual({ ...stopped.runtime, status: 'running' });
+    expect(broker.snapshot('term')!.runtime).toEqual({ status: 'running', turnId: stopped.runtime.turnId, startedAt: stopped.runtime.startedAt });
     expect(broker.snapshot('term')!.lastCompletion).toBeNull();
     expect(broker.canHandoff('term')).toBe(false);
     // A continuation approval remains actionable even after ordinary resumed activity.
@@ -1333,7 +1450,7 @@ describe('native tool activity after candidate Stop', () => {
     }
     expect(state()).toBe('provisional');
     expect(broker.snapshot('term')!.runtime.turnId).toBe(turn);
-    expect(broker.canHandoff('term')).toBe(false);
+    expect(broker.canHandoff('term')).toBe(false); // Stop is presentation, not input readiness.
     expect(broker.snapshot('term')!.lastCompletion).toBeNull();
   });
 });

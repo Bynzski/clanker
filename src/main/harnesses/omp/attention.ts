@@ -10,6 +10,10 @@ import { localAttention } from '../localAttention';
 export const SOURCE = `import { emit } from './observer.mjs';
 // OMP exposes no turn ID. The extension owns one epoch per main-session foreground turn:
 // agent_start opens it and only the terminal main agent_end closes it.
+// Turn IDs are unique to this module instance: the host re-imports the extension on every session
+// replacement and reload, so a bare counter would restart at 1 and collide with retired turns.
+const instance = Math.random().toString(36).slice(2, 10);
+const turnOf = (n) => instance + '.' + n;
 let epoch = 0;
 let open = false;
 let root;
@@ -24,17 +28,17 @@ export default function (omp) {
     if (root && sessionId(ctx) !== root) return; // require explicit native switch/shutdown
     if (!open) { epoch += 1; open = true; root = sessionId(ctx); }
     if (sessionId(ctx) !== root) return;
-    return emit('turn_started', { scope, sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
+    return emit('turn_started', { scope, sessionId: sessionId(ctx), turnId: turnOf(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
   });
   omp.on('agent_end', (event, ctx) => {
     const scope = kind(ctx);
     if (scope !== 'root' || !open || sessionId(ctx) !== root || event.willContinue === true) return;
     open = false;
     const last = [...(event.messages ?? [])].reverse().find(message => message.role === 'assistant');
-    if (!last) return emit('turn_provisional', { scope, sessionId: root, turnId: String(epoch), nativeEvent: 'agent_end' });
+    if (!last) return emit('turn_provisional', { scope, sessionId: root, turnId: turnOf(epoch), nativeEvent: 'agent_end' });
     const outcome = last.stopReason === 'aborted' ? 'turn_interrupted'
       : last.stopReason === 'error' ? 'turn_failed' : 'turn_completed';
-    return emit(outcome, { scope, sessionId: root, turnId: String(epoch), nativeEvent: 'agent_end', cwd: cwd(ctx) });
+    return emit(outcome, { scope, sessionId: root, turnId: turnOf(epoch), nativeEvent: 'agent_end', cwd: cwd(ctx) });
   });
   omp.on('session_start', (_event, ctx) => located(ctx, 'session_start'));
   omp.on('session_switch', async (_event, ctx) => {

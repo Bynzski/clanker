@@ -151,7 +151,7 @@ export interface ElectronAPI {
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
   isAttentionDebugEnabled: () => Promise<boolean>;
-  getAgentAttentionDiagnostics: (terminalId: string) => Promise<{ main: AttentionSignalDiagnostics | null; terminal: { harness: string | null; workspaceId: string | null; environmentId: string; attention: NativeAttentionCapability | null } | null } | null>;
+  getAgentAttentionDiagnostics: (terminalId: string) => Promise<{ main: AttentionSignalDiagnostics | null; trace?: Array<{ at: number; semantic: string; nativeEvent?: string; verdict?: string; revision: number; status: string; session?: string; turn?: string }>; unattributedEnvelopes?: number; eventLoopDelay?: { maxMs: number; p99Ms: number; meanMs: number } | null; terminal: { harness: string | null; workspaceId: string | null; environmentId: string; attention: NativeAttentionCapability | null } | null } | null>;
   getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
   onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => () => void;

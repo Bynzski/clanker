@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { attentionCounts, useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
-import { deriveAttention, getAttentionPresentation } from '../../../src/renderer/lib/agentAttentionPresentation';
+import { deriveAttention } from '../../../src/renderer/lib/agentAttentionPresentation';
 import { nextAttentionTarget } from '../../../src/renderer/lib/agentAttentionNavigation';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { change, EMPTY_ATTENTION, snapshot, tombstone } from '../../_helpers/attentionSnapshots';
@@ -229,24 +229,26 @@ describe('UI acknowledgement watermarks', () => {
 });
 
 
-describe('provisional settlement hydration and background presentation', () => {
-  it('hydrates uncertainty without Done, actionable input, navigation or aggregate alerts', () => {
+describe('a provider stop presents as a finished turn', () => {
+  it('lights up in the background until the user goes to the agent, and lights again for the next stop', () => {
     const pendingRequest = { ...snapshot('t', 'approval', 2).pendingRequest!, resolutionUnknown: true as const };
     store().hydrate([snapshot('t', 'provisional', 3, { pendingRequest })], () => false);
-    expect(view('t')).toMatchObject({ display: 'provisional', unseen: false });
-    expect(getAttentionPresentation('provisional').label).toBe('Stop observed · outcome unknown');
-    expect(view('t')?.description).toContain('execution may continue');
-    expect(view('t')?.description).toContain('request resolution');
+    expect(view('t')).toMatchObject({ display: 'turn_complete', unseen: true });
+    expect(view('t')?.description).toContain('Stop hook may still continue it');
     const workspace = { id: 'w', terminals: [{ id: 't' }], panes: [{ id: 'p', terminalId: 't' }] } as WorkspaceTab;
-    expect(nextAttentionTarget([workspace], store().byTerminalId, store().seenByTerminalId, null)).toBeNull();
-    expect(attentionCounts(['t'], store().byTerminalId, store().seenByTerminalId)).toEqual({ needsInput: 0, completed: 0 });
+    expect(nextAttentionTarget([workspace], store().byTerminalId, store().seenByTerminalId, null)).not.toBeNull();
+    expect(attentionCounts(['t'], store().byTerminalId, store().seenByTerminalId)).toEqual({ needsInput: 0, completed: 1 });
     store().applyChange(change(snapshot('t', 'running', 2)), false);
-    expect(view('t')?.display).toBe('provisional');
+    expect(view('t')?.display).toBe('turn_complete'); // an older revision never overrides
     store().acknowledge('t');
-    expect(view('t')?.display).toBe('provisional');
+    expect(view('t')).toBeNull(); // going to it clears it
     store().applyChange(change(snapshot('t', 'running', 4)), false);
     expect(view('t')?.display).toBe('running');
-    store().applyChange(change(snapshot('t', 'completed', 5)), false);
+    store().applyChange(change(snapshot('t', 'provisional', 5)), false);
+    expect(view('t')).toMatchObject({ display: 'turn_complete', unseen: true });
+    store().applyChange(change(snapshot('t', 'provisional', 6)), true);
+    expect(view('t')).toBeNull(); // a stop the user is watching is seen on arrival
+    store().applyChange(change(snapshot('t', 'completed', 7)), false);
     expect(view('t')).toEqual({ display: 'turn_complete', unseen: true });
   });
 });

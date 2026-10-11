@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const repo = path.resolve(__dirname, '..');
+// Native focus checks require a window system; headless remains available for diagnosing its limitations.
+const ozonePlatform = process.env.CLANKER_ATTENTION_SMOKE_OZONE_PLATFORM || (process.env.DISPLAY ? 'x11' : 'headless');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-attention-electron-'));
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'bin', 'A', 'B', 'C', 'D']) fs.mkdirSync(path.join(root, name));
 fs.writeFileSync(path.join(root, 'bin/pi'), `#!${process.execPath}
@@ -24,15 +26,24 @@ if(process.argv.includes('--version')) {console.log('1.1.0');process.exit(0)}
 `, { mode: 0o700 });
 fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ workspaceNavigationMode: 'tabs',
   harnessDefaults: Object.fromEntries(['codex', 'claude', 'pi', 'opencode', 'omp', 'hermes', 'agy'].map(id => [id, { model: '', favorites: [], flags: '', visible: id === 'pi', usageVisible: false, attentionEnabled: id === 'pi' }])) }));
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
 Object.assign(env, { PATH: `${path.join(root, 'bin')}:${env.PATH}`, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', CLANKER_DEBUG_ATTENTION: '1',
   HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, label) { const end = Date.now() + 15000; while (!await check()) { if (Date.now() > end) throw new Error(label); await pause(50); } }
 let app;
+async function closeOwnedTerminals() {
+  // Opening a workspace also creates a shell; __smokeIds contains only attention agents.
+  // Read the existing test export in THIS disposable main process, then use normal retirement IPC.
+  const mainPath = path.join(repo, 'dist/main/main/main.js');
+  const ids = await app.evaluate((_electron, mainPath) => [...process.mainModule.require(mainPath).terminals.keys()], mainPath);
+  const page = await app.firstWindow();
+  await page.evaluate(async ids => { for (const id of ids) await window.electronAPI.killTerminal(id); }, ids);
+  await until(async () => app.evaluate((_electron, mainPath) => process.mainModule.require(mainPath).terminals.size === 0, mainPath), 'Smoke terminal cleanup did not complete');
+}
 (async () => {
   try {
-    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, `--ozone-platform=${ozonePlatform}`], env });
     let page = await app.firstWindow(); page.setDefaultTimeout(10000);
     await page.evaluate(() => { window.__fixtureReady = new Set(); window.electronAPI.onTerminalData(({ id, data }) => { if (data.includes('fixture-ready')) window.__fixtureReady.add(id); }); });
     const open = async name => {
@@ -63,8 +74,12 @@ let app;
     assert.equal((await explain(a)).renderer.snapshotPresent, true);
     assert.equal((await explain(a)).renderer.tombstone, false);
     await send(a, 'stop'); await state(a, 'provisional');
-    assert.equal((await explain(a)).renderer.indicator, 'provisional');
+    assert.equal((await explain(a)).renderer.indicator, 'turn_complete', 'Background Stop must remain unread');
     assert.equal((await page.evaluate(() => window.electronAPI.getAgentHandoffStatuses()))[a], 'provisional');
+    await page.locator('.workspace-tab').filter({ hasText: 'A' }).first().click();
+    await until(async () => (await explain(a)).renderer.terminalPanePresented && (await explain(a)).renderer.indicator === null, 'Selecting the agent did not acknowledge its Stop');
+    await page.locator('.workspace-tab').filter({ hasText: 'D' }).first().click();
+    await until(async () => !(await explain(a)).renderer.terminalPanePresented, 'Workspace return did not hide A');
     await send(a, 'start'); await state(a, 'running');
     await send(a, 'ask'); await state(a, 'running');
     await until(async () => (await explain(a)).renderer.indicator === 'needs_input', 'Cold background wait not visible in store');
@@ -72,9 +87,31 @@ let app;
     await page.locator('.workspace-tab').filter({ hasText: 'A' }).first().click();
     await until(async () => (await explain(a)).renderer.terminalPanePresented, 'Restored pane not presented');
     await page.getByRole('img', { name: /Needs input/ }).first().waitFor();
+    // Playwright normally emulates an always-focused document, hiding actual window focus.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+    // Stop presentation remains unread while the app is unfocused; it is not handoff readiness.
+    const focusSink = await app.evaluate(async ({ BrowserWindow }) => {
+      const fixture = new BrowserWindow({ width: 200, height: 100, show: true });
+      await fixture.loadURL('data:text/html,Attention focus fixture');
+      fixture.focus();
+      return fixture.id;
+    });
+    await until(async () => page.evaluate(() => !document.hasFocus()), 'Window did not lose focus');
     await send(a, 'stop'); await state(a, 'provisional');
-    assert.equal((await explain(a)).renderer.indicator, 'provisional');
-    await page.getByRole('img', { name: /Stop observed · outcome unknown/ }).first().waitFor();
+    assert.equal((await explain(a)).renderer.indicator, 'turn_complete', 'Unfocused Stop must remain unread');
+    await page.getByRole('img', { name: /Turn complete/ }).first().waitFor();
+    const workspaceId = (await explain(a)).terminal.workspaceId;
+    const handoff = await page.evaluate(async ({ id, workspaceId }) => window.electronAPI.sendAnnotationToAgent(
+      workspaceId, id, 'Fixture annotation'), { id: a, workspaceId });
+    assert.equal(handoff.success, false, 'Provisional Stop cannot permit annotation submission');
+    assert.match(handoff.error, /input readiness is unverified/, 'Handoff must fail for readiness, not target validation');
+    await app.evaluate(({ BrowserWindow }, sinkId) => {
+      BrowserWindow.fromId(sinkId).destroy();
+      BrowserWindow.getAllWindows()[0].focus();
+    }, focusSink);
+    await until(async () => page.evaluate(() => document.hasFocus()), 'Window did not regain focus');
+    await until(async () => (await explain(a)).renderer.indicator === null, 'Presented agent did not acknowledge Stop');
     const nativeTurn = () => page.evaluate(async id => (await window.electronAPI.getAgentAttentionSnapshots()).find(s => s.terminalId === id).runtime.turnId, a);
     const provisionalTurn = await nativeTurn();
     await send(a, 'activity'); await state(a, 'running');
@@ -104,8 +141,9 @@ let app;
     await until(async () => page.evaluate(() => JSON.parse(localStorage.getItem('clanker-grid:open-workspaces:v1')).workspaces.length === 4), 'Workspace set not persisted');
     await app.evaluate(({ session }) => session.defaultSession.flushStorageData());
     await pause(500);
+    await closeOwnedTerminals();
     await app.close();
-    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, `--ozone-platform=${ozonePlatform}`], env });
     page = await app.firstWindow(); page.setDefaultTimeout(10000);
     await until(async () => (await page.locator('.workspace-tab').count()) === 4, 'Four workspaces not restored after restart');
     assert.equal((await page.evaluate(() => window.electronAPI.getAgentAttentionSnapshots())).length, 0, 'Restart resurrected old attention authority');
@@ -113,12 +151,23 @@ let app;
     const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
     await send(restored, 'stop'); await state(restored, 'provisional');
     await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', provisionalStop: 'passed in cold and mounted panes; same-turn activity restores Running', provisionalApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', providerStop: 'Finished stays unread when unfocused, focused agent acknowledges it; same-turn activity restores Running', annotationAtStop: 'refused', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);
     if (app) console.error(JSON.stringify(await (await app.firstWindow()).evaluate(() => ({ restoredTabs: document.querySelectorAll('.workspace-tab').length, savedCount: JSON.parse(localStorage.getItem('clanker-grid:open-workspaces:v1') || '{}').workspaces?.length }))));
     if (app) { const page = await app.firstWindow(); console.error(JSON.stringify(await page.evaluate(async () => Promise.all((window.__smokeIds ?? []).map(id => window.clankerAttention?.explain(id)))))); }
     process.exitCode = 1;
-  } finally { await app?.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    if (app) {
+      await closeOwnedTerminals();
+      await app.evaluate(({ BrowserWindow }) => {
+        for (const fixture of BrowserWindow.getAllWindows()) {
+          if (fixture.webContents.getURL() === 'data:text/html,Attention focus fixture') fixture.destroy();
+        }
+      }).catch(() => {});
+      await app.close();
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 })();
