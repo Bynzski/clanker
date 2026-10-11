@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GitButton from '../../../src/renderer/components/GitButton';
 import FileExplorer from '../../../src/renderer/components/FileExplorer';
@@ -59,10 +59,13 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('one observed-checkout interpretation across workspace surfaces', () => {
+  // Nine real portal-dialog cycles plus root/focus/provenance transitions are CPU-heavy under CI coverage.
+  // Only this journey gets a larger budget; individual waitFor/findBy deadlines stay unchanged.
   it('keeps Darling/Pi test1 and Dozin/OpenCode main aligned through sidebar focus, loading, failure, stale replies and provenance recovery', async () => {
     automatic = false;
     const test1 = { ...A, branch: 'test1' };
     const ws = { ...workspace(), name: 'worktree-tests', checkoutContexts: [MAIN, test1, B], gitIsRepo: true, gitCurrentBranch: 'main',
+      activeEditorTabId: 'main-pin',
       editorTabs: [{ id: 'main-pin', filePath: `${MAIN.path}/same.ts`, fileName: 'same.ts', content: '', originalContent: '', isDirty: false, checkoutContextId: MAIN.id, checkoutRoot: MAIN.path }],
       terminals: [createTerminalFixture({ id: 'agent', displayName: 'Darling', harnessId: 'pi', checkoutContextId: A.id }), createTerminalFixture({ id: 'other', displayName: 'Dozin', harnessId: 'opencode', checkoutContextId: MAIN.id })],
       panes: [{ id: 'pi-pane', terminalId: 'agent' }, { id: 'oc-pane', terminalId: 'other' }] };
@@ -98,7 +101,8 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
       expect(document.querySelector('.git-badge')).toHaveTextContent(String(count));
       expect(document.querySelectorAll('.git-status-indicator')).toHaveLength(count);
       fireEvent.click(screen.getByRole('button', { name: 'Source Control' }));
-      expect(await screen.findByText(new RegExp(`${count} changed ${count === 1 ? 'file' : 'files'}`))).toBeVisible();
+      const dialog = screen.getByRole('dialog', { name: 'Source Control' });
+      expect(await within(dialog).findByText(new RegExp(`${count} changed ${count === 1 ? 'file' : 'files'}`))).toBeVisible();
       fireEvent.keyDown(document, { key: 'Escape' });
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull());
     };
@@ -156,7 +160,7 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
     selected(A.path, A.id); loading(); await complete(A.path, 2, 'test1');
     expect(workspace().terminals.map((terminal) => terminal.checkoutContextId)).toEqual([A.id, MAIN.id]);
     expect(workspace().panes).toHaveLength(2);
-  });
+  }, 15000);
 
   it('does not mistake an occupied unregistered worktree for authorized surface selection', () => {
     useWorkspaceStore.setState({ workspaces: [{ ...workspace(), checkoutContexts: [MAIN], gitIsRepo: true }] });

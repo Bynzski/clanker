@@ -325,6 +325,15 @@ lint, typecheck, Fallow regression, security gate and build. The only audit exce
 is the already documented dev-only electron-builder chain; no new dependency or
 exception was added.
 
+CI follow-up: GitHub coverage run `38144536776` reached the final editor-pin portion
+of the nine-dialog Darling/Pi–Dozin/OpenCode journey, then exceeded its aggregate
+5-second test deadline; it did not stop at one unresolved async wait. The test now
+scopes changed-count queries to its Source Control dialog and supplies a valid active
+editor-tab fixture. Only that full journey has a 15-second budget; individual
+`waitFor`/`findBy` deadlines, global defaults, assertions and production behavior are
+unchanged. Five consecutive coverage runs restricted to two CPUs passed (922–978 ms
+for the journey); full local coverage passed all **390 files / 7,909 tests**.
+
 Run `npm run validate` as the final repository gate. Real-Git file/worktree/lifecycle/
 Source Control integrations remain part of the suite; no mutation controller,
 backend occupancy guard or host confinement was replaced.
