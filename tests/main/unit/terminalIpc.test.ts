@@ -337,7 +337,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(broker.handoffState(result.id)).toBe('unavailable');
       broker.receiveRemote(result.id, raw);
       // The start, then the PTY exit's retirement tombstone; the retired credential adds nothing.
-      expect(updates).toHaveBeenCalledTimes(4); // prepared, runtime, observed-health, authoritative retirement
+      expect(updates).toHaveBeenCalledTimes(3); // prepared, atomic runtime + observed-health, authoritative retirement
       expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ terminalId: result.id, snapshot: null }));
       mockPtySpawn.mockImplementationOnce(() => { throw new Error('spawn failed'); });
       await expect(handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host')).rejects.toThrow('spawn failed');

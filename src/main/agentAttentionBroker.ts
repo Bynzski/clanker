@@ -114,6 +114,9 @@ interface Registration {
   lastCompletion: AgentAttentionSnapshot['lastCompletion'];
   lastOutcome: AgentAttentionSnapshot['lastOutcome'];
   location: AgentLocation | null;
+  locationEvidence?: { sessionId: string; lastReportedAt: number };
+  /** Native delivery batches lifecycle, location and signal health into one publication. */
+  deferPublication?: boolean;
   lastAccepted?: AttentionExplanation['lastAccepted'];
   lastRejected?: AttentionExplanation['lastRejected'];
   lastFallback?: AttentionExplanation['lastFallback'];
@@ -290,6 +293,19 @@ export class AgentAttentionBroker {
     return registration ? this.toSnapshot(registration) : null;
   }
 
+  /** Main-only authenticated evidence. A session boundary makes it historical, not proof of vacancy.
+   * No timeout proves an idle harness has left its directory; final agent/PTY release removes it. */
+  locationObservation(terminalId: string): {
+    location: AgentLocation; sessionId: string; lastReportedAt: number; state: 'current' | 'last-reported';
+  } | null {
+    const registration = this.current(terminalId);
+    if (!registration?.location || !registration.locationEvidence) return null;
+    return {
+      location: { ...registration.location }, ...registration.locationEvidence,
+      state: registration.rootSessionId === registration.locationEvidence.sessionId ? 'current' : 'last-reported',
+    };
+  }
+
   /** Every live registration. Retired agents are absent, so hydration cannot recreate them. */
   snapshots(): AgentAttentionSnapshot[] {
     return [...this.registrations.values()].map((registration) => this.toSnapshot(registration));
@@ -359,7 +375,9 @@ export class AgentAttentionBroker {
   private commit(registration: Registration, mutate: (revision: number) => void): void {
     registration.revision = this.issueRevision(registration.terminalId);
     mutate(registration.revision);
-    this.onChange({ terminalId: registration.terminalId, revision: registration.revision, snapshot: this.toSnapshot(registration) });
+    if (!registration.deferPublication) {
+      this.onChange({ terminalId: registration.terminalId, revision: registration.revision, snapshot: this.toSnapshot(registration) });
+    }
   }
 
   /** Public for focused validation tests; the transport uses the same boundary. */
@@ -507,12 +525,19 @@ export class AgentAttentionBroker {
     registration.received = Math.min(Number.MAX_SAFE_INTEGER, registration.received + 1);
     registration.lastNativeEvent = parsed.nativeEvent;
     if (parsed.diagnostic) registration.hooks[parsed.diagnostic] = Math.min(Number.MAX_SAFE_INTEGER, (registration.hooks[parsed.diagnostic] ?? 0) + 1);
-    // A location moves with whatever lifecycle change this event makes, in the same revision; only
-    // when the lifecycle does not change does it get a revision of its own.
-    const moved = parsed.event !== 'observer_diagnostic' && this.stageLocation(registration, parsed);
+    // Validate lifecycle/session/turn ordering first. Publish only after accepted location and
+    // signal facts are attached, so subscribers never see a new session with its old location.
     const beforeSignal = JSON.stringify(registration.signal);
     const revision = registration.revision;
-    const decision = parsed.event === 'observer_diagnostic' ? 'accepted' : this.apply(registration, parsed);
+    let decision: AttentionDecision;
+    registration.deferPublication = true;
+    try {
+      decision = parsed.event === 'observer_diagnostic' ? 'accepted' : this.apply(registration, parsed);
+    } finally {
+      registration.deferPublication = false;
+    }
+    const moved = decision === 'accepted' && parsed.event !== 'observer_diagnostic'
+      && this.stageLocation(registration, parsed);
     if (registration.signal?.attachment === 'prepared') {
       const error = parsed.diagnostic && parsed.diagnostic !== 'no-event' ? parsed.diagnostic
         : decision === 'rejected-mismatch' || decision === 'rejected-ambiguous' ? 'identity-rejected' : undefined;
@@ -522,8 +547,12 @@ export class AgentAttentionBroker {
         registration.signal = { requested: registration.signal.requested, attachment: 'prepared', health: 'observed' };
       }
     }
-    if (((moved && registration.revision === revision) || JSON.stringify(registration.signal) !== beforeSignal) && this.current(registration.terminalId) === registration) {
-      this.commit(registration, () => undefined);
+    if (this.current(registration.terminalId) === registration) {
+      if (registration.revision !== revision) {
+        this.onChange({ terminalId: registration.terminalId, revision: registration.revision, snapshot: this.toSnapshot(registration) });
+      } else if (moved || JSON.stringify(registration.signal) !== beforeSignal) {
+        this.commit(registration, () => undefined);
+      }
     }
     const record = { semantic: parsed.event, ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}) };
     if (decision === 'accepted') registration.lastAccepted = { ...record, revision: registration.revision };
@@ -543,12 +572,13 @@ export class AgentAttentionBroker {
     return verdict;
   }
 
-  /** Records the reported location of the bound (or not yet bound) root agent; a child, another
-   * session, or an event without a session never moves it. Returns whether it changed. */
+  /** Records only accepted native root evidence, after any proven session transition. A boundary
+   * may retain a last report; it cannot turn that history into a current-session observation. */
   private stageLocation(registration: Registration, event: ParsedEvent): boolean {
     const next = event.location;
     if (!next || event.event === 'agent_exited' || event.scope !== 'root' || !event.sessionId) return false;
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return false;
+    registration.locationEvidence = { sessionId: event.sessionId, lastReportedAt: this.now() };
     const current = registration.location;
     if (current && current.path === next.path && current.checkoutContextId === next.checkoutContextId) return false;
     registration.location = { ...next };
@@ -604,7 +634,7 @@ export class AgentAttentionBroker {
       return 'accepted';
     }
 
-    // Location only: staged before lifecycle authority, it can neither bind a root nor touch a turn.
+    // Location only: acceptance neither binds a root nor touches a turn.
     if (event.event === 'location_changed') return event.location ? 'accepted' : 'rejected-ambiguous';
 
     if (event.event === 'session_ended') {

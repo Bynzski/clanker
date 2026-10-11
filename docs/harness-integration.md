@@ -274,16 +274,48 @@ The broker (`agentLocation.ts`) canonicalizes the path in the registry's form
 (resolved, POSIX, no trailing slash; host paths for SSH) and rejects an event whose
 `cwd` is not absolute. Main then resolves it to the most specific checkout context of
 the reporting terminal's own workspace (symlink-aware locally, lexical on the host).
-Only the bound root session (or an unbound registration) can move the location;
-children and other sessions cannot. A move rides in the same revision as the
-lifecycle change of its event, otherwise it gets its own. The snapshot's
+Only an accepted native root event from the bound session (or an unbound
+registration) can move the location; children, other sessions, ambiguous events
+and delayed retired-turn events cannot. Proven `session_replaced` and
+`session_continued` transitions apply their new-session cwd after identity
+validation. Lifecycle, location and signal health publish atomically in one
+revision; a location-only move gets its own. The snapshot's
 `location: { path, checkoutContextId }` survives `session_ended` and goes with the
 agent on `agent_exited`.
 
-Location is presentation only. Agent rows and the status bar show the reported
-context (falling back to the launch context until a report arrives). It never
-re-binds `terminal.checkoutContextId`, never authorizes a root, and never relaxes
-release or removal checks, which stay on the launch binding.
+Location is descriptive, never launch authority. Agent rows and the status bar
+show the reported context (falling back to the launch context until a report
+arrives). It never re-binds `terminal.checkoutContextId`, authorizes a root or
+relaxes release/removal checks. Main adds observed containment as a conservative
+reason to block release, reconciliation, inspection, removal, prune and lifecycle
+cleanup, in addition to recorded directories, launch bindings and services.
+Unregistered observed paths can block an unmanaged Git checkout; they never adopt
+it. Local comparisons retain symlink/missing-tail handling; SSH activity remains
+scoped to equivalent host identities and host paths, never desktop cwd.
+
+Main's broker exposes copy-safe location evidence with its native session and
+last accepted report time. An unchanged accepted cwd refreshes that time without
+publishing a duplicate renderer revision. `current` means the report belongs to
+the bound native session, **not** proof of instantaneous cwd or Running status;
+`last-reported` means the native session boundary/transition retained history.
+Neither an idle/completed turn, lifecycle-loss indication, session boundary nor
+elapsed time proves vacancy. Such evidence keeps blocking cleanup while both the
+terminal and authenticated registration are live; a newer accepted location
+supersedes it. `agent_exited`, registration retirement or removal from the live
+terminal table ends observed occupancy. Unknown recorded directories remain
+fail-closed even if an observation is elsewhere. Cleanup diagnostics tell the
+user to close the terminal; no renderer or MCP observation clears these guards.
+Local removal rechecks activity after its async Git preflight immediately before
+move dispatch; SSH keeps its activity recheck, reservations and host journal.
+
+**#147 safety slice / verification limits:** regression tests exercise the common
+broker and occupancy helpers, direct release IPC, real local Git inspection and
+removal-race checks, and mocked SSH coordinator activity. These are not native
+multi-harness/SSH smoke proof. Reports arriving after destructive host dispatch,
+unreported shell/tool cwd changes, and remote symlink spellings not canonicalized
+by a provider remain observational limits. Explorer selection/dirty indicators
+and read-only MCP launch-versus-observed fields are separate pending slices;
+`clanker_context` still describes launch authority only.
 
 What each provider reports (root only; mid-turn tool hooks and children never
 carry a location):

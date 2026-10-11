@@ -6,6 +6,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GitService } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import { localCheckoutUsagePaths } from '../../../src/main/checkoutOccupancy';
+import type { TerminalUsage } from '../../../src/main/checkoutContextRelease';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 
 const execFileAsync = promisify(execFile);
@@ -16,7 +18,7 @@ function readCheckedOutText(filePath: string): string {
 
 function makeService(trashWorktree: (worktreePath: string) => Promise<void> = async (worktreePath) => {
   await fs.promises.rename(worktreePath, `${worktreePath}.recycled`);
-}, getLiveTerminalPaths: () => string[] = () => []): GitService {
+}, getLiveTerminalPaths: () => string[] | null = () => []): GitService {
   return new GitService(() => undefined, trashWorktree, getLiveTerminalPaths);
 }
 
@@ -38,6 +40,43 @@ async function withRepo(run: (repo: string) => Promise<void>): Promise<void> {
 }
 
 describe('GitService worktree lifecycle', () => {
+  it('blocks an unmanaged observed checkout and rechecks occupancy after async inspection/listing', async () => {
+    await withRepo(async (repo) => {
+      const usage: TerminalUsage = { environmentId: 'local', cwd: repo };
+      const trash = vi.fn(async () => undefined);
+      const service = makeService(trash, () => localCheckoutUsagePaths([usage]));
+      const created = await service.createWorktree(repo, 'main', 'observed');
+      expect(created.success).toBe(true);
+      const checkout = created.worktree!.path;
+      usage.observedLocation = { path: `${checkout}/src`, checkoutContextId: null };
+      expect(await service.inspectWorktree(repo, checkout)).toMatchObject({ success: false });
+      expect(await service.removeWorktree(repo, checkout, 'observed')).toMatchObject({ success: false });
+      expect(trash).not.toHaveBeenCalled();
+      delete usage.observedLocation;
+
+      // First list is inspection, second is the main-checkout routing lookup. A native
+      // location update in that second await must still prevent the destructive move.
+      const list = service.listWorktrees.bind(service);
+      let calls = 0;
+      const spy = vi.spyOn(service, 'listWorktrees').mockImplementation(async (cwd) => {
+        const result = await list(cwd);
+        if (++calls === 2) usage.observedLocation = { path: checkout, checkoutContextId: null };
+        return result;
+      });
+      try {
+        expect(await service.removeWorktree(repo, checkout, 'observed')).toMatchObject({ success: false, error: expect.stringContaining('now using') });
+        expect(trash).not.toHaveBeenCalled();
+        expect(fs.existsSync(checkout)).toBe(true);
+      } finally { spy.mockRestore(); }
+      delete usage.observedLocation;
+      expect(await service.inspectWorktree(repo, checkout)).toMatchObject({ success: true, hasChanges: false });
+      delete usage.cwd;
+      expect(await service.inspectWorktree(repo, checkout)).toMatchObject({ success: false });
+      expect(await service.removeWorktree(repo, checkout, 'observed')).toMatchObject({ success: false });
+      expect(trash).not.toHaveBeenCalled();
+    });
+  });
+
   it('preserves a large ignored dependency tree in Trash only with opt-in', async () => {
     await withRepo(async (repo) => {
       fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n');

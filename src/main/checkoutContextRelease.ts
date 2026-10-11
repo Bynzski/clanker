@@ -1,3 +1,4 @@
+import type { AgentLocation } from '../shared/types/agentAttention';
 import type { CheckoutContext, ReleaseCheckoutContextResult } from '../shared/types/checkoutContext';
 import { LOCAL_ENVIRONMENT_ID } from '../shared/types/environments';
 import { toPosixPath } from '../shared/pathNormalize';
@@ -9,6 +10,10 @@ import type { WorkspaceRegistry } from './workspaceRegistry';
 export interface TerminalUsage {
   /** Headless services share the usage rule, but are stopped rather than closing an agent pane. */
   resourceKind?: 'service';
+  /** Main-enriched, authenticated root-agent evidence from a still-live broker registration.
+   * Historical session-boundary evidence also blocks; only exit or a newer report clears it.
+   * Never supplied by IPC, and never used to authorize a root or replace launch occupancy. */
+  observedLocation?: AgentLocation;
   checkoutContextId?: string;
   environmentId?: string;
   /** Desktop directory of a local terminal (meaningless for SSH terminals). */
@@ -31,13 +36,15 @@ function isUsing(terminal: TerminalUsage, context: CheckoutContext, registry: Wo
   if (isLocal(context.environmentId)) {
     if (!isLocal(terminal.environmentId)) return false;
     // Usage (unlike filesystem authorization) must still count a directory removed under a shell.
-    return !terminal.cwd || locateCheckoutContext(toPosixPath(terminal.cwd), [context], 'local') !== null;
+    return !terminal.cwd || locateCheckoutContext(toPosixPath(terminal.cwd), [context], 'local') !== null
+      || (!!terminal.observedLocation && locateCheckoutContext(terminal.observedLocation.path, [context], 'local') !== null);
   }
   if (isLocal(terminal.environmentId)
     || registry.getWorktreeResourceId(terminal.environmentId!) !== registry.getWorktreeResourceId(context.environmentId)) {
     return false;
   }
-  return !terminal.remoteWorkingDir || isPathContained(context.path, terminal.remoteWorkingDir);
+  return !terminal.remoteWorkingDir || isPathContained(context.path, terminal.remoteWorkingDir)
+    || (!!terminal.observedLocation && isPathContained(context.path, terminal.observedLocation.path));
 }
 
 /**

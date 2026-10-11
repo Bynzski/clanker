@@ -18,6 +18,7 @@ import { retireTerminal } from '../../../src/main/terminalRetirement';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 import * as providers from '../../../src/main/harnesses/registry';
 import type { AgentAttentionSnapshot } from '../../../src/shared/types/agentAttention';
+import type { TerminalUsage } from '../../../src/main/checkoutContextRelease';
 
 let root: string;
 let mainPath: string;
@@ -142,10 +143,12 @@ function makeWorld(options: Options = {}) {
     return result;
   });
 
+  const checkoutUsages = vi.fn<() => Iterable<[string, TerminalUsage]>>(() => terminals.entries());
   const service = new IsolatedCheckoutService({
     isAttentionEnabled: () => options.attentionEnabled !== false,
     getRegistry: () => registry as never,
     getTerminals: () => terminals,
+    getCheckoutUsages: checkoutUsages,
     attention: {
       snapshot: (id) => {
         if (id === 'caller' && options.live) return liveSnapshot;
@@ -182,7 +185,7 @@ function makeWorld(options: Options = {}) {
     liveSnapshot = { ...liveSnapshot, revision: liveSnapshot.revision + 1, location: { path: target.path, checkoutContextId: target.id } };
     service.onAttentionChange({ terminalId: 'caller', revision: liveSnapshot.revision, snapshot: liveSnapshot });
   };
-  return { service, log, events, terminals, contexts, git, sessions, registry, addTerminal, releaseCheckoutContext, callerIn, lastReplacement, workspace, reportLive };
+  return { service, log, events, terminals, contexts, git, sessions, registry, addTerminal, releaseCheckoutContext, callerIn, lastReplacement, workspace, reportLive, checkoutUsages };
 }
 
 type World = ReturnType<typeof makeWorld>;
@@ -418,6 +421,18 @@ describe('create: main checkout -> new isolated worktree', () => {
     expect(text(result)).toContain('already in use');
     expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
     expect(world.terminals.has('caller')).toBe(true);
+  });
+
+  it.each(['observed-agent', 'service'])('refuses reuse based on main-enriched occupancy (%s)', async (kind) => {
+    const world = inMain();
+    world.contexts.set(TREE.id, { ...TREE, branch: 'feature-x' });
+    world.checkoutUsages.mockImplementation(() => [...world.terminals, ['resource', kind === 'service'
+      ? { resourceKind: 'service', cwd: wtPath, environmentId: 'local' }
+      : { cwd: mainPath, environmentId: 'local', observedLocation: { path: wtPath, checkoutContextId: TREE.id } }]]);
+    const result = await call(world, 'create', MAIN, { branch: 'feature-x' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('already in use');
+    expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
   });
 
   it('is idempotent when the conversation is already in an isolated checkout', async () => {

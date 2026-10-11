@@ -152,7 +152,7 @@ export class GitService {
   constructor(
     private readonly emitStatus: (status: GitStatusResult) => void,
     private readonly trashWorktree: (worktreePath: string) => Promise<void> = async () => { throw new Error('System trash is unavailable'); },
-    private readonly getLiveTerminalPaths: () => string[] = () => [],
+    private readonly getLiveTerminalPaths: () => string[] | null = () => [],
     private readonly getOpenWorkspacePaths: () => string[] = () => [],
     private gitExecutor?: GitCommandExecutor,
   ) {}
@@ -465,7 +465,10 @@ export class GitService {
     const comparable = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
     const target = comparable(fs.realpathSync.native(worktreePath));
     const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths() : [];
-    return [...registryPaths, ...this.openWorkspaces.values(), ...this.getLiveTerminalPaths(), ...openWorkspacePaths].some((openPath) => {
+    const livePaths = this.getLiveTerminalPaths();
+    // Unknown local resource directories never become proof that an unmanaged checkout is free.
+    if (livePaths === null) return true;
+    return [...registryPaths, ...this.openWorkspaces.values(), ...livePaths, ...openWorkspacePaths].some((openPath) => {
       let existingPath = openPath;
       const missingSegments: string[] = [];
       while (true) {
@@ -532,6 +535,11 @@ export class GitService {
       // checkout is in Trash. New files at the original path remain untouched.
       const targetPath = inspection.worktree.path;
       const stagingPath = path.join(path.dirname(targetPath), `.clanker-removing-${randomBytes(8).toString('hex')}`);
+      // Inspection and repository listing await Git. Re-read live recorded/observed occupancy
+      // immediately before dispatch; a native location report may have arrived in either gap.
+      if (this.isOpenWorkspace(targetPath, openWorkspacePaths)) {
+        return { success: false, error: 'A workspace, terminal or dev server is now using this checkout; inspect it again' };
+      }
       await this.execGit(gitCwd, ['worktree', 'move', targetPath, stagingPath], 120000);
       try {
         await this.trashWorktree(stagingPath);

@@ -3,7 +3,7 @@
  * RELEASE_CHECKOUT_CONTEXT handler and the real WorkspaceRegistry. Terminals are entries in the
  * same table main keeps, so "in use" is judged exactly as production judges it.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
 }));
 
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
+import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import { RemoteWorktreeCoordinator } from '../../../src/main/remote/remoteWorktreeCoordinator';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
@@ -37,6 +38,8 @@ describe('RELEASE_CHECKOUT_CONTEXT (local)', () => {
   let registry: WorkspaceRegistry;
   let terminals: Map<string, FakeTerminal>;
   let ids: { a: string; b: string };
+  let broker: AgentAttentionBroker;
+  afterEach(() => broker?.close());
 
   const localEnvironment = {
     id: 'local', kind: 'local',
@@ -62,6 +65,7 @@ describe('RELEASE_CHECKOUT_CONTEXT (local)', () => {
       b: (await registry.registerCheckoutContext({ workspaceId: 'ws', path: toPosixPath(wtB), kind: 'worktree' })).checkoutContext!.id,
     };
     terminals = new Map();
+    broker = new AgentAttentionBroker(() => undefined, () => undefined);
     mockHandle.mockClear();
     registerTerminalIpc({
       getTerminals: () => terminals as never,
@@ -70,6 +74,7 @@ describe('RELEASE_CHECKOUT_CONTEXT (local)', () => {
       getSafeWorkspacePath: (dir) => dir,
       getHarnessOptions: () => ({}),
       getWorkspaceRegistry: () => registry,
+      agentAttentionBroker: broker,
     });
   });
 
@@ -118,6 +123,17 @@ describe('RELEASE_CHECKOUT_CONTEXT (local)', () => {
   });
 
   describe('active terminals', () => {
+    it('the direct release IPC consumes broker evidence without rebinding the terminal', async () => {
+      addTerminal('agent', { checkoutContextId: mainCheckoutContextId('ws'), cwd: main });
+      const env = await broker.register('agent', 'pi');
+      const send = (event: string, fields: object = {}) => broker.receive(JSON.stringify({ version: 1, token: env.CLANKER_ATTENTION_TOKEN, harness: 'pi', scope: 'root', sessionId: 's', event, ...fields }));
+      send('session_started', { cwd: toPosixPath(wtA) });
+      expect(await release('ws', ids.a)).toMatchObject({ success: false, activeTerminals: 1 });
+      expect(terminals.get('agent')).toMatchObject({ checkoutContextId: mainCheckoutContextId('ws'), cwd: main });
+      send('agent_exited');
+      expect(await release('ws', ids.a)).toEqual({ success: true });
+    });
+
     it('one terminal launched into the context blocks release', async () => {
       addTerminal('t1', { checkoutContextId: ids.a, cwd: wtA });
       const result = await release('ws', ids.a);
