@@ -109,15 +109,27 @@ describe('Source Control foundation', () => {
     useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, activeTerminalId: 'agent', checkoutContexts: [main, task], terminals: [createTerminalFixture({ id: 'agent', workingDir: '/repo', checkoutContextId: main.id })] })) }));
     useAgentAttentionStore.setState(storeState([snapshot('agent', 'completed', 1, { location: { path: main.path, checkoutContextId: main.id } })]));
     const { user } = await open(); act(() => { useAgentAttentionStore.setState(storeState([snapshot('agent', 'running', 2, { location: { path: task.path, checkoutContextId: task.id } })])); });
-    expect(screen.queryByRole('dialog')).toBeNull(); await user.click(screen.getByRole('button', { name: 'Source Control' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('not substituted'); expect(api.gitFetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(screen.getByText(/repo-worktrees\/task/)).toBeVisible();
+    act(() => { useAgentAttentionStore.setState(storeState([snapshot('agent', 'running', 3, { location: { path: '/unregistered', checkoutContextId: null } })])); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('The selected checkout is unavailable');
+    expect(api.gitFetch).not.toHaveBeenCalled();
   });
   it('closes on selected worktree changes and never substitutes its parent or starts parent polling', async () => {
-    const { user } = await open(); const before = api.gitStartPolling.mock.calls.length;
+    const { user } = await open();
     act(() => { useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, fileSurfaceContextId: 'task', checkoutContexts: [...(entry.checkoutContexts ?? []), { id: 'task', workspaceId: 'ws', environmentId: 'local', path: '/repo-worktrees/task', kind: 'worktree' as const, branch: 'task' }] })) })); });
-    expect(screen.queryByRole('dialog')).toBeNull(); await waitFor(() => expect(screen.getByRole('button', { name: 'Source Control' })).toHaveFocus()); await user.click(screen.getByRole('button', { name: 'Source Control' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('not substituted'); expect(api.gitStartPolling).toHaveBeenCalledTimes(before);
-    expect(screen.queryByRole('button', { name: 'Review Changes' })).toBeNull(); expect(api.gitFetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Source Control' })).toHaveFocus());
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(api.gitStartPolling).toHaveBeenCalledWith('/repo-worktrees/task', 'ws', 'task');
+    expect(screen.getByText(/repo-worktrees\/task/)).toBeVisible();
+    act(() => { useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.map((entry) => ({ ...entry, checkoutContexts: entry.checkoutContexts?.map((c) => c.id === 'task' ? { ...c, missing: true } : c) })) })); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('The selected checkout is unavailable');
   });
 });
 

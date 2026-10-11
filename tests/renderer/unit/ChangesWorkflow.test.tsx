@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
-import { createWorkspaceFixture } from '../../setup/fixtures';
+import { createWorkspaceFixture, createTerminalFixture } from '../../setup/fixtures';
 import type { GitStatusResult } from '../../../src/shared/types/git';
 
 let api: ReturnType<typeof installElectronApiMock>;
@@ -239,6 +239,66 @@ describe('Changes-first workflow', () => {
     expect(screen.getByText('Hooks rejected')).toBeVisible();
     expect(screen.getByRole('textbox')).toHaveValue('explicit all');
     expect(screen.getByRole('button', { name: 'History' })).toBeEnabled();
+  });
+
+  it('correctly distinguishes commit success with refresh failure, settles the draft and requires refresh', async () => {
+    api.gitCommit.mockResolvedValueOnce({ success: true });
+    api.gitRefresh.mockRejectedValueOnce(new Error('Network glitch'));
+    const user = await open();
+    await user.type(screen.getByRole('textbox'), 'feat: committed changes');
+    await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
+
+    // Commit succeeded: draft is settled/cleared, so it cannot accidentally be resubmitted
+    expect(screen.getByRole('textbox')).toHaveValue('');
+    // Refresh failed: status is marked unavailable, warning that commit succeeded but status failed
+    expect(await screen.findByText(/Refresh changes to update repository status/)).toBeVisible();
+    expect(screen.getByText('Change counts unavailable')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Commit Staged' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stage All & Commit' })).toBeDisabled();
+
+    // User can recover by clicking Refresh changes
+    api.gitRefresh.mockImplementationOnce(async () => ({ ...status, changes: [] }));
+    await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
+    expect(await screen.findByText('0 staged · 0 unstaged entries')).toBeVisible();
+    expect(screen.getByText('Working directory is clean')).toBeVisible();
+  });
+
+  it('operates directly on a selected isolated worktree with checkout-specific staging, diff, commit and polling', async () => {
+    const mainCtx = { id: 'ws::main', workspaceId: 'ws', environmentId: 'local', path: '/repo', kind: 'main' as const };
+    const worktreeCtx = { id: 'ws::ckt-feat', workspaceId: 'ws', environmentId: 'local', path: '/repo-worktrees/feat', kind: 'worktree' as const, branch: 'feat' };
+    const worktreeStatus: GitStatusResult = {
+      success: true, isRepo: true, workspaceId: 'ws', checkoutContextId: 'ws::ckt-feat',
+      workspacePath: '/repo-worktrees/feat', environmentId: 'local', currentBranch: 'feat',
+      isDetached: false, upstream: null, ahead: 0, behind: 0,
+      changes: [{ path: 'feat.ts', status: 'modified', staged: false }],
+    };
+    useWorkspaceStore.setState({
+      activeWorkspaceId: 'ws',
+      workspaces: [createWorkspaceFixture({
+        id: 'ws',
+        workspacePath: '/repo',
+        environmentId: 'local',
+        activeTerminalId: 'term-agent',
+        terminals: [createTerminalFixture({ id: 'term-agent', checkoutContextId: 'ws::ckt-feat' })],
+        checkoutContexts: [mainCtx, worktreeCtx],
+      })],
+    });
+    api.onGitStatusUpdate.mockImplementation((callback) => { callback(worktreeStatus); return vi.fn(); });
+    api.gitRefresh.mockResolvedValue(worktreeStatus);
+
+    const user = userEvent.setup();
+    render(<GitButton workspacePath="/repo" workspaceId="ws" />);
+    await user.click(screen.getByRole('button', { name: 'Source Control' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh changes' })).toBeEnabled());
+
+    expect(screen.getByText(/repo-worktrees\/feat/)).toBeVisible();
+    expect(screen.getByText('feat.ts')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Stage feat.ts' }));
+    expect(api.gitStage).toHaveBeenCalledWith('/repo-worktrees/feat', ['feat.ts'], 'ws', 'ws::ckt-feat');
+
+    await user.click(screen.getByRole('button', { name: 'View working diff for feat.ts' }));
+    expect(api.gitGetFileDiff).toHaveBeenCalledWith('/repo-worktrees/feat', 'feat.ts', 'working', 'ws', 'ws::ckt-feat');
   });
 
   it.each(['workspace', 'checkout', 'environment'])('never dispatches commit after stage-all completes in an old %s scope', async (change) => {

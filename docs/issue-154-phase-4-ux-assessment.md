@@ -1,10 +1,33 @@
-# Issue #154 — Phase 4 workflow assessment / approved Phase 4A–4B
+# Issue #154 — Phase 4 workflow assessment / approved Phase 4A–4C
 
 Original assessment against reviewed Phase 3D `9b9f875051c27ebc8846a6fb456ca10d2a82d63f`.
 Phase 4A starts from reviewed correctness commit `50b878b0c6542f79ef386707fb852059af559829`.
 **Owner approved Option A and explicit staged-only versus stage-all commit policy.**
 
-## Phase 4B implementation — unified Changes workspace
+## Phase 4C implementation — Checkout-Aware Source Control
+
+Starts from reviewed `a25bdaa94544dc8affc30189d52a5defe665ae84`.
+Phase 4C addresses the functional limitation where Source Control was unavailable
+for isolated worktree checkouts.
+
+- When an active agent is operating inside a registered isolated worktree, opening
+  Source Control operates against that specific checkout. The user can inspect status,
+  review file diffs, stage/unstage, commit staged, explicitly Stage All & Commit, inspect
+  history, view the worktree branch, and manage operations.
+- The parent workspace checkout is never silently substituted.
+- An unavailable, missing, foreign, or unregistered checkout continues to fail closed.
+- `GitManagementScope` carries `checkoutContextId` along with `workspaceId`, `environmentId`,
+  and `path`. Main validates the checkout context via `WorkspaceRegistry.resolveCheckoutContext`.
+- Repository-level operations (listing worktrees, pruning, unlocking, remotes, branch
+  deletions) execute against the registered repository root.
+- A single polling loop in `GitService` tracks `checkoutContextId`; status events are
+  checkout-specific, preventing crossover.
+- Switching agents or checkouts closes Source Control safely; reopening re-initializes
+  the controller with the newly selected checkout.
+- A commit that succeeds followed by a failed refresh settles the submitted draft,
+  marks status as unavailable, disables commit buttons, and requires a refresh.
+
+## Phase 4B implementation — unified Changes workspace (historical)
 
 Starts from reviewed `34b24caa75ed8ccb18298efd22c333ab671032f6`.
 The owner approved consolidating review/staging/message/generation/submission

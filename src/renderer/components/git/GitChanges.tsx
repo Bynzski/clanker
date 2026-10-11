@@ -10,9 +10,9 @@ import { changedFileCount, gitStatusBadge } from './gitChangePresentation';
 import './GitChanges.css';
 
 export function GitChanges(props: GitRepoMenuProps) {
-  const { changes, isScopeCurrent, workspaceId, workspacePath } = props;
-  const { diffState, viewDiff, closeDiff } = useFileDiffReview(workspacePath, workspaceId,
-    props.statusKnown, `${JSON.stringify(changes)}:${props.reviewRevision}`, isScopeCurrent);
+  const { changes, isScopeCurrent, workspaceId } = props;
+  const { diffState, viewDiff, closeDiff } = useFileDiffReview(props.scope.path, workspaceId,
+    props.statusKnown, `${JSON.stringify(changes)}:${props.reviewRevision}`, isScopeCurrent, props.scope.checkoutContextId);
   const disabled = props.isBusy || props.isLoadingChanges || !props.statusKnown;
   const staged = changes.filter((change) => change.staged);
   const working = changes.filter((change) => !change.staged);

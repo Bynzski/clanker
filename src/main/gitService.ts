@@ -36,6 +36,7 @@ export interface GitStatusResult {
   workspacePath?: string;
   workspaceId?: string;
   environmentId?: string;
+  checkoutContextId?: string;
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;
@@ -141,6 +142,7 @@ export class GitService {
   private currentWorkspacePath: string | null = null;
   private currentWorkspaceId: string | null = null;
   private currentEnvironmentId: string | null = null;
+  private currentCheckoutContextId: string | null = null;
   private pollIntervalMs = 30000;
   private pollGeneration = 0;
   private pollRequested: { path: string; generation: number } | null = null;
@@ -1758,11 +1760,12 @@ export class GitService {
     }
   }
 
-  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string): void {
+  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string, checkoutContextId?: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
     this.currentWorkspaceId = workspaceId ?? null;
     this.currentEnvironmentId = environmentId ?? null;
+    this.currentCheckoutContextId = checkoutContextId ?? null;
     this.requestStatusUpdate();
     this.pollingInterval = setInterval(() => {
       this.requestStatusUpdate();
@@ -1783,6 +1786,7 @@ export class GitService {
     this.currentWorkspacePath = null;
     this.currentWorkspaceId = null;
     this.currentEnvironmentId = null;
+    this.currentCheckoutContextId = null;
     this.pollRequested = null;
     this.pollGeneration += 1;
   }
@@ -1806,6 +1810,7 @@ export class GitService {
       workspacePath: this.currentWorkspacePath,
       workspaceId: this.currentWorkspaceId,
       environmentId: this.currentEnvironmentId,
+      ...(this.currentCheckoutContextId ? { checkoutContextId: this.currentCheckoutContextId } : {}),
     };
   }
 
@@ -1836,6 +1841,7 @@ export class GitService {
         status.workspacePath = request.path;
         status.workspaceId = identity?.workspaceId;
         status.environmentId = identity?.environmentId;
+        status.checkoutContextId = identity?.checkoutContextId;
         if (request.path === this.currentWorkspacePath) {
           this.emitStatus(status);
         }

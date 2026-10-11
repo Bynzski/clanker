@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiCommitSettings } from '../../types/shared';
 
 /** Scope-local draft and inference lifecycle. Git execution/serialization belongs to GitButton. */
-export function useCommitComposer({ enabled, workspacePath, workspaceId, environmentId, revision,
+export function useCommitComposer({ enabled, workspacePath, workspaceId, environmentId, checkoutContextId, revision,
   hasStaged, hasWorking, disabled, isCurrent, onCommit }: {
-  enabled: boolean; workspacePath: string; workspaceId?: string; environmentId: string; revision: string;
+  enabled: boolean; workspacePath: string; workspaceId?: string; environmentId: string; checkoutContextId?: string; revision: string;
   hasStaged: boolean; hasWorking: boolean; disabled: boolean; isCurrent: () => boolean;
-  onCommit: (message: string, stageAll: boolean) => Promise<{ success: boolean; error?: string }>;
+  onCommit: (message: string, stageAll: boolean) => Promise<{ success: boolean; error?: string; refreshError?: string }>;
 }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function useCommitComposer({ enabled, workspacePath, workspaceId, environ
     draftRevision.current++;
     setMessage(value);
   }, []);
-  const identity = `${workspaceId ?? ''}\0${environmentId}\0${workspacePath}`;
+  const identity = `${workspaceId ?? ''}\0${environmentId}\0${checkoutContextId ?? ''}\0${workspacePath}`;
   const latest = useRef({ enabled, revision, identity });
   latest.current = { enabled, revision, identity };
   useEffect(() => {
@@ -68,7 +68,11 @@ export function useCommitComposer({ enabled, workspacePath, workspaceId, environ
     try {
       const result = await onCommit(message, stageAll);
       if (!fresh()) return;
-      if (result.success) { editMessage(''); focusAfterSubmit.current = true; }
+      if (result.success) {
+        editMessage('');
+        focusAfterSubmit.current = true;
+        if (result.refreshError) setError(result.refreshError);
+      }
       else setError(result.error || 'Failed to create commit');
     } catch (reason) {
       if (fresh()) setError(reason instanceof Error ? reason.message : 'Failed to create commit');
@@ -85,7 +89,7 @@ export function useCommitComposer({ enabled, workspacePath, workspaceId, environ
     const fresh = () => live.current && isCurrent() && latest.current.identity === identity && latest.current.enabled && request === generation.current;
     setIsGenerating(true); setError(null);
     try {
-      const result = await window.electronAPI.generateCommitMessage(workspacePath, workspaceId);
+      const result = await window.electronAPI.generateCommitMessage(workspacePath, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!fresh()) return;
       if (!result.success || !result.message) setError(result.error || 'Failed to generate commit message');
       else if (snapshot !== latest.current.revision) setError('Changes updated during generation. Generate the message again.');

@@ -187,9 +187,84 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     await until(() => changes.getByRole('textbox', { name: 'Commit Message' }).evaluate(element => document.activeElement === element), 'Clean Changes editor focus not restored');
     await page.keyboard.press('Escape');
     await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Browser did not restore after commits');
+
+    // Test linked worktree Source Control and context switching
+    // First, launch a normal terminal in the main checkout so the workspace has both contexts active
+    const addTerminalBtn = page.locator('button.harness-pill[title="Add terminal"]');
+    if (await addTerminalBtn.count() > 0) {
+      await addTerminalBtn.first().click();
+      await pause(600);
+    }
+
+    fs.writeFileSync(path.join(root, 'linked-task', 'worktree-note.txt'), 'worktree draft content\n');
+    await page.getByRole('button', { name: 'New isolated agent', exact: true }).click();
+    await page.locator('.isolated-agent-popover').waitFor();
+    await page.locator('.isolated-agent-worktree button.isolated-agent-choice').filter({ hasText: 'linked-task' }).click();
+    await page.locator('.isolated-agent-form button[type="submit"]').click();
+    await page.locator('.isolated-agent-popover').waitFor({ state: 'hidden' });
+    await pause(500);
+
+    // Open Source Control on the linked worktree
+    await page.getByRole('button', { name: 'Source Control', exact: true }).click();
+    const worktreeSource = page.getByRole('dialog', { name: 'Source Control', exact: true });
+    await worktreeSource.waitFor();
+    await worktreeSource.getByRole('button', { name: 'Refresh changes' }).click();
+    await worktreeSource.getByText('linked-task', { exact: true }).waitFor();
+    assert((await worktreeSource.locator('.source-control-change-identity').textContent()).includes('linked-task'), 'Worktree identity missing in Source Control');
+    await worktreeSource.getByText('worktree-note.txt', { exact: true }).waitFor();
+
+    // Review working diff in worktree
+    const worktreeDiffBtn = worktreeSource.getByRole('button', { name: 'Review working changes for worktree-note.txt', exact: true });
+    await worktreeDiffBtn.click();
+    const worktreeViewer = page.getByRole('dialog', { name: 'worktree-note.txt', exact: true });
+    await worktreeViewer.locator('.cm-content').first().waitFor();
+    const worktreeDiffContent = await worktreeViewer.locator('.cm-content').allTextContents();
+    assert(worktreeDiffContent.join('\n').includes('worktree draft content'), 'Worktree diff content missing');
+    assert((await views()).every(view => !view.visible), 'Worktree diff exposed Browser');
+    await page.keyboard.press('Escape');
+    await until(() => worktreeDiffBtn.evaluate(element => document.activeElement === element), 'Worktree diff focus not restored');
+
+    // Stage and commit in worktree
+    await worktreeSource.getByRole('button', { name: 'Stage worktree-note.txt', exact: true }).click();
+    await worktreeSource.getByRole('textbox', { name: 'Commit Message' }).fill('feat: isolated worktree commit');
+    await worktreeSource.getByRole('button', { name: 'Commit Staged', exact: true }).click();
+    await until(async () => await worktreeSource.getByRole('textbox', { name: 'Commit Message' }).inputValue() === '', 'Worktree commit did not clear draft');
+    await worktreeSource.getByText('Working directory is clean').waitFor();
+    assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: path.join(root, 'linked-task'), env }).toString().trim(), '');
+    assert(execFileSync('git', ['log', '-1', '--pretty=%B'], { cwd: path.join(root, 'linked-task'), env }).toString().includes('feat: isolated worktree commit'));
+    assert(!execFileSync('git', ['log', '-1', '--pretty=%B'], { cwd: project, env }).toString().includes('feat: isolated worktree commit'));
+
+    await page.keyboard.press('Escape');
+    await until(async () => (await page.getByRole('dialog', { name: 'Source Control' }).count()) === 0, 'Source Control did not close on Escape');
+
+    // Switch back to main checkout terminal tab
+    // Context switching: switch back to main terminal -> management shell dismisses
+    const tabAgentsTrigger = page.locator('.workspace-tab-agents-trigger');
+    if (await tabAgentsTrigger.isVisible()) {
+      await tabAgentsTrigger.click();
+      await page.locator('.workspace-tab-agents-popover').waitFor();
+      const rows = page.locator('.workspace-tab-agents-popover .ws-agent-row');
+      const rowCount = await rows.count();
+      assert.equal(rowCount, 2, 'Expected two terminals in workspace');
+      // The main terminal row is the one without worktree meta
+      const mainRow = rows.filter({ hasNot: page.locator('.ws-agent-meta') }).first();
+      await mainRow.click();
+      await page.locator('.workspace-tab-agents-popover').waitFor({ state: 'hidden' });
+      await pause(300);
+
+      // Reopen Source Control on main
+      await page.getByRole('button', { name: 'Source Control', exact: true }).click();
+      const mainSource = page.getByRole('dialog', { name: 'Source Control', exact: true });
+      await mainSource.waitFor();
+      const identityText = await mainSource.locator('.source-control-change-identity').textContent();
+      assert(identityText.includes('project') && identityText.includes('main'), 'Main identity not restored');
+      await page.keyboard.press('Escape');
+      await until(async () => (await views()).some(view => view.id === browserId && view.visible), 'Browser did not restore after main return');
+    }
+
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; no Create Commit dialog; native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

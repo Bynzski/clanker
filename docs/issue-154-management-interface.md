@@ -1,6 +1,101 @@
-# Issue #154 — Inventory and Phase 0–4B decisions
+# Issue #154 — Inventory and Phase 0–4C decisions
 
-## Phase 4B — one Changes review and commit workspace
+## Phase 4C — Checkout-Aware Source Control
+
+Starts from reviewed `a25bdaa94544dc8affc30189d52a5defe665ae84` on
+`feat/154-management-settings`. Prior phase descriptions/results below are historical.
+No PR, merge, Settings or Browser redesign, new diff engine or release cleanup.
+
+### Problem solved
+
+When an active agent is operating inside a registered isolated worktree, opening
+Source Control previously displayed:
+> Git operations currently authorize the workspace checkout only. This selected checkout is not substituted with its parent. Open it as a workspace to manage its Git tools.
+
+This restriction was intentionally introduced during Phase 3A to prevent operations
+from accidentally targeting the parent checkout. Phase 4C natively and safely integrates
+Source Control with the application's existing first-class checkout contexts
+(`WorkspaceRegistry.resolveCheckoutContext`), allowing inspection, file diffs, staging,
+inline commits, and repository operations on registered isolated worktrees without
+requiring the user to open every worktree as a separate workspace.
+
+### Architecture, execution scope and lifecycle
+
+- **Authoritative execution scope:** `GitManagementScope` in the renderer identifies
+  `workspaceId`, optional `checkoutContextId`, `environmentId`, `path`, `blocked`,
+  `checkoutLabel`, and a cache/invalidation `key`. When an isolated checkout context
+  is active and valid, `blocked` is cleared and `checkoutContextId` is carried.
+- **Main-process authority:** The renderer cannot authorize execution by passing an
+  arbitrary filesystem path. Main independently validates and resolves `checkoutContextId`
+  via `WorkspaceRegistry.resolveCheckoutContext(workspaceId, checkoutContextId)`.
+  If the context is missing, belongs to a different workspace, has an environment
+  mismatch, or is reserved for removal, Git IPC fails closed. The parent checkout
+  is never substituted silently.
+- **Checkout-specific versus repository-wide operations:**
+  - *Checkout-specific operations* (status, polling, staging, unstage, commit,
+    file diffs, current branch state, branch switching, merge, abort, stash
+    operations, commit history, and AI commit generation) are scoped to the
+    authorized checkout root (`context.path`).
+  - *Repository-level operations* (worktree listing, creation, inspection, removal,
+    pruning, unlocking, remotes management, and branch deletion) always execute
+    against the registered repository root (`ws.location.path`), preserving
+    repository-level ownership and destructive-operation safeguards.
+- **Single polling ownership and status isolation:** `GitService` maintains a single
+  active polling identity tracking `checkoutContextId`. Emitted `GitStatusResult`
+  objects carry `checkoutContextId`, `workspacePath`, `environmentId`, and `workspaceId`.
+  `GitButton.applyStatus` strictly validates that status for checkout A never populates
+  checkout B. Main workspace store branch info is not overwritten when an isolated
+  worktree is being inspected.
+- **Scope switching and management dismissal:** When the focused agent or checkout
+  changes, `scope.key` changes. React unmounts `GitController`, safely closing the
+  dialog and aborting in-flight requests. Reopening Source Control initializes a clean
+  controller targeting the newly focused checkout with its own polling identity.
+- **Commit success versus refresh failure:** Narrowly distinguished: if a native
+  commit succeeds but the subsequent status refresh fails, the submitted composer draft
+  is settled/cleared (preventing accidental resubmission), `statusKnown` is set to
+  `false` to disable further submission until recovery, and an explicit explanation
+  is displayed instructing the user to refresh changes before continuing.
+- **Diffs and AI commit generation:** Remote SSH `gitGetFileDiff` uses `ws.environment.readFile`
+  scoped to the remote worktree root. Local AI commit message generation is extended
+  to registered local worktrees, running inference with `cwd: context.path` and
+  collecting prompt diffs from that checkout. Remote AI commit generation remains
+  explicitly disabled with a helpful error.
+
+### Verification and review gate
+
+- Final `env PATH=/usr/bin:/bin npm run validate`: **382 files / 7,807 tests passed**;
+  branding, lint, typecheck, Fallow dead-code check, security-check (documented
+  dev-only electron-builder exception), build and full tests pass.
+- Expanded clean-PATH focused suite: **40 files / 930 tests passed**. Command:
+  `env PATH=/usr/bin:/bin npm run test -- tests/renderer/unit/SourceControl.test.tsx
+  tests/renderer/unit/ChangesWorkflow.test.tsx tests/renderer/unit/GitButton.test.tsx
+  tests/renderer/unit/git/ tests/renderer/unit/DiffViewer.test.tsx
+  tests/renderer/unit/geometryContract.test.ts tests/main/unit/gitService/
+  tests/main/unit/gitIpc.test.ts tests/main/integration/gitService.real.test.ts
+  tests/main/integration/gitCheckoutContext.real.test.ts`.
+- Real-Git integration tests in `gitCheckoutContext.real.test.ts` (5 comprehensive
+  tests with real isolated temporary git repositories: 1 main + 2 linked worktrees
+  with different branches and dirty states), verifying main targeting, worktree A
+  vs B targeting, staging/commit isolation, file diffs, status events, fail-closed
+  security, repository-wide operations, and remote SSH routing.
+- Source Control Electron smoke (`scripts/source-control-management-smoke.cjs`):
+  **PASS**, covers main checkout Source Control, linked worktree Source Control with
+  real dirty file, file review and diff in worktree, staging and inline commit in
+  worktree, confirmed commit in worktree without affecting main, switching between
+  checkout contexts, management dismissal on context change, restoring to main
+  checkout Source Control, and native Browser suppression/restoration across Dark,
+  Light, Slate themes and 1100×760, 640×480 sizes. Screenshots reviewed in
+  `/tmp/clanker-source-control-visual-JPNU08`.
+- Settings Electron smoke: **PASS**, screenshots `/tmp/clanker-settings-visual-fA6GEy`.
+- Full-renderer native Browser smoke: **PASS**.
+- Separate native multi-Browser runner: **FAIL**, Electron SIGSEGV, exit 1,
+  the independently documented preexisting failure.
+- Logs: `/tmp/154-4c-validate.log`, `/tmp/154-4c-source-smoke.log`,
+  `/tmp/154-4c-settings-smoke.log`, `/tmp/154-4c-browser-smoke.log`,
+  `/tmp/154-4c-multi-browser.log`.
+- Stop after Phase 4C for independent code review and owner visual testing.
+
+## Phase 4B — one Changes review and commit workspace (historical)
 
 Starts from reviewed `34b24caa75ed8ccb18298efd22c333ab671032f6` on
 `feat/154-management-settings`. This supersedes Phase 4A's nested commit composer;

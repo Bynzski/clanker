@@ -244,13 +244,13 @@ export interface ElectronAPI {
   onBrowserKeybindingCommand: (callback: (payload: BrowserKeybindingCommandPayload) => void) => () => void;
 
   // Git operations
-  gitStartPolling: (workspacePath: string, workspaceId?: string) => Promise<void>;
-  gitStopPolling: (workspaceId?: string) => Promise<void>;
-  generateCommitMessage: (workspacePath: string, workspaceId?: string) => Promise<GenerateCommitMessageResult>;
-  gitStage: (workspacePath: string, files?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitCommit: (workspacePath: string, message: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
+  gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<void>;
+  gitStopPolling: (workspaceId?: string, checkoutContextId?: string) => Promise<void>;
+  generateCommitMessage: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GenerateCommitMessageResult>;
+  gitStage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitCommit: (workspacePath: string, message: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitGetBranchState: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
   gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) => Promise<GitWorktreeCreateResult>;
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; checkoutContext?: CheckoutContext; error?: string }>;
@@ -264,35 +264,36 @@ export interface ElectronAPI {
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
   gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreePruneResult>;
   gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => Promise<GitWorktreeUnlockResult>;
-  gitGetOperationState: (workspacePath: string, workspaceId?: string) => Promise<GitOperationStateResult>;
-  gitGetStashes: (workspacePath: string, workspaceId?: string) => Promise<GitStash[]>;
-  gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => Promise<GitHistoryEntry[]>;
-  gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string, workspaceId?: string) => Promise<GitDiffResult>;
+  gitGetOperationState: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitOperationStateResult>;
+  gitGetStashes: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitStash[]>;
+  gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string, checkoutContextId?: string) => Promise<GitHistoryEntry[]>;
+  gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitDiffResult>;
   gitGetFileDiff: (
     workspacePath: string,
     filePath: string,
     mode: 'working' | 'staged',
-    workspaceId?: string
+    workspaceId?: string,
+    checkoutContextId?: string
   ) => Promise<FileDiffResult>;
   gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
   gitForceDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
-  gitMergeBranch: (workspacePath: string, branchName: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitAbortOperation: (workspacePath: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitApplyStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitPopStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitRefresh: (workspaceId?: string) => Promise<GitStatusResult | null>;
+  gitMergeBranch: (workspacePath: string, branchName: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitAbortOperation: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitApplyStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPopStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitRefresh: (workspaceId?: string, checkoutContextId?: string) => Promise<GitStatusResult | null>;
   gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) => Promise<GitInitResult>;
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => Promise<GitRemotesResult>;
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRenameRemote: (workspacePath: string, oldName: string, newName: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitFetch: (workspacePath: string, remote?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitPush: (
     workspacePath: string,
     remote?: string,

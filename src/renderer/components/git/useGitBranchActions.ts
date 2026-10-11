@@ -9,6 +9,7 @@ interface UseGitBranchActionsParams {
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
 }
 
 export function useGitBranchActions({
@@ -19,6 +20,7 @@ export function useGitBranchActions({
   refreshAfterAction,
   workspacePath,
   workspaceId,
+  checkoutContextId,
 }: UseGitBranchActionsParams) {
   const pending = useRef(false);
   const canAct = () => isCurrent() && !pending.current && !activeAction;
@@ -67,7 +69,7 @@ export function useGitBranchActions({
     setBranchError(null);
 
     try {
-      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId);
+      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
       if (result.success) {
         await refreshAfterAction();

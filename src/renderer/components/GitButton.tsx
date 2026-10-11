@@ -30,6 +30,7 @@ import type {
   GitStatus,
 } from './git/types';
 import type { GitStatusResult } from '../../shared/types/git';
+import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
 import { Dialog } from './ui/Dialog';
 import { ManagementShell } from './ui/ManagementShell';
@@ -226,8 +227,11 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
   const refreshAfterAction = useCallback(async () => {
     if (!isCurrent()) return;
-    await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh(workspaceId)]);
-  }, [workspaceId, isCurrent]);
+    await Promise.all([
+      refreshMenuDataRef.current(),
+      window.electronAPI.gitRefresh(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
+    ]);
+  }, [workspaceId, scope.checkoutContextId, isCurrent]);
 
   const {
     branchError,
@@ -246,8 +250,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     currentBranch,
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
-    workspacePath,
+    workspacePath: scope.path,
     workspaceId,
+    checkoutContextId: scope.checkoutContextId,
   });
 
   const {
@@ -265,6 +270,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     remotes,
     workspacePath,
     workspaceId,
+    checkoutContextId: scope.checkoutContextId,
   });
 
   const {
@@ -291,8 +297,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
     stashes,
-    workspacePath,
+    workspacePath: scope.path,
     workspaceId,
+    checkoutContextId: scope.checkoutContextId,
   });
 
   const {
@@ -310,8 +317,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     activeAction,
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
-    workspacePath,
+    workspacePath: scope.path,
     workspaceId,
+    checkoutContextId: scope.checkoutContextId,
     operationState,
   });
 
@@ -328,7 +336,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
     try {
       const commitRef = mode === 'commit' ? ref ?? undefined : undefined;
-      const result = await window.electronAPI.gitGetDiff(workspacePath, mode, commitRef, workspaceId);
+      const result = await window.electronAPI.gitGetDiff(scope.path, mode, commitRef, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
       if (!fresh()) return;
       setDiffResult(result.success ? result : null);
       if (!result.success) {
@@ -346,7 +354,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setIsLoadingDiff(false);
       }
     }
-  }, [workspacePath, workspaceId, isCurrent]);
+  }, [scope.path, workspacePath, workspaceId, scope.checkoutContextId, isCurrent]);
 
   const handleSelectWorkingDiff = useCallback((mode: DiffMode) => {
     if (!isCurrent()) return;
@@ -374,7 +382,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     setHistoryError(null);
 
     try {
-      const items = await window.electronAPI.gitGetHistory(workspacePath, nextLimit, workspaceId);
+      const items = await window.electronAPI.gitGetHistory(scope.path, nextLimit, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
       if (!fresh()) return;
       historyLimitRef.current = nextLimit;
       setHistoryLimit(nextLimit);
@@ -389,7 +397,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setIsLoadingHistory(false);
       }
     }
-  }, [isCurrent, hasMoreHistory, workspacePath, workspaceId]);
+  }, [isCurrent, hasMoreHistory, workspaceId, scope.path, scope.checkoutContextId]);
 
   const dataRequest = useRef(0);
   const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
@@ -415,10 +423,10 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
     try {
       const [branchState, opState, stashItems, historyItems] = await Promise.all([
-        window.electronAPI.gitGetBranchState(workspacePath, workspaceId),
-        window.electronAPI.gitGetOperationState(workspacePath, workspaceId),
-        window.electronAPI.gitGetStashes(workspacePath, workspaceId),
-        window.electronAPI.gitGetHistory(workspacePath, historyLimitRef.current, workspaceId),
+        window.electronAPI.gitGetBranchState(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
+        window.electronAPI.gitGetOperationState(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
+        window.electronAPI.gitGetStashes(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
+        window.electronAPI.gitGetHistory(scope.path, historyLimitRef.current, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])),
       ]);
 
       if (!fresh()) return;
@@ -520,7 +528,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         }
       }
     }
-  }, [workspacePath, workspaceId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
+  }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
@@ -554,15 +562,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       return;
     }
 
-    window.electronAPI.gitStartPolling(workspacePath, workspaceId);
+    window.electronAPI.gitStartPolling(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
 
     return () => {
-      void window.electronAPI.gitStopPolling(workspaceId).catch((error: unknown) => {
+      void window.electronAPI.gitStopPolling(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])).catch((error: unknown) => {
         if (error instanceof Error && error.message.includes('Workspace identity is no longer registered')) return;
         console.error('Failed to stop Git polling:', error);
       });
     };
-  }, [workspacePath, workspaceId]);
+  }, [workspacePath, scope.path, workspaceId, scope.checkoutContextId]);
 
   const applyStatus = useCallback((status: GitStatusResult) => {
       if (!isCurrent()) return;
@@ -576,10 +584,15 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         if (status.environmentId && status.environmentId !== (activeWs.environmentId || 'local')) {
           return;
         }
-        if (status.workspacePath && !sameWorkspacePath(status.workspacePath, activeWs.workspacePath)) {
+        if (status.workspacePath && !sameWorkspacePath(status.workspacePath, scope.path)) {
           return;
         }
-      } else if (workspacePath && status.workspacePath && !sameWorkspacePath(status.workspacePath, workspacePath)) {
+        if (scope.checkoutContextId) {
+          if (status.checkoutContextId !== scope.checkoutContextId) return;
+        } else if (status.checkoutContextId && status.checkoutContextId !== mainCheckoutContextId(activeWs.id)) {
+          return;
+        }
+      } else if (workspacePath && status.workspacePath && !sameWorkspacePath(status.workspacePath, scope.path)) {
         return;
       }
       setStatusKnown(status.success);
@@ -594,8 +607,10 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setAhead(status.ahead);
         setBehind(status.behind);
 
-        useWorkspaceStore.getState().setGitChanges(status.isRepo ? status.changes : []);
-        useWorkspaceStore.getState().setGitBranchInfo(status.currentBranch, status.isRepo, status.isDetached);
+        if (!scope.checkoutContextId) {
+          useWorkspaceStore.getState().setGitChanges(status.isRepo ? status.changes : []);
+          useWorkspaceStore.getState().setGitBranchInfo(status.currentBranch, status.isRepo, status.isDetached);
+        }
       } else {
         setIsRepo(false);
         setChangeCount(0);
@@ -607,10 +622,12 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setAhead(0);
         setBehind(0);
         setProvider('unknown');
-        useWorkspaceStore.getState().setGitChanges([]);
-        useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
+        if (!scope.checkoutContextId) {
+          useWorkspaceStore.getState().setGitChanges([]);
+          useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
+        }
       }
-  }, [workspacePath, workspaceId, isCurrent]);
+  }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, isCurrent]);
 
   useEffect(() => window.electronAPI.onGitStatusUpdate(applyStatus), [applyStatus]);
 
@@ -628,12 +645,13 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
   const refreshChanges = async () => {
     try {
-      const status = await window.electronAPI.gitRefresh(workspaceId);
+      const status = await window.electronAPI.gitRefresh(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
       if (!isCurrent()) throw new Error('Repository scope changed');
       if (!status?.success) throw new Error(status?.error || 'Could not refresh changes');
       if ((workspaceId && status.workspaceId !== workspaceId) ||
-        (status.workspacePath && !sameWorkspacePath(status.workspacePath, workspacePath)) ||
+        (status.workspacePath && !sameWorkspacePath(status.workspacePath, scope.path)) ||
         (status.environmentId && status.environmentId !== scope.environmentId)) throw new Error('Repository scope changed');
+      if (scope.checkoutContextId && status.checkoutContextId !== scope.checkoutContextId) throw new Error('Repository scope changed');
       applyStatus(status);
       setReviewRevision((value) => value + 1);
     } catch (error) {
@@ -671,25 +689,52 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     catch (error) { if (isCurrent()) setChangesError(error instanceof Error ? error.message : 'Could not refresh changes'); }
     finally { changeMutationLock.current = false; if (isCurrent()) setIsLoadingChanges(false); }
   };
-  const handleCommit = (message: string, stageAll: boolean) => {
+  const handleCommit = async (message: string, stageAll: boolean): Promise<{ success: boolean; error?: string; refreshError?: string }> => {
     if (!statusKnown || !message.trim() || !changes.some((change) => stageAll ? !change.staged : change.staged)) {
-      return Promise.resolve({ success: false, error: 'A message and known changes are required' });
+      return { success: false, error: 'A message and known changes are required' };
     }
-    // Hold the same controller lock across explicit stage-all, commit and canonical refresh.
-    return runChangeMutation(stageAll ? 'commit-all' : 'commit', async () => {
+    if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
+    if (changeMutationLock.current || activeAction || remoteAction) return { success: false, error: 'Git operation already pending' };
+    changeMutationLock.current = true;
+    setActiveAction(stageAll ? 'commit-all' : 'commit');
+    setChangesError(null);
+    try {
       if (stageAll) {
-        const staged = await window.electronAPI.gitStage(workspacePath, undefined, workspaceId);
+        const staged = await window.electronAPI.gitStage(scope.path, undefined, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
         if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
-        if (!staged.success) return { success: false, error: staged.error || 'Failed to stage changes' };
+        if (!staged.success) throw new Error(staged.error || 'Failed to stage changes');
         setActiveAction('commit');
       }
-      return window.electronAPI.gitCommit(workspacePath, message, workspaceId);
-    }, false);
+      const committed = await window.electronAPI.gitCommit(scope.path, message, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
+      if (!isCurrent()) return { success: false, error: 'Repository scope changed' };
+      if (!committed.success) throw new Error(committed.error || 'Commit failed');
+
+      try {
+        await refreshChanges();
+        return { success: true };
+      } catch (refreshErr) {
+        const msg = refreshErr instanceof Error ? refreshErr.message : 'Could not refresh changes';
+        if (isCurrent()) {
+          setStatusKnown(false);
+          setChangesError(`Commit succeeded, but status could not be refreshed: ${msg}. Refresh changes before continuing.`);
+        }
+        return {
+          success: true,
+          refreshError: `Commit succeeded, but status could not be refreshed: ${msg}. Refresh changes to update repository status.`,
+        };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Git operation failed';
+      return { success: false, error: message };
+    } finally {
+      changeMutationLock.current = false;
+      if (isCurrent()) setActiveAction(null);
+    }
   };
-  const handleStage = () => runChangeMutation('stage-all', () => window.electronAPI.gitStage(workspacePath, undefined, workspaceId));
-  const handleStageFile = (path: string) => runChangeMutation(`stage:${path}`, () => window.electronAPI.gitStage(workspacePath, [path], workspaceId));
-  const handleUnstageFile = (path: string) => runChangeMutation(`unstage:${path}`, () => window.electronAPI.gitUnstage(workspacePath, [path], workspaceId));
-  const handleUnstageAll = () => runChangeMutation('unstage-all', () => window.electronAPI.gitUnstage(workspacePath, undefined, workspaceId));
+  const handleStage = () => runChangeMutation('stage-all', () => window.electronAPI.gitStage(scope.path, undefined, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])));
+  const handleStageFile = (path: string) => runChangeMutation(`stage:${path}`, () => window.electronAPI.gitStage(scope.path, [path], workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])));
+  const handleUnstageFile = (path: string) => runChangeMutation(`unstage:${path}`, () => window.electronAPI.gitUnstage(scope.path, [path], workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])));
+  const handleUnstageAll = () => runChangeMutation('unstage-all', () => window.electronAPI.gitUnstage(scope.path, undefined, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])));
 
   const handleInitRepository = async () => {
     if (!isCurrent() || !statusKnown || isInitializing) return;
@@ -700,7 +745,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch, workspaceId);
       if (!isCurrent()) return;
       if (result.success) {
-        await window.electronAPI.gitRefresh(workspaceId);
+        await window.electronAPI.gitRefresh(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
         setIsMenuOpen(false);
       } else {
         setInitError(result.error || 'Failed to initialize repository');
@@ -723,7 +768,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
 
   const commitComposer = useCommitComposer({
-    enabled: isMenuOpen, workspacePath, workspaceId, environmentId: scope.environmentId,
+    enabled: isMenuOpen, workspacePath: scope.path, workspaceId, environmentId: scope.environmentId,
+    checkoutContextId: scope.checkoutContextId,
     revision: `${statusKnown}:${JSON.stringify(changes)}:${reviewRevision}`, isCurrent,
     hasStaged: changes.some((change) => change.staged), hasWorking: changes.some((change) => !change.staged),
     disabled: !statusKnown || isLoadingChanges || activeAction !== null || remoteAction !== null,

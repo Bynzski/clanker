@@ -9,6 +9,7 @@ interface UseGitRemoteActionsParams {
   remotes: GitRemote[];
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
 }
 
 export function useGitRemoteActions({
@@ -18,6 +19,7 @@ export function useGitRemoteActions({
   remotes,
   workspacePath,
   workspaceId,
+  checkoutContextId,
 }: UseGitRemoteActionsParams) {
   const [remoteAction, setRemoteAction] = useState<RemoteAction>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function useGitRemoteActions({
     setRemoteError(null);
 
     try {
-      const result = await window.electronAPI.gitPull(workspacePath, undefined, workspaceId);
+      const result = await window.electronAPI.gitPull(workspacePath, undefined, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (result.success) {
         await refreshAfterAction();
       } else {

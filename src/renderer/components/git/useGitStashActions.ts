@@ -8,6 +8,7 @@ interface UseGitStashActionsParams {
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
   stashes?: GitStash[];
 }
 
@@ -18,6 +19,7 @@ export function useGitStashActions({
   refreshAfterAction,
   workspacePath,
   workspaceId,
+  checkoutContextId,
   stashes = [],
 }: UseGitStashActionsParams) {
   const pending = useRef(false);
@@ -35,7 +37,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitStash(workspacePath, stashMessage, includeUntracked, workspaceId);
+      const result = await window.electronAPI.gitStash(workspacePath, stashMessage, includeUntracked, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -63,7 +65,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitApplyStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId);
+      const result = await window.electronAPI.gitApplyStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -90,7 +92,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitPopStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId);
+      const result = await window.electronAPI.gitPopStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -134,7 +136,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitDropStash(workspacePath, target.ref, target.hash.trim(), workspaceId);
+      const result = await window.electronAPI.gitDropStash(workspacePath, target.ref, target.hash.trim(), workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -174,7 +176,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitClearStashes(workspacePath, expectedHashes, workspaceId);
+      const result = await window.electronAPI.gitClearStashes(workspacePath, expectedHashes, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {

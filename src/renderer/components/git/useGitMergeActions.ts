@@ -8,6 +8,7 @@ interface UseGitMergeActionsParams {
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
+  checkoutContextId?: string;
   operationState?: GitOperationState | null;
 }
 
@@ -18,6 +19,7 @@ export function useGitMergeActions({
   refreshAfterAction,
   workspacePath,
   workspaceId,
+  checkoutContextId,
   operationState = null,
 }: UseGitMergeActionsParams) {
   const pending = useRef(false);
@@ -50,7 +52,7 @@ export function useGitMergeActions({
     setMergeError(null);
 
     try {
-      const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch, workspaceId);
+      const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
@@ -97,7 +99,7 @@ export function useGitMergeActions({
     setMergeError(null);
 
     try {
-      const result = await window.electronAPI.gitAbortOperation(workspacePath, workspaceId);
+      const result = await window.electronAPI.gitAbortOperation(workspacePath, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
       if (result.success) {
