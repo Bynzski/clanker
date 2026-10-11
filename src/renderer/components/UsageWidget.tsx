@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, Gauge, TriangleAlert } from 'lucide-react';
+import { Gauge, TriangleAlert } from 'lucide-react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
@@ -105,7 +105,7 @@ export default function UsageWidget() {
                 <span className="usage-chip-percent">{picked.percent}%</span>
                 <span className="usage-chip-bar" aria-hidden="true"><span className="usage-chip-fill" style={{ width: `${picked.percent}%` }} /></span>
               </span>
-              {picked.resetsAt !== undefined && <span className="usage-chip-time"><Clock3 size={8} aria-hidden="true" />{formatResetShort(picked.resetsAt, usage.now)}</span>}
+              {picked.resetsAt !== undefined && <span className="usage-chip-time">{formatResetShort(picked.resetsAt, usage.now)}</span>}
             </span>
           ))}
         </button>

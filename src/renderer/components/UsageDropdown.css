@@ -143,5 +143,4 @@
 .usage-chip-fill { display: block; height: 100%; background: var(--status-success); }
 .usage-chip.warn .usage-chip-fill { background: var(--status-warning); }
 .usage-chip.low .usage-chip-fill { background: var(--status-error); }
-.usage-chip-time { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; line-height: 11px; color: var(--text-muted); }
-.usage-chip-time svg { flex-shrink: 0; opacity: .7; }
+.usage-chip-time { flex-shrink: 0; line-height: 11px; color: var(--text-muted); }

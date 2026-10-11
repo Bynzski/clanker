@@ -14,10 +14,14 @@ const pct = (label: string, used: number, resetsAt?: number) => ({ kind: 'rate-l
 
 describe('widget formatting', () => {
   const now = 1_000_000;
-  it('is coarse: minutes under an hour, hours under a day, whole days beyond', () => {
+  it('is coarse: minutes under an hour, hours and days to one decimal at most', () => {
     expect(formatResetShort(now + 35 * 60_000, now)).toBe('35m');
-    expect(formatResetShort(now + (3 * 60 + 40) * 60_000, now)).toBe('3h');
-    expect(formatResetShort(now + (5 * 24 + 19) * 3_600_000, now)).toBe('5d');
+    expect(formatResetShort(now + 3.5 * 3_600_000, now)).toBe('3.5h');
+    expect(formatResetShort(now + (3 * 60 + 40) * 60_000, now)).toBe('3.6h');
+    expect(formatResetShort(now + (3 * 60 + 59) * 60_000, now)).toBe('3.9h');
+    expect(formatResetShort(now + 3 * 3_600_000, now)).toBe('3h');
+    expect(formatResetShort(now + (5 * 24 + 19) * 3_600_000, now)).toBe('5.7d');
+    expect(formatResetShort(now + 6 * 86_400_000, now)).toBe('6d');
   });
   it('prefers the five-hour limit, falls back to weekly, else nothing', () => {
     const week = pct('Claude · weekly', 36);
@@ -130,6 +134,18 @@ describe('UsageWidget', () => {
     expect(chip).toHaveAttribute('role', 'group');
     expect(chip.getAttribute('aria-label')).toContain('Claude');
     expect(chip.getAttribute('title')).toContain('resets in 3h');
-    expect(chip.querySelector('.usage-chip-time svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(chip.querySelector('.usage-chip-time')!.children).toHaveLength(0); // bare text, no clock icon
+  });
+
+  it('shows the countdown to one decimal, e.g. 3.5h, without an icon', async () => {
+    installElectronApiMock({
+      getHarnessOptions: vi.fn().mockResolvedValue({ claude: { name: 'claude', command: 'claude', args: [], icon: 'terminal' } }),
+      getHarnessUsage: vi.fn().mockResolvedValue({ environmentId: 'local', environmentGeneration: 0, entries: [{ harnessId: 'claude', status: 'ok', measurements: [pct('Claude · 5 hour', 17, Date.now() + 3.5 * 3_600_000 + 30_000)] }] }),
+    });
+    useWorkspaceStore.setState({ activeWorkspaceId: 'ws-1', workspaces: [createWorkspaceFixture({ id: 'ws-1', workspacePath: '/w', terminals: [], panes: [] })] });
+    useUsageWidgetStore.setState({ ids: ['claude'] });
+    render(<UsageWidget />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Usage' }).querySelector('.usage-chip-time')).toHaveTextContent(/^3\.5h$/));
+    expect(screen.getByRole('button', { name: 'Usage' }).querySelector('.usage-chip-time svg')).toBeNull();
   });
 });

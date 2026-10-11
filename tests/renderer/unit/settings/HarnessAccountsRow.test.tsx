@@ -35,7 +35,8 @@ describe('HarnessAccountsRow', () => {
     vi.mocked(window.electronAPI.selectHarnessAccount).mockResolvedValue(list([def(false), managed({ selected: true, status: 'needs-auth' })]));
     render(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" />);
     expect(await screen.findByText('Work')).toBeInTheDocument();
-    expect(screen.getByText('w@example.test · Pro')).toBeInTheDocument();
+    expect(screen.getByText('w***@example.test · Pro')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('w@example.test');
     expect(screen.getByText('Needs sign-in')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Remove/ })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
@@ -100,6 +101,16 @@ describe('HarnessAccountsRow', () => {
     render(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" />);
     await userEvent.click(await screen.findByRole('button', { name: 'Remove Work' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/^Work could not be signed out\. Try again\.$/));
+  });
+
+  it('masks an address that names an unlabeled account, including in the failure message main builds from it', async () => {
+    vi.mocked(window.electronAPI.listHarnessAccounts).mockResolvedValue(list([def(), managed({ label: undefined, email: 'jay@example.test', status: 'needs-auth' })]));
+    vi.mocked(window.electronAPI.removeHarnessAccount).mockRejectedValue(new Error("Error invoking remote method 'harness-accounts:remove': Error: jay@example.test needs to be reconnected in Settings → Harness Defaults."));
+    render(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" />);
+    expect(await screen.findByText('j***@example.test')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove j***@example.test' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('j***@example.test needs to be reconnected in Settings → Harness Defaults.'));
+    expect(document.body.textContent).not.toContain('jay@example.test');
   });
 });
 
