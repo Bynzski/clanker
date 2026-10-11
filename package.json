@@ -40,6 +40,7 @@
     "smoke:source-control": "node scripts/source-control-management-smoke.cjs",
     "smoke:checkout-presentation": "node scripts/checkout-presentation-smoke.cjs",
     "smoke:attention:native": "node scripts/native-attention-smoke.cjs",
+    "smoke:attention:pi-tui": "node scripts/native-attention-smoke.cjs pi-tui",
     "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
     "smoke:attention:codex-tui": "node scripts/codex-attention-tui-smoke.cjs",

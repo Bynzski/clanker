@@ -15,12 +15,12 @@ async function until(check, label) {
   const end = Date.now() + 15000;
   while (!check()) { if (Date.now() > end) throw new Error(label); await pause(25); }
 }
-async function run(harness) {
+async function run(harness, interactive = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-native-attention-'));
   const agentDir = path.join(root, 'agent'); fs.mkdirSync(agentDir);
   let mode = 'success', requests = 0, child, attachments, prematureCompletion = false;
   const observed = [], transitions = [];
-  const broker = new AgentAttentionBroker(change => { if (change.snapshot) transitions.push({ revision: change.revision, status: change.snapshot.runtime.status, turnId: change.snapshot.runtime.turnId, waiting: !!change.snapshot.pendingRequest }); }, event => observed.push({ semantic: event.semantic, decision: event.decision, nativeEvent: event.nativeEvent }));
+  const broker = new AgentAttentionBroker(change => { if (change.snapshot) transitions.push({ revision: change.revision, status: change.snapshot.runtime.status, turnId: change.snapshot.runtime.turnId, waiting: !!change.snapshot.pendingRequest }); }, event => observed.push({ semantic: event.semantic, decision: event.decision, nativeEvent: event.nativeEvent, verdict: event.verdict }));
   const server = http.createServer((request, response) => {
     request.resume(); request.on('end', () => {
       requests++;
@@ -42,6 +42,11 @@ async function run(harness) {
     attachments = await prepareLaunchAttachments({ args: [], env: {} }, [attentionLaunchStep({ broker, harness, terminalId: harness, enabled: true })]);
     assert(attachments.provided.has('native-attention'));
     const env = { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: agentDir, PI_CONFIG_DIR: '.omp', XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), ...attachments.env };
+    if (interactive) {
+      assert.equal(harness, 'pi', 'Interactive fixture supports Pi only');
+      await require('./lib/pi-attention-tui-smoke.cjs')({ root, env, args: attachments.args, broker, observed, transitions, setMode: value => { mode = value; }, until });
+      return;
+    }
     const testExtension = path.join(root, 'fixture.ts');
     fs.writeFileSync(testExtension, harness === 'pi'
       ? `export default function(pi) { pi.registerTool({ name:'smoke_wait',label:'Fixture wait',description:'Fixture wait',parameters:{type:'object',properties:{}},async execute(id,args,signal,update,ctx) { await ctx.ui.confirm('fixture','fixture'); return {content:[{type:'text',text:'ok'}],details:{}}; } }); }`
@@ -123,4 +128,4 @@ async function run(harness) {
     await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true });
   }
 }
-(async () => { try { for (const harness of process.argv.slice(2).length ? process.argv.slice(2) : ['pi', 'omp']) await run(harness); } finally { removeAttentionAdapterFiles(); } })().catch(error => { console.error(error.message); process.exitCode = 1; });
+(async () => { try { for (const harness of process.argv.slice(2).length ? process.argv.slice(2) : ['pi', 'omp']) await run(harness === 'pi-tui' ? 'pi' : harness, harness === 'pi-tui'); } finally { removeAttentionAdapterFiles(); } })().catch(error => { console.error(error.message); process.exitCode = 1; });

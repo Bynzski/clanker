@@ -668,6 +668,43 @@ describe('Pi lifecycle', () => {
     settledTwo.forEach(feed);
     expect(state()).toBe('ready');
   });
+  it('does not invent a new epoch when agent_start repeats without native settlement', async () => {
+    const handlers = await load(); const { feed, broker } = rig('pi');
+    drain();
+    await handlers.agent_start({}, ctx); drain().forEach(feed);
+    const revision = broker.snapshot('term')?.revision;
+    await handlers.agent_start({}, ctx);
+    const repeated = drain();
+    expect(repeated[0]).toMatchObject({ event: 'turn_started', turnId: '1' });
+    repeated.forEach(feed);
+    expect(broker.snapshot('term')?.revision).toBe(revision);
+    await handlers.agent_settled({}, ctx); drain().forEach(feed);
+    await handlers.agent_start({}, ctx);
+    expect(drain()[0]).toMatchObject({ event: 'turn_started', turnId: '2' });
+  });
+
+  it('allows a freshly loaded extension epoch only after the old native reload boundary', async () => {
+    const before = await load(); const { feed, broker, state } = rig('pi');
+    const context = { ...ctx, cwd: '/fixture' };
+    drain();
+    await before.session_start({}, context);
+    await before.agent_start({}, context);
+    await before.agent_settled({}, context);
+    drain().forEach(feed);
+    expect(state()).toBe('ready');
+    await before.session_shutdown({ reason: 'reload' }, context); drain().forEach(feed);
+    const after = await load();
+    await after.session_start({ reason: 'reload' }, context); drain().forEach(feed);
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'unverified', turnId: null } });
+    await after.agent_start({}, context);
+    const start = drain();
+    expect(start[0].turnId).toBe('1'); // New extension state, not an invented broker epoch.
+    start.forEach(feed);
+    expect(state()).toBe('running');
+    await after.agent_settled({}, context); drain().forEach(feed);
+    expect(state()).toBe('ready');
+  });
+
   it('does not emit a completion when no foreground turn is open', async () => {
     const handlers = await load();
     drain();

@@ -574,3 +574,118 @@ Primary contract references: [Claude hooks](https://code.claude.com/docs/en/hook
 Final `npm run validate` passed: branding, lint, typecheck, Fallow, security-check, build, and **367 test files / 7,603 tests** (63.83 s test phase, default repository worker policy). Focused Codex/OpenCode checkout lifecycle tests: **57 passed**. All six smoke commands exited 0: `smoke:attention:native`, `smoke:attention:claude`, `smoke:attention:codex`, `smoke:attention:codex-tui`, `smoke:attention:opencode`, and `smoke:attention:electron`. Claude and both Codex suites were rerun against the final provider build; the other suites exercise unchanged provider/broker code. No paid model inference was used. The continuation correction is suitable for independent review and a narrowly scoped PR after owner acceptance of the documented native-contract limitations. It is **not** a claim of complete interactive reliability across every harness.
 
 Owner acceptance still requires real-account Claude TUI approvals/AskUserQuestion/compaction/interruption and continuation without tools; Codex hook trust review, quit/resume and the explicit `/new` degraded workflow; Antigravity 1.3.3 persistent plugin, continuation counters, fresh prompts, asks and conversation replacement; Hermes and at least one authorized genuine SSH session. Repeat the four-workspace/background/restart matrix with real agents. Do not spend paid inference solely to rerun the protocol fixtures.
+
+
+## Post-merge Pi TUI follow-up (2026-10-11)
+
+Reviewed the narrowed #152 scope and the later Pi 1.1.0 field report against the
+current source. **The owner's intermittent failure remains unreproduced.** This
+follow-up adds evidence and regression coverage, not a speculative runtime fix or
+an assertion that #152 is complete.
+
+### Reproduction and loss-stage evidence
+
+After building, run:
+
+```sh
+npm run smoke:attention:pi-tui
+```
+
+The new mode shares the existing native suite's disposable HOME, model fixture,
+normal launch attachment preparation, real observer/socket/ACK and main broker.
+It runs installed Pi **1.1.0 in interactive TUI mode over a real node-pty PTY**,
+not RPC. Only a loopback model protocol fixture is used; no external inference,
+account credentials or user configuration changes are involved.
+
+A separate fixture extension records a bounded 128-entry list of fixed native
+source event names/reasons, independently of Clanker's adapter. The adapter's
+actual broker decisions/ACK verdicts and revisioned publications provide the next
+stages. Neither terminal output nor elapsed silence determines lifecycle state.
+Terminal output is consumed without retention. Private session references stay
+inside the disposable fixture and are removed, never printed. On failure, the
+script reports only stage, bounded native events, recent verdicts and broker
+revision/status. UI-readiness delays only allow key handlers to mount; they do not
+create lifecycle evidence.
+
+| Pi 1.1.0 native TUI scenario | Observed result |
+| --- | --- |
+| Ten consecutive foreground prompts | Every prompt publishes Running, then matching native agent_settled completion |
+| Two consecutive /reload commands after completed turns | Native shutdown(reload) precedes start(reload), same root; subsequent turns accepted despite extension epoch reset |
+| Native /new command | Shutdown(new) precedes start(new), new root; next turn settles |
+| Resume prior fixture session | Native shutdown(resume)/start(resume), original root restored; next turn settles |
+| Fork prior user entry | Native shutdown(fork)/start(fork), distinct root; next turn settles |
+| /reload after fork | Same-root shutdown/start and next turn pass |
+| Real TUI extension confirmation | ui_prompt_start opens Needs Input; Enter produces ui_prompt_end, Running and settlement |
+| Fixture API failure and subsequent success | Failed, then a fresh Running/idle turn |
+| Native Escape abort and subsequent success | Interrupted, then a fresh Running/idle turn |
+| Handoff after each successful settled turn | broker.canHandoff remains true |
+
+The resume/fork operations run through fixture slash commands calling native
+TUI ctx.switchSession/ctx.fork. **Their built-in picker interfaces, /tree navigation
+and arbitrary third-party extensions are not covered.** All captured adapter
+verdicts were accepted-changed. This verifies source emission through transport,
+broker projection and broker handoff eligibility, **not actual annotation injection
+or the Electron renderer for these native Pi processes**.
+
+Two complete native TUI runs passed before the final version-labelled rerun. The
+first attempt sent a literal `y` to Pi's confirmation selector, which does not
+submit it. Captured source/broker evidence showed an accepted pending wait, not
+lost integration. Using the selector's Enter key after the input component mounts
+corrected the smoke fixture; no production change was made.
+
+### Reconciliation with the field report
+
+- Current agent_settled clears local open and pending state before awaiting emit.
+  New real-socket regressions run the generated Pi extension with a lost completion
+  ACK, and separately a lost completion envelope. In both cases emit returns false,
+  the next native-start fixture uses epoch 2, and the actual broker/renderer store
+  publishes Running at the current revision. ACK loss does not reproduce the
+  proposed stuck-open/retired-epoch diagnosis.
+- A missing or filtered native settlement is different. A targeted fixture confirms
+  repeated agent_start without settlement retains epoch 1; it cannot safely be
+  assumed to represent a new prompt. No forced increment was added. A reload
+  fixture proves a fresh extension can restart its epoch after accepted native
+  shutdown/start clears the broker's retired-turn history.
+- The native TUI baseline now agrees with the earlier RPC passes for the exercised
+  boundaries. It does not disprove the owner's report. The comment does not provide
+  an executable sequence, extension roster/order, reload timing, tree target or
+  session files sufficient to reproduce its differing boundary behavior. Those
+  details, plus safe diagnostics at the first missing subsequent turn, are still
+  required before claiming a root cause.
+- Pi awaits extension callbacks, so ACK latency can delay native lifecycle dispatch.
+  The observer uses asynchronous socket I/O with a bounded deadline, not a
+  synchronous event-loop block. These passes do not prove behavior under main-process
+  overload; no non-blocking delivery rewrite is justified by the present evidence.
+- Foreground acknowledged completion remains intentionally hidden. Neither that
+  policy nor completion persistence was changed. Timers, cwd-based rebinding,
+  fabricated epochs and unverified fire-and-forget delivery remain excluded.
+
+### Versioned support decisions and validation limits
+
+Earlier versioned evidence remains intact; none is upgraded to real-account or
+SSH validation by this follow-up:
+
+| Provider/version checked now | Decision / new evidence |
+| --- | --- |
+| Pi 1.1.0 | Native TUI cases above supported; exact owner sequence, picker/tree/third-party-extension behavior and native SSH unverified |
+| OMP 18.4.10 | Native RPC suite rerun passes; TUI waits/fork/background jobs and genuine SSH remain unverified |
+| Claude 2.1.296 | Native print/Stop continuation suite rerun passes; success remains provisional, real TUI/compaction/interruption gaps retained |
+| Codex 0.162.0 | Native exec/resume and TUI suites rerun pass their bounded cases; /new remains deliberately degraded, production hook trust review and interactive quit/resume unverified |
+| OpenCode 1.18.34 / installed 2.0.26 | Prior 1.18.34 evidence retained. Installed 2.0.26 smoke fails at POST /session before model requests or native attention receipt; its server API/plugin contract is unverified, not a demonstrated attention loss or a supported-version pass |
+| Antigravity 1.3.3 | Version rechecked; provisional Stop/source-fixture evidence retained, authenticated persistent TUI still unverified |
+| Hermes inspected 0.21.5+5751.g4097709 | Existing source/fixture evidence retained, not a new native run; local attention unsupported and genuine SSH finalizer/approval/compression unverified |
+
+The Electron lifecycle-fixture matrix was rerun and passed, including cold
+workspaces, background turns, minimized/hidden panes, restoration and retirement.
+It remains explicitly **fixture-powered Electron evidence**, not real-agent
+workspace switching. No authorized SSH target was supplied or probed. No broader
+provider architecture, runtime authority, renderer ownership, observation safety
+(#147) or Pi relocation (#138) was changed.
+
+Verification: the focused delivery/provider suite passed **103 tests**. All native
+Pi/OMP, new Pi TUI, Claude, Codex exec/resume, Codex TUI and Electron smoke commands
+passed; OpenCode's separately recorded 2.0.26 failure is not hidden. Final
+`npm run validate` passed branding, lint, typecheck, Fallow, security-check, build
+and **391 test files / 7,922 tests**, including attachment, lifecycle, SSH fixture,
+checkout transaction and renderer coverage. No runtime correction or issue closure
+is claimed; remaining owner/native validation is explicit above.
