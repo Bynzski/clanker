@@ -524,9 +524,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
-      return fail(agentAttentionBroker?.handoffState(payload.terminalId) === 'running' || agentAttentionBroker?.handoffState(payload.terminalId) === 'needs_input'
-        ? 'The agent is busy. Wait for it to finish or copy the message instead.'
-        : 'The agent is no longer available for handoff. Copy the message instead.');
+      const state = agentAttentionBroker?.handoffState(payload.terminalId);
+      return fail(state === 'provisional'
+        ? 'A Stop was observed, but input readiness is unverified. Copy the message instead.'
+        : state === 'running' || state === 'needs_input'
+          ? 'The agent is busy. Wait for it to finish or copy the message instead.'
+          : 'The agent is no longer available for handoff. Copy the message instead.');
     }
     const message = payload.message.replace(/\r\n?/g, '\n');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {

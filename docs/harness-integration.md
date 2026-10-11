@@ -197,9 +197,11 @@ outcome) is presented as a finished turn: it ends the turn unless another Stop h
 continued native activity returns the same turn to Working. The snapshot carries
 `runtime.stopRevision`, the revision at which the stop was observed, so it is acknowledged like a
 completion. It never writes `lastCompletion`: consumers that need proven success (after-turn checkout
-moves) still treat it as unproven and cancel. Annotation handoff is allowed, because the agent is at
-its prompt; submitting a handoff ends the stopped turn and its unresolved waits. A previously presented
-request remains recorded with `resolutionUnknown: true`. No silence timer is used.
+moves) still treat it as unproven and cancel. Annotation handoff is **refused**: a candidate Stop does
+not prove that the terminal can accept a new prompt. The dialog offers Copy instead; main rechecks
+readiness before any PTY write, and `markSubmitted` cannot retire a provisional turn. A previously
+presented request remains recorded with `resolutionUnknown: true`. No silence timer is used.
+Finished presentation, external-input readiness, and proven successful completion are distinct facts.
 
 Source authority is declared per provider (`attention.authority: full | partial`, and
 `source: native | hook`) and arbitrated centrally (`attentionAuthority.ts`).
@@ -243,18 +245,17 @@ input and lifecycle. Invariants:
 - Events whose `scope` is `child`, or is missing (unknown subject), cannot change
   state (`ignored-child` / `rejected-ambiguous`). Once a root is bound, another
   session's events cannot mutate it (`rejected-mismatch`), with one exception:
-- **A new root session start replaces the bound root** (`session_started` or
-  `turn_started` carrying a different root `sessionId`), so a session change without a
-  paired native end (`/new`, a resume picker, a lost shutdown delivery) cannot leave the
-  terminal rejecting everything for the rest of its life. `attention.sessionModel`
-  decides when: `process` providers (Pi, OMP: one foreground session per process, observed
-  in-process) always follow the newest session; `shared` providers (the default: hook and
-  server providers, including Codex whose auxiliary threads report their own root sessions)
-  only replace a root with no live turn and no actionable wait, so an auxiliary session can
-  never take a working terminal and the next real prompt takes an idle one back. A root seeded
-  from a validated resume is protected until it reports once. Replacement retires the old
-  root's turns and waits, records `lastOutcome: session_ended` and is published as its own
-  snapshot before the new session's event, so boundary consumers see it.
+- **Only process-scoped starts implicitly replace the bound root.** `attention.sessionModel`
+  `process` providers (Pi, OMP: one foreground session per process, observed in-process) recover
+  on root `session_started` or identified `turn_started` even after a lost outgoing boundary.
+  A validated resume seed remains protected until it reports. Replacement clears the old turn/waits,
+  records `lastOutcome: session_ended`, and publishes its own snapshot before the new start.
+  `shared` providers (the default) never infer selection from idleness, Stop, cwd, token possession,
+  elapsed time, or arrival order. A different root is rejected even while idle; only an accepted
+  native end, explicit `session_replaced` naming the bound root, or `session_continued` lineage
+  permits changing it. Rejected reports do not prevent the bound root's next turn from tracking.
+  Shared-session switching without those signals remains a documented limitation, not an automatic
+  recovery claim (see below and [final hardening findings](agent-attention-final-hardening.md)).
 - **Turn identity is mandatory.** Every start, input and completion event carries
   a `turnId`: the native turn ID where the harness has one (Codex `turn_id`,
   Claude `prompt_id`, Hermes `turn_id`), otherwise a provider-owned epoch the
@@ -551,11 +552,15 @@ review persists. Until reviewed no events arrive and the pane stays unknown. Rem
 
 ### Remaining limitations
 
-- An in-TUI session switch without a native end (installed Codex TUI `/new` emits
-  `SessionStart.source=startup`; Agy has no end event) is followed by root replacement once the
-  old root is idle (see the invariants). While the old root still has a live turn or wait, a
-  `shared` provider keeps it until it stops; Codex source `clear` remains an explicit,
-  immediate replacement.
+- A shared-provider switch without a native end or proven replacement cannot safely recover
+  automatically. Installed Codex 0.162.1 TUI `/new` emits `SessionStart.source=startup` without
+  `SessionEnd`; the hooks provide no selected-session discriminator. It is conservatively rejected,
+  reports degraded `identity-rejected`, and requires a fresh Clanker launch/resume to track the new
+  conversation. The unchanged Codex TUI smoke intentionally still requires `/new` recovery and fails;
+  this acceptance criterion is unresolved, not an environmental failure. Codex `source=clear` remains
+  an explicit replacement (adapter fixture coverage). OpenCode parentage likewise proves root, not
+  terminal selection. An incorrect first shared root report also requires proven replacement/end or
+  fresh registration; Clanker does not guess which subsequent root is selected.
 - An interrupted turn with no settle event stays Running rather than Ready (Claude has no
   interrupt hook); the next prompt starts a fresh turn.
 - Claude, Codex and Agy `Stop` callbacks run before other hooks can request continuation.

@@ -455,26 +455,29 @@ export class AgentAttentionBroker {
   handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'provisional' | 'unavailable' {
     const registration = this.current(terminalId);
     if (!registration) return 'unavailable';
+    // After ambiguous identity evidence the cached root may not be the visible conversation.
+    // Never let its old completion authorize a write; accepted turn evidence restores health.
+    if (registration.signal?.reason === 'identity-rejected') return 'unavailable';
     if (registration.status === 'provisional') return 'provisional';
     if (isActive(registration)) return registration.pending.some(request => !request.resolutionUnknown) ? 'needs_input' : 'running';
     return registration.status === 'idle' && registration.lastOutcome?.kind === 'completed' ? 'ready' : 'unverified';
   }
 
-  /** A candidate stop is handed off too: the agent is at its prompt, exactly where the user would type.
-   * A wait or a live turn is not. */
+  /** Finished presentation is not input readiness: another Stop hook may continue this turn.
+   * Preserve the existing explicit user choice for an unverified, non-active agent. */
   canHandoff(terminalId: string): boolean {
     const state = this.handoffState(terminalId);
-    return state === 'unverified' || state === 'ready' || state === 'provisional';
+    return state === 'unverified' || state === 'ready';
   }
 
   /** Clanker itself submitted a prompt: a new foreground turn starts without a native event. */
   markSubmitted(terminalId: string): void {
     const registration = this.current(terminalId);
     const state = this.handoffState(terminalId);
-    if (!registration || (state !== 'ready' && state !== 'provisional')) return;
+    if (!registration || state !== 'ready') return;
     // The native start event must establish the turn identity before anything can settle it.
     this.commit(registration, () => {
-      // Submitting a prompt ends a stopped turn, including any wait whose resolution was never seen.
+      // Only established readiness may retire the previous turn.
       if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
       registration.pending = [];
       registration.status = 'starting';
@@ -710,12 +713,12 @@ export class AgentAttentionBroker {
       return 'accepted';
     }
 
-    // A newly started root session in this same authenticated terminal replaces the bound one when
-    // nothing live belongs to the old one (or always, for one-session-per-process providers). Without
-    // this, any session change that lacks a paired native end (`/new`, a lost shutdown delivery, a
-    // resume picker) would leave the terminal rejecting every later event for the rest of its life.
+    // Process-scoped providers prove that the old session runtime was replaced, even if its end
+    // was lost. Shared providers do not: an idle root, token possession, or a root start says nothing
+    // about which conversation the user selected. They need an explicit boundary/replacement above.
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId
       && (event.event === 'session_started' || event.event === 'turn_started') && this.maySupersede(registration)) {
+      if (event.event === 'turn_started' && !event.turnId) return 'rejected-ambiguous';
       this.supersede(registration, event.sessionId);
     }
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return 'rejected-mismatch';
@@ -852,10 +855,7 @@ export class AgentAttentionBroker {
   }
 
   private maySupersede(registration: Registration): boolean {
-    if (registration.seedUnconfirmed) return false;
-    if (registration.sessionModel === 'process') return true;
-    const liveTurn = isActive(registration) && registration.activeTurnId !== undefined;
-    return !liveTurn && !registration.pending.some((request) => !request.resolutionUnknown);
+    return !registration.seedUnconfirmed && registration.sessionModel === 'process';
   }
 
   /** The old root is over: retire its turns and waits, record a session boundary, and bind the new

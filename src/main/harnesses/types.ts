@@ -172,8 +172,8 @@ export interface HarnessAttentionCapability {
   readonly hooksRunInAgentDirectory?: boolean;
   /** How native root sessions relate to the terminal. `process`: the harness runs exactly one
    * foreground session per process, observed in-process, so a newly started root session always
-   * replaces the previous one (Pi, OMP). Absent means `shared`: a different root session may replace
-   * the bound one only while that one has no live turn or actionable wait (hook and server providers). */
+   * replaces the previous one (Pi, OMP). Absent means `shared`: starts alone never prove selection;
+   * changing a bound root requires an explicit native boundary/replacement/continuation. */
   readonly sessionModel?: 'process' | 'shared';
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;

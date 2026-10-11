@@ -5,6 +5,12 @@ Method: source reading of every stage; the attention test suites (292 passing, t
 
 ## Implementation status (follow-up commit on this branch)
 
+**Final safety correction:** the table below records `972e760`, not the final behavior. Its shared-idle
+session replacement and provisional-Stop handoff rules were unsafe and are superseded by
+[final hardening findings and verification](../agent-attention-final-hardening.md). Process-scoped recovery,
+Finished presentation, focus acknowledgement, transport hardening and bounded diagnostics remain.
+Safe automatic Codex `/new` recovery is unresolved; the unchanged TUI smoke fails, and the PR is a draft.
+
 The fixes below were implemented on the same branch. Findings in the sections that follow describe the code **before** this change.
 
 | Finding | Change |

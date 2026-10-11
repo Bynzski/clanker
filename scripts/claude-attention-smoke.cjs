@@ -8,7 +8,13 @@ const { removeAttentionAdapterFiles } = require('../dist/main/main/agentAttentio
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-claude-native-'));
 let child, attachments, requests = 0, results = 0, failure = false, stops = 0;
 const transitions = [];
-const broker = new AgentAttentionBroker(change => { if (change.snapshot) transitions.push({ status: change.snapshot.runtime.status, turn: change.snapshot.runtime.turnId }); }, event => { if (event.semantic === 'turn_provisional' && event.decision === 'accepted') stops++; });
+let unsafeHandoff = false;
+const broker = new AgentAttentionBroker(change => {
+  if (change.snapshot) {
+    transitions.push({ status: change.snapshot.runtime.status, turn: change.snapshot.runtime.turnId });
+    if (change.snapshot.runtime.status === 'provisional' && broker.canHandoff('claude')) unsafeHandoff = true;
+  }
+}, event => { if (event.semantic === 'turn_provisional' && event.decision === 'accepted') stops++; });
 const server = http.createServer((request, response) => {
   request.resume(); request.on('end', () => {
     if (request.url.includes('count_tokens')) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end('{"input_tokens":1}'); return; }
@@ -60,14 +66,15 @@ async function until(check, label) { const deadline = Date.now() + 20000; while 
     const firstTurn = transitions.find(t => t.status === 'running').turn;
     const sameTurn = transitions.filter(t => t.turn === firstTurn).map(t => t.status).filter((status, index, all) => index === 0 || all[index - 1] !== status);
     assert.deepEqual(sameTurn, ['running', 'provisional', 'running', 'provisional'], 'Native continuation did not restore the SAME foreground turn');
-    assert.equal(broker.canHandoff('claude'), true, 'A stopped agent is at its prompt and accepts a handoff');
+    assert.equal(unsafeHandoff, false, 'A candidate Stop authorized a handoff during native continuation');
+    assert.equal(broker.canHandoff('claude'), false, 'A stopped agent has no proven input readiness');
     const beforeFailure = requests; failure = true; child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: 'Reply ok.' } }) + '\n');
     await until(() => requests > beforeFailure, 'Claude did not reach the fixture failure endpoint');
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline && results <= 10 && !exited && broker.snapshot('claude').runtime.status !== 'failed') await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal(broker.snapshot('claude').lastCompletion, null, 'API failure must never announce Done');
     const stopFailure = broker.snapshot('claude').runtime.status === 'failed' ? 'observed' : 'not emitted within 5 s of fixture authentication error; CLI still waiting';
-    console.log(JSON.stringify({ harness: 'claude', nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, starts: 'accepted native UserPromptSubmit', stop: 'observed native Stop, settlement explicitly unverified', separateStopContinuation: 'native Read after Stop restored Running in the same turn; subsequent Stop presents as finished; handoff allowed; no proven-completion record', stopFailure, requests }));
+    console.log(JSON.stringify({ harness: 'claude', nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, starts: 'accepted native UserPromptSubmit', stop: 'observed native Stop, settlement explicitly unverified', separateStopContinuation: 'native Read after Stop restored Running in the same turn; every Stop refused handoff; subsequent Stop presents as finished; no proven-completion record', stopFailure, requests }));
   } catch (error) { console.error(error.message); console.error(JSON.stringify(broker.signalDiagnostics('claude'))); process.exitCode = 1; }
   finally { child?.kill(); if (child && child.exitCode === null) await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 1000))]); await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); removeAttentionAdapterFiles(); fs.rmSync(root, { recursive: true, force: true }); }
 })();

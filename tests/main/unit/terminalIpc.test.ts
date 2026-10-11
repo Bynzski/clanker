@@ -699,6 +699,44 @@ describe('terminalIpc — error-path: handler returns', () => {
     }
   });
 
+  test('rechecks a pending annotation against real Stop/continuation state before writing', () => {
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-handoff-'));
+    const broker = new AgentAttentionBroker(() => {}, () => {});
+    try {
+      const { terminals, opts } = createMockDeps();
+      const write = vi.fn();
+      const token = broker.registerRemote('term-agent', 'claude');
+      const send = (event: string, turnId = 't1') => broker.receiveRemote('term-agent', JSON.stringify({
+        version: 1, token, harness: 'claude', scope: 'root', sessionId: 'root', turnId, event,
+      }));
+      terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'claude', pty: { write } });
+      registerTerminalIpc({ ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
+        _: unknown, payload: unknown,
+      ) => { success: boolean; error?: string };
+      const payload = { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'Pending annotation' };
+      send('turn_started');
+      send('turn_provisional');
+      expect(handler(null, payload).error).toContain('input readiness is unverified');
+      expect(write).not.toHaveBeenCalled();
+      expect(broker.snapshot('term-agent')?.runtime.turnId).toBe('t1');
+      send('turn_activity');
+      expect(handler(null, payload).error).toContain('The agent is busy');
+      expect(write).not.toHaveBeenCalled();
+      send('turn_started', 't2');
+      send('turn_completed'); // Stale settlement cannot permit the pending handoff.
+      expect(handler(null, payload).success).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+      send('turn_completed', 't2');
+      expect(handler(null, payload)).toEqual({ success: true });
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(broker.snapshot('term-agent')?.runtime.status).toBe('starting');
+    } finally {
+      broker.close();
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+    }
+  });
+
   test('rejects closed, shell-fallback, and mismatched annotation targets', () => {
     const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-handoff-'));
     const otherPath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-other-'));

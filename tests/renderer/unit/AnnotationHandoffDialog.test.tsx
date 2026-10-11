@@ -64,6 +64,16 @@ describe('AnnotationHandoffDialog', () => {
     expect(screen.getByRole('button', { name: 'Copy message' })).toBeEnabled();
   });
 
+  it('offers Copy, not Send, for Finished presentation without proven readiness', async () => {
+    vi.mocked(window.electronAPI.getAgentHandoffStatuses).mockResolvedValue({ 'term-1': 'provisional' });
+    render(<AnnotationHandoffDialog sourceWorkspaceId="workspace-1" initialMessage="Annotation" onClose={vi.fn()} />);
+    expect(await screen.findByText(/Stopped · readiness unverified/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy message' }));
+    await waitFor(() => expect(window.electronAPI.writeClipboard).toHaveBeenCalledWith('Annotation'));
+    expect(window.electronAPI.sendAnnotationToAgent).not.toHaveBeenCalled();
+  });
+
   it('allows an open agent when optional attention tracking is off', async () => {
     vi.mocked(window.electronAPI.getAgentHandoffStatuses).mockResolvedValue({ 'term-1': 'unverified' });
     useWorkspaceStore.setState((state) => ({

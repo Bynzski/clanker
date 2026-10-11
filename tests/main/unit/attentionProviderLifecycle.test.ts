@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
+import type { HarnessId } from '../../../src/shared/harnessIds';
 import { CLAUDE_HOOK_EVENTS } from '../../../src/main/harnesses/claude/attention';
 import { OBSERVER_FIELDS } from '../../../src/main/harnesses/attentionSources';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
@@ -29,13 +30,13 @@ afterEach(() => {
 });
 
 interface Wire { event: string; [key: string]: unknown }
-function rig(harness: string, rootSessionId?: string) {
+function rig(harness: HarnessId, rootSessionId?: string) {
   const recorder = attentionRecorder();
   const updates = recorder.changes;
   const decisions: AttentionDiagnostic['decision'][] = [];
   const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => decisions.push(diagnostic.decision));
   brokers.push(broker);
-  const token = broker.registerRemote('term', harness, { rootSessionId });
+  const token = broker.registerRemote('term', harness, { rootSessionId, sessionModel: getHarnessProvider(harness).attention.sessionModel });
   const feed = (wire: Wire | null | undefined) => {
     if (wire) broker.receiveRemote('term', JSON.stringify({ version: 1, token, harness, ...wire }));
   };
@@ -73,7 +74,7 @@ async function interpreter(harness: 'codex' | 'claude' | 'agy') {
 }
 
 describe('Codex lifecycle', () => {
-  it('replaces an idle root on a native session start (installed TUI /new sends startup), never during a live turn', async () => {
+  it('rejects unproven startup replacement even at Stop; explicit native clear still switches the root', async () => {
     const hook = await interpreter('codex'); const { feed, broker, state, decisions } = rig('codex');
     feed(hook('SessionStart', { session_id: 'root', source: 'startup' }));
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
@@ -83,17 +84,25 @@ describe('Codex lifecycle', () => {
     expect(broker.snapshot('term')?.sessionId).toBe('root');
     expect(decisions).toContain('rejected-mismatch');
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
-    // /new: startup with a new id and no SessionEnd. The stopped root is replaced, not left bound forever.
+    // /new's startup is indistinguishable from an auxiliary root. Do not guess selection.
     feed(hook('SessionStart', { session_id: 'replacement', source: 'startup' }));
-    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'replacement', runtime: { status: 'unverified' }, pendingRequest: null, lastCompletion: null, lastOutcome: { kind: 'session_ended' } });
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'provisional' }, lastCompletion: null });
     feed(hook('UserPromptSubmit', { session_id: 'replacement', turn_id: 't2' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    // A rejected auxiliary prompt must not prevent the next actual root prompt/Stop from tracking.
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't3' }));
+    feed(hook('Stop', { session_id: 'root', turn_id: 't3' }));
+    expect(state()).toBe('provisional');
+    feed(hook('SessionStart', { session_id: 'replacement', source: 'clear' }));
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'replacement', runtime: { status: 'unverified' }, pendingRequest: null, lastCompletion: null, lastOutcome: { kind: 'session_ended' } });
+    feed(hook('UserPromptSubmit', { session_id: 'replacement', turn_id: 't4' }));
     expect(state()).toBe('running');
     // Late events of the replaced root change nothing.
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
     feed(hook('SessionEnd', { session_id: 'root' }));
     expect(broker.snapshot('term')?.sessionId).toBe('replacement');
     expect(state()).toBe('running');
-    feed(hook('Stop', { session_id: 'replacement', turn_id: 't2' }));
+    feed(hook('Stop', { session_id: 'replacement', turn_id: 't4' }));
     expect(state()).toBe('provisional');
     // Explicit clear still replaces directly.
     feed(hook('SessionStart', { session_id: 'cleared', source: 'clear' }));
@@ -113,9 +122,9 @@ describe('Codex lifecycle', () => {
     expect(state()).toBe('unverified');
     feed(hook('SessionStart', { session_id: 'child', source: 'resume', agent_id: 'worker' }));
     expect(broker.snapshot('term')?.sessionId).toBe('root');
-    // An auxiliary root session may briefly take an idle terminal; the next real prompt takes it back.
+    // A root auxiliary session cannot claim an idle terminal. The next real prompt still works.
     feed(hook('SessionStart', { session_id: 'other', source: 'resume' }));
-    expect(broker.snapshot('term')?.sessionId).toBe('other');
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 'new' }));
     expect(broker.snapshot('term')?.sessionId).toBe('root');
     expect(state()).toBe('running');
@@ -999,7 +1008,7 @@ describe('Oh My Pi lifecycle', () => {
   });
 });
 
-describe.each([['pi', PI, 'agent_settled'], ['omp', OMP, 'agent_end']])('%s root bookkeeping', (harness, source, settle) => {
+describe.each([['pi', PI, 'agent_settled'], ['omp', OMP, 'agent_end']] as const)('%s root bookkeeping', (harness, source, settle) => {
   it('cannot be poisoned by unrelated start/shutdown after idle or during work', async () => {
     const module = await importSource(source);
     const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
@@ -1036,6 +1045,22 @@ describe('OpenCode lifecycle', () => {
     return async (type: string, properties: Record<string, unknown>) => { await instance.event({ event: { type, properties } }); };
   }
   const status = (sessionID: string, type: string) => ['session.status', { sessionID, status: { type } }] as const;
+
+  it('does not confuse parentless background busy with selected-session ownership after root idle', async () => {
+    const send = await plugin(); const { feed, broker, decisions } = rig('opencode'); drain();
+    const step = async (...args: Parameters<typeof send>) => { await send(...args); drain().forEach(feed); };
+    await step(...status('root', 'busy'));
+    await step(...status('root', 'idle'));
+    await step('session.created', { info: { id: 'background' } });
+    await step(...status('background', 'busy'));
+    await step(...status('background', 'idle'));
+    expect(decisions.slice(-2)).toEqual(['rejected-mismatch', 'rejected-mismatch']);
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    await step(...status('root', 'busy'));
+    expect(broker.snapshot('term')?.runtime.status).toBe('running');
+    await step(...status('root', 'idle'));
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('completed');
+  });
 
   it('settles explicit errors and aborts at idle, without turning compaction recovery into failure', async () => {
     const send = await plugin(); const { feed, broker } = rig('opencode'); drain();
@@ -1425,7 +1450,7 @@ describe('native tool activity after candidate Stop', () => {
     }
     expect(state()).toBe('provisional');
     expect(broker.snapshot('term')!.runtime.turnId).toBe(turn);
-    expect(broker.canHandoff('term')).toBe(true); // stopped at its prompt: a handoff may type into it
+    expect(broker.canHandoff('term')).toBe(false); // Stop is presentation, not input readiness.
     expect(broker.snapshot('term')!.lastCompletion).toBeNull();
   });
 });

@@ -35,10 +35,10 @@ export default function AnnotationHandoffDialog({ sourceWorkspaceId, initialMess
     .filter((terminal) => terminal.harnessId && workspace.panes.some((pane) => pane.terminalId === terminal.id))
     .map((terminal) => {
       const handoffState = handoffStatuses[terminal.id] ?? 'unavailable';
-      const canSend = handoffState === 'ready' || handoffState === 'unverified' || handoffState === 'provisional';
+      const canSend = handoffState === 'ready' || handoffState === 'unverified';
       const status = handoffState === 'ready' ? 'Ready'
         : handoffState === 'unverified' ? 'Open · status unverified'
-          : handoffState === 'provisional' ? 'Ready · stopped'
+          : handoffState === 'provisional' ? 'Stopped · readiness unverified'
           : handoffState === 'running' ? 'Running'
             : handoffState === 'needs_input' ? 'Needs input' : 'Unavailable';
       return { workspace, terminal, canSend, status };

@@ -15,7 +15,7 @@ async function until(check, label) {
   const end = Date.now() + 15000;
   while (!check()) { if (Date.now() > end) throw new Error(label); await pause(25); }
 }
-async function run(harness, interactive = false) {
+async function run(harness, interactive = false, loseBoundaries = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-native-attention-'));
   const agentDir = path.join(root, 'agent'); fs.mkdirSync(agentDir);
   let mode = 'success', requests = 0, child, attachments, prematureCompletion = false;
@@ -44,7 +44,7 @@ async function run(harness, interactive = false) {
     const env = { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: agentDir, PI_CONFIG_DIR: '.omp', XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), ...attachments.env };
     if (interactive) {
       assert.equal(harness, 'pi', 'Interactive fixture supports Pi only');
-      await require('./lib/pi-attention-tui-smoke.cjs')({ root, env, args: attachments.args, broker, observed, transitions, setMode: value => { mode = value; }, until });
+      await require('./lib/pi-attention-tui-smoke.cjs')({ root, env, args: attachments.args, broker, observed, transitions, setMode: value => { mode = value; }, until, loseBoundaries });
       return;
     }
     const testExtension = path.join(root, 'fixture.ts');
@@ -128,4 +128,11 @@ async function run(harness, interactive = false) {
     await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true });
   }
 }
-(async () => { try { for (const harness of process.argv.slice(2).length ? process.argv.slice(2) : ['pi', 'omp']) await run(harness === 'pi-tui' ? 'pi' : harness, harness === 'pi-tui'); } finally { removeAttentionAdapterFiles(); } })().catch(error => { console.error(error.message); process.exitCode = 1; });
+(async () => {
+  try {
+    for (const harness of process.argv.slice(2).length ? process.argv.slice(2) : ['pi', 'omp']) {
+      const interactive = harness === 'pi-tui' || harness === 'pi-tui-lost-boundary';
+      await run(interactive ? 'pi' : harness, interactive, harness === 'pi-tui-lost-boundary');
+    }
+  } finally { removeAttentionAdapterFiles(); }
+})().catch(error => { console.error(error.message); process.exitCode = 1; });
