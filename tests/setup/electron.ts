@@ -11,6 +11,8 @@ const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true,
 
 function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
+    getAssistantDetails: createAsyncMock({ assistantId: '', profile: { state: 'unsupported' }, history: { state: 'unsupported' }, routines: { state: 'unsupported' } }),
+    getAssistantRoutineRuns: createAsyncMock({ state: 'unsupported' }),
     getAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }),
     configureAssistants: vi.fn(async (settings) => ({ ...{ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }, settings })),
     refreshAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }),

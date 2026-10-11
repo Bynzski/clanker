@@ -22,6 +22,7 @@ export type HermesAssistantServiceState =
   | 'detected-unusable';
 
 export interface HermesAssistant {
+  activity?: import('./assistantDetails').AssistantActivity;
   /** Opaque Clanker id (never the display name); the only handle the renderer sends back. */
   id: string;
   displayName: string;

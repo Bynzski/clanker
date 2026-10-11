@@ -14,8 +14,9 @@ const PORT_IN_USE_LINE = /^BACKEND_PORT_IN_USE port=\d{1,5}$/;
 const MAX_LINE_BYTES = 4096;
 const MAX_CAPTURED_BYTES = 64 * 1024;
 
-export type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<{
+export type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string>; redirect?: 'error' }) => Promise<{
   ok: boolean; status: number; text(): Promise<string>; json(): Promise<unknown>;
+  body?: ReadableStream<Uint8Array> | null;
 }>;
 
 export type ExternalProbe =

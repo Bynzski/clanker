@@ -6,6 +6,7 @@
     "src/renderer/electron.d.ts",
     "src/shared/types/credentials.ts",
     "scripts/app-close-guard-smoke.cjs",
+    "scripts/assistant-details-smoke.cjs",
     "scripts/pi-bridge-smoke.cjs",
     "scripts/ssh-preview-session-smoke.cjs",
     "scripts/terminal-geometry-smoke.cjs",

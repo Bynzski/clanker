@@ -1,4 +1,6 @@
 import { StringDecoder } from 'node:string_decoder';
+import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared/types/assistantDetails';
+import { JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
   type AssistantOpenResult,
@@ -102,6 +104,8 @@ export class HermesAssistantService {
   private episodeRestarts = 0;
   private readonly sessions = new Map<string, PtySession>();
   private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
+  private readonly detailReads = new Map<string, Promise<AssistantDetails | AssistantRead<AssistantRun[]>>>();
+  private readonly detailControllers = new Set<AbortController>();
 
   constructor(private readonly deps: HermesAssistantServiceDeps) {
     this.fetcher = deps.fetch ?? ((url, init) => fetch(url, init) as ReturnType<FetchLike>);
@@ -373,6 +377,8 @@ export class HermesAssistantService {
   private dropRpc(): void {
     const rpc = this.rpc;
     this.rpc = undefined;
+    for (const controller of this.detailControllers) controller.abort();
+    this.detailReads.clear();
     rpc?.close();
   }
 
@@ -388,6 +394,8 @@ export class HermesAssistantService {
   private onRpcClosed(rpc: HermesRpcClient): void {
     if (this.rpc !== rpc) return;
     this.rpc = undefined;
+    for (const controller of this.detailControllers) controller.abort();
+    this.detailReads.clear();
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
     this.markSessionsDisconnected();
     this.roster = [];
@@ -402,6 +410,62 @@ export class HermesAssistantService {
     const result = await rpc.call('profiles.list', {});
     if (!this.current(generation)) return;
     this.roster = parseAssistantRoster(result);
+  }
+
+  /** Lazy read-only details; independent section failures never affect the control connection or chat. */
+  readDetails(assistantId: unknown): Promise<AssistantDetails> {
+    return this.readAssistant(assistantId, undefined) as Promise<AssistantDetails>;
+  }
+
+  readRoutineRuns(assistantId: unknown, jobId: unknown): Promise<AssistantRead<AssistantRun[]>> {
+    if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return Promise.resolve({ state: 'unavailable' });
+    return this.readAssistant(assistantId, jobId) as Promise<AssistantRead<AssistantRun[]>>;
+  }
+
+  private readAssistant(assistantId: unknown, jobId: string | undefined): Promise<AssistantDetails | AssistantRead<AssistantRun[]>> {
+    const unavailable = (state: 'offline' | 'unavailable'): AssistantDetails | AssistantRead<AssistantRun[]> => jobId ? { state }
+      : { assistantId: isValidAssistantId(assistantId) ? assistantId : '', profile: { state }, history: { state }, routines: { state } };
+    if (!isValidAssistantId(assistantId)) return Promise.resolve(unavailable('unavailable'));
+    const entry = this.entry(assistantId); const rpc = this.rpc; const endpoint = this.endpoint;
+    if (!entry || !rpc || rpc.isClosed || !endpoint || this.state !== 'connected') return Promise.resolve(unavailable(this.state === 'connected' ? 'unavailable' : 'offline'));
+    const key = `${assistantId}/${jobId ?? ''}`;
+    const previous = this.detailReads.get(key); if (previous) return previous;
+    if (this.detailReads.size >= 8) return Promise.resolve(unavailable('unavailable'));
+    const generation = this.generation;
+    const controller = new AbortController(); this.detailControllers.add(controller);
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    const rest = (path: string) => readHermesRest(this.fetcher, endpoint, path, controller.signal);
+    const jobsPath = `/api/cron/jobs?profile=${encodeURIComponent(entry.slug)}`;
+    const live = () => this.current(generation) && this.rpc === rpc && this.endpoint === endpoint && this.entry(assistantId)?.slug === entry.slug && !controller.signal.aborted;
+    const operation = (async () => {
+      let result: AssistantDetails | AssistantRead<AssistantRun[]>;
+      if (jobId) {
+        result = await readSection(async () => {
+          // Hermes may fall back to another profile for an absent job. Confirm this profile owns the
+          // exact id both before and after the run query; reject any explicit foreign-profile rows.
+          const owns = async () => parseRoutines(await rest(jobsPath), entry.slug).some((job) => job.id === jobId);
+          if (!await owns()) throw new Error('Job no longer owned');
+          const runs = parseRuns(await rest(`/api/cron/jobs/${encodeURIComponent(jobId)}/runs?profile=${encodeURIComponent(entry.slug)}&limit=20`), entry.slug, jobId);
+          if (!await owns()) throw new Error('Job no longer owned');
+          return runs;
+        });
+      } else {
+        const [profile, history, routines] = await Promise.all([
+          readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug)),
+          readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }))),
+          readSection(async () => parseRoutines(await rest(jobsPath), entry.slug)),
+        ]);
+        result = { assistantId, profile, history, routines };
+      }
+      // Even a backend title/preview containing its own credential must not expose that token.
+      const safeResult = JSON.parse(JSON.stringify(result, (_key, value: unknown) => typeof value === 'string' ? value.split(endpoint.token).join('[redacted]') : value)) as typeof result;
+      return live() ? safeResult : unavailable('unavailable');
+    })().finally(() => {
+      clearTimeout(timer); this.detailControllers.delete(controller);
+      if (this.detailReads.get(key) === operation) this.detailReads.delete(key);
+    });
+    this.detailReads.set(key, operation);
+    return operation;
   }
 
   // ── Assistant surfaces (service-hosted chat PTYs) ───────────────────────────
@@ -626,6 +690,7 @@ export function parseAssistantRoster(result: unknown): RosterEntry[] {
       slug, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`,
+        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row) } : {}),
         displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
         ...(description ? { description: description.slice(0, 200) } : {}),
       },

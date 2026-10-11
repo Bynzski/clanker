@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
+import { openAssistantSettings } from '../../lib/settingsHandoff';
+import { Button } from '../ui/Button';
+import '../settings/AssistantProfileDetail.css';
 import AssistantTerminal from './AssistantTerminal';
 import AssistantBrowserPanel from './AssistantBrowserPanel';
 import { DEFAULT_SIDECAR_PRIMARY_RATIO, useAssistantSurfaceStore } from '../../store/assistantSurfaceStore';
@@ -26,7 +29,7 @@ export default function AssistantSurface({ assistantId, displayName, isActive }:
 
   return (
     <section className={`assistant-surface ${isActive ? 'active' : 'parked'}`} data-assistant-id={assistantId} aria-hidden={!isActive} aria-label={`${displayName} Bot Chat`}>
-      <div className="assistant-surface-header">{displayName} · Hermes Bot Chat</div>
+      <div className="assistant-surface-header"><span>{displayName} · Hermes Bot Chat</span><Button variant="ghost" size="sm" onClick={(event) => openAssistantSettings(assistantId, event.currentTarget)}>Manage Assistant</Button></div>
       <Group
         id={`assistant-${assistantId}`}
         className="split-group split-horizontal assistant-surface-body"

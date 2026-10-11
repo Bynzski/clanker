@@ -14,6 +14,18 @@ export function openAccountSettings(harnessId: string, intent: 'manage' | 'add')
   return true;
 }
 
+type AssistantSettingsHandler = (id: string, trigger: HTMLElement) => void;
+let assistantHandler: AssistantSettingsHandler | null = null;
+export function registerAssistantSettingsHandler(next: AssistantSettingsHandler): () => void {
+  assistantHandler = next;
+  return () => { if (assistantHandler === next) assistantHandler = null; };
+}
+export function openAssistantSettings(id: string, trigger: HTMLElement): boolean {
+  if (!assistantHandler) return false;
+  assistantHandler(id, trigger);
+  return true;
+}
+
 export interface SshSettingsHandoff {
   environmentId: string | null;
   onAcquired: () => void;

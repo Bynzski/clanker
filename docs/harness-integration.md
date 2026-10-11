@@ -2039,7 +2039,23 @@ Sources checked against upstream Hermes (`0.21.5`, September 2026): the headless
 
 ### Roster
 
-`profiles.list` is authoritative: every valid named profile except the raw `default`. `ui_meta["hermes-bots"]` is optional presentation metadata (title, description, `hidden`), not eligibility, and no messaging gateway is required. Display precedence is Bot title, profile `display_name`, then a prettified slug. The renderer receives only `{id, displayName, description?}` with an opaque id; the raw slug and session identity stay main-only.
+`profiles.list` is authoritative: every valid named profile except the raw `default`. `ui_meta["hermes-bots"]` is optional presentation metadata (title, description, `hidden`), not eligibility, and no messaging gateway is required. Display precedence is Bot title, profile `display_name`, then a prettified slug. The renderer receives `{id, displayName, description?, activity?}` with an opaque id; `activity` projects bounded model/provider, last-known roster skill count, last human-visible session title/time and a background-worker timestamp. A worker timestamp is a historical hint, never lifecycle or attention authority. The raw session identity, profile home and backend credentials stay main-only.
+
+### Read-only profile details and scheduled tasks (#157)
+
+**Settings → Agents & AI → Assistants** remains the sole manager, preserving enable/autostart/health controls. Its compact profile selector lazily calls `ASSISTANTS_DETAILS`; the surface's **Manage Assistant** deep-link selects that profile and restores its initiating focus on close. No surface, canonical session, Browser owner or workspace binding changes. Search indexes profiles, skills, model/provider, routines, scheduled tasks and cron.
+
+Main resolves only live known opaque Assistant IDs against its roster and authenticated endpoint. The selected-profile read independently projects:
+
+- `profiles.describe {name}`: model/provider, skill/toolset/MCP names and boolean enablement. SOUL, config, URLs, transport commands and auth paths are discarded, not returned to the renderer. Unknown fields are not inferred; large capability arrays fail closed.
+- `session.list {profile, limit: 20, include_hidden: false}`: bounded ordinary history, omitting canonical Bot Chat and worker/unknown sources. No new sessions or resume actions. Some versions do not return activity time in this compact RPC; the UI says **Not reported**, rather than deriving it from start time.
+- authenticated REST `GET /api/cron/jobs?profile=<main-resolved-slug>`: at most 128 jobs, each requiring an exact profile attribution and unique bounded ID. The renderer may request `ASSISTANTS_ROUTINE_RUNS` for one listed job, never a URL or RPC name. Main re-lists to verify that exact job's ownership before **and after** `GET /api/cron/jobs/<id>/runs?profile=<slug>&limit=20`, rejecting explicit foreign-profile rows and mismatched cron/output IDs. This matters because Hermes can fall back to another owner when a job disappears. Script/output rows lack a profile field in the verified backend; their ownership additionally relies on these scoped ownership rechecks and Hermes' own owner-scoped read contract.
+
+REST uses the existing main-held token in `X-Hermes-Session-Token`, fixed loopback routes, no redirects, a 10-second abort and a 1-MiB streamed response limit. Gateway RPC retains its existing frame/time bounds. Up to eight coalesced detail/run requests are allowed; roster refresh never loads every profile's SOUL or routines. Renderer cleanup discards responses on selection changes/unmount; main invalidates results on shutdown/disable, backend replacement/loss or profile removal and aborts REST reads when its control connection is dropped. Section-level unsupported/error/empty states are independent; failed cron reads never drop RPC or an existing PTY. Offline details are unavailable, not a fabricated **No tasks** or a fresh-looking cached snapshot.
+
+Hermes owns all scheduling and execution. Clanker offers no writes, triggers, scheduler, new attention authority, Bot Mode setup, profile creation, SOUL editor or SSH management. It never parses output or timestamps into Working/Done/success. Missing run result/timing fields remain unknown. Previews are explicitly requested, length-bounded and redact common credential assignments, URLs and home paths; they are not full transcripts. Selective edits (issue phase 3) remain a follow-on requiring revision/replacement semantics and model confirmation verification.
+
+Versioned contract checks and native-smoke limitations: [Assistant detail evidence](evidence/assistant-details-157.md). Repeat the isolated built-app smoke with `npm run build && node scripts/assistant-details-smoke.cjs` against a working installed Hermes CLI; it never sends a model prompt or runs a routine.
 
 ### Canonical Bot Chat
 

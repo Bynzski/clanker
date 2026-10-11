@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import AssistantProfileDetail from './AssistantProfileDetail';
+import { Select } from '../ui/Select';
 import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { AssistantNotice } from '../assistants/AssistantsRoster';
@@ -14,7 +16,10 @@ const PROBLEM: Record<string, string> = {
 const TRANSITION: Record<string, string> = { probing: 'Connecting…', starting: 'Starting Hermes service…' };
 
 /** Optional Hermes Assistants. Absent entirely unless the Hermes CLI is installed. */
-export default function AssistantsSettings() {
+export default function AssistantsSettings({ initialAssistantId }: { initialAssistantId?: string | null }) {
+  const [selectedId, setSelectedId] = useState(initialAssistantId ?? '');
+  const [initialSelection, setInitialSelection] = useState(initialAssistantId);
+  if (initialSelection !== initialAssistantId) { setInitialSelection(initialAssistantId); setSelectedId(initialAssistantId ?? ''); }
   const snapshot = useAssistantsStore((state) => state.snapshot);
   const error = useAssistantsStore((state) => state.error);
   const busy = useAssistantsStore((state) => state.busy);
@@ -47,6 +52,16 @@ export default function AssistantsSettings() {
       {transition && <AssistantNotice tone="info" message={transition} />}
       {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
       {!settings.enabled && error && <AssistantNotice tone="error" message={error} />}
+      {connected && <>
+        <label htmlFor="setting-assistant-profile">Profile</label>
+        <Select id="setting-assistant-profile" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
+          <option value="">Select a Hermes profile…</option>
+          {snapshot.assistants.map((assistant) => <option key={assistant.id} value={assistant.id}>{assistant.displayName}</option>)}
+        </Select>
+        {!snapshot.assistants.length && <p>No named Hermes profiles reported.</p>}
+        {selectedId && !snapshot.assistants.some((assistant) => assistant.id === selectedId) && <p role="status">Selected profile is no longer available. Choose another profile.</p>}
+      </>}
+      {connected && snapshot.assistants.filter((assistant) => assistant.id === selectedId).map((assistant) => <AssistantProfileDetail key={assistant.id} assistant={assistant} connected={connected} />)}
     </div>
   );
 }

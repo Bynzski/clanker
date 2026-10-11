@@ -20,13 +20,14 @@ const pages = [
 ] as const;
 export type SettingsPage = typeof pages[number]['id'];
 
-export default function SettingsManagement({ page, onPageChange, children, environmentId, assistantsAvailable = false, headerActions, busy = false, focusTarget, ...props }:
+export default function SettingsManagement({ page, onPageChange, children, environmentId, assistantsAvailable = false, headerActions, busy = false, focusTarget, assistantId, ...props }:
   Omit<DialogContentProps, 'children'> & {
     page: SettingsPage;
     onPageChange: (page: SettingsPage) => void;
     environmentId: string;
     children: ReactNode;
     assistantsAvailable?: boolean;
+    assistantId?: string | null;
     headerActions?: ReactNode;
     busy?: boolean;
     focusTarget?: { id: string; serial: number } | null;
@@ -64,7 +65,7 @@ export default function SettingsManagement({ page, onPageChange, children, envir
         {page === 'layout' && <WorkspaceLayoutSettings />}
         {page === 'shortcuts' && <KeyboardShortcutsContent key={focusTarget?.serial ?? 'page'} />}
         {(page === 'harnesses' || page === 'accounts') && <p className="management-page-description">Environment: {environmentId === 'local' ? 'Local' : `SSH · ${environmentId}`}.{page === 'harnesses' ? ' Defaults are application-wide; launch support is explained below.' : ' Accounts are scoped to this environment.'}</p>}
-        {page === 'assistants' && assistantsAvailable && <AssistantsSettings />}
+        {page === 'assistants' && assistantsAvailable && <AssistantsSettings initialAssistantId={assistantId} />}
         {(page === 'harnesses' || page === 'accounts' || page === 'git-preferences') && children}
         {(page === 'authentication' || page === 'ssh-targets') && children}
       </div>

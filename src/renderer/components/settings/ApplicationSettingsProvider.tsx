@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../../store/workspaceStore';
 import { registerOpenSettingsHandler } from '../../lib/keybindingDispatcher';
-import { registerManageAccountsHandler, registerSshSettingsHandler, type SshSettingsHandoff } from '../../lib/settingsHandoff';
+import { registerAssistantSettingsHandler, registerManageAccountsHandler, registerSshSettingsHandler, type SshSettingsHandoff } from '../../lib/settingsHandoff';
 import { useHeaderSettings } from '../useHeaderSettings';
 import { Dialog } from '../ui/Dialog';
 import SettingsManagement, { type SettingsPage } from './SettingsManagement';
@@ -47,6 +47,8 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
   const sshSelection = useRef<string | null | undefined>(undefined);
   const returning = useRef(false);
   const handingBack = useRef(false);
+  const [assistantId, setAssistantId] = useState<string | null>(null);
+  const assistantTrigger = useRef<HTMLElement | null>(null);
   const [accountHarness, setAccountHarness] = useState<string | null>(null);
   const assistantsAvailable = useAssistantsStore((state) => state.snapshot?.available === true);
   const ensureAssistants = useAssistantsStore((state) => state.ensureSubscribed);
@@ -77,6 +79,13 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
     setShowSettings(true);
   };
   useEffect(() => registerOpenSettingsHandler(openSettings));
+  useEffect(() => registerAssistantSettingsHandler((id, trigger) => {
+    if (busy || returning.current || sshHandoff.current || !assistantsAvailable) return;
+    assistantTrigger.current = trigger;
+    setAssistantId(id); setPage('assistants');
+    setFocusTarget({ id: 'setting-assistant-profile', serial: ++serial.current });
+    setShowSettings(true);
+  }));
   useEffect(() => registerManageAccountsHandler((harness, intent) => {
     setFocusTarget(null); setPage('accounts');
     setAccountHarness(harness);
@@ -96,6 +105,9 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
   // The initiating Header/Usage button may have unmounted. Resolve the live toolbar
   // ref at close time, never retain a disconnected trigger from the old placement.
   const restoreToolbarFocus = (event: Event) => {
+    const trigger = assistantTrigger.current;
+    assistantTrigger.current = null;
+    if (trigger?.isConnected) { event.preventDefault(); trigger.focus(); return; }
     if (settingsTriggerRef.current) {
       event.preventDefault();
       settingsTriggerRef.current.focus();
@@ -106,7 +118,7 @@ export function ApplicationSettingsProvider({ children }: { children: ReactNode 
     {children}
     <Dialog open={showSettings} onOpenChange={(open) => { if (!open) requestClose(); }}>
       <SettingsManagement page={page} onPageChange={(next) => { if (!busy) { setFocusTarget(null); setAccountIntent(null); setPage(next); } }} environmentId={environmentId}
-        assistantsAvailable={assistantsAvailable} busy={busy} focusTarget={focusTarget}
+        assistantsAvailable={assistantsAvailable} assistantId={assistantId} busy={busy} focusTarget={focusTarget}
         headerActions={<>{sshHandoff.current && <IconButton variant="ghost" disabled={busy} aria-label="Back to Open Workspace" title="Back to Open Workspace" onClick={requestClose}><ArrowLeft size={14} /></IconButton>}
           <SettingsSearch assistantsAvailable={assistantsAvailable} disabled={busy} onSelect={(result) => {
             if (busy) return;
