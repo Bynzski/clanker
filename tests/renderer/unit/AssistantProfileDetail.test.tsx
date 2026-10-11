@@ -5,6 +5,9 @@ import type { AssistantDetails } from '../../../src/shared/types/assistantDetail
 import { useAssistantsStore } from '../../../src/renderer/store/assistantsStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import AssistantsSettings from '../../../src/renderer/components/settings/AssistantsSettings';
+import AssistantsRoster from '../../../src/renderer/components/assistants/AssistantsRoster';
+import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
+import { AssistantTimestamp } from '../../../src/renderer/components/settings/assistantDetails/AssistantReadState';
 import AssistantProfileDetail from '../../../src/renderer/components/settings/AssistantProfileDetail';
 import { openAssistantSettings, registerAssistantSettingsHandler } from '../../../src/renderer/lib/settingsHandoff';
 
@@ -72,4 +75,54 @@ it('routes a contextual deep-link with its focus-return trigger, without opening
   expect(handler).toHaveBeenCalledWith(fred.id, trigger);
   expect(window.electronAPI.openAssistant).not.toHaveBeenCalled();
   unregister(); expect(openAssistantSettings(fred.id, trigger)).toBe(false);
+});
+it('refreshes the roster from Settings and discovers new profiles without opening a chat', async () => {
+  const snapshot = await window.electronAPI.getAssistants();
+  const newcomer = { id: 'hermes:newcomer', displayName: 'Newcomer' };
+  vi.mocked(window.electronAPI.refreshAssistants).mockResolvedValue({ ...snapshot, profiles: [fred, reviewer, newcomer], assistants: [fred, reviewer, newcomer] });
+  render(<AssistantsSettings initialAssistantId={fred.id} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh profiles' }));
+  expect(await screen.findByRole('option', { name: 'Newcomer' })).toBeInTheDocument();
+  expect(window.electronAPI.refreshAssistants).toHaveBeenCalledOnce();
+  expect(window.electronAPI.openAssistant).not.toHaveBeenCalled();
+  expect(screen.getByRole('combobox')).toHaveValue(fred.id);
+});
+it('hides and restores a profile in the roster while keeping its Settings detail and live destination', async () => {
+  const snapshot = await window.electronAPI.getAssistants();
+  vi.mocked(window.electronAPI.configureAssistants).mockImplementation(async (settings) => ({ ...snapshot, settings, profiles: [fred, reviewer], assistants: settings.hiddenAssistantIds?.includes(fred.id) ? [reviewer] : [fred, reviewer] }));
+  useAssistantNavStore.setState({ activeAssistantId: fred.id, openedAssistantIds: [fred.id] });
+  render(<><AssistantsRoster /><AssistantsSettings initialAssistantId={fred.id} /></>);
+  expect(await screen.findByRole('button', { name: 'Fred' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Hide from roster' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Fred' })).toBeNull());
+  expect(screen.getByRole('option', { name: 'Fred · Hidden' })).toBeInTheDocument();
+  expect(screen.getByRole('combobox')).toHaveValue(fred.id);
+  expect(useAssistantNavStore.getState()).toMatchObject({ activeAssistantId: fred.id, openedAssistantIds: [fred.id] });
+  expect(window.electronAPI.openAssistant).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Hide from roster' }));
+  expect(await screen.findByRole('button', { name: 'Fred' })).toBeInTheDocument();
+  useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
+});
+it('keeps Hermes-owned hiding descriptive and never overwrites its metadata', async () => {
+  const snapshot = await window.electronAPI.getAssistants();
+  vi.mocked(window.electronAPI.getAssistants).mockResolvedValue({ ...snapshot, assistants: [], profiles: [{ ...fred, hiddenInHermes: true }] });
+  render(<AssistantsSettings initialAssistantId={fred.id} />);
+  expect(await screen.findByRole('option', { name: 'Fred · Hidden in Hermes' })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Hide from roster' })).toBeDisabled();
+  expect(window.electronAPI.configureAssistants).not.toHaveBeenCalled();
+});
+it('distinguishes all-hidden profiles from an empty discovered roster', async () => {
+  const snapshot = await window.electronAPI.getAssistants();
+  vi.mocked(window.electronAPI.getAssistants).mockResolvedValue({ ...snapshot, settings: { ...snapshot.settings, hiddenAssistantIds: [fred.id] }, assistants: [], profiles: [fred] });
+  render(<AssistantsRoster />);
+  expect(await screen.findByText('All Hermes Assistants are hidden')).toBeInTheDocument();
+  expect(screen.queryByText('No Hermes Assistants found')).toBeNull();
+});
+it('renders structured label/value data and only reformats offset-bearing timestamps', async () => {
+  render(<><AssistantProfileDetail assistant={fred} connected /><AssistantTimestamp value="2026-01-01T12:00:00Z" /><AssistantTimestamp value="2026-01-01T12:00:00" /></>);
+  expect(await screen.findByText(`${fred.id}-model`)).toBeInTheDocument();
+  expect(screen.getByText('Model').tagName).toBe('DT');
+  expect(screen.getByText(`${fred.id}-model`).tagName).toBe('DD');
+  expect(document.querySelector('time')).toHaveAttribute('datetime', '2026-01-01T12:00:00Z');
+  expect(screen.getByText('2026-01-01T12:00:00')).toBeInTheDocument();
 });

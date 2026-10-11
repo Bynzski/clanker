@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import AssistantProfileDetail from './AssistantProfileDetail';
-import { Select } from '../ui/Select';
+import { AssistantProfileSelector } from './assistantDetails/AssistantProfileSelector';
 import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { AssistantNotice } from '../assistants/AssistantsRoster';
@@ -18,6 +18,7 @@ const TRANSITION: Record<string, string> = { probing: 'Connecting…', starting:
 /** Optional Hermes Assistants. Absent entirely unless the Hermes CLI is installed. */
 export default function AssistantsSettings({ initialAssistantId }: { initialAssistantId?: string | null }) {
   const [selectedId, setSelectedId] = useState(initialAssistantId ?? '');
+  const [profilesRevision, setProfilesRevision] = useState(0);
   const [initialSelection, setInitialSelection] = useState(initialAssistantId);
   if (initialSelection !== initialAssistantId) { setInitialSelection(initialAssistantId); setSelectedId(initialAssistantId ?? ''); }
   const snapshot = useAssistantsStore((state) => state.snapshot);
@@ -29,6 +30,7 @@ export default function AssistantsSettings({ initialAssistantId }: { initialAssi
   useEffect(() => { ensure(); }, [ensure]);
   if (!snapshot?.available) return null;
   const { settings, service } = snapshot;
+  const profiles = snapshot.profiles ?? snapshot.assistants;
   const connected = settings.enabled && service.state === 'connected';
   const transition = settings.enabled ? TRANSITION[service.state] : undefined;
   const problem = settings.enabled && !connected && !transition ? (error || service.error || PROBLEM[service.state]) : undefined;
@@ -51,17 +53,16 @@ export default function AssistantsSettings({ initialAssistantId }: { initialAssi
         onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })}>Start Hermes service when needed</Checkbox>
       {transition && <AssistantNotice tone="info" message={transition} />}
       {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
-      {!settings.enabled && error && <AssistantNotice tone="error" message={error} />}
-      {connected && <>
-        <label htmlFor="setting-assistant-profile">Profile</label>
-        <Select id="setting-assistant-profile" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-          <option value="">Select a Hermes profile…</option>
-          {snapshot.assistants.map((assistant) => <option key={assistant.id} value={assistant.id}>{assistant.displayName}</option>)}
-        </Select>
-        {!snapshot.assistants.length && <p>No named Hermes profiles reported.</p>}
-        {selectedId && !snapshot.assistants.some((assistant) => assistant.id === selectedId) && <p role="status">Selected profile is no longer available. Choose another profile.</p>}
-      </>}
-      {connected && snapshot.assistants.filter((assistant) => assistant.id === selectedId).map((assistant) => <AssistantProfileDetail key={assistant.id} assistant={assistant} connected={connected} />)}
+      {(!settings.enabled || connected) && error && <AssistantNotice tone="error" message={error} />}
+      <AssistantProfileSelector profiles={profiles} selectedId={selectedId} hiddenIds={settings.hiddenAssistantIds ?? []}
+        connected={connected} enabled={settings.enabled} busy={busy} onSelect={setSelectedId}
+        onRefresh={() => { void refresh().then(() => setProfilesRevision((value) => value + 1)); }}
+        onVisibilityChange={(id, hidden) => {
+          const hiddenAssistantIds = (settings.hiddenAssistantIds ?? []).filter((existing) => existing !== id);
+          if (hidden) hiddenAssistantIds.push(id);
+          void configure({ ...settings, hiddenAssistantIds });
+        }} />
+      {connected && profiles.filter((assistant) => assistant.id === selectedId).map((assistant) => <AssistantProfileDetail key={`${assistant.id}:${profilesRevision}`} assistant={assistant} connected={connected} />)}
     </div>
   );
 }

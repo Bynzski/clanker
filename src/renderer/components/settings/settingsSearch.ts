@@ -23,7 +23,7 @@ const SETTINGS_SEARCH_RESULTS: readonly SettingsSearchResult[] = [
       ...('usage' in descriptor ? [base('usage', 'Usage visibility', 'usage pin monitor', 'setting-harness-usage')] : []),
       ...('accounts' in descriptor ? [{ id: `${descriptor.id}-account`, label: `${descriptor.name} · Accounts`, keywords: 'account sign in manage', page: 'accounts' as const, target: 'account-harness', harness: descriptor.id }] : [])];
   }),
-  { id: 'assistants', label: 'Hermes Assistants', keywords: 'hermes service autostart profiles skills model provider routines scheduled tasks cron capabilities history', page: 'assistants', target: 'setting-assistants' },
+  { id: 'assistants', label: 'Hermes Assistants', keywords: 'hermes service autostart profiles refresh hide hidden visibility skills model provider routines scheduled tasks cron capabilities history', page: 'assistants', target: 'setting-assistants' },
   { id: 'ai-commit', label: 'Git Preferences · AI commit messages', keywords: 'ai commit provider', page: 'git-preferences', target: 'ai-commit-provider' },
   { id: 'ai-model', label: 'Git Preferences · AI commit model', keywords: 'model', page: 'git-preferences', target: 'ai-commit-model' },
   { id: 'ssh-key', label: 'Authentication · SSH key', keywords: 'public key fingerprint git authentication', page: 'authentication', target: 'setting-ssh-key', authentication: 'ssh' },

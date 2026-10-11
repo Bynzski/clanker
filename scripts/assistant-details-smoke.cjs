@@ -46,6 +46,20 @@ let app;
     await dialog.getByRole('combobox', { name: 'Profile' }).waitFor();
     assert.equal(await dialog.getByRole('combobox').inputValue(), 'hermes:alpha');
     await dialog.getByText('alpha paused routine', { exact: true }).waitFor();
+    await dialog.getByRole('checkbox', { name: 'Hide from roster' }).check();
+    await page.waitForFunction(async () => !(await window.electronAPI.getAssistants()).assistants.some(row => row.id === 'hermes:alpha'));
+    assert.equal(await dialog.getByRole('combobox').inputValue(), 'hermes:alpha');
+    assert.equal(await page.locator('[data-assistant-id="hermes:alpha"]').count(), 1);
+    assert.equal(await page.locator('.assistant-row[aria-label="Alpha"]').count(), 0);
+    await dialog.getByRole('checkbox', { name: 'Hide from roster' }).uncheck();
+    await page.waitForFunction(async () => (await window.electronAPI.getAssistants()).assistants.some(row => row.id === 'hermes:alpha'));
+    assert.equal(await page.locator('.assistant-row[aria-label="Alpha"]').count(), 1);
+    // Create only a fixture directory: Refresh profiles must discover it, not create a real profile.
+    const newcomer = path.join(root, 'hermes/profiles/gamma'); fs.mkdirSync(newcomer);
+    fs.writeFileSync(path.join(newcomer, 'config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\n');
+    await dialog.getByRole('button', { name: 'Refresh profiles', exact: true }).click();
+    await dialog.getByRole('option', { name: 'Gamma', exact: true }).waitFor({ state: 'attached' });
+    await dialog.getByText('alpha paused routine', { exact: true }).waitFor();
     await dialog.getByRole('button', { name: 'Inspect recent runs' }).click();
     await dialog.getByText('No recent runs reported.', { exact: true }).waitFor();
     await dialog.getByRole('combobox').selectOption('hermes:beta');
@@ -54,7 +68,7 @@ let app;
     await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-157-assistant-details.png');
     await dialog.getByRole('button', { name: 'Close Settings' }).click();
     assert(await page.getByRole('button', { name: 'Manage Assistant', exact: true }).evaluate(element => document.activeElement === element));
-    console.log('Real Hermes / Electron Assistant details smoke passed: profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, focus return. Screenshot: /tmp/clanker-157-assistant-details.png');
+    console.log('Real Hermes / Electron Assistant details smoke passed: profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, hide/unhide while retaining the surface, discover newly added profile on refresh, focus return. Screenshot: /tmp/clanker-157-assistant-details.png');
   } finally {
     if (app) {
       try {

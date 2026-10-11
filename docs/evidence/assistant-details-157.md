@@ -30,6 +30,14 @@ Practical verification against the user's **existing** installed backend (Hermes
 
 Regression tests cover dynamic ports, identity mismatch, private files/symlinks/size bounds, non-loopback rejection, IPv6, token/record mismatch, recycled Linux PIDs, legacy/dead-listener fallback, sign-in refusal, no-spawn adoption and the owner-appears-during-startup race. This closes the immediate branch-testing connection blocker without requiring the independent installed launcher bootstrap repair.
 
+## Presentation and visibility follow-up
+
+The detail controller now composes independent overview/capability/history/routine/run components, backed by shared read-only `DataList`, `DetailSection`, `DetailCard`, `StatusLabel` and `Disclosure` primitives. Unknown run state remains unknown; no lifecycle/success inference was added. Only offset-bearing timestamp strings are localized, retaining the original ISO value; unzoned backend text is untouched.
+
+Settings adds **Refresh profiles**, using the existing roster-refresh path, and **Hide from roster**, a bounded persisted Clanker-only preference. Hidden profiles stay in the complete Settings catalog and remain inspectable/unhideable there; visible roster projections exclude them, including opened/remembered rows. Hiding does not close a surface, PTY or Browser, create a new chat, or write any Hermes metadata. Hermes-hidden profiles are shown read-only in the manager.
+
+Targeted regressions verify persisted visibility validation, manager/roster separation, no Hermes writes/socket closure, hide/unhide with an already-open destination, newly discovered profiles on refresh, read-only upstream hiding, semantic label/value anatomy and timezone-safe formatting. The isolated real-backend/built-Electron smoke was extended and passed hide/unhide while retaining the surface plus discovery of a newly added fixture profile through **Refresh profiles**. The updated physical screenshot was reviewed; the same native launcher/TUI limitations below still apply.
+
 ## Automated checks
 
 Targeted main/renderer suites cover bounded and redacted projections, profile isolation, unknown IDs, foreign/duplicate jobs, ownership rechecks, removed profiles during a request, out-of-order profile selection, older API, independent failed routine reads, empty/offline states, script-output records and truthful unknown run results. Existing suites cover canonical chat and Browser continuity, zero-workspace destinations, IPC registration and enable/autostart controls.

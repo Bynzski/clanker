@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import { openAssistantSettings } from '../../lib/settingsHandoff';
 import { Button } from '../ui/Button';
-import '../settings/AssistantProfileDetail.css';
 import AssistantTerminal from './AssistantTerminal';
 import AssistantBrowserPanel from './AssistantBrowserPanel';
 import { DEFAULT_SIDECAR_PRIMARY_RATIO, useAssistantSurfaceStore } from '../../store/assistantSurfaceStore';

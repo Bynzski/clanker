@@ -4,6 +4,7 @@ import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared
 import { JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
+  isValidAssistantId,
   type AssistantOpenResult,
   type AssistantSnapshot,
   type AssistantSettings,
@@ -50,12 +51,9 @@ const REPLAY_LIMIT = 512 * 1024;
 const PTY_CLOSE_CHILD_EXITED = 4410;
 const PROFILE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const ASSISTANT_ID = /^hermes:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /** The one canonical title: (profile, "Bot Chat") is that profile's permanent chat identity in Hermes. */
 export const CANONICAL_CHAT_TITLE = 'Bot Chat';
 const CANONICAL_LIST_LIMIT = 200;
-
-export function isValidAssistantId(value: unknown): value is string { return typeof value === 'string' && ASSISTANT_ID.test(value); }
 
 /** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
 interface RosterEntry { public: HermesAssistant; slug: string; sessionId?: string; hadCanonical: boolean }
@@ -127,9 +125,10 @@ export class HermesAssistantService {
   get(): AssistantSnapshot {
     return {
       available: this.available,
-      settings: { ...this.settings },
+      settings: { ...this.settings, ...(this.settings.hiddenAssistantIds ? { hiddenAssistantIds: [...this.settings.hiddenAssistantIds] } : {}) },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
-      assistants: this.roster.map((entry) => ({ ...entry.public })),
+      assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
+      profiles: this.roster.map((entry) => ({ ...entry.public })),
       surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state })),
     };
   }
@@ -415,7 +414,7 @@ export class HermesAssistantService {
   private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
     const result = await rpc.call('profiles.list', {});
     if (!this.current(generation)) return;
-    this.roster = parseAssistantRoster(result);
+    this.roster = parseAssistantRoster(result, true);
   }
 
   /** Lazy read-only details; independent section failures never affect the control connection or chat. */
@@ -670,7 +669,7 @@ export class HermesAssistantService {
  * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
  * uses the raw slug; display is Assistant title, then profile display name, then the prettified slug.
  */
-export function parseAssistantRoster(result: unknown): RosterEntry[] {
+export function parseAssistantRoster(result: unknown, includeHidden = false): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
   if (!Array.isArray(profiles)) throw new Error('Hermes returned an unexpected profile list');
   const assistants: RosterEntry[] = [];
@@ -683,7 +682,7 @@ export function parseAssistantRoster(result: unknown): RosterEntry[] {
     const uiMeta = row.ui_meta && typeof row.ui_meta === 'object' ? row.ui_meta as Record<string, unknown> : null;
     const botMeta = uiMeta?.['hermes-bots'];
     const meta = botMeta && typeof botMeta === 'object' && !Array.isArray(botMeta) ? botMeta as Record<string, unknown> : {};
-    if (meta.hidden === true) continue;
+    if (meta.hidden === true && !includeHidden) continue;
     seen.add(slug);
     const title = typeof meta.title === 'string' ? meta.title.trim() : '';
     const profileDisplay = typeof row.display_name === 'string' ? row.display_name.trim() : '';
@@ -696,6 +695,7 @@ export function parseAssistantRoster(result: unknown): RosterEntry[] {
       slug, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`,
+        ...(meta.hidden === true ? { hiddenInHermes: true } : {}),
         ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row) } : {}),
         displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
         ...(description ? { description: description.slice(0, 200) } : {}),
