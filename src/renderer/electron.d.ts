@@ -275,7 +275,7 @@ export interface ElectronAPI {
     workspaceId?: string,
     checkoutContextId?: string
   ) => Promise<FileDiffResult>;
-  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
   gitForceDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
@@ -292,7 +292,7 @@ export interface ElectronAPI {
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRenameRemote: (workspacePath: string, oldName: string, newName: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
-  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitPush: (
     workspacePath: string,
@@ -300,7 +300,8 @@ export interface ElectronAPI {
     branch?: string,
     forceWithLease?: boolean,
     setUpstream?: boolean,
-    workspaceId?: string
+    workspaceId?: string,
+    checkoutContextId?: string
   ) => Promise<{ success: boolean; error?: string }>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 

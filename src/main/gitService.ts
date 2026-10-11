@@ -130,6 +130,7 @@ export interface GitWorkspaceIdentity {
   workspaceId: string;
   environmentId: string;
   checkoutContextId?: string;
+  validateIdentity?: () => void;
   readFile?: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string; errorCode?: string }>;
 }
 
@@ -180,6 +181,7 @@ export class GitService {
     workspaceId?: string,
   ): Promise<{ stdout: string; stderr: string }> {
     const scoped = this.workspaceContext.getStore();
+    scoped?.validateIdentity?.();
     if (scoped && scoped.environmentId !== 'local' && scoped.workspacePath !== workspacePath) {
       throw new Error('Git command targets a different remote workspace');
     }

@@ -264,6 +264,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     remoteError,
     setRemoteError,
   } = useGitRemoteActions({
+    isCurrent,
     currentBranch,
     loadRemotes,
     refreshAfterAction,

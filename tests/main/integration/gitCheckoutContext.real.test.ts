@@ -79,7 +79,7 @@ describe('Checkout-aware Git IPC with real Git repository', () => {
     fs.writeFileSync(path.join(worktreeBPath, 'file-b.txt'), 'untracked B\n');
 
     const localEnv = {
-      validateWorkspacePath: async (p: string) => ({ valid: true, resolvedPath: p }),
+      validateWorkspacePath: async (p: string) => ({ valid: fs.existsSync(p), resolvedPath: p }),
       execGit: async (cwd: string, args: string[], timeoutMs?: number) => {
         const { stdout, stderr } = await execFileAsync('git', args, {
           cwd,
@@ -301,6 +301,130 @@ describe('Checkout-aware Git IPC with real Git repository', () => {
     expect(listResult.worktrees.some((w) => w.branch === 'feature-a')).toBe(true);
   });
 
+  const git = async (cwd: string, ...args: string[]) => (await execFileAsync('git', args, { cwd })).stdout.trim();
+  const registerA = async () => {
+    await registry.registerWorkspace({ workspaceId: 'ws-1', workspacePath: repoPath });
+    return (await registry.registerCheckoutContext({ workspaceId: 'ws-1', path: worktreeAPath, kind: 'worktree' })).checkoutContext!;
+  };
+
+  it('creates branches only in the selected checkout, including legacy main callers and failures', async () => {
+    const a = await registerA();
+    const before = await Promise.all([repoPath, worktreeAPath, worktreeBPath].map(p => git(p, 'status', '--porcelain')));
+    expect(await invoke('git-create-branch', repoPath, 'new-a', undefined, 'ws-1', a.id)).toMatchObject({ success: true });
+    expect(await git(worktreeAPath, 'branch', '--show-current')).toBe('new-a');
+    expect(await git(repoPath, 'branch', '--show-current')).toBe('main');
+    expect(await git(worktreeBPath, 'branch', '--show-current')).toBe('feature-b');
+    expect(await invoke('git-create-branch', repoPath, 'feature-b', undefined, 'ws-1', a.id)).toMatchObject({ success: false });
+    expect(await git(worktreeAPath, 'branch', '--show-current')).toBe('new-a');
+    expect(await invoke('git-create-branch', repoPath, 'new-main', undefined, 'ws-1')).toMatchObject({ success: true });
+    expect(await git(repoPath, 'branch', '--show-current')).toBe('new-main');
+    expect(await git(worktreeBPath, 'branch', '--show-current')).toBe('feature-b');
+    expect(await Promise.all([repoPath, worktreeAPath, worktreeBPath].map(p => git(p, 'status', '--porcelain')))).toEqual(before);
+  });
+
+  it('publishes A with its upstream and default pushes A or main without substituting another branch', async () => {
+    const a = await registerA();
+    const bare = path.join(tmpDir, 'remote.git');
+    await git(tmpDir, 'init', '--bare', bare);
+    await git(repoPath, 'remote', 'add', 'origin', bare);
+    expect(await invoke('git-push', repoPath, 'origin', 'feature-a', false, true, 'ws-1', a.id)).toMatchObject({ success: true });
+    expect(await git(worktreeAPath, 'rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/feature-a');
+    await git(worktreeAPath, 'commit', '--allow-empty', '-m', 'A push');
+    expect(await invoke('git-push', repoPath, undefined, undefined, undefined, undefined, 'ws-1', a.id)).toMatchObject({ success: true });
+    expect(await git(bare, 'rev-parse', 'feature-a')).toBe(await git(worktreeAPath, 'rev-parse', 'HEAD'));
+    await expect(git(bare, 'rev-parse', '--verify', 'main')).rejects.toThrow();
+    await git(repoPath, 'push', '--set-upstream', 'origin', 'main');
+    await git(repoPath, 'commit', '--allow-empty', '-m', 'Main push');
+    expect(await invoke('git-push', repoPath, undefined, undefined, undefined, undefined, 'ws-1')).toMatchObject({ success: true });
+    expect(await git(bare, 'rev-parse', 'main')).toBe(await git(repoPath, 'rev-parse', 'HEAD'));
+    await expect(git(bare, 'rev-parse', '--verify', 'feature-b')).rejects.toThrow();
+    await git(bare, 'update-ref', 'refs/heads/feature-a', await git(bare, 'rev-parse', 'main'));
+    expect(await invoke('git-push', repoPath, undefined, undefined, undefined, undefined, 'ws-1', a.id))
+      .toMatchObject({ success: false, error: 'Push rejected — fetch and merge or rebase first. Run "Fetch & Pull" to update.' });
+    expect(await git(worktreeBPath, 'branch', '--show-current')).toBe('feature-b');
+    expect(await git(repoPath, 'branch', '--show-current')).toBe('main');
+  });
+
+  it('fetches at the repository root but pulls in A', async () => {
+    const a = await registerA();
+    const bare = path.join(tmpDir, 'remote.git');
+    await git(tmpDir, 'init', '--bare', bare);
+    await git(repoPath, 'remote', 'add', 'origin', bare);
+    await git(worktreeAPath, 'push', '-u', 'origin', 'feature-a');
+    const clone = path.join(tmpDir, 'clone');
+    await git(tmpDir, 'clone', '--branch', 'feature-a', bare, clone);
+    await git(clone, 'config', 'user.name', 'Test');
+    await git(clone, 'config', 'user.email', 'test@example.com');
+    await git(clone, 'commit', '--allow-empty', '-m', 'Remote advancement');
+    await git(clone, 'push');
+    const mainHead = await git(repoPath, 'rev-parse', 'HEAD');
+    const bHead = await git(worktreeBPath, 'rev-parse', 'HEAD');
+    const exec = vi.spyOn(registry.getWorkspace('ws-1')!.environment, 'execGit');
+    expect(await invoke('git-fetch', worktreeAPath, undefined, 'ws-1', a.id)).toMatchObject({ success: true });
+    expect(exec.mock.calls[0][0]).toBe(repoPath);
+    expect(await invoke('git-pull', repoPath, false, 'ws-1', a.id)).toMatchObject({ success: true });
+    expect(await git(worktreeAPath, 'rev-parse', 'HEAD')).toBe(await git(clone, 'rev-parse', 'HEAD'));
+    expect(await git(repoPath, 'rev-parse', 'HEAD')).toBe(mainHead);
+    expect(await git(worktreeBPath, 'rev-parse', 'HEAD')).toBe(bHead);
+  });
+
+  it('rejects invalid, foreign, missing, released and physically removed origins before repository mutations', async () => {
+    const a = await registerA();
+    await registry.registerWorkspace({ workspaceId: 'other', workspacePath: worktreeBPath });
+    const foreign = registry.resolveCheckoutContext('other')!;
+    const remove = (id: string) => invoke('git-remove-remote', worktreeAPath, 'origin', 'ws-1', id);
+    const exec = vi.spyOn(registry.getWorkspace('ws-1')!.environment, 'execGit');
+    await expect(remove('unknown')).rejects.toThrow('not registered');
+    await expect(remove(foreign.id)).rejects.toThrow('not registered');
+    registry.describeCheckoutContext(a.id, { missing: true });
+    await expect(remove(a.id)).rejects.toThrow('missing');
+    registry.describeCheckoutContext(a.id, { missing: false });
+    fs.rmSync(worktreeAPath, { recursive: true, force: true });
+    await expect(remove(a.id)).rejects.toThrow('missing');
+    registry.unregisterCheckoutContext(a.id);
+    await expect(remove(a.id)).rejects.toThrow('not registered');
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('blocks removal reservations and origins released during repository-wide validation', async () => {
+    const a = await registerA();
+    const env = registry.getWorkspace('ws-1')!.environment;
+    const exec = vi.spyOn(env, 'execGit');
+    const removal = vi.spyOn(gitService, 'isWorktreeBeingRemoved').mockReturnValue(true);
+    await expect(invoke('git-fetch', repoPath, undefined, 'ws-1', a.id)).rejects.toThrow('being removed');
+    removal.mockRestore();
+    vi.spyOn(env, 'validateWorkspacePath').mockImplementation(async p => {
+      registry.unregisterCheckoutContext(a.id);
+      return { valid: true, resolvedPath: p };
+    });
+    await expect(invoke('git-fetch', repoPath, undefined, 'ws-1', a.id)).rejects.toThrow('no longer registered');
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('keeps one poller through main → A → B → main and rejects older stops/refreshes', async () => {
+    const a = await registerA();
+    const b = (await registry.registerCheckoutContext({ workspaceId: 'ws-1', path: worktreeBPath, kind: 'worktree' })).checkoutContext!;
+    await invoke('git-start-polling', repoPath, 'ws-1');
+    await invoke('git-start-polling', repoPath, 'ws-1', a.id);
+    await invoke('git-stop-polling', 'ws-1');
+    expect(gitService.getCurrentWorkspaceIdentity()?.checkoutContextId).toBe(a.id);
+    expect(await invoke('git-refresh', 'ws-1')).toBeNull();
+    expect(await invoke('git-refresh')).toBeNull();
+    await invoke('git-stop-polling');
+    expect(gitService.getCurrentWorkspaceIdentity()?.checkoutContextId).toBe(a.id);
+    const old = invoke('git-refresh', 'ws-1', a.id);
+    await invoke('git-start-polling', repoPath, 'ws-1', b.id);
+    await invoke('git-stop-polling', 'ws-1', a.id);
+    expect(await old).toBeNull();
+    expect(gitService.getCurrentWorkspaceIdentity()?.checkoutContextId).toBe(b.id);
+    expect(await invoke('git-refresh', 'ws-1', b.id)).toMatchObject({ currentBranch: 'feature-b', checkoutContextId: b.id });
+    await invoke('git-start-polling', repoPath, 'ws-1');
+    await invoke('git-stop-polling', 'ws-1', b.id);
+    expect(await invoke('git-refresh', 'ws-1')).toMatchObject({ currentBranch: 'main', workspacePath: repoPath });
+    await invoke('git-stop-polling', 'ws-1');
+    expect(gitService.getCurrentWorkspaceIdentity()).toBeNull();
+  });
+
   it('routes remote SSH checkout operations through the registered remote environment without local execution', async () => {
     const remoteExecGit = vi.fn().mockResolvedValue({ stdout: 'status on remote\n', stderr: '' });
     const remoteReadFile = vi.fn().mockResolvedValue({ success: true, content: 'remote content' });
@@ -353,6 +477,11 @@ describe('Checkout-aware Git IPC with real Git repository', () => {
     // Commit in remote worktree
     await sshInvoke('git-commit', '/remote/worktrees/feat', 'remote commit', 'ssh-ws', remoteCtx.id);
     expect(remoteExecGit).toHaveBeenCalledWith('/remote/worktrees/feat', ['commit', '-m', 'remote commit'], 120000);
+
+    await sshInvoke('git-push', '/remote/repo', undefined, undefined, undefined, undefined, 'ssh-ws', remoteCtx.id);
+    expect(remoteExecGit).toHaveBeenCalledWith('/remote/worktrees/feat', ['push'], 60000);
+    await sshInvoke('git-fetch', '/remote/worktrees/feat', undefined, 'ssh-ws', remoteCtx.id);
+    expect(remoteExecGit).toHaveBeenCalledWith('/remote/repo', ['fetch', '--prune'], 60000);
 
     // File diff on remote worktree uses remoteReadFile on the worktree root
     const diff = await sshInvoke('git-get-file-diff', '/remote/worktrees/feat', 'remote.ts', 'working', 'ssh-ws', remoteCtx.id);

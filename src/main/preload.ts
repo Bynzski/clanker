@@ -499,8 +499,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     workspaceId?: string,
     checkoutContextId?: string
   ) => ipcRenderer.invoke(GIT_GET_FILE_DIFF, workspacePath, filePath, mode, workspaceId, checkoutContextId),
-  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string) =>
-    ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch, workspaceId),
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string, checkoutContextId?: string) =>
+    ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch, workspaceId, checkoutContextId),
   gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_SWITCH_BRANCH, workspacePath, name, workspaceId, checkoutContextId),
   gitDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => ipcRenderer.invoke(GIT_DELETE_BRANCH, workspacePath, name, workspaceId),
   gitForceDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) =>
@@ -527,7 +527,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(GIT_REMOVE_REMOTE, workspacePath, name, workspaceId),
   gitRenameRemote: (workspacePath: string, oldName: string, newName: string, workspaceId?: string) =>
     ipcRenderer.invoke(GIT_RENAME_REMOTE, workspacePath, oldName, newName, workspaceId),
-  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string) => ipcRenderer.invoke(GIT_FETCH, workspacePath, remote, workspaceId),
+  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_FETCH, workspacePath, remote, workspaceId, checkoutContextId),
   gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_PULL, workspacePath, rebase, workspaceId, checkoutContextId),
   gitPush: (
     workspacePath: string,
@@ -535,8 +535,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     branch?: string,
     forceWithLease?: boolean,
     setUpstream?: boolean,
-    workspaceId?: string
-  ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream, workspaceId),
+    workspaceId?: string,
+    checkoutContextId?: string
+  ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream, workspaceId, checkoutContextId),
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => {
     const handler = (_event: IpcRendererEvent, status: GitStatusResult) => callback(status);
     ipcRenderer.on(GIT_STATUS_UPDATE, handler);

@@ -1,6 +1,89 @@
 # Issue #154 — Inventory and Phase 0–4C decisions
 
-## Phase 4C — Checkout-Aware Source Control
+## Phase 4C correctness correction — independent review of `7cc4da7`
+
+Focused continuation of #154 on `feat/154-management-settings`; no polish, PR,
+merge or unrelated Browser changes.
+
+### Corrected execution paths
+
+- **Create Branch:** `useGitBranchActions` now appends the selected checkout ID to
+  the existing positional preload contract. Main resolves that ID through
+  `WorkspaceRegistry`; `GitService.createBranch` runs its existing validation and
+  `git switch -c` in that checkout, not the parent. Existing main callers retain
+  their argument positions and default root. Failed/blocked creation does not
+  switch any other checkout or change its working files.
+- **Push/Publish:** the existing remote-action hook appends the checkout ID.
+  Default Push uses Git's branch/configuration in the authorized checkout; Publish
+  supplies the selected branch and remote with the existing upstream flag. Main
+  never substitutes its current parent branch. Native rejection/error handling
+  and branch/worktree restrictions are unchanged. Pull stays checkout-specific;
+  Fetch and remote configuration management are deliberately repository-wide.
+- **Repository-wide authorization:** explicit originating checkout IDs are checked
+  for ownership, environment, missing/released state and removal reservations
+  **before** selecting the workspace's registered execution root. Shared operations
+  also validate the originating directory through its registered environment and
+  require its canonical path to remain unchanged (native local paths normalized
+  to POSIX). Registry identity/reservations are rechecked after that await and
+  before subsequent scoped Git commands via an operation-local validation callback.
+  The callback preserves origin authority independently of the execution identity;
+  it does not turn the originating checkout into the repository execution root.
+  Foreign/removed origins cannot authorize a shared mutation. No arbitrary-path
+  authorization or parent fallback is introduced.
+- **Poll/refresh identity:** one canonical active poller remains. Stop compares
+  checkout identity even when the requested main checkout has no ID; an old main
+  Stop cannot stop A, nor A stop B. Refresh rejects mismatched identities, including
+  legacy unscoped main refresh while an isolated checkout is active. Delayed results
+  are checked against the live workspace/root/checkout before return, with existing
+  poll generation checks retained. No per-worktree background polling.
+- **Remote async lifecycle:** a synchronous pending lock prevents overlapping calls
+  in the controller. Its existing scope-current predicate plus a scope generation
+  guards success, error, refresh, Publish follow-up and final state updates, including
+  A → B → A reuse. Scope changes retire UI responses, not already-dispatched Git
+  processes; a successful operation is not rolled back because focus changed.
+
+### Coverage and verification
+
+- Real-Git checkout fixture now has **11 tests** using one main checkout and two
+  linked worktrees, plus disposable bare remotes/clones for Push/Publish/Pull.
+  Coverage includes checkout-only creation, duplicate-branch failure, main-only
+  creation/Push, A upstream/default Push and remote rejection, repository-root
+  Fetch versus A Pull, invalid/foreign/missing/released/physically removed origins,
+  reservation and validation-await races, rapid main → A → B → main Stop/Refresh,
+  and registered SSH execution roots. No real user remote is contacted.
+- Added **7 renderer tests** for branch and remote argument propagation, overlapping
+  requests, stale success/failure/exception completion, A → B → A, and Publish
+  follow-up suppression after a scope change during refresh.
+- Expanded focused Git/Source Control suite: **41 files / 943 tests passed**
+  (`/tmp/154-correction-focused-cleanpath.log`), including main Git IPC/security,
+  branch/remote service tests and real checkout integration.
+- `env PATH=/usr/bin:/bin npm run validate`: **383 files / 7,820 tests passed**;
+  branding, lint, typecheck, Fallow, security-check and build passed. Existing
+  documented dev-only electron-builder audit exception and bundle warnings remain.
+  Log: `/tmp/154-correction-validate-cleanpath.log`.
+- PATH adjustment: the inherited developer PATH exposes installed harness CLIs;
+  the first validation had **3 sessionWorktreeHistory timeout failures** (382 files
+  passed / 7,815 tests passed). They reproduced alone on inherited PATH, then passed
+  **3/3** with `/usr/bin:/bin`; the clean-PATH full pipeline passed. No timeout or
+  unrelated session test code was changed. Node `/usr/bin/node` is v26.11.1.
+- Source Control Electron smoke: **PASS**, three themes/two sizes, main and linked
+  checkout changes/diffs/staging/commits, scope dismissal and native Browser
+  suppression/restoration; screenshots `/tmp/clanker-source-control-visual-EVUDna`.
+  Log: `/tmp/154-correction-source-smoke.log`.
+- Renderer Browser smoke: **PASS**, including 24 page transitions and native view
+  lifecycle (`/tmp/154-correction-browser-smoke.log`).
+- Separate native multi-Browser runner: **SIGSEGV / exit 139**, still independently
+  reproduced (`/tmp/154-correction-multi-browser.log`); not reported as passing.
+
+Remaining owner smoke: interactively Create Branch and Push/Publish from an isolated
+checkout, confirm main/other checkout branches and working files stay untouched,
+and rapidly switch Source Control between main/A/B. Live SSH Git operations and
+real-account remote auth/rejection remain owner checks; tests simulate SSH transport.
+Automated Electron smoke exercises checkout inspection/staging/commit, not live
+remote publishing. Runtime contexts are not durable task records, and scope changes
+cannot cancel an already-running native Git command. Stop for independent review.
+
+## Phase 4C — Checkout-Aware Source Control (historical)
 
 Starts from reviewed `a25bdaa94544dc8affc30189d52a5defe665ae84` on
 `feat/154-management-settings`. Prior phase descriptions/results below are historical.

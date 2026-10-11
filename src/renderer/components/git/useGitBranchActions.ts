@@ -45,7 +45,8 @@ export function useGitBranchActions({
         workspacePath,
         newBranchName,
         currentBranch ?? undefined,
-        workspaceId
+        workspaceId,
+        ...(checkoutContextId ? [checkoutContextId] : [])
       );
       if (!isCurrent()) return;
       if (result.success) {

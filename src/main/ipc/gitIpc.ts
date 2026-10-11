@@ -188,6 +188,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     ADOPT_WORKTREE_CHECKOUT_CONTEXT,
     RECONCILE_CHECKOUT_CONTEXTS,
     GIT_GET_REMOTES,
+    GIT_FETCH,
     GIT_ADD_REMOTE,
     GIT_REMOVE_REMOTE,
     GIT_RENAME_REMOTE,
@@ -209,13 +210,14 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       if (typeof target === 'object' && target !== null && 'workspaceId' in target) {
         const scopeObj = target as { workspaceId?: unknown; checkoutContextId?: unknown };
         workspaceId = scopeObj.workspaceId;
-        if (typeof scopeObj.checkoutContextId === 'string' && scopeObj.checkoutContextId.trim()) {
+        if (scopeObj.checkoutContextId !== undefined) {
+          if (typeof scopeObj.checkoutContextId !== 'string' || !scopeObj.checkoutContextId.trim()) throw new Error('Invalid checkout identity');
           checkoutContextId = scopeObj.checkoutContextId.trim();
         }
-      } else if (typeof target === 'string') {
-        if (typeof args[idPosition + 1] === 'string' && args[idPosition + 1].trim()) {
-          checkoutContextId = args[idPosition + 1].trim();
-        }
+      } else if (channel !== GIT_CREATE_WORKTREE && channel !== ADOPT_WORKTREE_CHECKOUT_CONTEXT && args[idPosition + 1] !== undefined) {
+        const checkout = args[idPosition + 1];
+        if (typeof checkout !== 'string' || !checkout.trim()) throw new Error('Invalid checkout identity');
+        checkoutContextId = checkout.trim();
       }
 
       if (workspaceId === undefined) {
@@ -231,7 +233,10 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
           if (typeof args[3] === 'string' && args[3].trim()) checkoutContextId = args[3].trim();
         }
       }
-      if (workspaceId === undefined) return handler(event, ...args);
+      if (workspaceId === undefined) {
+        if (checkoutContextId) throw new Error('Invalid workspace identity');
+        return handler(event, ...args);
+      }
       if (typeof workspaceId !== 'string' || !workspaceId.trim()) {
         throw new Error('Invalid workspace identity');
       }
@@ -239,10 +244,11 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       if (!ws) throw new Error('Workspace identity is no longer registered');
 
       const isRepoWide = repositoryWideChannels.has(channel);
-      const effectiveCheckoutContextId = isRepoWide ? undefined : checkoutContextId;
+      const effectiveCheckoutContextId = checkoutContextId;
 
       let authorizedRoot = ws.location.path;
       let targetContextId: string | undefined;
+      let validateOrigin: (() => void) | undefined;
 
       if (effectiveCheckoutContextId) {
         const reg = getWorkspaceRegistry?.();
@@ -260,8 +266,30 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
         if (ws.location.environmentId !== 'local' && reg.isRemotePathReserved(ws.location.environmentId, context.path)) {
           throw new Error('This remote worktree is being removed or awaiting completion verification');
         }
-        authorizedRoot = context.path;
-        targetContextId = context.id;
+        validateOrigin = () => {
+          if (reg.getWorkspace(workspaceId) !== ws || reg.resolveCheckoutContext(ws.workspaceId, context.id) !== context || context.missing) {
+            throw new Error('Checkout context is no longer registered');
+          }
+          if (ws.location.environmentId === 'local' ? gitService.isWorktreeBeingRemoved(context.path)
+            : reg.isRemotePathReserved(ws.location.environmentId, context.path)) {
+            throw new Error('This worktree is being removed or awaiting completion verification');
+          }
+        };
+        // Repository-wide routing must not make a physically removed originating
+        // checkout usable while reconciliation has yet to mark it missing.
+        if (isRepoWide) {
+          const validation = await ws.environment.validateWorkspacePath(context.path);
+          if (!validation.valid || !validation.resolvedPath || toPosixPath(validation.resolvedPath) !== context.path) {
+            throw new Error('The selected checkout is missing or has been removed');
+          }
+          validateOrigin();
+        }
+        // Validate the originating identity before deliberately routing shared
+        // repository operations to the registered workspace root.
+        if (!isRepoWide) {
+          authorizedRoot = context.path;
+          targetContextId = context.id;
+        }
       }
 
       const identity: GitWorkspaceIdentity = {
@@ -269,6 +297,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
         workspaceId: ws.workspaceId,
         environmentId: ws.location.environmentId,
         ...(targetContextId ? { checkoutContextId: targetContextId } : {}),
+        ...(validateOrigin ? { validateIdentity: validateOrigin } : {}),
       };
       if (channel === GIT_GET_FILE_DIFF && ws.location.environmentId !== 'local') {
         identity.readFile = (filePath) => {
@@ -337,7 +366,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
   registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string, checkoutContextId?: string) => {
     const current = gitService.getCurrentWorkspaceIdentity?.();
     if (workspaceId && current?.workspaceId !== workspaceId) return;
-    if (checkoutContextId && current?.checkoutContextId !== checkoutContextId) return;
+    // An omitted checkout ID denotes main, not whichever poller is active.
+    if (current?.checkoutContextId !== checkoutContextId) return;
     gitService.stopPolling();
   });
 
@@ -793,7 +823,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     const targetCheckoutContextId = scoped?.checkoutContextId ?? checkoutContextId;
 
     if (targetWorkspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== targetWorkspaceId) return null;
-    if (targetCheckoutContextId && gitService.getCurrentWorkspaceIdentity?.()?.checkoutContextId !== targetCheckoutContextId) return null;
+    // Legacy/main refreshes must not read a selected isolated checkout's status.
+    if (gitService.getCurrentWorkspaceIdentity?.()?.checkoutContextId !== targetCheckoutContextId) return null;
 
     const workspacePath = gitService.getCurrentWorkspace();
     if (!workspacePath) return null;
