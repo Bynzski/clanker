@@ -139,7 +139,9 @@ describe('StatusBar', () => {
       expect(screen.getByText('clanker')).toBeTruthy();
       expect(branchText()).toBe('main');
       expect(pathTitle()).toBe(ROOT);
-      expect(document.querySelector('.status-branch')).toHaveAttribute('title', 'main');
+      expect(document.querySelector('.status-branch')?.getAttribute('title')).toContain('main');
+      expect(document.querySelector('.status-checkout-unavailable')).toBeNull();
+      expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git loading…');
     });
 
     it('shows the context branch and path when an isolated agent is selected', () => {
@@ -224,14 +226,15 @@ describe('StatusBar', () => {
     it('marks the selected agent\'s checkout as removed once Git no longer has it', () => {
       open('t-a', { checkoutContexts: [main, { ...A, missing: true }, B] });
       render(<StatusBar />);
-      expect(branchText()).toBe('issue-90 · removed');
-      expect(document.querySelector('.status-branch')?.getAttribute('title')).toContain('checkout removed');
+      expect(branchText()).toBeUndefined();
+      expect(document.querySelector('.status-checkout-unavailable')).toHaveAttribute('title', 'The selected checkout is missing.');
     });
 
     it('ignores a terminal bound to a context the workspace does not have', () => {
       open('t-x', { terminals: [agent('t-x', 'ws::ckt-never-registered')] });
       render(<StatusBar />);
-      expect([branchText(), pathTitle()]).toEqual(['main', ROOT]);
+      expect([branchText(), pathTitle()]).toEqual([undefined, '']);
+      expect(document.querySelector('.status-checkout-unavailable')).toHaveAttribute('title', 'The selected checkout has been released.');
     });
 
     it('does not apply another workspace\'s isolated context', () => {
@@ -243,7 +246,8 @@ describe('StatusBar', () => {
       });
       useWorkspaceStore.setState({ workspaces: [other], activeWorkspaceId: 'other', activeWorkspaceLifecycle: 'active' });
       render(<StatusBar />);
-      expect([branchText(), pathTitle()]).toEqual(['other-main', '/projects/other']);
+      expect([branchText(), pathTitle()]).toEqual([undefined, '']);
+      expect(document.querySelector('.status-checkout-unavailable')).toBeTruthy();
     });
 
     it('keeps a legacy linked-worktree workspace showing its own branch, whichever of its agents is selected', () => {

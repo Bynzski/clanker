@@ -378,10 +378,24 @@ describe('AgentAttentionBroker agent location', () => {
     const before = updates.length;
     expect(send(event, { sessionId: 'new', previousSessionId: 'old', continuesSessionId: 'old', cwd: '/srv/new' })).toBe('accepted');
     expect(updates.slice(before)).toHaveLength(1);
-    expect(updates[updates.length - 1]?.snapshot).toMatchObject({ sessionId: 'new', location: { path: '/srv/new' } });
+    expect(updates[updates.length - 1]?.snapshot).toMatchObject({ sessionId: 'new', location: { path: '/srv/new' }, locationProvenance: { state: 'current', sessionId: 'new' } });
     expect(broker.locationObservation('term-a')).toMatchObject({ sessionId: 'new', state: 'current' });
     expect(send('location_changed', { sessionId: 'old', cwd: '/srv/old' })).toBe('rejected-mismatch');
     expect(location(broker)?.path).toBe('/srv/new');
+  });
+
+  it('publishes authenticated provenance across a session boundary and same-path re-report without making historical evidence current implicitly', () => {
+    const { broker, send, updates } = setup();
+    send('session_started', { sessionId: 'old', cwd: '/srv/a' });
+    expect(broker.snapshot('term-a')?.locationProvenance).toEqual({ state: 'current', sessionId: 'old' });
+    send('session_replaced', { sessionId: 'new', previousSessionId: 'old' });
+    expect(broker.snapshot('term-a')?.locationProvenance).toEqual({ state: 'last-reported', sessionId: 'old' });
+    const before = updates.length;
+    expect(send('location_changed', { sessionId: 'new', cwd: '/srv/a' })).toBe('accepted');
+    expect(updates.slice(before)).toHaveLength(1);
+    expect(broker.snapshot('term-a')?.locationProvenance).toEqual({ state: 'current', sessionId: 'new' });
+    send('location_changed', { sessionId: 'old', cwd: '/srv/elsewhere' });
+    expect(updates.slice(before)).toHaveLength(1);
   });
 
   it('does not acquire location evidence from an ambiguous completion or refresh it from stale delivery', () => {
@@ -468,13 +482,15 @@ describe('AgentAttentionBroker lost lifecycle source', () => {
     const revisions = recorder.revisions().length;
 
     expect(broker.markLifecycleLost('term-a')).toBe(true);
-    expect(broker.snapshot('term-a')).toMatchObject({ runtime: { status: 'unverified', turnId: null }, pendingRequest: null, location: { path: '/srv/wt' } });
+    expect(broker.snapshot('term-a')).toMatchObject({ runtime: { status: 'unverified', turnId: null }, pendingRequest: null, location: { path: '/srv/wt' }, locationProvenance: { state: 'unavailable', sessionId: 'root' } });
+    expect(broker.locationObservation('term-a')?.state).toBe('unavailable');
     expect(recorder.revisions().length).toBe(revisions + 1);
     // The abandoned turn can never settle anything later.
     expect(send('turn_completed', { sessionId: 'root', turnId: 't1' })).toBe('ignored-stale');
     // Once hooks run again (for example after the agent moved somewhere that exists), a new turn works.
     expect(send('turn_started', { sessionId: 'root', turnId: 't2', cwd: '/srv/main' })).toBe('accepted');
     expect(broker.handoffState('term-a')).toBe('running');
+    expect(broker.snapshot('term-a')?.locationProvenance).toEqual({ state: 'current', sessionId: 'root' });
   });
 
   it('changes nothing for an agent with no open turn or wait, or an unknown terminal', () => {

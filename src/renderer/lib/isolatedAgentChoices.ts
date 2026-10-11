@@ -62,8 +62,8 @@ export function buildIsolatedAgentChoices(params: {
     const managed = findManagedWorktreeContext(workspace, entry.path);
     const state: WorktreeChoiceState = entry.isPrunable ? 'missing'
       : entry.isLocked ? 'locked'
-        : managed ? (isCheckoutContextInUse(workspace, managed) ? 'in-use' : 'available')
-          : 'unmanaged';
+        : isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path }) ? 'in-use'
+          : managed ? 'available' : 'unmanaged';
     choices.push({
       path: entry.path,
       branch: entry.branch,

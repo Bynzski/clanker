@@ -78,13 +78,14 @@ describe('focus-driven checkout files (real Explorer, watcher coordinator and ed
     } finally { stop(); }
   });
 
-  it('falls back when the active context is released and preserves dirty tabs without rebinding saves', async () => {
+  it('reports unavailability when the selected context is released and preserves dirty tabs without rebinding saves', async () => {
     focus('a1'); mount(); await loaded(A.path);
     await act(async () => useWorkspaceStore.getState().openFileInEditor(`${A.path}/same.txt`, 'ws'));
     const tab = workspace().editorTabs[0];
     act(() => useWorkspaceStore.getState().updateEditorContent(tab.id, 'unsaved', 'ws'));
     act(() => useWorkspaceStore.getState().removeCheckoutContext('ws', A.id));
-    await loaded(MAIN);
+    expect(await screen.findByText('The selected checkout has been released.')).toBeVisible();
+    expect(api.explorerStopWatching).toHaveBeenCalled();
     expect(screen.queryByText('Checkout: alpha')).toBeNull();
     api.editorWriteFile.mockResolvedValueOnce({ success: false, errorCode: 'invalid-path' });
     let saved: boolean | undefined;
@@ -122,10 +123,10 @@ describe('focus-driven checkout files (real Explorer, watcher coordinator and ed
     focus('a1'); mount(); await loaded(A.path);
     api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [{ ...A, missing: true }, B], dropped: [] });
     act(() => api.onExplorerTreeChanged.mock.calls[0][0]({ directoryPath: '/p/app-worktrees' }));
-    await loaded(MAIN);
+    expect(await screen.findByText('The selected checkout is missing.')).toBeVisible();
     expect(api.reconcileCheckoutContexts).toHaveBeenCalledWith('ws');
     expect(screen.queryByText('Checkout: alpha')).toBeNull();
-    expect(api.explorerStartWatching).toHaveBeenLastCalledWith('ws');
+    expect(api.explorerStopWatching).toHaveBeenCalled();
   });
 
   it('does not reuse retired caches or accept an old response when a new context occupies the same path', async () => {

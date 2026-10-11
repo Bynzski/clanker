@@ -331,7 +331,11 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
   };
 
   const refreshGitStatus = async (workspacePath: string): Promise<void> => {
+    // Zero means no presentation owner; a delayed notification from the poller gap
+    // cannot be adopted by a later same-root controller.
+    const presentationGeneration = gitService.getPresentationGeneration?.() ?? 0;
     const status = await gitService.getStatus(workspacePath);
+    status.presentationGeneration = presentationGeneration;
     const scoped = gitService.getScopedWorkspaceIdentity?.();
     if (scoped) {
       const registered = resolveWorkspace(scoped.workspaceId);
@@ -350,7 +354,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     getMainWindow()?.webContents.send(GIT_STATUS_UPDATE, status);
   };
 
-  registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string, checkoutContextId?: string) => {
+  registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => {
+    if (presentationGeneration !== undefined && (!Number.isSafeInteger(presentationGeneration) || presentationGeneration < 1)) throw new Error('Invalid presentation generation');
     const scoped = gitService.getScopedWorkspaceIdentity?.();
     const ws = resolveWorkspace(scoped?.workspaceId ?? workspaceId);
     const safeWorkspacePath = scoped?.workspacePath ?? getValidatedWorkspacePath(workspacePath);
@@ -360,10 +365,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       scoped?.workspaceId ?? ws?.workspaceId,
       scoped?.environmentId ?? ws?.location.environmentId ?? 'local',
       scoped?.checkoutContextId ?? checkoutContextId,
+      ...(presentationGeneration !== undefined ? [presentationGeneration] : []),
     );
   });
 
-  registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string, checkoutContextId?: string) => {
+  registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => {
+    if (presentationGeneration !== undefined && gitService.getPresentationGeneration?.() !== presentationGeneration) return;
     const current = gitService.getCurrentWorkspaceIdentity?.();
     if (workspaceId && current?.workspaceId !== workspaceId) return;
     // An omitted checkout ID denotes main, not whichever poller is active.
@@ -847,15 +854,17 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
           throw new Error('Workspace identity is no longer registered');
         }
       }
+      const presentationGeneration = gitService.getPresentationGeneration?.();
       return gitService.withWorkspace(identity, async () => {
         const status = await gitService.getStatus(identity.workspacePath);
-        if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== identity.workspaceId ||
+        if (gitService.getPresentationGeneration?.() !== presentationGeneration || gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== identity.workspaceId ||
             gitService.getCurrentWorkspaceIdentity?.()?.checkoutContextId !== identity.checkoutContextId ||
             gitService.getCurrentWorkspace() !== identity.workspacePath) return null;
         status.workspacePath = identity.workspacePath;
         status.workspaceId = identity.workspaceId;
         status.environmentId = identity.environmentId;
         status.checkoutContextId = identity.checkoutContextId;
+        if (presentationGeneration !== undefined) status.presentationGeneration = presentationGeneration;
         return status;
       });
     }

@@ -243,7 +243,8 @@ describe('the status bar follows the terminal\'s real checkout (the smoke-test s
       applyAgentCheckoutTransition({ kind: 'checkout-released', workspaceId: WS, checkoutContextId: TREE.id });
     });
     expect(branchLabel()).toBe('main');
-    expect(branchTitle()).toBe('main');
+    expect(branchTitle()).toContain('main');
+    expect(branchTitle()).toContain('Last-known branch metadata');
     expect(workspace().checkoutContexts).toEqual([MAIN]);
   });
 
@@ -252,7 +253,8 @@ describe('the status bar follows the terminal\'s real checkout (the smoke-test s
       createTerminalFixture({ id: 'old', workspaceId: WS, checkoutContextId: TREE.id, displayName: 'Odessa' }),
     ] });
     render(<StatusBar />);
-    expect(branchLabel()).toContain('removed'); // the pre-fix state: bound to a removed checkout
+    expect(branchLabel()).toBeNull();
+    expect(document.querySelector('.status-checkout-unavailable')).toHaveAttribute('title', 'The selected checkout is missing.');
     act(() => {
       applyAgentCheckoutTransition(replaced('new', 'old', MAIN_ID, MAIN.path));
       applyAgentCheckoutTransition({ kind: 'checkout-released', workspaceId: WS, checkoutContextId: TREE.id });

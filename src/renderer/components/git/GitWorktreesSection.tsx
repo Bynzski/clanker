@@ -7,7 +7,7 @@ import type { CheckoutContext } from '../../../shared/types/checkoutContext';
 import type { GitWorktree } from '../../../shared/types/git';
 import { isSameWorkspaceIdentity } from '../../../shared/workspaceIdentity';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { findManagedWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel } from '../../lib/worktreeAgents';
+import { findManagedWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel, useCheckoutOccupancy } from '../../lib/worktreeAgents';
 import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../../lib/worktreeCheckoutRemoval';
 import { removeUnmanagedWorktree } from '../../lib/unmanagedWorktreeRemoval';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
@@ -59,6 +59,7 @@ interface GitWorktreesSectionProps {
  * prune drops Git's stale records for checkouts whose directory is already gone (repository-wide).
  */
 export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, onModalOpenChange, onRefresh, management = false, isScopeCurrent = unboundScope, onBusyChange, onChanged }: GitWorktreesSectionProps) {
+  useCheckoutOccupancy();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const isCurrent = useCallback(() => mounted.current && isScopeCurrent(), [isScopeCurrent]);
@@ -241,7 +242,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
         {entries.map((entry) => {
           const branch = entry.branch ?? 'HEAD';
           const managed = findManagedWorktreeContext(workspace, entry.path);
-          const inUse = managed ? isCheckoutContextInUse(workspace, managed) : false;
+          const inUse = isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path });
           const isThisWorkspace = isSameWorkspaceIdentity({ environmentId, path: entry.path }, { environmentId, path: workspace.workspacePath });
           const ownership = entry.isMain ? 'Main checkout' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : managed ? 'Managed' : 'Unmanaged';
 

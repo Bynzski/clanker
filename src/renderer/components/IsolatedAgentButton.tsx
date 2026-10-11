@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { GitBranchPlus } from 'lucide-react';
+import { useCheckoutOccupancy, isCheckoutContextInUse } from '../lib/worktreeAgents';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { FormMessage } from './ui/Field';
@@ -34,6 +35,7 @@ const NO_CHOICES: IsolatedAgentChoices = { branches: [], worktrees: [] };
  * draft and any error never carry over to another workspace.
  */
 export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: IsolatedAgentButtonProps) {
+  useCheckoutOccupancy();
   const options = HARNESS_OPTIONS.filter((option) => visibleHarnessIds.includes(option.id));
   const preferred = options.find((option) => option.id === workspace.harness) ?? options[0];
   const [open, setOpen] = useState(false);
@@ -276,8 +278,9 @@ function rebuildStates(choices: IsolatedAgentChoices, workspace: WorkspaceTab): 
     worktrees: choices.worktrees.map((entry) => {
       if (entry.state === 'missing' || entry.state === 'locked') return entry;
       const managed = (workspace.checkoutContexts ?? []).find((context) => context.id === entry.managed?.id) ?? null;
-      if (!managed) return entry.managed ? { ...entry, managed: null, state: 'unmanaged' as const } : entry;
-      return { ...entry, state: workspace.terminals.some((terminal) => terminal.checkoutContextId === managed.id) ? 'in-use' as const : 'available' as const };
+      if (isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path })) return { ...entry, state: 'in-use' as const };
+      if (!managed) return entry.managed ? { ...entry, managed: null, state: 'unmanaged' as const } : { ...entry, state: 'unmanaged' as const };
+      return { ...entry, state: 'available' as const };
     }),
   };
 }

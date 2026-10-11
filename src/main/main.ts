@@ -277,6 +277,7 @@ const checkoutLifecyclePort = deferredLifecyclePort();
 const agentBridge = new AgentBridgeService({
   getRegistry: () => workspaceRegistry,
   getTerminals: () => terminals,
+  getLocationObservation: (id) => agentAttentionBroker.locationObservation(id),
   version: () => app.getVersion(),
   capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(checkoutLifecyclePort.port)],
 });

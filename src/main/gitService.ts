@@ -32,22 +32,8 @@ export interface GitRemotesResult {
 
 export type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
 
-export interface GitStatusResult {
-  workspacePath?: string;
-  workspaceId?: string;
-  environmentId?: string;
-  checkoutContextId?: string;
-  success: boolean;
-  isRepo: boolean;
-  currentBranch: string | null;
-  isDetached: boolean;
-  changes: GitStatusEntry[];
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  errorCode?: GitErrorCode;
-  error?: string;
-}
+import type { GitStatusResult } from '../shared/types/git';
+export type { GitStatusResult } from '../shared/types/git';
 
 export interface GitBranchEntry {
   name: string;
@@ -146,6 +132,8 @@ export class GitService {
   private currentCheckoutContextId: string | null = null;
   private pollIntervalMs = 30000;
   private pollGeneration = 0;
+  private presentationGeneration?: number;
+  getPresentationGeneration(): number | undefined { return this.presentationGeneration; }
   private pollRequested: { path: string; generation: number } | null = null;
   private pollLoop: Promise<void> | null = null;
 
@@ -1780,12 +1768,13 @@ export class GitService {
     }
   }
 
-  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string, checkoutContextId?: string): void {
+  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string, checkoutContextId?: string, presentationGeneration?: number): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
     this.currentWorkspaceId = workspaceId ?? null;
     this.currentEnvironmentId = environmentId ?? null;
     this.currentCheckoutContextId = checkoutContextId ?? null;
+    this.presentationGeneration = presentationGeneration;
     this.requestStatusUpdate();
     this.pollingInterval = setInterval(() => {
       this.requestStatusUpdate();
@@ -1808,6 +1797,7 @@ export class GitService {
     this.currentEnvironmentId = null;
     this.currentCheckoutContextId = null;
     this.pollRequested = null;
+    this.presentationGeneration = undefined;
     this.pollGeneration += 1;
   }
 
@@ -1862,6 +1852,7 @@ export class GitService {
         status.workspaceId = identity?.workspaceId;
         status.environmentId = identity?.environmentId;
         status.checkoutContextId = identity?.checkoutContextId;
+        if (this.presentationGeneration !== undefined) status.presentationGeneration = this.presentationGeneration;
         if (request.path === this.currentWorkspacePath) {
           this.emitStatus(status);
         }

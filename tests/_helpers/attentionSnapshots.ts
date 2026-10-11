@@ -8,6 +8,7 @@ export function snapshot(terminalId: string, kind: SnapshotKind, revision = 1, o
     terminalId, revision, sessionId: 'S',
     runtime: { status: 'unverified', turnId: null, startedAt: null },
     pendingRequest: null, lastCompletion: null, lastOutcome: null, location: null,
+    locationProvenance: overrides.location ? { state: kind === 'unverified' ? 'last-reported' : 'current', sessionId: overrides.sessionId ?? 'S' } : null,
   };
   switch (kind) {
     case 'unverified': return { ...base, sessionId: null, ...overrides };

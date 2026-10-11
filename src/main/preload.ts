@@ -456,8 +456,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SET_HARNESS_DEFAULTS, defaults),
 
   // Git operations - managed by GitService in main process
-  gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath, workspaceId, checkoutContextId),
-  gitStopPolling: (workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_STOP_POLLING, workspaceId, checkoutContextId),
+  gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath, workspaceId, checkoutContextId, presentationGeneration),
+  gitStopPolling: (workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => ipcRenderer.invoke(GIT_STOP_POLLING, workspaceId, checkoutContextId, presentationGeneration),
   generateCommitMessage: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GENERATE_COMMIT_MESSAGE, workspacePath, workspaceId, checkoutContextId),
   gitStage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_STAGE, workspacePath, files, workspaceId, checkoutContextId),
   gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_UNSTAGE, workspacePath, files, workspaceId, checkoutContextId),

@@ -9,7 +9,11 @@ import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import { dirnamePath, joinPaths, normalizePath } from '../../lib/pathUtils';
 import { pathKey } from '../../../shared/pathKey';
-import { focusedFileCheckout, pathInFileCheckout } from '../../lib/fileCheckout';
+import { focusedFileCheckout, fileCheckoutFromSelection, pathInFileCheckout } from '../../lib/fileCheckout';
+import { useAgentSnapshot } from '../../lib/useAgentLocation';
+import { selectCheckout } from '../../lib/checkoutSelection';
+import { checkoutSelectionToken } from '../../lib/checkoutSelectionRuntime';
+import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../../store/checkoutGitStore';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspaceSelector } from '../WorkspaceScope';
@@ -77,20 +81,19 @@ interface FileExplorerProps {
 
 export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExplorerProps) {
   const isSection = variant === 'section';
-  const workspace = useScopedWorkspaceSelector((current) => current && ({
-    id: current.id,
-    ...focusedFileCheckout(current),
-    environmentId: current.environmentId,
-    gitChanges: current.gitChanges,
-    explorerVisible: current.explorerVisible,
-    explorerSidebarWidth: current.explorerSidebarWidth,
-    explorerEntriesByPath: current.explorerEntriesByPath,
-    explorerLoadingPaths: current.explorerLoadingPaths,
-    explorerErrorsByPath: current.explorerErrorsByPath,
-    explorerExpandedPaths: current.explorerExpandedPaths,
-    showHiddenFiles: current.showHiddenFiles,
-    explorerSelectedPath: current.explorerSelectedPath,
+  const scopedWorkspace = useScopedWorkspaceSelector((current) => current && ({
+    id: current.id, workspacePath: current.workspacePath, environmentId: current.environmentId,
+    checkoutContexts: current.checkoutContexts, terminals: current.terminals,
+    activeTerminalId: current.activeTerminalId, fileSurfaceContextId: current.fileSurfaceContextId,
+    explorerVisible: current.explorerVisible, explorerSidebarWidth: current.explorerSidebarWidth,
+    explorerEntriesByPath: current.explorerEntriesByPath, explorerLoadingPaths: current.explorerLoadingPaths,
+    explorerErrorsByPath: current.explorerErrorsByPath, explorerExpandedPaths: current.explorerExpandedPaths,
+    showHiddenFiles: current.showHiddenFiles, explorerSelectedPath: current.explorerSelectedPath,
   }), workspaceId);
+  const snapshot = useAgentSnapshot(scopedWorkspace?.activeTerminalId);
+  const selection = scopedWorkspace ? selectCheckout(scopedWorkspace, snapshot) : null;
+  const workspace = scopedWorkspace && selection ? { ...scopedWorkspace, ...fileCheckoutFromSelection(selection) } : null;
+  const activeGit = useCheckoutGitStore((state) => state.active);
   const {
     setExplorerSelectedPath,
     toggleExplorerPath,
@@ -121,7 +124,9 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const resolvedWorkspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.workspacePath ?? '';
   const checkoutContextId = workspace?.checkoutContextId;
-  const gitChanges = checkoutContextId ? [] : workspace?.gitChanges ?? [];
+  const gitSnapshot = workspace ? matchingCheckoutGit(activeGit, { workspaceId: workspace.id, environmentId: workspace.environmentId ?? 'local', contextId: checkoutContextId, root: workspace.workspacePath, selectionGeneration: checkoutSelectionToken(workspace.id) }) : null;
+  const gitAvailability = checkoutGitAvailability(gitSnapshot);
+  const gitChanges = gitSnapshot?.state === 'ready' ? gitSnapshot.result?.changes ?? [] : [];
   const isRemote = workspace?.environmentId != null && workspace.environmentId !== 'local';
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
@@ -144,6 +149,10 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
   const previousRootRef = useRef(rootIdentity);
+  const directoryRequests = useRef(new Map<string, number>());
+  const nextDirectoryRequest = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     setContextMenu(null);
@@ -190,6 +199,11 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       };
     }
 
+    const selectionToken = checkoutSelectionToken(requestWorkspaceId);
+    const request = ++nextDirectoryRequest.current;
+    directoryRequests.current.set(normalizedDirectoryPath, request);
+    const valid = () => mounted.current && checkoutSelectionToken(requestWorkspaceId) === selectionToken
+      && directoryRequests.current.get(normalizedDirectoryPath) === request;
     setExplorerDirectoryLoading(normalizedDirectoryPath, true, requestWorkspaceId);
     setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
 
@@ -202,7 +216,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       });
 
       const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
-      if (liveWorkspace == null || normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) !== normalizedWorkspacePath
+      if (!valid() || liveWorkspace == null || normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) !== normalizedWorkspacePath
         || focusedFileCheckout(liveWorkspace).checkoutContextId !== checkoutContextId) {
         return result;
       }
@@ -233,7 +247,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       });
 
       const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
-      if (liveWorkspace && normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) === normalizedWorkspacePath
+      if (valid() && liveWorkspace && normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) === normalizedWorkspacePath
         && focusedFileCheckout(liveWorkspace).checkoutContextId === checkoutContextId) {
         setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
         setExplorerDirectoryError(normalizedDirectoryPath, errorMessage, requestWorkspaceId);
@@ -246,8 +260,11 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         error: errorMessage,
       };
     } finally {
-      if (useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
-        setExplorerDirectoryLoading(normalizedDirectoryPath, false, requestWorkspaceId);
+      if (directoryRequests.current.get(normalizedDirectoryPath) === request) {
+        directoryRequests.current.delete(normalizedDirectoryPath);
+        if (mounted.current && useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
+          setExplorerDirectoryLoading(normalizedDirectoryPath, false, requestWorkspaceId);
+        }
       }
     }
   }, [
@@ -417,14 +434,16 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     if (typeof window.electronAPI.onRemoteFilesChanged !== 'function') return;
     return window.electronAPI.onRemoteFilesChanged((event) => {
       const state = useWorkspaceStore.getState();
-      if (event.workspaceId !== resolvedWorkspaceId || state.activeWorkspaceId !== resolvedWorkspaceId) return;
+      if (event.workspaceId !== resolvedWorkspaceId || state.activeWorkspaceId !== resolvedWorkspaceId
+        || event.checkoutContextId !== checkoutContextId
+        || (event.selectionGeneration !== undefined && event.selectionGeneration !== checkoutSelectionToken(event.workspaceId))) return;
       event.directoryPaths.forEach(scheduleDirectoryRefresh);
       const liveWorkspace = state.getWorkspaceById(event.workspaceId);
       for (const directoryPath of event.unchangedDirectoryPaths ?? []) {
         if (liveWorkspace?.explorerErrorsByPath[directoryPath]) scheduleDirectoryRefresh(directoryPath);
       }
     });
-  }, [resolvedWorkspaceId, scheduleDirectoryRefresh]);
+  }, [resolvedWorkspaceId, checkoutContextId, scheduleDirectoryRefresh]);
 
   // This handler is passed to FileTree as the onContextMenu prop.
   // TreeNode wraps it (already called preventDefault/stopPropagation) and
@@ -604,7 +623,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   }, [deleteTarget, normalizedWorkspacePath, resolvedWorkspaceId, actionDeps]);
 
   if (!normalizedWorkspacePath) {
-    return null;
+    return workspace?.unavailable && explorerVisible ? <section className="file-explorer file-explorer-section" aria-label="Files"><div className="file-explorer-header">Files</div><p role="status">{workspace.unavailable}</p></section> : null;
   }
 
   if (isSection && !explorerVisible) {
@@ -709,6 +728,8 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         </div>
       </div>
       {workspace?.checkoutLabel && <div className="file-explorer-checkout" title={normalizedWorkspacePath}>Checkout: {workspace.checkoutLabel}</div>}
+      {workspace?.selectionNotice && <div className="file-explorer-checkout">{workspace.selectionNotice}</div>}
+      {gitAvailability !== 'ready' && <div className="file-explorer-checkout" data-git-state={gitAvailability} role="status">{gitAvailability === 'loading' ? 'Loading Git status…' : 'Git status unavailable'}</div>}
       <div className="file-explorer-filter">
         <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />
         <Input

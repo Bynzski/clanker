@@ -176,6 +176,7 @@
 .git-status-indicator.git-deleted { background: var(--git-deleted); }
 .git-status-indicator.git-untracked { background: var(--git-untracked); }
 .git-status-indicator.git-renamed { background: var(--git-renamed); }
+.git-status-indicator.git-staged { border-radius: var(--radius-sm); }
 
 /* S8: Inline create/rename input */
 .tree-node-input {

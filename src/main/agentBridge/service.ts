@@ -14,6 +14,7 @@ import {
 import { AgentBridgeCredentials, type AgentBridgeGrant, type AgentBridgeIdentity } from './credentials';
 import { bridgeInstructions } from './instructions';
 import { liveCheckoutToolDescription } from './lifecycleCapabilities';
+import { describeBridgeObservation, type BridgeLocationEvidence } from './observation';
 import { AgentBridgeServer, AGENT_BRIDGE_LIMITS, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
 
 function supportsLiveRelocation(harness: string): boolean {
@@ -45,6 +46,8 @@ export interface AgentBridgeServiceDeps {
   getRegistry(): WorkspaceRegistry | undefined;
   getTerminals(): ReadonlyMap<string, AgentBridgeTerminalRecord>;
   version: () => string;
+  /** Authenticated broker evidence, looked up only by the already-validated caller terminal. */
+  getLocationObservation?: (terminalId: string) => BridgeLocationEvidence | null;
   /** Test seam; defaults to the shipped capability set. */
   capabilities?: readonly AgentBridgeCapability[];
   /** Test seam; defaults to AGENT_BRIDGE_LIMITS.toolTimeoutMs. */
@@ -201,6 +204,12 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     return {
       terminalId: identity.terminalId, harnessId: identity.harnessId, workspace, checkoutContext,
       ...(terminal.cwd ? { launchDirectory: terminal.cwd } : {}), granted: [...grant.capabilities],
+      observedCheckout: describeBridgeObservation(this.deps.getLocationObservation?.(identity.terminalId) ?? null,
+        this.deps.getLocationObservation ? registry.getCheckoutContextsForWorkspace(identity.workspaceId) : [], checkoutContext),
+      providerCapabilities: {
+        resumeWithoutOriginalDirectory: findHarnessProvider(identity.harnessId)?.sessions?.resumesWithoutOriginalDirectory === true,
+        checkoutRehome: findHarnessProvider(identity.harnessId)?.checkoutRehome?.mode ?? null,
+      },
     };
   }
 }

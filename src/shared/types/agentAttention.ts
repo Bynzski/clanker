@@ -74,6 +74,9 @@ export interface AgentAttentionSnapshot {
   /** Latest location the root agent reported; null until it reports one. Survives a native session
    * boundary (the agent is still where it was) and is gone with the agent on exit. */
   location: AgentLocation | null;
+  /** Authenticated native provenance, not a wall-clock freshness heuristic. Absent on legacy
+   * snapshots: a retained location then has unknown provenance and cannot select file/Git roots. */
+  locationProvenance?: { state: 'current' | 'last-reported' | 'unavailable'; sessionId: string } | null;
 }
 
 /** Pushed on every authoritative change. `snapshot: null` is a revisioned tombstone: the agent

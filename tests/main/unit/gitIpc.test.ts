@@ -1581,6 +1581,26 @@ describe('Git IPC workspace identity routing', () => {
       .rejects.toThrow('Workspace identity is no longer registered');
   });
 
+  test('presentation epochs reject same-root late status and old cleanup without changing Git authority', async () => {
+    const { local, handle, statuses, service } = setup();
+    await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local');
+    let release!: () => void;
+    local.execGit.mockImplementationOnce(async () => { await new Promise<void>((done) => { release = done; }); return { stdout: '# branch.head old\n', stderr: '' }; });
+    try {
+      await handle('git-start-polling')(null, workspacePath, 'local-tab', undefined, 1);
+      await handle('git-start-polling')(null, workspacePath, 'local-tab', undefined, 3);
+      await handle('git-stop-polling')(null, 'local-tab', undefined, 1);
+      expect(service.getPresentationGeneration()).toBe(3);
+      expect(service.getCurrentWorkspaceIdentity()?.workspaceId).toBe('local-tab');
+      release(); await service.drain();
+      expect(statuses).toHaveLength(1);
+      expect(statuses[0]).toMatchObject({ presentationGeneration: 3, workspaceId: 'local-tab', currentBranch: 'local' });
+      await expect(handle('git-start-polling')(null, workspacePath, 'local-tab', undefined, 0)).rejects.toThrow('Invalid presentation generation');
+      await handle('git-stop-polling')(null, 'local-tab', undefined, 3);
+      expect(service.getCurrentWorkspace()).toBeNull();
+    } finally { release?.(); service.stopPolling(); await service.drain(); }
+  });
+
   test('rapid same-path polling switch discards stale status without stopping the other workspace', async () => {
     const { local, remote, handle, statuses, service, mainWindow } = setup();
     await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local');

@@ -283,9 +283,16 @@ revision; a location-only move gets its own. The snapshot's
 `location: { path, checkoutContextId }` survives `session_ended` and goes with the
 agent on `agent_exited`.
 
-Location is descriptive, never launch authority. Agent rows and the status bar
-show the reported context (falling back to the launch context until a report
-arrives). It never re-binds `terminal.checkoutContextId`, authorizes a root or
+Location is descriptive, never launch authority. Individual agent rows show the
+last reported context (falling back to launch until a report arrives), independently
+of explicit workspace-surface pins. Explorer, Git, header counts and the status bar
+share `checkoutSelection.ts`: explicit file/editor pin → current authenticated
+registered observation → launch when an observation is absent or historical evidence
+agrees with that exact independently registered usable launch ID → workspace.
+Agreeing history selects launch authority with a last-reported notice; it stays historical.
+Historical disagreement, unavailable, unregistered, missing/released and unknown-provenance
+selections are visibly unavailable, never silently main/current/clean. See
+[checkout presentation](checkout-presentation.md). It never re-binds `terminal.checkoutContextId`, authorizes a root or
 relaxes release/removal checks. Main adds observed containment as a conservative
 reason to block release, reconciliation, inspection, removal, prune and lifecycle
 cleanup, in addition to recorded directories, launch bindings and services.
@@ -294,10 +301,15 @@ it. Local comparisons retain symlink/missing-tail handling; SSH activity remains
 scoped to equivalent host identities and host paths, never desktop cwd.
 
 Main's broker exposes copy-safe location evidence with its native session and
-last accepted report time. An unchanged accepted cwd refreshes that time without
-publishing a duplicate renderer revision. `current` means the report belongs to
+last accepted report time. Renderer snapshots carry authenticated
+`locationProvenance: { state, sessionId }` separately from the location. An unchanged
+accepted cwd refreshes main's report time without publishing a duplicate renderer
+revision, except when its provenance changed (a new session or recovery from
+lifecycle loss). Session changes publish provenance atomically with lifecycle/location. `current` means the report belongs to
 the bound native session, **not** proof of instantaneous cwd or Running status;
-`last-reported` means the native session boundary/transition retained history.
+`last-reported` means no matching native root is bound (including retained session history);
+`unavailable` means the lifecycle source was explicitly invalidated. A new accepted
+native location report restores current provenance. No wall-clock TTL clears it.
 Neither an idle/completed turn, lifecycle-loss indication, session boundary nor
 elapsed time proves vacancy. Such evidence keeps blocking cleanup while both the
 terminal and authenticated registration are live; a newer accepted location
@@ -317,9 +329,13 @@ broker and occupancy helpers, direct release IPC, real local Git inspection and
 removal-race checks, and mocked SSH coordinator activity. These are not native
 multi-harness/SSH smoke proof. Reports arriving after destructive host dispatch,
 unreported shell/tool cwd changes, and remote symlink spellings not canonicalized
-by a provider remain observational limits. Explorer selection/dirty indicators
-and read-only MCP launch-versus-observed fields are separate pending slices;
-`clanker_context` still describes launch authority only.
+by a provider remain observational limits. #159 aligns Explorer/shared Git status,
+selection, renderer occupancy presentation and read-only MCP description. The
+[verification record](checkout-presentation.md#verification-record) distinguishes
+mocked/real-Git/full-Electron contracts from native provider and live SSH proof.
+Location observation, resume in another checkout and same-turn live relocation
+are separate capabilities: observation never implies either relocation capability.
+Pi is not special; #138 remains on hold.
 
 What each provider reports (root only; mid-turn tool hooks and children never
 carry a location):
@@ -328,7 +344,7 @@ carry a location):
 | --- | --- | --- |
 | Claude | Yes, a Bash `cd` persists (the process never moves) | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed` |
 | Codex | Only `/cd` or a worktree switch, while idle (commands run one-shot) | hook `cwd` on `UserPromptSubmit`/`Stop`/`Interrupt`/`SessionEnd` |
-| Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; `session_start` as `location_changed` |
+| Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; native `session_start` as `session_started` (root binding before any prompt) |
 | OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`agent_end`; `session_start`/`session_switch` as `location_changed` |
 | OpenCode | Per session (`info.directory`) | the verified root session's directory (else the plugin's instance directory) on its turn events |
 | Antigravity | No (per-command `Cwd`); hooks carry no cwd | the root conversation's `workspacePaths` when it has exactly one |
@@ -609,8 +625,27 @@ agent is doing. The two credentials
 are independent, minted by different code, validated by different code, and not interchangeable
 (a test asserts an attention token never resolves as a bridge credential).
 
+### Read-only launch versus observation (#159)
+
+`clanker_context.checkout` retains its launch-authority meaning. `observedCheckout`
+is resolved only after credential/live-caller validation, from that terminal's
+broker evidence and that workspace's registered contexts. Its `state` is `none`,
+`current`, `last-reported`, `unregistered`, `missing`, `released` or `unavailable`;
+`provenance` preserves the current/historical/unavailable distinction when a
+context is missing or unregistered. A bounded branch/kind/isolated descriptor and
+`matchesLaunch` are returned only when known. Raw observed paths, native session
+IDs, context IDs, other callers and credentials are never returned. Requests have
+no identity/path arguments and do not renew evidence, adopt roots or rebind grants.
+
+`providerCapabilities.resumeWithoutOriginalDirectory` and `checkoutRehome` describe
+proven provider support independently of an observation or the caller's granted
+tools. Rehome uses the existing transaction strategy (`hot-replace`/`after-turn`),
+not same-turn native cwd mutation. The read-only addition grants no mutation tool;
+Pi stays context-only. MCP remains local-only; no SSH bridge was added.
+
 ### Pieces
 
+- `src/main/agentBridge/observation.ts`: bounded authenticated caller observation description.
 - `src/main/launchAttachments.ts`: the generic launch-attachment lifecycle (below).
 - `src/main/attentionLaunchStep.ts`: existing attention preparation expressed as a launch attachment
   (behavior unchanged).

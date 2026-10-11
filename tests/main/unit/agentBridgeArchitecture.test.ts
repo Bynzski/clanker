@@ -10,9 +10,10 @@ const imports = (source: string) => [...source.matchAll(/(?:from|import)\s*\(?\s
 const filesIn = (directory: string) => readdirSync(directory).filter((name) => name.endsWith('.ts')).map((name) => resolve(directory, name));
 
 describe('agent bridge architecture contract', () => {
-  it('the bridge never depends on attention: MCP is not a second lifecycle system', () => {
+  it('the bridge consumes descriptive types only, never attention lifecycle authority', () => {
     for (const file of filesIn(resolve(main, 'agentBridge'))) {
-      const offending = imports(read(file)).filter((specifier) => /attention/i.test(specifier));
+      const runtime = read(file).replace(/import type[\s\S]*?;/g, '');
+      const offending = imports(runtime).filter((specifier) => /attention/i.test(specifier));
       expect(offending, file).toEqual([]);
       expect(read(file), file).not.toMatch(/AgentAttentionBroker|markSubmitted|markLifecycleLost|receiveRemote/);
     }

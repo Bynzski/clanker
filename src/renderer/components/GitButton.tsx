@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useVcsStore } from '../store/vcsStore';
+import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../store/checkoutGitStore';
+import { checkoutSelectionToken } from '../lib/checkoutSelectionRuntime';
 import { sameWorkspacePath } from '../lib/pathUtils';
 import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
-import { useAgentLocation } from '../lib/useAgentLocation';
+import { useAgentSnapshot } from '../lib/useAgentLocation';
 import { requestCheckoutReconciliation } from '../lib/checkoutReconciliation';
 import { useCommitComposer } from './git/useCommitComposer';
 import { GitAbortOperationDialog } from './git/GitAbortOperationDialog';
@@ -28,7 +30,6 @@ import type {
   GitOperationState,
   GitRemote,
   GitStash,
-  GitStatus,
 } from './git/types';
 import type { GitStatusResult } from '../../shared/types/git';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
@@ -45,16 +46,17 @@ interface GitButtonProps {
 
 export default function GitButton(props: GitButtonProps) {
   const workspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === props.workspaceId));
-  useAgentLocation(workspace?.activeTerminalId);
+  useAgentSnapshot(workspace?.activeTerminalId);
   useWorkspaceStore((state) => state.activeWorkspaceId);
   const scope = gitManagementScope(props.workspacePath, props.workspaceId);
   const trigger = useRef<HTMLButtonElement>(null);
-  return scope.blocked ? <UnavailableGit key={scope.key} scope={scope} trigger={trigger} /> : <GitController key={scope.key} {...props} scope={scope} trigger={trigger} />;
+  const epoch = props.workspaceId ? checkoutSelectionToken(props.workspaceId) : 0;
+  return scope.blocked ? <UnavailableGit key={scope.key} scope={scope} trigger={trigger} /> : <GitController key={`${scope.key}:${epoch}`} {...props} scope={scope} trigger={trigger} />;
 }
 
 function UnavailableGit({ scope, trigger }: { scope: ReturnType<typeof gitManagementScope>; trigger: React.RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false);
-  return <><Button ref={trigger} size="xs" variant="ghost" aria-label="Source Control" onClick={() => setOpen(true)}><GitBranchIcon size={14} /></Button>
+  return <><Button ref={trigger} size="xs" variant="ghost" aria-label="Source Control" title={scope.blocked ?? undefined} onClick={() => setOpen(true)}><GitBranchIcon size={14} /><span>Checkout unavailable</span></Button>
     <Dialog open={open} onOpenChange={setOpen}><ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }]} selectedId="overview" onSelect={() => {}}>
       <p>{scope.environmentId === 'local' ? 'Local' : `SSH · ${scope.environmentId}`} · {scope.path}</p><p role="alert">{scope.blocked}</p>
     </ManagementShell></Dialog></>;
@@ -63,12 +65,20 @@ function UnavailableGit({ scope, trigger }: { scope: ReturnType<typeof gitManage
 function GitController({ workspacePath, workspaceId, scope, trigger }: GitButtonProps & { scope: ReturnType<typeof gitManagementScope>; trigger: React.RefObject<HTMLButtonElement | null> }) {
   const live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
-  const isCurrent = useCallback(() => live.current && gitManagementScope(workspacePath, workspaceId).key === scope.key, [workspacePath, workspaceId, scope.key]);
-  const [statusKnown, setStatusKnown] = useState(false);
-  const [changeCount, setChangeCount] = useState(0);
+  const selectionEpoch = useRef(workspaceId ? checkoutSelectionToken(workspaceId) : 0);
+  const isCurrent = useCallback(() => live.current && gitManagementScope(workspacePath, workspaceId).key === scope.key
+    && (!workspaceId || checkoutSelectionToken(workspaceId) === selectionEpoch.current), [workspacePath, workspaceId, scope.key]);
+  const statusGeneration = useRef(0);
+  const activeStatus = useCheckoutGitStore((state) => state.active);
+  const selectedStatus = matchingCheckoutGit(activeStatus, { workspaceId, environmentId: scope.environmentId, contextId: scope.checkoutContextId, root: scope.path, selectionGeneration: selectionEpoch.current });
+  const gitAvailability = checkoutGitAvailability(selectedStatus);
+  const gitLabel = gitAvailability === 'loading' ? 'Git loading…' : 'Git status unavailable';
+  const statusKnown = gitAvailability === 'ready';
+  const changes = statusKnown ? selectedStatus?.result?.changes ?? [] : [];
+  const changeCount = statusKnown ? changedFileCount(changes) : null;
+  const setStatusKnown = useCallback((known: boolean) => { if (!known) useCheckoutGitStore.getState().invalidate(statusGeneration.current); }, []);
   const [isRepo, setIsRepo] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [changes, setChanges] = useState<GitStatus[]>([]);
   const [changesError, setChangesError] = useState<string | null>(null);
   const [isLoadingChanges, setIsLoadingChanges] = useState(false);
   const [reviewRevision, setReviewRevision] = useState(0);
@@ -116,8 +126,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
   const { activeWorkspaceId } = useWorkspaceStore();
   const focusedWorkspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === workspaceId));
-  const agentLocation = useAgentLocation(focusedWorkspace?.activeTerminalId);
-  const checkoutContextId = focusedWorkspace ? selectedVcsCheckoutId(focusedWorkspace, agentLocation) : undefined;
+  const agentSnapshot = useAgentSnapshot(focusedWorkspace?.activeTerminalId);
+  const checkoutContextId = focusedWorkspace ? selectedVcsCheckoutId(focusedWorkspace, agentSnapshot) : undefined;
   const vcsGeneration = useRef(0);
   const invalidateVcsRequest = useCallback(() => { vcsGeneration.current++; }, []);
   useEffect(() => {
@@ -539,7 +549,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         }
       }
     }
-  }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent]);
+  }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, fetchDiff, loadVcsContext, setBranchError, setStashError, setMergeError, setMergeTargetBranch, isCurrent, setStatusKnown]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
@@ -547,9 +557,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
 
   useEffect(() => {
     if (!workspacePath) {
-      setChangeCount(0);
+      setStatusKnown(false);
       setIsRepo(false);
-      setChanges([]);
       useWorkspaceStore.getState().setGitChanges([]);
       useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
       setCurrentBranch(null);
@@ -573,18 +582,23 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       return;
     }
 
-    window.electronAPI.gitStartPolling(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
+    const generation = useCheckoutGitStore.getState().begin({ workspaceId, environmentId: scope.environmentId, contextId: scope.checkoutContextId, root: scope.path, selectionGeneration: selectionEpoch.current });
+    statusGeneration.current = generation;
+    void Promise.resolve(window.electronAPI.gitStartPolling(scope.path, workspaceId, scope.checkoutContextId, generation)).catch(() => {
+      if (isCurrent()) useCheckoutGitStore.getState().invalidate(generation);
+    });
 
     return () => {
-      void window.electronAPI.gitStopPolling(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])).catch((error: unknown) => {
+      useCheckoutGitStore.getState().clear(generation);
+      void window.electronAPI.gitStopPolling(workspaceId, scope.checkoutContextId, generation).catch((error: unknown) => {
         if (error instanceof Error && error.message.includes('Workspace identity is no longer registered')) return;
         console.error('Failed to stop Git polling:', error);
       });
     };
-  }, [workspacePath, scope.path, workspaceId, scope.checkoutContextId]);
+  }, [workspacePath, scope.path, workspaceId, scope.checkoutContextId, scope.environmentId, isCurrent, setStatusKnown]);
 
   const applyStatus = useCallback((status: GitStatusResult) => {
-      if (!isCurrent()) return;
+      if (!isCurrent() || (status.presentationGeneration !== undefined && status.presentationGeneration !== statusGeneration.current)) return;
       const activeWs = useWorkspaceStore.getState().getActiveWorkspace();
       if (activeWs) {
         if (workspaceId
@@ -606,11 +620,9 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
       } else if (workspacePath && status.workspacePath && !sameWorkspacePath(status.workspacePath, scope.path)) {
         return;
       }
-      setStatusKnown(status.success);
+      useCheckoutGitStore.getState().apply(statusGeneration.current, status);
       if (status.success) {
         setIsRepo(status.isRepo);
-        setChangeCount(changedFileCount(status.changes));
-        setChanges(status.changes);
         setCurrentBranch(status.currentBranch);
         setIsDetached(status.isDetached);
         setStatusErrorCode(null);
@@ -624,8 +636,6 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         }
       } else {
         setIsRepo(false);
-        setChangeCount(0);
-        setChanges([]);
         setCurrentBranch(null);
         setIsDetached(false);
         setStatusErrorCode(status.errorCode ?? null);
@@ -635,7 +645,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setProvider('unknown');
         if (!scope.checkoutContextId) {
           useWorkspaceStore.getState().setGitChanges([]);
-          useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
+          // Failed acquisition is not proof that the registered checkout/branch vanished.
+          // Retain descriptive main metadata; snapshot availability still gates all counts/actions.
         }
       }
   }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, isCurrent]);
@@ -816,11 +827,11 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
           className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
           onClick={handleToggleMenu}
           aria-expanded={isMenuOpen}
-          title={!isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
+          title={!statusKnown ? gitLabel : !isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
         >
           <GitBranchIcon size={14} strokeWidth={2} />
-          {!isRepo && <span>Init Git</span>}
-          {changeCount > 0 && (
+          {!statusKnown ? <span data-git-state={gitAvailability} title={gitLabel}>{gitAvailability === 'loading' ? 'Git…' : 'Git unavailable'}</span> : !isRepo && <span>Init Git</span>}
+          {changeCount !== null && changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}
           <ChevronDown size={12} strokeWidth={2.5} />
@@ -850,7 +861,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             behind={behind}
             branchError={branchError}
             branches={branches}
-            changeCount={changeCount}
+            changeCount={changeCount ?? 0}
             createBranchInputRef={createBranchInputRef}
             currentBranch={currentBranch}
             currentBranchLabel={currentBranchLabel}

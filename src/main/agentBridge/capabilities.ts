@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import { defineInput, type InferInput, type InputSpec, type ToolJsonSchema } from './input';
+import type { BridgeObservation } from './observation';
 
 /**
  * The authority of one authenticated MCP caller, re-derived from main's live state on every call.
@@ -18,6 +19,8 @@ export interface AgentBridgeCaller {
   readonly launchDirectory?: string;
   /** Names of the capabilities this credential may use. */
   readonly granted: readonly string[];
+  readonly observedCheckout?: BridgeObservation;
+  readonly providerCapabilities?: { resumeWithoutOriginalDirectory: boolean; checkoutRehome: string | null };
 }
 
 export interface AgentBridgeToolResult {
@@ -121,13 +124,13 @@ function relativeLaunchDirectory(caller: AgentBridgeCaller): string | null {
 /**
  * `clanker_context`: read-only description of where the calling agent is running. Proves identity
  * binding and capability scoping end to end; it returns display-safe facts about the caller's own
- * launch only (no credentials, no ids that select authority, no other terminals or workspaces, no
+ * launch and authenticated descriptive observation only (no credentials, no ids that select authority, no other terminals or workspaces, no
  * absolute paths).
  */
 export const clankerContextCapability: AgentBridgeCapability = defineCapability({
   name: 'clanker_context',
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  description: 'Describe the Clanker workspace and checkout this agent was launched in, and which Clanker capabilities are available. Read-only; takes no arguments.',
+  description: 'Describe the authorized launch checkout, authenticated observed checkout (current or last-reported), and available Clanker capabilities. Observation grants no authority. Read-only; takes no arguments.',
   input: {},
   run(_input, { caller }) {
     const { workspace, checkoutContext } = caller;
@@ -142,6 +145,8 @@ export const clankerContextCapability: AgentBridgeCapability = defineCapability(
           ...(checkoutContext.missing ? { missing: true } : {}),
         },
         agent: { harness: caller.harnessId, launchDirectory: relativeLaunchDirectory(caller) },
+        observedCheckout: caller.observedCheckout ?? { state: 'none', provenance: null, checkout: null, matchesLaunch: null },
+        providerCapabilities: caller.providerCapabilities ?? { resumeWithoutOriginalDirectory: false, checkoutRehome: null },
         capabilities: [...caller.granted],
       },
     };
