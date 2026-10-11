@@ -14,7 +14,10 @@ export function useAssistantRoster(): { assistants: HermesAssistant[]; live: Set
   const openedAssistantIds = useAssistantNavStore((state) => state.openedAssistantIds);
   const live = new Set((snapshot?.assistants ?? []).map((assistant) => assistant.id));
   const assistants = [...(snapshot?.assistants ?? [])];
-  for (const id of openedAssistantIds) if (!live.has(id) && knownAssistants[id]) assistants.push(knownAssistants[id]);
+  for (const id of openedAssistantIds) {
+    const hidden = snapshot?.settings.hiddenAssistantIds?.includes(id) || snapshot?.profiles?.find((profile) => profile.id === id)?.hiddenInHermes || knownAssistants[id]?.hiddenInHermes;
+    if (!hidden && !live.has(id) && knownAssistants[id]) assistants.push(knownAssistants[id]);
+  }
   return { assistants, live };
 }
 
@@ -88,7 +91,7 @@ export default function AssistantsRoster({ variant = 'sidebar', disabled = false
   const { assistants, live } = useAssistantRoster();
   if (!enabled || !snapshot) return null;
   const state = snapshot.service.state;
-  const status = state === 'connected' ? (assistants.length === 0 ? 'No Hermes Assistants found' : null) : STATUS_TEXT[state] ?? null;
+  const status = state === 'connected' ? (assistants.length === 0 ? (snapshot.profiles?.length ? 'All Hermes Assistants are hidden' : 'No Hermes Assistants found') : null) : STATUS_TEXT[state] ?? null;
   const retry = state === 'offline' || state === 'error' || state === 'detected-unusable';
   return (
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">

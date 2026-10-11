@@ -148,3 +148,18 @@ Keep catalogs and persistence in the caller. Return the persistence promise from
 `onToggleFavorite`; the picker prevents overlapping changes, retains focus after
 reordering, and surfaces failed saves. The optional footer supports focused actions
 such as refreshing a catalog. Tokens and reduced-motion support live in its CSS.
+
+## Read-only detail presentation
+
+`DetailPresentation` owns compact read-only geometry through shared tokens:
+
+- `DataList`: semantic `dl` / `dt` / `dd` label/value rows, stacked on narrow viewports.
+- `DetailSection`: section heading, optional description/actions, and content.
+- `DetailCard`: standard bordered surface with title/status slots; no feature-specific card styling.
+- `StatusLabel`: neutral/muted/positive presentation only; callers supply authoritative text and tone.
+- `Disclosure`: native `details` / `summary` keyboard/expanded semantics and shared focus styling.
+
+These primitives own no requests, catalogs, lifecycle inference or persistence. Feature components
+format their typed values and supply their own empty/error/provenance states. Assistant overview,
+capabilities, history, routines and run/output views are separate compositions of this anatomy;
+restyling the primitives changes all views without rewriting their data policy.

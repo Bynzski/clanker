@@ -21,6 +21,7 @@ function setup(initial: unknown = { enabled: false, autoStart: false }, override
     isShuttingDown: () => false,
     isHermesAvailable: () => true,
     fetch: hermes.fetch as never,
+    readRendezvous: async () => [],
     createWebSocket: hermes.createWebSocket,
     spawnServe,
     generateToken: () => 'owned-token-0123456789abcdefghijklmnop',
@@ -52,12 +53,40 @@ describe('settings and enablement', () => {
     const { service } = setup({ enabled: true, pins: [1, 2] });
     expect(service.get().settings).toEqual({ enabled: true, autoStart: false });
   });
-  it('rejects malformed renderer settings and persists only the two booleans', () => {
+  it('rejects malformed renderer settings and persists only supported preferences', () => {
     const { service, stored } = setup();
     expect(() => service.configure({ enabled: true })).toThrow();
     expect(() => service.configure({ enabled: 'yes', autoStart: false })).toThrow();
     service.configure({ enabled: false, autoStart: true, token: 'x', pins: [] });
     expect(stored()).toEqual({ enabled: false, autoStart: true });
+  });
+});
+
+describe('profile visibility preferences', () => {
+  it('persists local hiding, keeps profiles manageable, and never reconfigures or closes Hermes', async () => {
+    const { service, hermes, stored } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    await service.openSurface('hermes:fred');
+    const socket = hermes.ptySockets()[0]; const calls = hermes.calls.length;
+    const snapshot = service.configure({ enabled: true, autoStart: false, hiddenAssistantIds: ['hermes:fred'] });
+    expect(snapshot.assistants.some((profile) => profile.id === 'hermes:fred')).toBe(false);
+    expect(snapshot.profiles?.some((profile) => profile.id === 'hermes:fred')).toBe(true);
+    expect(snapshot.profiles?.find((profile) => profile.id === 'hermes:hidden-one')).toMatchObject({ hiddenInHermes: true });
+    expect(snapshot.surfaces.some((surface) => surface.assistantId === 'hermes:fred')).toBe(true);
+    expect(socket.closed).toBe(false); expect(hermes.calls).toHaveLength(calls);
+    expect(readPersistedAssistantSettings(stored()).hiddenAssistantIds).toEqual(['hermes:fred']);
+    expect((await service.refresh()).assistants.some((profile) => profile.id === 'hermes:fred')).toBe(false);
+    service.configure({ enabled: true, autoStart: false, hiddenAssistantIds: [] });
+    expect(service.get().assistants.some((profile) => profile.id === 'hermes:fred')).toBe(true);
+    await service.shutdown();
+  });
+  it('bounds and validates persisted visibility without losing enable/autostart settings', () => {
+    const { service } = setup();
+    for (const hiddenAssistantIds of [['../private'], ['hermes:bad name'], new Array(65).fill('hermes:fred'), 'hermes:fred']) {
+      expect(() => service.configure({ enabled: false, autoStart: false, hiddenAssistantIds })).toThrow();
+      expect(readPersistedAssistantSettings({ enabled: true, autoStart: true, hiddenAssistantIds })).toEqual({ enabled: true, autoStart: true });
+    }
+    expect(readPersistedAssistantSettings({ enabled: false, hiddenAssistantIds: ['hermes:fred', 'hermes:fred'] }).hiddenAssistantIds).toEqual(['hermes:fred']);
   });
 });
 
@@ -106,6 +135,21 @@ describe('existing backend adoption', () => {
     expect(snapshot.service).toMatchObject({ state: 'connected', ownership: 'external' });
     expect(hermes.fetched[0]).toBe('http://127.0.0.1:9119/api/status');
     expect(hermes.wsSockets()[0].url).toBe(`ws://127.0.0.1:9119/api/ws?token=${TOKEN}`);
+  });
+  it('adopts a host owner that appears while the owned launch is starting and exits without READY', async () => {
+    const { service, hermes, children, spawnServe } = setup({ enabled: true, autoStart: true });
+    hermes.running = false;
+    const pending = service.refresh();
+    await flush();
+    expect(children).toHaveLength(1);
+    hermes.running = true;
+    children[0].crash(0); // Modern Hermes attaches to the winner, prints an attach message, then exits.
+    expect((await pending).service).toMatchObject({ state: 'connected', ownership: 'external' });
+    expect(service.hasRunningOwnedService()).toBe(false);
+    expect(spawnServe).toHaveBeenCalledOnce();
+    expect(hermes.wsSockets()[0].url).toContain(TOKEN);
+    await service.shutdown();
+    expect(hermes.running).toBe(true);
   });
   it('never stops an external backend on disable or shutdown', async () => {
     const { service, hermes, spawnServe } = setup({ enabled: true, autoStart: true });

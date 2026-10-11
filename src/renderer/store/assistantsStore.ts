@@ -22,9 +22,10 @@ let unsubscribe: (() => void) | undefined;
 let loading = false;
 
 function remember(known: Record<string, HermesAssistant>, snapshot: AssistantSnapshot): Record<string, HermesAssistant> {
-  if (snapshot.assistants.length === 0) return known;
+  const profiles = snapshot.profiles ?? snapshot.assistants;
+  if (profiles.length === 0) return known;
   const next = { ...known };
-  for (const assistant of snapshot.assistants) next[assistant.id] = assistant;
+  for (const assistant of profiles) next[assistant.id] = assistant;
   return next;
 }
 

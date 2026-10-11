@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import AssistantProfileDetail from './AssistantProfileDetail';
+import { AssistantProfileSelector } from './assistantDetails/AssistantProfileSelector';
 import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { AssistantNotice } from '../assistants/AssistantsRoster';
@@ -14,7 +16,11 @@ const PROBLEM: Record<string, string> = {
 const TRANSITION: Record<string, string> = { probing: 'Connecting…', starting: 'Starting Hermes service…' };
 
 /** Optional Hermes Assistants. Absent entirely unless the Hermes CLI is installed. */
-export default function AssistantsSettings() {
+export default function AssistantsSettings({ initialAssistantId }: { initialAssistantId?: string | null }) {
+  const [selectedId, setSelectedId] = useState(initialAssistantId ?? '');
+  const [profilesRevision, setProfilesRevision] = useState(0);
+  const [initialSelection, setInitialSelection] = useState(initialAssistantId);
+  if (initialSelection !== initialAssistantId) { setInitialSelection(initialAssistantId); setSelectedId(initialAssistantId ?? ''); }
   const snapshot = useAssistantsStore((state) => state.snapshot);
   const error = useAssistantsStore((state) => state.error);
   const busy = useAssistantsStore((state) => state.busy);
@@ -24,6 +30,7 @@ export default function AssistantsSettings() {
   useEffect(() => { ensure(); }, [ensure]);
   if (!snapshot?.available) return null;
   const { settings, service } = snapshot;
+  const profiles = snapshot.profiles ?? snapshot.assistants;
   const connected = settings.enabled && service.state === 'connected';
   const transition = settings.enabled ? TRANSITION[service.state] : undefined;
   const problem = settings.enabled && !connected && !transition ? (error || service.error || PROBLEM[service.state]) : undefined;
@@ -46,7 +53,16 @@ export default function AssistantsSettings() {
         onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })}>Start Hermes service when needed</Checkbox>
       {transition && <AssistantNotice tone="info" message={transition} />}
       {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
-      {!settings.enabled && error && <AssistantNotice tone="error" message={error} />}
+      {(!settings.enabled || connected) && error && <AssistantNotice tone="error" message={error} />}
+      <AssistantProfileSelector profiles={profiles} selectedId={selectedId} hiddenIds={settings.hiddenAssistantIds ?? []}
+        connected={connected} enabled={settings.enabled} busy={busy} onSelect={setSelectedId}
+        onRefresh={() => { void refresh().then(() => setProfilesRevision((value) => value + 1)); }}
+        onVisibilityChange={(id, hidden) => {
+          const hiddenAssistantIds = (settings.hiddenAssistantIds ?? []).filter((existing) => existing !== id);
+          if (hidden) hiddenAssistantIds.push(id);
+          void configure({ ...settings, hiddenAssistantIds });
+        }} />
+      {connected && profiles.filter((assistant) => assistant.id === selectedId).map((assistant) => <AssistantProfileDetail key={`${assistant.id}:${profilesRevision}`} assistant={assistant} connected={connected} />)}
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import { StringDecoder } from 'node:string_decoder';
+import { discoverHermesBackend, readHermesRendezvous } from './hermesDiscovery';
+import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared/types/assistantDetails';
+import { JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
+  isValidAssistantId,
   type AssistantOpenResult,
   type AssistantSnapshot,
   type AssistantSettings,
@@ -10,10 +14,8 @@ import {
 } from '../../shared/types/assistants';
 import { readPersistedAssistantSettings, validateAssistantSettings } from './assistantSettings';
 import {
-  HERMES_DEFAULT_PORT,
   HERMES_LOOPBACK_HOST,
   generateServiceToken,
-  probeExternalBackend,
   spawnHermesServe,
   waitForServeReady,
   type FetchLike,
@@ -31,6 +33,7 @@ export interface HermesAssistantServiceDeps {
   /** Canonical local harness availability for `hermes`. Evaluated once per service lifetime (a restart picks up installs). */
   isHermesAvailable(): boolean;
   fetch?: FetchLike;
+  readRendezvous?: typeof readHermesRendezvous;
   createWebSocket?: WebSocketFactory;
   spawnServe?: SpawnServe;
   generateToken?: () => string;
@@ -48,12 +51,9 @@ const REPLAY_LIMIT = 512 * 1024;
 const PTY_CLOSE_CHILD_EXITED = 4410;
 const PROFILE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const ASSISTANT_ID = /^hermes:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /** The one canonical title: (profile, "Bot Chat") is that profile's permanent chat identity in Hermes. */
 export const CANONICAL_CHAT_TITLE = 'Bot Chat';
 const CANONICAL_LIST_LIMIT = 200;
-
-export function isValidAssistantId(value: unknown): value is string { return typeof value === 'string' && ASSISTANT_ID.test(value); }
 
 /** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
 interface RosterEntry { public: HermesAssistant; slug: string; sessionId?: string; hadCanonical: boolean }
@@ -69,7 +69,7 @@ interface PtySession {
   generation: number;
 }
 
-type Endpoint = { port: number; token: string; ownership: 'external' | 'clanker' };
+type Endpoint = { port: number; token: string; host?: '127.0.0.1' | '[::1]'; ownership: 'external' | 'clanker' };
 
 /**
  * Main-owned Hermes Assistant integration. Owns settings, backend discovery/adoption, the optional
@@ -102,6 +102,8 @@ export class HermesAssistantService {
   private episodeRestarts = 0;
   private readonly sessions = new Map<string, PtySession>();
   private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
+  private readonly detailReads = new Map<string, Promise<AssistantDetails | AssistantRead<AssistantRun[]>>>();
+  private readonly detailControllers = new Set<AbortController>();
 
   constructor(private readonly deps: HermesAssistantServiceDeps) {
     this.fetcher = deps.fetch ?? ((url, init) => fetch(url, init) as ReturnType<FetchLike>);
@@ -123,9 +125,10 @@ export class HermesAssistantService {
   get(): AssistantSnapshot {
     return {
       available: this.available,
-      settings: { ...this.settings },
+      settings: { ...this.settings, ...(this.settings.hiddenAssistantIds ? { hiddenAssistantIds: [...this.settings.hiddenAssistantIds] } : {}) },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
-      assistants: this.roster.map((entry) => ({ ...entry.public })),
+      assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
+      profiles: this.roster.map((entry) => ({ ...entry.public })),
       surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state })),
     };
   }
@@ -239,10 +242,10 @@ export class HermesAssistantService {
       // 2. (Re)discover: adopt a compatible running backend, else optionally start our own.
       let endpoint = this.child && this.child.exitCode === null && this.endpoint?.ownership === 'clanker' ? this.endpoint : undefined;
       if (!endpoint) {
-        const probe = await probeExternalBackend(this.fetcher, HERMES_DEFAULT_PORT);
+        const probe = await discoverHermesBackend(this.fetcher, this.deps.readRendezvous);
         if (!this.current(generation)) return this.get();
         if (probe.kind === 'usable') {
-          endpoint = { port: probe.port, token: probe.token, ownership: 'external' };
+          endpoint = { port: probe.port, token: probe.token, host: probe.host, ownership: 'external' };
         } else if (probe.kind === 'unusable') {
           return this.finish(generation, 'detected-unusable', probe.reason);
         } else if (this.settings.autoStart) {
@@ -312,7 +315,13 @@ export class HermesAssistantService {
       // (so a Retry coalesces onto it) and no replacement can spawn beside a still-live failed child.
       await this.killChild(child);
       if (this.child === child) this.child = undefined;
-      this.finish(generation, 'error', safeMessage(error));
+      if (!this.current(generation)) return undefined;
+      // A host owner can appear between discovery and spawn. New Hermes then attaches and exits
+      // instead of emitting READY. Rediscover after our failed child is cleaned; never claim it.
+      const probe = await discoverHermesBackend(this.fetcher, this.deps.readRendezvous);
+      if (!this.current(generation)) return undefined;
+      if (probe.kind === 'usable') return { port: probe.port, token: probe.token, host: probe.host, ownership: 'external' };
+      this.finish(generation, probe.kind === 'unusable' ? 'detected-unusable' : 'error', probe.kind === 'unusable' ? probe.reason : safeMessage(error));
       return undefined;
     }
   }
@@ -373,11 +382,13 @@ export class HermesAssistantService {
   private dropRpc(): void {
     const rpc = this.rpc;
     this.rpc = undefined;
+    for (const controller of this.detailControllers) controller.abort();
+    this.detailReads.clear();
     rpc?.close();
   }
 
   private async connectRpc(generation: number, endpoint: Endpoint): Promise<HermesRpcClient | undefined> {
-    const url = `ws://${HERMES_LOOPBACK_HOST}:${endpoint.port}/api/ws?token=${encodeURIComponent(endpoint.token)}`;
+    const url = `ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/ws?token=${encodeURIComponent(endpoint.token)}`;
     const rpc = new HermesRpcClient(this.createWebSocket(url), () => this.onRpcClosed(rpc));
     this.rpc = rpc;
     await rpc.ready;
@@ -388,6 +399,8 @@ export class HermesAssistantService {
   private onRpcClosed(rpc: HermesRpcClient): void {
     if (this.rpc !== rpc) return;
     this.rpc = undefined;
+    for (const controller of this.detailControllers) controller.abort();
+    this.detailReads.clear();
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
     this.markSessionsDisconnected();
     this.roster = [];
@@ -401,7 +414,63 @@ export class HermesAssistantService {
   private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
     const result = await rpc.call('profiles.list', {});
     if (!this.current(generation)) return;
-    this.roster = parseAssistantRoster(result);
+    this.roster = parseAssistantRoster(result, true);
+  }
+
+  /** Lazy read-only details; independent section failures never affect the control connection or chat. */
+  readDetails(assistantId: unknown): Promise<AssistantDetails> {
+    return this.readAssistant(assistantId, undefined) as Promise<AssistantDetails>;
+  }
+
+  readRoutineRuns(assistantId: unknown, jobId: unknown): Promise<AssistantRead<AssistantRun[]>> {
+    if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return Promise.resolve({ state: 'unavailable' });
+    return this.readAssistant(assistantId, jobId) as Promise<AssistantRead<AssistantRun[]>>;
+  }
+
+  private readAssistant(assistantId: unknown, jobId: string | undefined): Promise<AssistantDetails | AssistantRead<AssistantRun[]>> {
+    const unavailable = (state: 'offline' | 'unavailable'): AssistantDetails | AssistantRead<AssistantRun[]> => jobId ? { state }
+      : { assistantId: isValidAssistantId(assistantId) ? assistantId : '', profile: { state }, history: { state }, routines: { state } };
+    if (!isValidAssistantId(assistantId)) return Promise.resolve(unavailable('unavailable'));
+    const entry = this.entry(assistantId); const rpc = this.rpc; const endpoint = this.endpoint;
+    if (!entry || !rpc || rpc.isClosed || !endpoint || this.state !== 'connected') return Promise.resolve(unavailable(this.state === 'connected' ? 'unavailable' : 'offline'));
+    const key = `${assistantId}/${jobId ?? ''}`;
+    const previous = this.detailReads.get(key); if (previous) return previous;
+    if (this.detailReads.size >= 8) return Promise.resolve(unavailable('unavailable'));
+    const generation = this.generation;
+    const controller = new AbortController(); this.detailControllers.add(controller);
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    const rest = (path: string) => readHermesRest(this.fetcher, endpoint, path, controller.signal);
+    const jobsPath = `/api/cron/jobs?profile=${encodeURIComponent(entry.slug)}`;
+    const live = () => this.current(generation) && this.rpc === rpc && this.endpoint === endpoint && this.entry(assistantId)?.slug === entry.slug && !controller.signal.aborted;
+    const operation = (async () => {
+      let result: AssistantDetails | AssistantRead<AssistantRun[]>;
+      if (jobId) {
+        result = await readSection(async () => {
+          // Hermes may fall back to another profile for an absent job. Confirm this profile owns the
+          // exact id both before and after the run query; reject any explicit foreign-profile rows.
+          const owns = async () => parseRoutines(await rest(jobsPath), entry.slug).some((job) => job.id === jobId);
+          if (!await owns()) throw new Error('Job no longer owned');
+          const runs = parseRuns(await rest(`/api/cron/jobs/${encodeURIComponent(jobId)}/runs?profile=${encodeURIComponent(entry.slug)}&limit=20`), entry.slug, jobId);
+          if (!await owns()) throw new Error('Job no longer owned');
+          return runs;
+        });
+      } else {
+        const [profile, history, routines] = await Promise.all([
+          readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug)),
+          readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }))),
+          readSection(async () => parseRoutines(await rest(jobsPath), entry.slug)),
+        ]);
+        result = { assistantId, profile, history, routines };
+      }
+      // Even a backend title/preview containing its own credential must not expose that token.
+      const safeResult = JSON.parse(JSON.stringify(result, (_key, value: unknown) => typeof value === 'string' ? value.split(endpoint.token).join('[redacted]') : value)) as typeof result;
+      return live() ? safeResult : unavailable('unavailable');
+    })().finally(() => {
+      clearTimeout(timer); this.detailControllers.delete(controller);
+      if (this.detailReads.get(key) === operation) this.detailReads.delete(key);
+    });
+    this.detailReads.set(key, operation);
+    return operation;
   }
 
   // ── Assistant surfaces (service-hosted chat PTYs) ───────────────────────────
@@ -515,7 +584,7 @@ export class HermesAssistantService {
     session.generation++;
     const generation = session.generation;
     const params = new URLSearchParams({ token: endpoint.token, profile: entry.slug, resume: entry.sessionId!, attach: session.attach });
-    const socket = this.createWebSocket(`ws://${HERMES_LOOPBACK_HOST}:${endpoint.port}/api/pty?${params.toString()}`);
+    const socket = this.createWebSocket(`ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/pty?${params.toString()}`);
     socket.binaryType = 'arraybuffer';
     session.socket = socket;
     const live = () => session.socket === socket && session.generation === generation;
@@ -600,7 +669,7 @@ export class HermesAssistantService {
  * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
  * uses the raw slug; display is Assistant title, then profile display name, then the prettified slug.
  */
-export function parseAssistantRoster(result: unknown): RosterEntry[] {
+export function parseAssistantRoster(result: unknown, includeHidden = false): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
   if (!Array.isArray(profiles)) throw new Error('Hermes returned an unexpected profile list');
   const assistants: RosterEntry[] = [];
@@ -613,7 +682,7 @@ export function parseAssistantRoster(result: unknown): RosterEntry[] {
     const uiMeta = row.ui_meta && typeof row.ui_meta === 'object' ? row.ui_meta as Record<string, unknown> : null;
     const botMeta = uiMeta?.['hermes-bots'];
     const meta = botMeta && typeof botMeta === 'object' && !Array.isArray(botMeta) ? botMeta as Record<string, unknown> : {};
-    if (meta.hidden === true) continue;
+    if (meta.hidden === true && !includeHidden) continue;
     seen.add(slug);
     const title = typeof meta.title === 'string' ? meta.title.trim() : '';
     const profileDisplay = typeof row.display_name === 'string' ? row.display_name.trim() : '';
@@ -626,6 +695,8 @@ export function parseAssistantRoster(result: unknown): RosterEntry[] {
       slug, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`,
+        ...(meta.hidden === true ? { hiddenInHermes: true } : {}),
+        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row) } : {}),
         displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
         ...(description ? { description: description.slice(0, 200) } : {}),
       },

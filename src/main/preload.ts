@@ -22,6 +22,8 @@ import type { AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../
 import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, WorkspaceServicesUpdate } from '../shared/types/workspaceServices';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
+  ASSISTANTS_DETAILS,
+  ASSISTANTS_ROUTINE_RUNS,
   ASSISTANTS_GET,
   ASSISTANTS_CONFIGURE,
   ASSISTANTS_REFRESH,
@@ -228,6 +230,8 @@ import {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Optional native-profile roster; settings do not contain native credentials.
+  getAssistantDetails: (id: string) => ipcRenderer.invoke(ASSISTANTS_DETAILS, id),
+  getAssistantRoutineRuns: (id: string, jobId: string) => ipcRenderer.invoke(ASSISTANTS_ROUTINE_RUNS, id, jobId),
   getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
   configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
   refreshAssistants: () => ipcRenderer.invoke(ASSISTANTS_REFRESH),
