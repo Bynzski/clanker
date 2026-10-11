@@ -92,6 +92,7 @@ import { AgentAttentionBroker } from './agentAttentionBroker';
 import { createAgentLocationResolver, strandedAgentTerminals } from './agentLocation';
 import { findHarnessProvider } from './harnesses/registry';
 import { releaseCheckoutContext } from './checkoutContextRelease';
+import { checkoutTerminalUsages, localCheckoutUsagePaths } from './checkoutOccupancy';
 import { AGENT_ATTENTION_CHANGED, AGENT_CHECKOUT_TRANSITION, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
@@ -287,7 +288,9 @@ const workspaceServiceManager = new WorkspaceServiceManager({
   isShuttingDown: getAppShuttingDown,
   changed: (update) => { if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(WORKSPACE_SERVICE_CHANGED, update); },
 });
-const checkoutUsages = () => [...terminals.values(), ...workspaceServiceManager.usages()];
+const terminalCheckoutUsages = () => checkoutTerminalUsages(terminals,
+  (id) => agentAttentionBroker.locationObservation(id)?.location ?? null);
+const checkoutUsages = () => [...terminalCheckoutUsages().map(([, usage]) => usage), ...workspaceServiceManager.usages()];
 const releaseCheckoutWithUsages = (workspaceId: string, checkoutContextId: string) =>
   releaseCheckoutContext({ registry: workspaceRegistry, terminals: checkoutUsages(), workspaceId, checkoutContextId });
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, {
@@ -309,9 +312,7 @@ const gitService: GitService = new GitService(
     }
   },
   (worktreePath) => shell.trashItem(worktreePath),
-  () => checkoutUsages()
-    .map((terminal) => terminal.cwd)
-    .filter((cwd): cwd is string => typeof cwd === 'string'),
+  () => localCheckoutUsagePaths(checkoutUsages()),
   () => workspaceRegistry.getLocalOpenWorkspacePaths(),
   async (workspacePath, args, timeoutMs, workspaceId, environmentId, checkoutContextId) => {
     if (workspaceId !== undefined) {
@@ -534,13 +535,14 @@ app.whenReady().then(() => {
       const configurations = store.get('sshEnvironments') ?? [];
       if (!configurations.some((entry) => entry.id === environmentId)) return null;
       const resourceId = workspaceRegistry.getWorktreeResourceId(environmentId);
-      for (const terminal of terminals.values()) {
+      for (const [, terminal] of terminalCheckoutUsages()) {
         if (!terminal.environmentId || terminal.environmentId === 'local') continue;
         if (!configurations.some((entry) => entry.id === terminal.environmentId)) return null;
         if (workspaceRegistry.getWorktreeResourceId(terminal.environmentId) !== resourceId) continue;
         // The SSH client's local cwd is unrelated to its remote checkout.
         if (!terminal.remoteWorkingDir) return null;
         paths.push(terminal.remoteWorkingDir);
+        if (terminal.observedLocation) paths.push(terminal.observedLocation.path);
       }
       return paths;
     },
@@ -594,6 +596,10 @@ app.whenReady().then(() => {
   isolatedCheckout = new IsolatedCheckoutService({
     getRegistry: () => workspaceRegistry,
     getTerminals: () => terminals,
+    getCheckoutUsages: () => [
+      ...terminalCheckoutUsages(),
+      ...workspaceServiceManager.usages().map((usage, index): [string, typeof usage] => [`service:${index}`, usage]),
+    ],
     attention: agentAttentionBroker,
     isAttentionEnabled: (harnessId) => isHarnessId(harnessId) && store.get('harnessDefaults')[harnessId]?.attentionEnabled === true,
     git: gitIpc,

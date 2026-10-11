@@ -11,8 +11,9 @@ import { isPathContained } from './remote/remotePaths';
  * its process changing directory (Claude Code tracks the directory a Bash `cd` leaves it in), so
  * this is the agent's own report, carried over the authenticated attention channel.
  *
- * Presentation only. It never authorizes a root, re-binds a terminal's launch context, or relaxes
- * a safety check: a terminal stays confined to, and counted against, the context it launched in.
+ * Descriptive, never authority. It never authorizes a root, re-binds a terminal's launch context,
+ * or relaxes a safety check. Live authenticated observations can additionally block cleanup;
+ * launch occupancy remains intact regardless of the reported location.
  */
 
 /** Largest reported directory accepted, in UTF-8 bytes. Keeps every attention frame within its bound. */

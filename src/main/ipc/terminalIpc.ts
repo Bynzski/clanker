@@ -48,6 +48,7 @@ import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
 import { isInsideRoot } from '../localPathContainment';
 import { releaseCheckoutContext, type TerminalUsage } from '../checkoutContextRelease';
+import { checkoutTerminalUsages } from '../checkoutOccupancy';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -601,7 +602,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   ipcMain.handle(RELEASE_CHECKOUT_CONTEXT, (_, workspaceId: unknown, checkoutContextId: unknown) => {
     const registry = deps.getWorkspaceRegistry?.();
     if (!registry) return fail('Workspace registry is unavailable');
-    return releaseCheckoutContext({ registry, terminals: [...getTerminals().values(), ...(deps.getAdditionalCheckoutUsages?.() ?? [])], workspaceId, checkoutContextId });
+    const usages = checkoutTerminalUsages(getTerminals(),
+      (id) => deps.agentAttentionBroker?.locationObservation(id)?.location ?? null);
+    return releaseCheckoutContext({ registry, terminals: [...usages.map(([, usage]) => usage), ...(deps.getAdditionalCheckoutUsages?.() ?? [])], workspaceId, checkoutContextId });
   });
 
   ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {

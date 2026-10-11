@@ -75,6 +75,8 @@ export interface LifecycleTerminal extends TerminalUsage, RetirableTerminal {
 export interface IsolatedCheckoutServiceDeps {
   getRegistry(): WorkspaceRegistry | undefined;
   getTerminals(): Map<string, LifecycleTerminal>;
+  /** Main-enriched live occupancy, including observed agent paths and pending/live services. */
+  getCheckoutUsages?(): Iterable<[string, TerminalUsage]>;
   isAttentionEnabled(harnessId: string): boolean;
   attention: {
     snapshot(terminalId: string): (Pick<AgentAttentionSnapshot, 'sessionId' | 'lastOutcome'> & Partial<AgentAttentionSnapshot>) | null;
@@ -281,7 +283,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       const registry = this.deps.getRegistry()!;
       let target = registry.getCheckoutContextsForWorkspace(workspaceId)
         .find((context) => context.kind === 'worktree' && context.id !== main.id && context.branch === branch && !context.missing) ?? null;
-      if (target && countTerminalsUsingContext(registry, target, this.deps.getTerminals().entries()) > 0) {
+      if (target && countTerminalsUsingContext(registry, target, this.deps.getCheckoutUsages?.() ?? this.deps.getTerminals().entries()) > 0) {
         throw new TransitionFailure(`Branch "${branch}" is already in use by another conversation; choose a new branch name`);
       }
       let createdNow = false;
@@ -353,7 +355,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
       // The checkout must be one this transaction can finish: nobody else uses it, Git lists it as an
       // unlocked linked worktree (or no longer has its directory at all), and it holds nothing unsaved.
-      const others = countTerminalsUsingContext(registry, old, this.deps.getTerminals().entries(), caller.terminalId);
+      const others = countTerminalsUsingContext(registry, old, this.deps.getCheckoutUsages?.() ?? this.deps.getTerminals().entries(), caller.terminalId);
       if (others > 0) throw new TransitionFailure(`${others} other running terminal${others === 1 ? ' is' : 's are'} still using this checkout; close ${others === 1 ? 'it' : 'them'} first`);
       const checkout = await this.inspectCheckout(workspaceId, old, input.discardIgnored === true);
       this.throwIfAborted(signal);
@@ -780,7 +782,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
     let checkout: { missing: boolean; branch: string | null } = { missing: false, branch: null };
     if (pending.kind === 'complete') {
-      const others = countTerminalsUsingContext(registry, pending.source, this.deps.getTerminals().entries(), terminalId);
+      const others = countTerminalsUsingContext(registry, pending.source, this.deps.getCheckoutUsages?.() ?? this.deps.getTerminals().entries(), terminalId);
       if (others > 0) return cancel(`${others} other running terminal${others === 1 ? ' is' : 's are'} using the checkout`);
       try { checkout = await this.inspectCheckout(workspaceId, pending.source, pending.discardIgnored); }
       catch (error) { return cancel(messageOf(error, 'the checkout can no longer be removed')); }

@@ -364,12 +364,53 @@ describe('AgentAttentionBroker agent location', () => {
     expect(location(broker)).toEqual({ path: '/srv/repo', checkoutContextId: null });
   });
 
-  it('records a location even when the event cannot change foreground state', () => {
+  it('never lets a delayed retired-turn report overwrite newer location evidence', () => {
     const { broker, send } = setup();
     send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/a' });
     send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/a' });
     expect(send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/b' })).toBe('ignored-stale');
-    expect(location(broker)).toEqual({ path: '/srv/b', checkoutContextId: null });
+    expect(location(broker)).toEqual({ path: '/srv/a', checkoutContextId: null });
+  });
+
+  it.each(['session_replaced', 'session_continued'])('publishes %s with its new-session location atomically', (event) => {
+    const { broker, send, updates } = setup();
+    send('turn_started', { sessionId: 'old', turnId: 't1', cwd: '/srv/old' });
+    const before = updates.length;
+    expect(send(event, { sessionId: 'new', previousSessionId: 'old', continuesSessionId: 'old', cwd: '/srv/new' })).toBe('accepted');
+    expect(updates.slice(before)).toHaveLength(1);
+    expect(updates[updates.length - 1]?.snapshot).toMatchObject({ sessionId: 'new', location: { path: '/srv/new' } });
+    expect(broker.locationObservation('term-a')).toMatchObject({ sessionId: 'new', state: 'current' });
+    expect(send('location_changed', { sessionId: 'old', cwd: '/srv/old' })).toBe('rejected-mismatch');
+    expect(location(broker)?.path).toBe('/srv/new');
+  });
+
+  it('does not acquire location evidence from an ambiguous completion or refresh it from stale delivery', () => {
+    const { broker, send } = setup();
+    expect(send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/b' })).toBe('rejected-ambiguous');
+    expect(broker.locationObservation('term-a')).toBeNull();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/a' });
+    const observation = broker.locationObservation('term-a');
+    send('turn_completed', { sessionId: 'root', turnId: 'wrong', cwd: '/srv/b' });
+    expect(broker.locationObservation('term-a')).toEqual(observation);
+  });
+
+  it('tracks repeat-report freshness in main without duplicate renderer publications', () => {
+    let now = 100;
+    const changes = vi.fn();
+    const broker = new AgentAttentionBroker(changes, () => undefined, () => now);
+    brokers.push(broker);
+    const token = broker.registerRemote('t', 'pi');
+    const send = (event: string, fields: object = {}) => broker.receiveRemote('t', JSON.stringify({ version: 1, token, harness: 'pi', scope: 'root', sessionId: 's', event, ...fields }));
+    send('session_started', { cwd: '/srv/a' });
+    expect(broker.locationObservation('t')).toMatchObject({ lastReportedAt: 100, state: 'current' });
+    now = 200;
+    send('location_changed', { cwd: '/srv/a' });
+    expect(changes).toHaveBeenCalledTimes(1);
+    expect(broker.locationObservation('t')).toMatchObject({ lastReportedAt: 200, state: 'current' });
+    send('session_ended');
+    expect(broker.locationObservation('t')).toMatchObject({ lastReportedAt: 200, state: 'last-reported' });
+    send('agent_exited');
+    expect(broker.locationObservation('t')).toBeNull();
   });
 
   it('never takes a location from a child, another session, or an event without a session', () => {

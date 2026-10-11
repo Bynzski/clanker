@@ -1,6 +1,7 @@
 /**
  * Issue #100 end to end on a real Git repository: real GitService, WorkspaceRegistry, Git and session IPC,
- * real Claude/Pi history parsing from an isolated HOME. Only Electron and node-pty are replaced.
+ * real Claude/Pi history parsing from an isolated HOME. Electron/node-pty and unrelated
+ * OpenCode CLI discovery are replaced; installed CLIs must not bootstrap against the fixture HOME.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -15,6 +16,17 @@ const { handlers, mockPtySpawn } = vi.hoisted(() => ({
   mockPtySpawn: vi.fn(),
 }));
 vi.mock('node-pty', () => ({ spawn: mockPtySpawn }));
+// This fixture contains Claude/Pi files, not an OpenCode store. The native CLI can bootstrap
+// or wait on network in the empty HOME; its own listing contract has separate coverage.
+vi.mock('../../../src/main/harnesses/registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/main/harnesses/registry')>();
+  return {
+    ...actual,
+    getHarnessProviders: () => actual.getHarnessProviders().map((provider) => provider.descriptor.id === 'opencode'
+      ? { ...provider, sessions: { ...provider.sessions!, discover: async () => [] } }
+      : provider),
+  };
+});
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => testHome()), on: vi.fn(), quit: vi.fn() },
   BrowserWindow: vi.fn(),
