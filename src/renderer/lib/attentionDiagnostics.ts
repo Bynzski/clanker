@@ -3,6 +3,9 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { paneIsPresented } from '../store/workspacePages';
 import { deriveAttention } from './agentAttentionPresentation';
+import { currentCheckoutSelection } from './checkoutSelection';
+import { checkoutSelectionToken } from './checkoutSelectionRuntime';
+import { matchingCheckoutGit, checkoutGitAvailability, useCheckoutGitStore } from '../store/checkoutGitStore';
 
 /** Query-only developer view. Nothing here alters authority, acknowledges a turn or starts a timer. */
 export async function explainTerminalAttention(terminalId: string) {
@@ -20,12 +23,25 @@ export async function explainTerminalAttention(terminalId: string) {
   const eligible = Boolean(terminal?.harnessId && (capability?.requested ?? terminal.attentionEnabled));
   const revision = store.revisionByTerminalId[terminalId] ?? null;
   const mainRevision = main.main?.revision ?? null;
+  const selection = workspace ? currentCheckoutSelection(workspace) : null;
+  const activeGit = useCheckoutGitStore.getState().active;
+  const matchingGit = selection?.availability === 'available' ? matchingCheckoutGit(activeGit, {
+    workspaceId: selection.workspaceId, environmentId: selection.environmentId, contextId: selection.contextId ?? undefined,
+    root: selection.root, selectionGeneration: checkoutSelectionToken(selection.workspaceId),
+  }) : null;
   return {
     ...main,
     renderer: {
       revision, snapshotPresent: Boolean(snapshot), tombstone: revision !== null && !snapshot,
       comparison: mainRevision === null ? 'no-main-registration' : revision === null || revision < mainRevision ? 'renderer-behind' : revision === mainRevision ? 'current' : 'renderer-newer-or-retired',
       runtime: snapshot?.runtime.status ?? null, signal: snapshot?.signal ?? null,
+      checkoutPresentation: {
+        workspaceActiveTerminalId: workspace?.activeTerminalId ?? null, globalActiveTerminalId: state.activeTerminalId,
+        queriedTerminalLaunchContextId: terminal?.checkoutContextId ?? null,
+        selectedLocationProvenance: workspace?.activeTerminalId ? store.byTerminalId[workspace.activeTerminalId]?.locationProvenance?.state ?? null : null,
+        selection, git: { availability: selection?.availability === 'available' ? checkoutGitAvailability(matchingGit) : 'not-selected', matchesSelection: Boolean(matchingGit),
+          snapshotState: activeGit?.state ?? null, identity: activeGit?.identity ?? null, generation: activeGit?.generation ?? null },
+      },
       indicator: eligible ? view?.display ?? null : null,
       suppressed: !eligible ? 'capability-disabled-or-terminal-absent' : view ? null
         : snapshot?.runtime.status === 'idle' && snapshot.lastCompletion && (seen?.completion ?? 0) >= snapshot.lastCompletion.revision ? 'acknowledged-idle'

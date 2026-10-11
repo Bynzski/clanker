@@ -23,10 +23,12 @@ export function describeBridgeObservation(evidence: BridgeLocationEvidence | nul
   // Keep the authenticated report's identity: registering a root later is not a
   // new native report and must not silently turn an unregistered report current.
   if (!reportedId) return { ...base, state: 'unregistered' };
-  if (!contexts.some((context) => context.id === reportedId)) return { ...base, state: 'released' };
-  const context = locateCheckoutContext(evidence.location.path, contexts, 'local');
-  if (!context) return { ...base, state: 'unregistered' };
+  const context = contexts.find((context) => context.id === reportedId);
+  if (!context) return { ...base, state: 'released' };
   if (context.workspaceId !== launch.workspaceId || context.environmentId !== launch.environmentId) return { ...base, state: 'unavailable' };
+  // Validate containment against the authenticated identity only. A newly registered
+  // nested root cannot reinterpret this report; only the broker's next native event can.
+  if (!locateCheckoutContext(evidence.location.path, [context], 'local')) return { ...base, state: 'unavailable' };
   return {
     ...base, state: context.missing ? 'missing' : evidence.state,
     checkout: { kind: context.kind, isolated: context.kind === 'worktree', branch: context.branch?.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 128) ?? null },

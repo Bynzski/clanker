@@ -5,9 +5,12 @@ import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttenti
 import { EMPTY_ATTENTION, snapshot } from '../../_helpers/attentionSnapshots';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
+import { useCheckoutGitStore } from '../../../src/renderer/store/checkoutGitStore';
+import { checkoutSelectionToken } from '../../../src/renderer/lib/checkoutSelectionRuntime';
 
 beforeEach(() => {
   useAgentAttentionStore.setState(EMPTY_ATTENTION);
+  useCheckoutGitStore.setState({ active: null });
   useWorkspaceStore.setState({ activeWorkspaceId: 'ws', workspaces: [createWorkspaceFixture({ id: 'ws', terminals: [{ id: 't', pid: 1, workingDir: '/PRIVATE', harnessId: 'codex', attentionEnabled: true }], panes: [{ id: 'p', terminalId: 't' }], layoutRoot: { type: 'leaf', nodeId: 'l', paneId: 'p' } })] });
 });
 afterEach(() => { delete window.clankerAttention; });
@@ -36,6 +39,20 @@ describe('query-only end-to-end attention diagnostics', () => {
     unverified.signal = { requested: true, attachment: 'unavailable', health: 'unverified', reason: 'configuration-conflict' };
     useAgentAttentionStore.getState().hydrate([unverified], () => false);
     expect(await explainTerminalAttention('t')).toMatchObject({ renderer: { indicator: 'signal_unavailable', signal: { reason: 'configuration-conflict' } } });
+  });
+
+  it('traces selected versus queried terminal, authenticated provenance and matching Git state without native session IDs', async () => {
+    installElectronApiMock({ getAgentAttentionDiagnostics: vi.fn().mockResolvedValue(mainAt(4)) });
+    const context = { id: 'ws::task', workspaceId: 'ws', environmentId: 'local', kind: 'worktree' as const, path: '/task', branch: 'test1' };
+    const workspace = { ...useWorkspaceStore.getState().workspaces[0], checkoutContexts: [context], activeTerminalId: 'pi', terminals: [{ id: 't', pid: 1, workingDir: '/PRIVATE', harnessId: 'opencode', checkoutContextId: 'ws::main' }, { id: 'pi', pid: 2, workingDir: '/task', harnessId: 'pi', checkoutContextId: context.id }] };
+    useWorkspaceStore.setState({ workspaces: [workspace], activeTerminalId: 'pi' });
+    useAgentAttentionStore.getState().hydrate([snapshot('pi', 'running', 4, { location: { path: '/task', checkoutContextId: context.id }, locationProvenance: { state: 'current', sessionId: 'PRIVATE_NATIVE_SESSION' } })], () => false);
+    const generation = useCheckoutGitStore.getState().begin({ workspaceId: 'ws', environmentId: 'local', contextId: context.id, root: '/task', selectionGeneration: checkoutSelectionToken('ws') });
+    const explained = await explainTerminalAttention('t');
+    expect(explained).toMatchObject({ renderer: { checkoutPresentation: { workspaceActiveTerminalId: 'pi', globalActiveTerminalId: 'pi', queriedTerminalLaunchContextId: 'ws::main', selectedLocationProvenance: 'current', selection: { source: 'observed', root: '/task' }, git: { availability: 'loading', matchesSelection: true, generation } } } });
+    expect(JSON.stringify(explained)).not.toContain('PRIVATE_NATIVE_SESSION');
+    useCheckoutGitStore.getState().invalidate(generation);
+    expect(await explainTerminalAttention('t')).toMatchObject({ renderer: { checkoutPresentation: { selection: { availability: 'available', root: '/task' }, git: { availability: 'unavailable' } } } });
   });
 
   it('installs a developer console query only when main enables debugging, and cleans it up', async () => {

@@ -52,6 +52,11 @@ export const useCheckoutGitStore = create<CheckoutGitState>((set) => ({
     ? { active: { ...state.active, state: 'error', result: null } } : state),
 }));
 
+/** Missing means the selected controller has not supplied a snapshot yet, not a bad checkout. */
+export function checkoutGitAvailability(snapshot: CheckoutGitSnapshot | null): 'loading' | 'unavailable' | 'ready' {
+  return !snapshot || snapshot.state === 'loading' ? 'loading' : snapshot.state === 'error' ? 'unavailable' : 'ready';
+}
+
 /** Consumers must match identity on every render, including the render before poll-owner effects. */
 export function matchingCheckoutGit(active: CheckoutGitSnapshot | null, identity: CheckoutGitIdentity): CheckoutGitSnapshot | null {
   return active?.key === checkoutGitKey(identity)

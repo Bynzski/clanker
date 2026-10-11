@@ -13,7 +13,7 @@ import { focusedFileCheckout, fileCheckoutFromSelection, pathInFileCheckout } fr
 import { useAgentSnapshot } from '../../lib/useAgentLocation';
 import { selectCheckout } from '../../lib/checkoutSelection';
 import { checkoutSelectionToken } from '../../lib/checkoutSelectionRuntime';
-import { matchingCheckoutGit, useCheckoutGitStore } from '../../store/checkoutGitStore';
+import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../../store/checkoutGitStore';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspaceSelector } from '../WorkspaceScope';
@@ -125,6 +125,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const workspacePath = workspace?.workspacePath ?? '';
   const checkoutContextId = workspace?.checkoutContextId;
   const gitSnapshot = workspace ? matchingCheckoutGit(activeGit, { workspaceId: workspace.id, environmentId: workspace.environmentId ?? 'local', contextId: checkoutContextId, root: workspace.workspacePath, selectionGeneration: checkoutSelectionToken(workspace.id) }) : null;
+  const gitAvailability = checkoutGitAvailability(gitSnapshot);
   const gitChanges = gitSnapshot?.state === 'ready' ? gitSnapshot.result?.changes ?? [] : [];
   const isRemote = workspace?.environmentId != null && workspace.environmentId !== 'local';
   const explorerVisible = workspace?.explorerVisible ?? false;
@@ -727,7 +728,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         </div>
       </div>
       {workspace?.checkoutLabel && <div className="file-explorer-checkout" title={normalizedWorkspacePath}>Checkout: {workspace.checkoutLabel}</div>}
-      {gitSnapshot?.state !== 'ready' && <div className="file-explorer-checkout" role="status">{gitSnapshot?.state === 'loading' ? 'Loading Git status…' : 'Git status unavailable'}</div>}
+      {gitAvailability !== 'ready' && <div className="file-explorer-checkout" data-git-state={gitAvailability} role="status">{gitAvailability === 'loading' ? 'Loading Git status…' : 'Git status unavailable'}</div>}
       <div className="file-explorer-filter">
         <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />
         <Input

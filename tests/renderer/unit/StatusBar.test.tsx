@@ -140,7 +140,8 @@ describe('StatusBar', () => {
       expect(branchText()).toBe('main');
       expect(pathTitle()).toBe(ROOT);
       expect(document.querySelector('.status-branch')?.getAttribute('title')).toContain('main');
-      expect(document.querySelector('.status-checkout-unavailable')).toHaveTextContent('Checkout status unavailable');
+      expect(document.querySelector('.status-checkout-unavailable')).toBeNull();
+      expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git loading…');
     });
 
     it('shows the context branch and path when an isolated agent is selected', () => {

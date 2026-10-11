@@ -39,9 +39,13 @@ environment, checkout context and canonical root. No historical cache or extra
 poller exists. The established `GitButton` controller owns the canonical poller;
 Explorer decorations, header counts and status-bar Git metadata consume its
 matching snapshot. Successful known-empty status is clean; loading, failure and
-unavailable selection are not. Last-known branch metadata is explicitly marked
-as such when live Git status is absent. Explorer shows loading/unavailable text
-rather than carrying dirty decorations over from another checkout.
+unavailable selection are not. Available checkout + pending/missing snapshot shows
+**Git loading…**, never checkout unavailable. A failed refresh shows **Git status
+unavailable**, retaining the valid checkout's branch/root metadata. Only genuinely
+unavailable selection shows **Checkout unavailable · <reason>**, with full guidance
+in the tooltip and Explorer. Last-known branch metadata is identified as such until
+matching Git status is ready. All three consumers use the same stateless availability
+adapter over the existing snapshot; no status store or poller was added.
 
 Dirty counts deduplicate staged/working entries for the same relative path.
 Explorer resolves relative status only under the selected root. Staged indicators
@@ -62,7 +66,10 @@ focused-checkout batch, parking other-checkout tabs.
 
 Inactive/Available/In use labels include live terminal launch bindings,
 authenticated observed containment (including history/unregistered paths), and
-live services. Tombstones/retired snapshots are not permanent occupants. Main's
+live services. **In use is not registration or authorization:** an agent's unregistered
+worktree can be occupied in the launcher while Explorer/Git/status-bar selection
+remains unavailable. This is not a contradiction and must not trigger automatic
+adoption. Tombstones/retired snapshots are not permanent occupants. Main's
 release/removal/prune guards decide safety, not these labels.
 
 ## Read-only MCP
@@ -75,6 +82,11 @@ No observed absolute path, context/session ID, another caller or credential leak
 It takes no identity arguments, does not refresh observation and changes no grants.
 Later explicit registration of a formerly unregistered root does not rewrite its
 old report; a fresh accepted native report supplies the registered identity.
+Likewise, registering nested B after a report authenticated as A cannot reinterpret
+that report as B. MCP finds the original ID, validates its caller workspace/environment
+and symlink-aware containment against **that context alone**, and preserves A. Invalid
+containment is unavailable; missing/released original contexts remain missing/released.
+Only a new accepted native event can resolve the location to B.
 
 Native location observation, resume in another checkout and same-turn live
 relocation are independent. `providerCapabilities` states proven resume/rehome
@@ -82,6 +94,69 @@ support; it does not grant a tool or infer relocation from location. Existing
 rehome transactions still resume the native conversation through their provider
 strategy. Pi remains context-only; #138 remains on hold. No Pi runtime integration,
 terminal-text parsing, automatic adoption or SSH MCP was added.
+
+## PR #160 review corrections and screenshot investigation
+
+Two independent defects were confirmed:
+
+- MCP originally checked that reported A existed, then resolved its path across the
+  entire updated registry. Registering nested B could therefore silently reinterpret
+  old A evidence. The correction validates **only the authenticated original ID**;
+  regressions cover nested registration, fresh reports, missing/released originals,
+  foreign workspace/environment, inconsistent paths and retargeted local symlinks.
+  Launch authority/grants and broker evidence are unchanged by a read.
+- StatusBar used `!status` for both an available checkout with pending/failed Git
+  acquisition and a genuinely unavailable selection, rendering the same generic
+  message. This was a **Git-status presentation defect**, reproducible even with a
+  valid registered `test1` selection and correctly scoped poll controller. Loading,
+  failed acquisition and actual unavailable selection are now distinct in StatusBar,
+  GitButton and Explorer. Failed main refresh preserves last-known branch metadata,
+  never old counts/decorations or current/clean claims.
+
+The exact owner screenshot state is **not recoverable from screenshots/terminal
+statuslines**; the owner's dev Electron process had exited when investigated. A
+missing/historical/unregistered observation could also legitimately block selection.
+No genuine sidebar focus, poll-identity or generation defect was reproduced in the
+controlled two-agent scenario. Dozin selected → main is correct; Darling's individual
+`test1` label must stay independent, even while both panes are visible.
+
+Trace: sidebar `AgentRow` calls `selectWorkspace(workspaceId, terminalId)` →
+`revealTerminal` synchronizes global/workspace active terminal and clears editor pin →
+`checkoutSelection` uses that terminal's authenticated snapshot/provenance (or launch
+when absent) → `gitManagementScope` passes its registered ID/root to `GitButton` →
+main validates the scope and owns the canonical poller → matching identity/epoch/
+generation is applied to the single snapshot → StatusBar, Explorer and header counts
+consume it. No terminal launch binding is modified.
+
+The extended built Electron smoke checks **actual main and renderer state**, with an
+OpenCode fixture in main and a Pi fixture in registered `test1`, in sidebar mode with
+both panes visible: Pi without observation selects launch `test1`; a current report
+changes only selection source; OpenCode selects main; Pi selects `test1` again. It
+asserts active terminal IDs, main poll context/root/generation, renderer snapshot
+identity/generation, branch, dirty counts/decorations and independent Pi label.
+An authenticated explicit emitter is used, not native-provider relocation proof.
+
+For an owner repeat, launch `CLANKER_DEBUG_ATTENTION=1 npm run dev` and query the
+existing gated developer console view (query-only; no timers or authority changes):
+
+```js
+await Promise.all((await window.electronAPI.getAgentAttentionSnapshots()).map(async s => {
+  const d = await window.clankerAttention.explain(s.terminalId);
+  return { terminalId: s.terminalId, presentation: d?.renderer.checkoutPresentation };
+}));
+```
+
+`checkoutPresentation` distinguishes workspace/global selected terminal, queried
+terminal launch context, selected authenticated provenance **state only** (no native
+session ID), canonical selection/root/reason and matching Git identity/state/generation.
+Compare while selecting Darling then Dozin. A valid root plus Git loading/failure is
+not checkout unavailability; a true unavailable selection includes its reason. Native
+terminal text and **In use** alone cannot establish current registered selection.
+
+Targeted renderer regressions use named Darling/Pi and Dozin/OpenCode rows, exercise
+all ten focus/provenance/polling transitions, failure/recovery for worktree and main,
+stale main response rejection, explicit editor override and occupied-but-unregistered
+worktree rejection. Existing dirty-buffer, SSH and occupancy guards remain intact.
 
 ## Smoke procedure
 
@@ -157,11 +232,17 @@ On this branch's implementation host:
   symlink spellings, destructive-dispatch timing and all Antigravity/Hermes behavior
   remain unverified here. No unsupported signal or relocation was fabricated.
 
-Focused integration run: **18 files / 275 tests passed**, including all main real
+Review-correction focused run: **9 files / 282 tests passed** (MCP observation,
+canonical selection/snapshot/polling, StatusBar/GitButton/Source Control, two-agent
+presentation and gated diagnostics). Extended `npm run smoke:checkout-presentation`
+passed the actual main/renderer/poller identity checks and both-visible-pane focus
+sequence, in addition to the existing four dirty matrices.
+
+Initial focused integration run: **18 files / 275 tests passed**, including all main real
 integrations, file/observed-checkout/isolated-picker renderer integrations and real
 editor-operation remote watcher/occupancy presentation regressions.
 
-`npm run validate`: **passed — 390 test files / 7,896 tests**, including branding,
+`npm run validate`: **passed — 390 test files / 7,904 tests**, including branding,
 lint, typecheck, Fallow regression, security gate and build. The only audit exception
 is the already documented dev-only electron-builder chain; no new dependency or
 exception was added.

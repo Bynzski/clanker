@@ -1,9 +1,12 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GitButton from '../../../src/renderer/components/GitButton';
 import FileExplorer from '../../../src/renderer/components/FileExplorer';
 import ExplorerLifecycleCoordinator from '../../../src/renderer/components/ExplorerLifecycleCoordinator';
 import StatusBar from '../../../src/renderer/components/StatusBar';
+import { AgentRow } from '../../../src/renderer/components/WorkspaceNavigatorSection';
+import { buildIsolatedAgentChoices } from '../../../src/renderer/lib/isolatedAgentChoices';
+import { gitManagementScope } from '../../../src/renderer/components/git/gitManagementScope';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { useCheckoutGitStore } from '../../../src/renderer/store/checkoutGitStore';
@@ -56,6 +59,104 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('one observed-checkout interpretation across workspace surfaces', () => {
+  it('keeps Darling/Pi test1 and Dozin/OpenCode main aligned through sidebar focus, loading, failure, stale replies and provenance recovery', async () => {
+    automatic = false;
+    const test1 = { ...A, branch: 'test1' };
+    const ws = { ...workspace(), name: 'worktree-tests', checkoutContexts: [MAIN, test1, B], gitIsRepo: true, gitCurrentBranch: 'main',
+      editorTabs: [{ id: 'main-pin', filePath: `${MAIN.path}/same.ts`, fileName: 'same.ts', content: '', originalContent: '', isDirty: false, checkoutContextId: MAIN.id, checkoutRoot: MAIN.path }],
+      terminals: [createTerminalFixture({ id: 'agent', displayName: 'Darling', harnessId: 'pi', checkoutContextId: A.id }), createTerminalFixture({ id: 'other', displayName: 'Dozin', harnessId: 'opencode', checkoutContextId: MAIN.id })],
+      panes: [{ id: 'pi-pane', terminalId: 'agent' }, { id: 'oc-pane', terminalId: 'other' }] };
+    useWorkspaceStore.setState({ workspaces: [ws], activeTerminalId: 'agent' });
+    changes[A.path] = [{ path: 'same.ts', status: 'modified', staged: true }, { path: 'new.ts', status: 'untracked', staged: false }];
+    changes[MAIN.path] = [{ path: 'other.ts', status: 'modified', staged: false }];
+    api.gitGetBranchState.mockImplementation(async (root) => ({ success: true, isRepo: true, currentBranch: root === A.path ? 'test1' : 'main', isDetached: false, branches: [] }));
+    function Rows() {
+      const current = useWorkspaceStore((state) => state.getWorkspaceById('ws')!);
+      return <ul>{current.terminals.map((terminal) => <AgentRow key={terminal.id} workspace={current} terminal={terminal} isCurrent={current.activeTerminalId === terminal.id} />)}</ul>;
+    }
+    render(<><Rows /><GitButton workspacePath={MAIN.path} workspaceId="ws" /><ExplorerLifecycleCoordinator /><FileExplorer workspaceId="ws" /><StatusBar /></>);
+    const selected = (root: string, contextId: string) => {
+      expect(selectCheckout(workspace(), useAgentAttentionStore.getState().byTerminalId[workspace().activeTerminalId!])).toMatchObject({ availability: 'available', root, contextId });
+      expect(gitManagementScope(MAIN.path, 'ws')).toMatchObject({ path: root, checkoutContextId: contextId === MAIN.id ? undefined : contextId, blocked: null });
+      expect(useCheckoutGitStore.getState().active?.identity).toMatchObject({ root });
+      expect(document.querySelector('.status-project')).toHaveAttribute('title', root);
+      expect(document.querySelector('.status-checkout-unavailable')).toBeNull();
+      expect(workspace().activeTerminalId).toBe(useWorkspaceStore.getState().activeTerminalId);
+    };
+    const loading = () => {
+      expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git loading…');
+      expect(screen.getByText('Loading Git status…')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Source Control' })).toHaveAttribute('title', 'Git loading…');
+      expect(document.querySelector('.git-badge')).toBeNull();
+    };
+    const complete = async (root: string, count: number, branch: string) => {
+      const current = useCheckoutGitStore.getState().active!;
+      act(() => listeners.forEach((callback) => callback({ ...result(root, current.identity.contextId, current.generation), currentBranch: branch })));
+      await ready(root);
+      expect(document.querySelector('.status-branch')).toHaveTextContent(branch);
+      expect(document.querySelector('.status-git-availability')).toBeNull();
+      expect(document.querySelector('.git-badge')).toHaveTextContent(String(count));
+      expect(document.querySelectorAll('.git-status-indicator')).toHaveLength(count);
+      fireEvent.click(screen.getByRole('button', { name: 'Source Control' }));
+      expect(await screen.findByText(new RegExp(`${count} changed ${count === 1 ? 'file' : 'files'}`))).toBeVisible();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull());
+    };
+    // Both sidebar rows/panes exist; no native location is required for a valid launch selection.
+    selected(A.path, A.id); loading();
+    const polls = api.gitStartPolling.mock.calls.length;
+    report(test1); selected(A.path, A.id); loading();
+    expect(api.gitStartPolling).toHaveBeenCalledTimes(polls);
+    await complete(A.path, 2, 'test1');
+    const current = useCheckoutGitStore.getState().active!;
+    act(() => listeners.forEach((callback) => callback({ ...result(A.path, A.id, current.generation), success: false, error: 'fixture Git failure' })));
+    selected(A.path, A.id);
+    expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git status unavailable');
+    expect(document.querySelector('.status-branch')).toHaveTextContent('test1');
+    expect(screen.getByText('Git unavailable')).toBeVisible();
+    expect(document.querySelectorAll('.git-status-indicator')).toHaveLength(0);
+    await complete(A.path, 2, 'test1');
+    fireEvent.click(screen.getByRole('button', { name: /Dozin/ }));
+    selected(MAIN.path, MAIN.id); loading(); await complete(MAIN.path, 1, 'main');
+    const mainStatus = useCheckoutGitStore.getState().active!;
+    act(() => listeners.forEach((callback) => callback({ ...result(MAIN.path, MAIN.id, mainStatus.generation), success: false, error: 'main Git refresh failed' })));
+    selected(MAIN.path, MAIN.id);
+    expect(document.querySelector('.status-branch')).toHaveTextContent('main');
+    expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git status unavailable');
+    expect(document.querySelector('.git-badge')).toBeNull();
+    await complete(MAIN.path, 1, 'main');
+    expect(screen.getByRole('button', { name: /Darling/ }).querySelector('.ws-agent-branch')).toHaveTextContent('test1');
+    const oldMain = useCheckoutGitStore.getState().active!;
+    fireEvent.click(screen.getByRole('button', { name: /Darling/ }));
+    selected(A.path, A.id); loading();
+    act(() => listeners.forEach((callback) => callback(result(MAIN.path, MAIN.id, oldMain.generation))));
+    selected(A.path, A.id); loading(); await complete(A.path, 2, 'test1');
+    report(test1, 'last-reported');
+    expect(document.querySelector('.status-checkout-unavailable')).toHaveTextContent('historical location');
+    expect(document.querySelector('.status-git-availability')).toBeNull();
+    expect(api.gitStartPolling).toHaveBeenLastCalledWith(A.path, 'ws', A.id, expect.any(Number));
+    act(() => useWorkspaceStore.getState().toggleEditorPane());
+    act(() => useWorkspaceStore.getState().setActiveEditorTab('main-pin', 'ws'));
+    selected(MAIN.path, MAIN.id); loading(); await complete(MAIN.path, 1, 'main');
+    report(test1); // Restore authenticated evidence while explicit pin still wins.
+    fireEvent.click(screen.getByRole('button', { name: /Darling/ }));
+    selected(A.path, A.id); loading(); await complete(A.path, 2, 'test1');
+    expect(workspace().terminals.map((terminal) => terminal.checkoutContextId)).toEqual([A.id, MAIN.id]);
+    expect(workspace().panes).toHaveLength(2);
+  });
+
+  it('does not mistake an occupied unregistered worktree for authorized surface selection', () => {
+    useWorkspaceStore.setState({ workspaces: [{ ...workspace(), checkoutContexts: [MAIN], gitIsRepo: true }] });
+    const value = snapshot('agent', 'running', ++revision, { location: { path: A.path, checkoutContextId: null } });
+    useAgentAttentionStore.getState().applyChange({ terminalId: 'agent', revision, snapshot: value }, false);
+    mount();
+    expect(selectCheckout(workspace(), value)).toMatchObject({ availability: 'unavailable', reason: 'unregistered-observation' });
+    expect(buildIsolatedAgentChoices({ workspace: workspace(), currentBranch: 'main', branchNames: [], worktrees: [{ path: A.path, branch: 'test1', isMain: false, isLocked: false, isPrunable: false }] }).worktrees[0].state).toBe('in-use');
+    expect(document.querySelector('.status-checkout-unavailable')).toHaveTextContent('unregistered location');
+    expect(screen.getByText(/outside this workspace’s registered checkouts/)).toBeVisible();
+    expect(api.gitStartPolling).not.toHaveBeenCalled(); expect(api.fileListDirectory).not.toHaveBeenCalled();
+  });
+
   it.each([[3, 0, 0], [0, 2, 0], [3, 2, 0], [1, 2, 3]])('keeps the main/A/B dirty matrix isolated (%j)', async (main, a, b) => {
     for (const [context, count] of [[MAIN, main], [A, a], [B, b]] as Array<[CheckoutContext, number]>) {
       changes[context.path] = ['same.ts', 'other.ts', 'new.ts'].slice(0, count).map((path, index) => ({ path, staged: index === 0, status: index === 2 ? 'untracked' : 'modified' }));

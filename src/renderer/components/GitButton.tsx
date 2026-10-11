@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useVcsStore } from '../store/vcsStore';
-import { matchingCheckoutGit, useCheckoutGitStore } from '../store/checkoutGitStore';
+import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../store/checkoutGitStore';
 import { checkoutSelectionToken } from '../lib/checkoutSelectionRuntime';
 import { sameWorkspacePath } from '../lib/pathUtils';
 import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
@@ -56,7 +56,7 @@ export default function GitButton(props: GitButtonProps) {
 
 function UnavailableGit({ scope, trigger }: { scope: ReturnType<typeof gitManagementScope>; trigger: React.RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false);
-  return <><Button ref={trigger} size="xs" variant="ghost" aria-label="Source Control" onClick={() => setOpen(true)}><GitBranchIcon size={14} /></Button>
+  return <><Button ref={trigger} size="xs" variant="ghost" aria-label="Source Control" title={scope.blocked ?? undefined} onClick={() => setOpen(true)}><GitBranchIcon size={14} /><span>Checkout unavailable</span></Button>
     <Dialog open={open} onOpenChange={setOpen}><ManagementShell onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }} title="Source Control" items={[{ id: 'overview', label: 'Overview', group: 'Repository' }]} selectedId="overview" onSelect={() => {}}>
       <p>{scope.environmentId === 'local' ? 'Local' : `SSH · ${scope.environmentId}`} · {scope.path}</p><p role="alert">{scope.blocked}</p>
     </ManagementShell></Dialog></>;
@@ -71,8 +71,10 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const statusGeneration = useRef(0);
   const activeStatus = useCheckoutGitStore((state) => state.active);
   const selectedStatus = matchingCheckoutGit(activeStatus, { workspaceId, environmentId: scope.environmentId, contextId: scope.checkoutContextId, root: scope.path, selectionGeneration: selectionEpoch.current });
-  const statusKnown = selectedStatus?.state === 'ready';
-  const changes = statusKnown ? selectedStatus.result?.changes ?? [] : [];
+  const gitAvailability = checkoutGitAvailability(selectedStatus);
+  const gitLabel = gitAvailability === 'loading' ? 'Git loading…' : 'Git status unavailable';
+  const statusKnown = gitAvailability === 'ready';
+  const changes = statusKnown ? selectedStatus?.result?.changes ?? [] : [];
   const changeCount = statusKnown ? changedFileCount(changes) : null;
   const setStatusKnown = useCallback((known: boolean) => { if (!known) useCheckoutGitStore.getState().invalidate(statusGeneration.current); }, []);
   const [isRepo, setIsRepo] = useState(false);
@@ -643,7 +645,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setProvider('unknown');
         if (!scope.checkoutContextId) {
           useWorkspaceStore.getState().setGitChanges([]);
-          useWorkspaceStore.getState().setGitBranchInfo(null, false, false);
+          // Failed acquisition is not proof that the registered checkout/branch vanished.
+          // Retain descriptive main metadata; snapshot availability still gates all counts/actions.
         }
       }
   }, [workspacePath, workspaceId, scope.path, scope.checkoutContextId, isCurrent]);
@@ -824,10 +827,10 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
           className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
           onClick={handleToggleMenu}
           aria-expanded={isMenuOpen}
-          title={!statusKnown ? 'Git status unavailable' : !isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
+          title={!statusKnown ? gitLabel : !isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
         >
           <GitBranchIcon size={14} strokeWidth={2} />
-          {!statusKnown ? <span title="Git status unavailable">Git…</span> : !isRepo && <span>Init Git</span>}
+          {!statusKnown ? <span data-git-state={gitAvailability} title={gitLabel}>{gitAvailability === 'loading' ? 'Git…' : 'Git unavailable'}</span> : !isRepo && <span>Init Git</span>}
           {changeCount !== null && changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}

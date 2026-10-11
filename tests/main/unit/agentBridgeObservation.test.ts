@@ -6,7 +6,7 @@ import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { AgentBridgeService } from '../../../src/main/agentBridge/service';
-import type { BridgeObservation } from '../../../src/main/agentBridge/observation';
+import { describeBridgeObservation, type BridgeObservation } from '../../../src/main/agentBridge/observation';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 let root: string;
@@ -80,6 +80,42 @@ describe('caller-authenticated read-only MCP observation', () => {
     expect(broker.snapshot('caller')?.location?.checkoutContextId).toBeNull();
     send('location_changed', { cwd: unknown });
     expect((await call()).observedCheckout).toMatchObject({ state: 'current', matchesLaunch: false, checkout: { branch: 'adopted' } });
+  });
+
+  it.each(['workspace', 'environment', 'path'] as const)('refuses an original context with inconsistent %s instead of resolving another root', (invalid) => {
+    send('session_started', { cwd: taskPath });
+    const original = registry.resolveCheckoutContext('ws', taskId)!;
+    const context = { ...original, ...(invalid === 'workspace' ? { workspaceId: 'foreign' } : invalid === 'environment' ? { environmentId: 'ssh' } : { path: mainPath }) };
+    expect(describeBridgeObservation(broker.locationObservation('caller'), [context], registry.resolveCheckoutContext('ws')!)).toMatchObject({ state: 'unavailable', checkout: null, matchesLaunch: null });
+  });
+
+  it('preserves authenticated A when nested B is registered, until a fresh native report resolves B', async () => {
+    const nested = `${taskPath}/nested`; fs.mkdirSync(nested);
+    send('session_started', { cwd: nested });
+    const before = broker.locationObservation('caller');
+    expect(before?.location.checkoutContextId).toBe(taskId);
+    const b = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: nested, kind: 'worktree', branch: 'nested-B' })).checkoutContext!;
+    expect((await call()).observedCheckout).toMatchObject({ state: 'current', checkout: { branch: 'task' } });
+    expect(broker.locationObservation('caller')).toEqual(before);
+    registry.describeCheckoutContext(taskId, { missing: true });
+    expect((await call()).observedCheckout).toMatchObject({ state: 'missing', checkout: { branch: 'task' } });
+    registry.unregisterCheckoutContext(taskId);
+    expect((await call()).observedCheckout.state).toBe('released');
+    send('location_changed', { cwd: nested });
+    expect(broker.locationObservation('caller')?.location.checkoutContextId).toBe(b.id);
+    expect(await call()).toMatchObject({ checkout: { kind: 'main' }, observedCheckout: { state: 'current', matchesLaunch: false, checkout: { branch: 'nested-B' } }, capabilities: ['clanker_context'] });
+    expect(terminals.get('caller')?.checkoutContextId).toBe(mainId);
+  });
+
+  it.skipIf(process.platform === 'win32')('does not reinterpret an original context when the observed symlink changes target', async () => {
+    const alias = path.join(root, 'changing-alias'); fs.symlinkSync(taskPath, alias);
+    send('session_started', { cwd: toPosixPath(alias) });
+    expect((await call()).observedCheckout).toMatchObject({ state: 'current', checkout: { branch: 'task' } });
+    fs.unlinkSync(alias); fs.symlinkSync(mainPath, alias);
+    expect((await call()).observedCheckout).toMatchObject({ state: 'unavailable', checkout: null, matchesLaunch: null });
+    expect(broker.locationObservation('caller')?.location.checkoutContextId).toBe(taskId);
+    send('location_changed', { cwd: toPosixPath(alias) });
+    expect((await call()).observedCheckout).toMatchObject({ state: 'current', matchesLaunch: true, checkout: { kind: 'main' } });
   });
 
   it.skipIf(process.platform === 'win32')('resolves local symlink observations inside the caller workspace', async () => {

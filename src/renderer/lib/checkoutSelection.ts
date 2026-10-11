@@ -58,6 +58,16 @@ export function checkoutSelectionKey(selection: CheckoutSelection): string {
   return JSON.stringify([selection.workspaceId, selection.environmentId, selection.contextId, selection.root,
     selection.availability, selection.availability === 'unavailable' ? selection.reason : null]);
 }
+/** Compact reason for the status bar; the full guidance remains in the tooltip/Explorer. */
+export function checkoutUnavailableLabel(reason: CheckoutUnavailableReason): string {
+  const labels: Record<CheckoutUnavailableReason, string> = {
+    'invalid-workspace': 'invalid workspace', 'historical-observation': 'historical location',
+    'unavailable-observation': 'location source unavailable', 'unknown-provenance': 'unknown provenance',
+    'unregistered-observation': 'unregistered location', 'missing-checkout': 'missing checkout',
+    'released-checkout': 'released checkout', 'invalid-checkout': 'invalid identity',
+  };
+  return `Checkout unavailable · ${labels[reason]}`;
+}
 export function checkoutUnavailableMessage(reason: CheckoutUnavailableReason): string {
   const messages: Record<CheckoutUnavailableReason, string> = {
     'invalid-workspace': 'Workspace identity is unavailable.',

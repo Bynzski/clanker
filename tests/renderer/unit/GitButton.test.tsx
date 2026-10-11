@@ -337,7 +337,7 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
       
-      expect(screen.getByText('Git…')).toBeTruthy();
+      expect(screen.getByText('Git unavailable')).toBeTruthy();
     });
 
     it('clears stale git changes when status reports a non-repo workspace', () => {
