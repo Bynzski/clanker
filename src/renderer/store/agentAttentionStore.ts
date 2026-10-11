@@ -38,7 +38,8 @@ interface AgentAttentionState {
 }
 
 function acknowledged(snapshot: AgentAttentionSnapshot, seen: AttentionSeen | undefined): AttentionSeen | undefined {
-  const completion = Math.max(seen?.completion ?? 0, snapshot.lastCompletion?.revision ?? 0);
+  const stopped = snapshot.runtime.status === 'provisional' ? snapshot.runtime.stopRevision ?? snapshot.revision : 0;
+  const completion = Math.max(seen?.completion ?? 0, snapshot.lastCompletion?.revision ?? 0, stopped);
   const request = Math.max(seen?.request ?? 0, snapshot.pendingRequest?.revision ?? 0);
   if (seen && seen.completion === completion && seen.request === request) return seen;
   return completion === 0 && request === 0 ? seen : { completion, request };

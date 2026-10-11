@@ -53,6 +53,7 @@ import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { attentionSourceOptions } from '../agentAttentionAdapters';
+import { eventLoopDelay } from '../eventLoopDelay';
 import { withoutAttentionEnvironment } from '../environment/attentionEnvironment';
 
 interface Terminal {
@@ -464,12 +465,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   ));
 
   // Hydration for a renderer that subscribed late or was recreated. Retired agents are absent.
+  // Always available: content-free counters, a bounded trace and main's event-loop delay, so a
+  // missing indicator can be classified from the running app without a debug build.
   ipcMain.handle(GET_AGENT_ATTENTION_DIAGNOSTICS, (_event, terminalId: unknown) => {
-    const enabled = process.env.CLANKER_DEBUG_ATTENTION === '1';
-    if (terminalId === null) return enabled;
-    if (!enabled || typeof terminalId !== 'string' || terminalId.length > 128) return null;
+    if (terminalId === null) return true;
+    if (typeof terminalId !== 'string' || terminalId.length > 128) return null;
     const terminal = getTerminals().get(terminalId);
     return { main: agentAttentionBroker?.signalDiagnostics(terminalId) ?? null,
+      trace: agentAttentionBroker?.trace(terminalId) ?? [],
+      unattributedEnvelopes: agentAttentionBroker?.unattributedCount() ?? 0,
+      eventLoopDelay: eventLoopDelay(),
       terminal: terminal ? { harness: terminal.harnessId ?? null, workspaceId: terminal.workspaceId ?? null,
         environmentId: terminal.environmentId ?? 'local', attention: terminal.attention ?? null } : null };
   });
@@ -519,8 +524,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
-      return fail(agentAttentionBroker?.handoffState(payload.terminalId) === 'provisional'
-        ? 'The provider stopped without a verified final outcome. Continue in the agent terminal or copy the message instead.'
+      return fail(agentAttentionBroker?.handoffState(payload.terminalId) === 'running' || agentAttentionBroker?.handoffState(payload.terminalId) === 'needs_input'
+        ? 'The agent is busy. Wait for it to finish or copy the message instead.'
         : 'The agent is no longer available for handoff. Copy the message instead.');
     }
     const message = payload.message.replace(/\r\n?/g, '\n');

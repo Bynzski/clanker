@@ -94,6 +94,7 @@ import { findHarnessProvider } from './harnesses/registry';
 import { releaseCheckoutContext } from './checkoutContextRelease';
 import { checkoutTerminalUsages, localCheckoutUsagePaths } from './checkoutOccupancy';
 import { AGENT_ATTENTION_CHANGED, AGENT_CHECKOUT_TRANSITION, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
+import { startEventLoopDelayMonitor } from './eventLoopDelay';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
@@ -416,6 +417,7 @@ closeGuard = new AppCloseGuard({
 
 // App lifecycle
 app.whenReady().then(() => {
+  startEventLoopDelayMonitor();
   const preloadPath = getPreloadPath();
   // Drop the historical broken plugin and reclaim temp roots of crashed runs; failure must never block startup.
   try { migrateLegacyAgyAttentionPlugin(); scavengeStaleAttentionRoots(); } catch (error) {

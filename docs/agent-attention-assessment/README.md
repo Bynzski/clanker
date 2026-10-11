@@ -3,6 +3,30 @@
 Baseline: `fix/152-pi-attention-follow-up` @ `7d17343` (identical to `main` @ `f2f40a0` in `src/`; the branch adds only tests, docs and a Pi TUI smoke script).
 Method: source reading of every stage; the attention test suites (292 passing, the SSH suite needs the Electron binary); the repo's own Pi TUI native smoke against real Pi 1.1.0 with a loopback model fixture (passes); Pi 1.1.0 source inspection; Claude Code 2.1.296 binary inspection (hook schemas only); two new experiments against the compiled broker, observer and renderer selector (scripts and run instructions in [`experiments/`](experiments/README.md)). No paid inference was used, and nothing in the repository was changed.
 
+## Implementation status (follow-up commit on this branch)
+
+The fixes below were implemented on the same branch. Findings in the sections that follow describe the code **before** this change.
+
+| Finding | Change |
+|---|---|
+| F1 permanent root lockout | `AgentAttentionBroker.apply`: a root `session_started`/`turn_started` for a different session **replaces** the bound root. `process` providers (Pi, OMP) always follow the newest session. `shared` providers (the default) replace only a root with no live turn and no actionable wait, so Codex auxiliary threads cannot take a working terminal. A seeded resume root is protected until it reports once. Replacement is published as its own `session_ended` boundary. Claude now also hooks `SessionStart`. |
+| F2/F12 invisible finish, OS focus | Acknowledgement requires the Clanker window to have focus *and* the terminal to be the presented active pane. Returning to the window (`focus`) clears what is on screen. Anything else stays lit until you go to it. |
+| F3 no Finished for Claude/Codex/AGY | A provider stop is presented as a finished turn (lit until seen, via `runtime.stopRevision`). Same-turn activity reopens Working. Handoff is allowed; submitting ends the stopped turn. After-turn checkout moves still require a proven completion. |
+| F4 epoch collision after reload | Pi, OMP and OpenCode turn IDs are prefixed with a per-instance nonce. |
+| F5 main-loop stalls | Server socket idle timeout 1 s → 10 s (late events are applied, not dropped). The observer waits 1 s and resends once (0.5 s); duplicates are idempotent or stale. The Claude hook timeout is 3 s → 5 s. Codex stays at 3 s: changing its hook definition would force users to re-review hooks. |
+| F7 SSH partial frames | The remote observer writes each frame whole, waiting out `EAGAIN` for up to 1 s. |
+| F13 OpenCode queue stall | `client.session.get` is bounded to 2 s. |
+| Instrumentation | Always-on diagnostics (`window.clankerAttention.explain(terminalId)`): a bounded per-terminal trace of the last 64 decisions with hashed IDs (kept after release), a count of unattributed envelopes, and main event-loop delay (`eventLoopDelay.ts`). |
+
+Verification:
+- `npm run validate`: branding, lint, typecheck, Fallow, security, build pass. 7,928 tests pass; the only 3 failures are root-permission tests that fail identically on the untouched baseline in this container.
+- Native, with loopback model fixtures (no inference):
+  - Pi 1.1.0 TUI smoke passes.
+  - A Pi 1.1.0 TUI fault run that **drops** the old session's end on `/reload` and on `/new` tracks all 9 later turns. The same run against the previous code fails at the first post-reload turn.
+  - Codex 0.162.1 TUI smoke passes, including tracking the next turn after `/new`.
+  - Claude 2.1.296 smoke passes.
+- The Electron smoke could not run here: the network policy blocks the Electron headers needed to build node-pty for Electron.
+
 ---
 
 ## 1. Bottom line

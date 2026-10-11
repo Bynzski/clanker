@@ -181,17 +181,25 @@ revisioned tombstone (`snapshot: null`); hydration only lists live registrations
 renderer subscribes first, then hydrates, and keeps the newest revision per terminal
 (tombstones included). Whether the user has seen a completion or request is a renderer
 watermark over those revisions; it never changes lifecycle. `deriveAttention` projects
-Stop observed · outcome unknown for provisional settlement, otherwise actionable Needs Input, then Working, then Failed, then an unseen completion that is also the latest
-outcome. A user-facing `Failed` shows no badge or navigation target; only Needs Input and
-unseen Done are counted and jumped to.
+actionable Needs Input, then Working, then Failed, then an unseen finished turn: a proven
+completion that is also the latest outcome, or a provider stop (`provisional`, see below). A
+user-facing `Failed` shows no badge or navigation target; Needs Input and unseen finished turns are
+counted and jumped to.
 
-Provisional settlement is a canonical fact, independent of transport health. It never writes
-`lastCompletion`, never grants Ready or handoff eligibility, and never produces completion/input
-badges, attention navigation targets or completion notifications. The indicator remains visible
-in background, minimized and remounted panes. A previously presented request remains recorded
-with `resolutionUnknown: true`; matching native resolution may retire it, but does not prove
-completion. A fresh native turn or request restores the corresponding confirmed fact. A later
-proven failure, interruption or session end clears the unresolved history. No silence timer is used.
+**Seen means looked at.** A change is acknowledged on arrival only while the Clanker window has focus
+and the terminal is the presented active pane of the active workspace. Anything else lights up until the
+user goes to that agent: selecting its workspace or pane, returning to its page, leaving an Assistant,
+or focusing the window while it is on screen. Going to it clears a finished turn entirely; Needs Input
+stays visible (unhighlighted) until the wait resolves.
+
+A provider stop (`provisional`: Claude, Codex and Antigravity `Stop`, OMP without a final assistant
+outcome) is presented as a finished turn: it ends the turn unless another Stop hook continues it, and
+continued native activity returns the same turn to Working. The snapshot carries
+`runtime.stopRevision`, the revision at which the stop was observed, so it is acknowledged like a
+completion. It never writes `lastCompletion`: consumers that need proven success (after-turn checkout
+moves) still treat it as unproven and cancel. Annotation handoff is allowed, because the agent is at
+its prompt; submitting a handoff ends the stopped turn and its unresolved waits. A previously presented
+request remains recorded with `resolutionUnknown: true`. No silence timer is used.
 
 Source authority is declared per provider (`attention.authority: full | partial`, and
 `source: native | hook`) and arbitrated centrally (`attentionAuthority.ts`).
@@ -204,7 +212,10 @@ or a completion. No production screen detector exists yet because Clanker has no
 trustworthy main-process access to live screen state, and PTY silence, generic prompt
 patterns and scrollback parsing remain forbidden. `broker.explain(terminalId)` and
 `CLANKER_DEBUG_ATTENTION=1` report why an agent is in its current state (safe metadata
-only).
+only). The always-available diagnostics (`window.clankerAttention.explain(terminalId)` in the
+renderer devtools) add the broker's bounded per-terminal trace (last 64 decisions with verdict,
+revision, status and 8-hex hashes of session/turn IDs, retained after release), a count of
+envelopes no terminal could be blamed for, and main's event-loop delay.
 
 A terminal token proves *which terminal* emitted an event. It never proves that
 the event belongs to the root user-facing session or its current foreground turn.
@@ -231,12 +242,25 @@ input and lifecycle. Invariants:
   completion or input event never establishes a root.
 - Events whose `scope` is `child`, or is missing (unknown subject), cannot change
   state (`ignored-child` / `rejected-ambiguous`). Once a root is bound, another
-  session cannot mutate it (`rejected-mismatch`).
+  session's events cannot mutate it (`rejected-mismatch`), with one exception:
+- **A new root session start replaces the bound root** (`session_started` or
+  `turn_started` carrying a different root `sessionId`), so a session change without a
+  paired native end (`/new`, a resume picker, a lost shutdown delivery) cannot leave the
+  terminal rejecting everything for the rest of its life. `attention.sessionModel`
+  decides when: `process` providers (Pi, OMP: one foreground session per process, observed
+  in-process) always follow the newest session; `shared` providers (the default: hook and
+  server providers, including Codex whose auxiliary threads report their own root sessions)
+  only replace a root with no live turn and no actionable wait, so an auxiliary session can
+  never take a working terminal and the next real prompt takes an idle one back. A root seeded
+  from a validated resume is protected until it reports once. Replacement retires the old
+  root's turns and waits, records `lastOutcome: session_ended` and is published as its own
+  snapshot before the new session's event, so boundary consumers see it.
 - **Turn identity is mandatory.** Every start, input and completion event carries
   a `turnId`: the native turn ID where the harness has one (Codex `turn_id`,
   Claude `prompt_id`, Hermes `turn_id`), otherwise a provider-owned epoch the
-  adapter keeps for one foreground turn (Pi, OMP and OpenCode in the extension;
-  Agy in the bridge's per-terminal store). An event without one is
+  adapter keeps for one foreground turn (Pi, OMP and OpenCode in the extension, prefixed
+  with a per-instance nonce because the host re-imports the extension on reload and session
+  replacement; Agy in the bridge's per-terminal store). An event without one is
   `rejected-ambiguous`; there is no uncorrelated fallback.
 - Completion and input events need the live turn: only the active `turnId` can
   settle it, and a completed or superseded turn is retired, so a late completion
@@ -366,6 +390,12 @@ recovers normally. Claude's hooks keep running in that situation and in-process
 plugins/extensions are unaffected, so only Codex declares it. Adding a provider means emitting `cwd` from its
 interpreter or plugin; nothing in the broker or renderer is harness-specific.
 
+Delivery: a local hook or extension waits up to 1 s for the broker's verdict and resends
+once (0.5 s) when none arrives; resending is safe because a repeated start, wait or settle of the
+same turn is idempotent and a stale one is ignored. The broker keeps a delivered connection open
+for 10 s, so a busy main process applies an event late instead of dropping it unread. SSH
+observers write each frame whole, waiting out a full tty buffer for up to 1 s.
+
 Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope
 event: harness, terminal ID, native event class, truncated session/turn IDs,
 semantic and the decision (`accepted`, `ignored-child`, `ignored-stale`,
@@ -427,7 +457,7 @@ the root session; turn = the turn identity; child = how child scope is proven).
 | Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
 | --- | --- | --- | --- | --- | --- |
 | Codex | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | no proven success boundary: `Stop` is provisional (`turn_provisional`); root `Interrupt` ends the turn without completion | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
-| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` or `PreToolUse` of `AskUserQuestion` = turn-level wait / `PostToolBatch` for the same prompt | `Stop` is provisional (`turn_provisional`); `StopFailure` = `turn_failed` (never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
+| Claude | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` or `PreToolUse` of `AskUserQuestion` = turn-level wait / `PostToolBatch` for the same prompt | `Stop` is provisional (`turn_provisional`); `StopFailure` = `turn_failed` (never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
 | OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root idle: outstanding error → failed, abort → interrupted, otherwise completed; legacy `session.idle` duplicate absorbed | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
 | Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | `ui_prompt_start` / `ui_prompt_end` (extension-owned request epoch; foreground `ctx.ui` dialogs only) | `agent_settled`: aborted → interrupted; latest unrecovered assistant/compaction failure → failed; otherwise completed | `agent_end`, intermediate errors and lower-level events never settle | `session_shutdown` |
 | OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `agent_end` with `willContinue !== true`, after control hooks/background maintenance; final assistant error/abort determines failure/interruption; absent assistant outcome → provisional | `session_stop` can request continuation; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` or explicit `session_switch` (main) |
@@ -521,12 +551,15 @@ review persists. Until reviewed no events arrive and the pane stays unknown. Rem
 
 ### Remaining limitations
 
-- A provider that does not report a native boundary on an in-TUI session switch
-  (Agy has no end event; Codex `SessionEnd` currently reports reason `other`; installed TUI `/new` emits `SessionStart.source=startup` without ending the old root)
-  stays bound to the old root, rejects the unrelated identity, and displays degraded health until a fresh Clanker launch. Codex source `clear` is an explicit native replacement contract: the adapter names the prior stored root, and the broker replaces it only if that id exactly matches its binding. This is covered by source inspection and deterministic fixtures; the installed 0.162.0 TUI `/new` did **not** emit `clear`, so it remains unsupported. Ordinary startup/resume/fork never grants rebinding. Pi, OMP, Claude, OpenCode and Hermes report one.
-- An interrupted turn with no settle event stays Running rather than Ready.
+- An in-TUI session switch without a native end (installed Codex TUI `/new` emits
+  `SessionStart.source=startup`; Agy has no end event) is followed by root replacement once the
+  old root is idle (see the invariants). While the old root still has a live turn or wait, a
+  `shared` provider keeps it until it stops; Codex source `clear` remains an explicit,
+  immediate replacement.
+- An interrupted turn with no settle event stays Running rather than Ready (Claude has no
+  interrupt hook); the next prompt starts a fresh turn.
 - Claude, Codex and Agy `Stop` callbacks run before other hooks can request continuation.
-  They cannot prove success; Clanker publishes correlated `turn_provisional`, retains turn identity and request history (`resolutionUnknown`), and displays Stop observed · outcome unknown. No timer or output heuristic announces Done. Claude events need `prompt_id`
+  They cannot prove success; Clanker publishes correlated `turn_provisional`, retains turn identity and request history (`resolutionUnknown`), and presents it as a finished turn that same-turn activity reopens. It never records a proven completion. No timer or output heuristic is used. Claude events need `prompt_id`
   (Claude Code 2.1.196 or newer); without it nothing is reported.
 - Codex hooks, OMP `ctx.agent`, OpenCode `client.session.get` and Hermes hook
   kwargs follow upstream documentation; they have not been verified against live

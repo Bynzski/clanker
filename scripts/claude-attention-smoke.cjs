@@ -60,14 +60,14 @@ async function until(check, label) { const deadline = Date.now() + 20000; while 
     const firstTurn = transitions.find(t => t.status === 'running').turn;
     const sameTurn = transitions.filter(t => t.turn === firstTurn).map(t => t.status).filter((status, index, all) => index === 0 || all[index - 1] !== status);
     assert.deepEqual(sameTurn, ['running', 'provisional', 'running', 'provisional'], 'Native continuation did not restore the SAME foreground turn');
-    assert.equal(broker.canHandoff('claude'), false, 'Provisional stop must not permit handoff');
+    assert.equal(broker.canHandoff('claude'), true, 'A stopped agent is at its prompt and accepts a handoff');
     const beforeFailure = requests; failure = true; child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: 'Reply ok.' } }) + '\n');
     await until(() => requests > beforeFailure, 'Claude did not reach the fixture failure endpoint');
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline && results <= 10 && !exited && broker.snapshot('claude').runtime.status !== 'failed') await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal(broker.snapshot('claude').lastCompletion, null, 'API failure must never announce Done');
     const stopFailure = broker.snapshot('claude').runtime.status === 'failed' ? 'observed' : 'not emitted within 5 s of fixture authentication error; CLI still waiting';
-    console.log(JSON.stringify({ harness: 'claude', nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, starts: 'accepted native UserPromptSubmit', stop: 'observed native Stop, settlement explicitly unverified', separateStopContinuation: 'native Read after Stop restored Running in the same turn; subsequent Stop provisional; no Done/handoff', stopFailure, requests }));
+    console.log(JSON.stringify({ harness: 'claude', nativeCLI: true, model: 'loopback fixture (no inference)', consecutiveTurns: 10, starts: 'accepted native UserPromptSubmit', stop: 'observed native Stop, settlement explicitly unverified', separateStopContinuation: 'native Read after Stop restored Running in the same turn; subsequent Stop presents as finished; handoff allowed; no proven-completion record', stopFailure, requests }));
   } catch (error) { console.error(error.message); console.error(JSON.stringify(broker.signalDiagnostics('claude'))); process.exitCode = 1; }
   finally { child?.kill(); if (child && child.exitCode === null) await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 1000))]); await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); removeAttentionAdapterFiles(); fs.rmSync(root, { recursive: true, force: true }); }
 })();

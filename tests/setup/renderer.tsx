@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { setTimeout as waitForUnmountCallbacks } from 'node:timers/promises';
 
 // Mock ResizeObserver for components that use it (TerminalPane, BrowserPanel)
@@ -40,6 +40,13 @@ class ResizeObserverMock {
 }
 
 global.ResizeObserver = ResizeObserverMock;
+
+// A desktop window under test is focused unless a test says otherwise (jsdom reports no focus).
+// Attention acknowledgement depends on it: an unfocused window is not being looked at.
+const focusedWindow = () => true;
+beforeEach(() => {
+  Object.defineProperty(document, 'hasFocus', { configurable: true, writable: true, value: focusedWindow });
+});
 
 afterEach(async () => {
   cleanup();

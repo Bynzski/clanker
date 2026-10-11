@@ -502,9 +502,12 @@ describe('provisional native settlement', () => {
     if (wait) expect(snap().pendingRequest).toMatchObject({ id: 'approval', resolutionUnknown: true });
     expect(broker.explain('t')?.effective).toBe('provisional');
     expect(broker.handoffState('t')).toBe('provisional');
-    expect(broker.canHandoff('t')).toBe(false);
+    // The agent is back at its prompt: a handoff may type into it, and that submission opens a turn.
+    expect(broker.canHandoff('t')).toBe(true);
+    expect(snap().runtime.stopRevision).toBe(snap().revision);
     broker.markSubmitted('t');
-    expect(snap().runtime.status).toBe('provisional');
+    expect(snap().runtime).toMatchObject({ status: 'starting', turnId: null });
+    expect(send('turn_activity', { turnId: 'T' })).toBe('ignored-stale');
     send('turn_started', { turnId: 'next' });
     expect(snap()).toMatchObject({ runtime: { status: 'running', turnId: 'next' }, pendingRequest: null });
     const revision = snap().revision;

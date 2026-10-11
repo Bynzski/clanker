@@ -456,7 +456,7 @@ describe('registerSessionIpc', () => {
 
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, attention: { requested: false, attachment: 'disabled' }, checkoutContextId: 'local-ws::main', workingDir: '/workspace' });
     // A fork creates a new native session: the old ID is never pre-seeded.
-    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { authority: 'full', quality: 'hook', capability: { requested: false, attachment: 'disabled' } });
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { authority: 'full', quality: 'hook', sessionModel: 'shared', capability: { requested: false, attachment: 'disabled' } });
     expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,
@@ -576,10 +576,10 @@ describe('trusted resume identity for local attention', () => {
     return broker.register.mock.calls[0];
   };
   it('seeds the validated native ID for a non-fork resume only', async () => {
-    expect(await resume(codexSession, false)).toEqual([expect.any(String), 'codex', { rootSessionId: 'codex-session', authority: 'full', quality: 'hook', capability: { requested: false, attachment: 'disabled' } }]);
-    expect((await resume(codexSession, true))[2]).toEqual({ authority: 'full', quality: 'hook', capability: { requested: false, attachment: 'disabled' } });
+    expect(await resume(codexSession, false)).toEqual([expect.any(String), 'codex', { rootSessionId: 'codex-session', authority: 'full', quality: 'hook', sessionModel: 'shared', capability: { requested: false, attachment: 'disabled' } }]);
+    expect((await resume(codexSession, true))[2]).toEqual({ authority: 'full', quality: 'hook', sessionModel: 'shared', capability: { requested: false, attachment: 'disabled' } });
   });
   it('does not seed when a provider may re-identify the resumed session', async () => {
-    expect((await resume(claudeSession, false))[2]).toEqual({ authority: 'partial', quality: 'hook', capability: { requested: false, attachment: 'disabled' } });
+    expect((await resume(claudeSession, false))[2]).toEqual({ authority: 'partial', quality: 'hook', sessionModel: 'shared', capability: { requested: false, attachment: 'disabled' } });
   });
 });

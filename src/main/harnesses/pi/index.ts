@@ -22,7 +22,7 @@ export const piProvider = defineHarness({
     selectionFlags: ['--session', '--continue', '-c', '--resume', '-r', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverPiSessions(workspace),
   },
-  attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', prepareResources, local, remote },
+  attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', sessionModel: 'process', prepareResources, local, remote },
   aiCommit: { modelArg: '--model', parseOutput: parsePiCommitOutput,
     buildInvocation: ({ model, prompt }) => ({ command: 'pi', args: ['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions', ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 45000 }),
   },

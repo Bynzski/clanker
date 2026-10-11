@@ -87,7 +87,7 @@ describe('local attention delivery contract', () => {
     expect(await emit('turn_started', root)).toBe('rejected-auth');
   });
 
-  it.each(['lost-ack', 'lost-envelope'] as const)('Pi advances after native settlement despite %s, through socket/broker/renderer', async (fault) => {
+  it.each(['lost-ack', 'lost-envelope'] as const)('Pi resends an unacknowledged settlement once and advances despite %s, through socket/broker/renderer', async (fault) => {
     // Generated Pi extension, real observer/socket and canonical renderer projection.
     // Native event invocation is a fixture, not evidence of upstream Pi emission.
     const verdicts: string[] = [];
@@ -141,10 +141,13 @@ console.log(JSON.stringify({ first, settled, second }));`);
       });
     });
     expect(result).toEqual({ first: true, settled: false, second: true });
-    expect(seenTurnIds).toEqual(['1', '1', '2']);
-    expect(verdicts).toEqual(fault === 'lost-ack' ? ['accepted-changed', 'accepted-changed', 'accepted-changed'] : ['accepted-changed', 'accepted-changed']);
+    // The unacknowledged completion is resent once; a duplicate of an applied settle is harmlessly stale.
+    expect(seenTurnIds.map((turnId) => String(turnId).split('.').pop())).toEqual(['1', '1', '1', '2']);
+    expect(new Set(seenTurnIds.map((turnId) => String(turnId).split('.')[0])).size).toBe(1);
+    expect(verdicts).toEqual(fault === 'lost-ack'
+      ? ['accepted-changed', 'accepted-changed', 'ignored-stale', 'accepted-changed'] : ['accepted-changed', 'accepted-changed']);
     const store = useAgentAttentionStore.getState();
-    expect(store.byTerminalId.pi.runtime).toMatchObject({ status: 'running', turnId: '2' });
+    expect(store.byTerminalId.pi.runtime).toMatchObject({ status: 'running', turnId: expect.stringMatching(/\.2$/) });
     expect(deriveAttention(store.byTerminalId.pi, store.seenByTerminalId.pi)?.display).toBe('running');
     expect(store.byTerminalId.pi.revision).toBe(broker.snapshot('pi')?.revision);
   });

@@ -82,16 +82,15 @@ export default function(input, hook, store) {
     await pause(1000);
     let prior = count('turn_provisional'); child.write('Reply ok.'); await pause(150); child.write('\r');
     await until(() => count('turn_provisional') > prior, 'Turn after compaction did not recover');
-    const newSession = broker.snapshot('codex').sessionId;
+    const oldSession = broker.snapshot('codex').sessionId;
     child.write('/new'); await pause(150); child.write('\r'); await pause(1000);
-    const rejected = events.filter(event => event.decision === 'rejected-mismatch').length;
-    child.write('Reply ok.'); await pause(150); child.write('\r');
-    await until(() => events.filter(event => event.decision === 'rejected-mismatch').length > rejected, 'Expected uncorrelated /new boundary not observed');
-    // Installed 0.162.0 /new sends startup, not explicit clear; no previous-root link or
-    // SessionEnd proves replacement. Assert the visible fail-closed limitation, never rebind.
-    assert.equal(broker.snapshot('codex').sessionId, newSession);
-    assert.equal(broker.snapshot('codex').signal.health, 'degraded');
-    console.log(JSON.stringify({ harness: 'codex', execution: 'installed interactive TUI with real PTY', model: 'loopback fixture (no inference)', trust: 'disposable fixture bypass only', denialCoverage: 'native hook denial; default exec TUI offers cancel, not continue-without-running', approvals: results, repeatedTurns: 10, compaction: 'native request plus subsequent turn passed', sessionReplacement: 'coverage gap: /new emits startup without previous-root link; visibly degraded, unrelated root rejected', sessionEnd: 'covered by exec/resume suite; native TUI /quit and resume remain owner smoke items', requests, nativeHooks: [...new Set(events.map(event => event.nativeEvent))] }));
+    // Installed 0.162 /new sends SessionStart startup with a new id and no SessionEnd. The stopped
+    // old root is replaced, so the new conversation is tracked instead of rejected for good.
+    prior = count('turn_provisional'); child.write('Reply ok.'); await pause(150); child.write('\r');
+    await until(() => count('turn_provisional') > prior, 'Turn after /new was not tracked');
+    assert.notEqual(broker.snapshot('codex').sessionId, oldSession, '/new did not move tracking to the new session');
+    assert.equal(broker.handoffState('codex'), 'provisional');
+    console.log(JSON.stringify({ harness: 'codex', execution: 'installed interactive TUI with real PTY', model: 'loopback fixture (no inference)', trust: 'disposable fixture bypass only', denialCoverage: 'native hook denial; default exec TUI offers cancel, not continue-without-running', approvals: results, repeatedTurns: 10, compaction: 'native request plus subsequent turn passed', sessionReplacement: '/new (startup, no SessionEnd) replaces the stopped root; next turn tracked', sessionEnd: 'covered by exec/resume suite; native TUI /quit and resume remain owner smoke items', requests, nativeHooks: [...new Set(events.map(event => event.nativeEvent))] }));
   } catch (error) { console.error(error.message); console.error(JSON.stringify({ requests, exited, sessionSources: fs.existsSync(path.join(root, 'session-sources')) ? fs.readFileSync(path.join(root, 'session-sources'), 'utf8').trim().split('\n') : [], ui: [...ui], nativeEvents: events.slice(-12), diagnostics: broker.signalDiagnostics('codex') })); process.exitCode = 1; }
   finally { child?.kill(); await attachments?.dispose(); broker.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); removeAttentionAdapterFiles(); fs.rmSync(root, { recursive: true, force: true }); }
 })();

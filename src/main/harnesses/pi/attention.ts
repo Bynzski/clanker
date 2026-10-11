@@ -11,6 +11,10 @@ import { localAttention } from '../localAttention';
 export const SOURCE = `import { emit } from './observer.mjs';
 // Pi exposes no turn ID. The extension owns one epoch per foreground turn: agent_start opens it
 // and only the matching agent_settled can complete it, so a late settle can never close a newer turn.
+// Turn IDs are unique to this module instance: the host re-imports the extension on every session
+// replacement and reload, so a bare counter would restart at 1 and collide with retired turns.
+const instance = Math.random().toString(36).slice(2, 10);
+const turnOf = (n) => instance + '.' + n;
 let epoch = 0;
 let open = false;
 let root;
@@ -25,21 +29,21 @@ export default function (pi) {
     if (root && sessionId(ctx) !== root) return; // only native shutdown releases the bound root
     if (!open) { epoch += 1; open = true; root = sessionId(ctx); result = 'turn_completed'; pending = undefined; }
     if (!current(ctx)) return;
-    return emit('turn_started', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
+    return emit('turn_started', { scope: 'root', sessionId: sessionId(ctx), turnId: turnOf(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
   });
   // Prompt events bracket the outermost blocking ctx.ui call. Pi provides no request ID;
   // correlate locally, never forward dialog titles or infer permission from their text.
   pi.on('ui_prompt_start', (event, ctx) => {
     if (!current(ctx) || pending) return;
-    pending = { id: String(++promptEpoch), kind: event.kind };
+    pending = { id: turnOf('p' + (++promptEpoch)), kind: event.kind };
     const requestKind = ['select', 'input', 'editor'].includes(event.kind) ? 'input' : undefined;
-    return emit('input_requested', { scope: 'root', sessionId: root, turnId: String(epoch), inputId: pending.id, requestKind, nativeEvent: 'ui_prompt_start' });
+    return emit('input_requested', { scope: 'root', sessionId: root, turnId: turnOf(epoch), inputId: pending.id, requestKind, nativeEvent: 'ui_prompt_start' });
   });
   pi.on('ui_prompt_end', (event, ctx) => {
     if (!current(ctx) || !pending || pending.kind !== event.kind) return;
     const inputId = pending.id;
     pending = undefined;
-    return emit('input_resolved', { scope: 'root', sessionId: root, turnId: String(epoch), inputId, nativeEvent: 'ui_prompt_end' });
+    return emit('input_resolved', { scope: 'root', sessionId: root, turnId: turnOf(epoch), inputId, nativeEvent: 'ui_prompt_end' });
   });
   // A transient error is not a failed turn: a later successful retry replaces it.
   pi.on('message_end', (event, ctx) => {
@@ -58,7 +62,7 @@ export default function (pi) {
     pending = undefined;
     // Older Pi omits aborted; preserve its ordinary successful settlement behavior.
     const outcome = event.aborted === true ? 'turn_interrupted' : result;
-    return emit(outcome, { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_settled', cwd: cwd(ctx) });
+    return emit(outcome, { scope: 'root', sessionId: sessionId(ctx), turnId: turnOf(epoch), nativeEvent: 'agent_settled', cwd: cwd(ctx) });
   });
   pi.on('session_shutdown', (_event, ctx) => {
     if (root && sessionId(ctx) !== root) return;

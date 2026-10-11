@@ -23,7 +23,7 @@ export const ompProvider = defineHarness({
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace),
   },
-  attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', prepareResources, local, remote },
+  attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', sessionModel: 'process', prepareResources, local, remote },
   usage: ompUsage,
   aiCommit: { modelArg: '--model', parseOutput: parsePiCommitOutput,
     buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--mode', 'json', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),

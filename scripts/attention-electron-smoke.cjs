@@ -63,7 +63,7 @@ let app;
     assert.equal((await explain(a)).renderer.snapshotPresent, true);
     assert.equal((await explain(a)).renderer.tombstone, false);
     await send(a, 'stop'); await state(a, 'provisional');
-    assert.equal((await explain(a)).renderer.indicator, 'provisional');
+    assert(['turn_complete', null].includes((await explain(a)).renderer.indicator), 'A stop presents as a finished turn (lit until seen)');
     assert.equal((await page.evaluate(() => window.electronAPI.getAgentHandoffStatuses()))[a], 'provisional');
     await send(a, 'start'); await state(a, 'running');
     await send(a, 'ask'); await state(a, 'running');
@@ -73,7 +73,7 @@ let app;
     await until(async () => (await explain(a)).renderer.terminalPanePresented, 'Restored pane not presented');
     await page.getByRole('img', { name: /Needs input/ }).first().waitFor();
     await send(a, 'stop'); await state(a, 'provisional');
-    assert.equal((await explain(a)).renderer.indicator, 'provisional');
+    assert(['turn_complete', null].includes((await explain(a)).renderer.indicator), 'A stop presents as a finished turn (lit until seen)');
     await page.getByRole('img', { name: /Stop observed · outcome unknown/ }).first().waitFor();
     const nativeTurn = () => page.evaluate(async id => (await window.electronAPI.getAgentAttentionSnapshots()).find(s => s.terminalId === id).runtime.turnId, a);
     const provisionalTurn = await nativeTurn();
@@ -113,7 +113,7 @@ let app;
     const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
     await send(restored, 'stop'); await state(restored, 'provisional');
     await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', provisionalStop: 'passed in cold and mounted panes; same-turn activity restores Running', provisionalApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', providerStop: 'presents as a finished turn in cold and mounted panes; same-turn activity restores Running', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);
