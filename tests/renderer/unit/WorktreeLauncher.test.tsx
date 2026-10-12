@@ -94,7 +94,7 @@ describe('WorktreeLauncher', () => {
     expect(onOpenPath).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove…' }));
-    await screen.findByRole('dialog', { name: 'Confirm worktree removal' });
+    await screen.findByRole('alertdialog', { name: 'Confirm worktree removal' });
     fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' }));
     await waitFor(() => expect(api.gitRemoveWorktree).toHaveBeenCalledWith('/repo/', worktree.path, 'task', []));
   });

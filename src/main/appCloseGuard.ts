@@ -60,7 +60,7 @@ export class AppCloseGuard {
     event.preventDefault();
     const pending = { intent, controller: new AbortController() };
     this.pending = pending;
-    // Reserve the prompt synchronously before entering native dialog code.
+    // Reserve the prompt synchronously before requesting renderer presentation.
     void Promise.resolve().then(() => this.pending === pending
       ? this.options.confirmClose(pending.controller.signal) : false).then((confirmed) => {
       if (this.pending !== pending) return;

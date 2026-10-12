@@ -1,3 +1,4 @@
+import { showAppError } from '../../lib/appPrompt';
 /**
  * Extracted action handlers for FileExplorer operations.
  *
@@ -360,7 +361,7 @@ export async function executeDelete(
     await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath, deps)));
     const message = getFileInUseMessage(result);
     console.error('Failed to delete entry:', message);
-    window.alert(message);
+    showAppError(message);
     return;
   }
 
@@ -412,7 +413,7 @@ export async function executeRename(
     void rewatchEditorPath(normalizedWorkspacePath, oldPath, deps);
     const message = getFileInUseMessage(result);
     console.error('Failed to rename entry:', message);
-    window.alert(message);
+    showAppError(message);
     return;
   }
 

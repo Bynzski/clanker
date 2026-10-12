@@ -66,6 +66,7 @@ vi.mock('electron', () => ({
   })),
   ipcMain: {
     handle: vi.fn(),
+    on: vi.fn(),
   },
   dialog: {
     showOpenDialog: vi.fn(),
@@ -126,6 +127,8 @@ describe('registerWindowIpc', () => {
       'zoom-out-window',
       'reset-zoom-window',
       'window-ready-to-show',
+      'app-close-ready',
+      'app-close-response',
     ];
 
     expectedChannels.forEach(channel => {
@@ -133,13 +136,13 @@ describe('registerWindowIpc', () => {
     });
   });
 
-  test('registers exactly 8 window IPC channels', () => {
+  test('registers exactly 10 window IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerWindowIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(8);
+    expect(handleCalls.length).toBe(10);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -149,7 +152,7 @@ describe('registerWindowIpc', () => {
     registerWindowIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(16);
+    expect(handleCalls.length).toBe(20);
   });
 
   test('window channels do not overlap with settings channels', () => {

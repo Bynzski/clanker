@@ -46,7 +46,7 @@ describe('remote worktree inspection', () => {
     api.gitRemoveWorktree.mockResolvedValue({ success: true, recoveryPath: '/srv/recovery/checkout', warning: 'Checkout preserved' });
     render(<RemoteWorktreeInspect {...props} onRemoved={removed} onBusyChange={busy} />);
     fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Confirm remote worktree removal' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Confirm remote worktree removal' });
     expect(dialog).toHaveTextContent('/srv/task');
     expect(dialog).toHaveTextContent('task');
     expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
@@ -56,6 +56,20 @@ describe('remote worktree inspection', () => {
     expect(busy.mock.calls).toEqual([[true], [false]]);
   });
 
+  it('keeps cancellation available when removal becomes unavailable', async () => {
+    api.gitInspectWorktree.mockResolvedValue({ success: true, worktree, hasChanges: false });
+    const onRemoved = vi.fn();
+    const view = render(<RemoteWorktreeInspect {...props} onRemoved={onRemoved} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
+    await screen.findByRole('alertdialog');
+    view.rerender(<RemoteWorktreeInspect {...props} disabled onRemoved={onRemoved} />);
+    expect(screen.getByRole('button', { name: 'Remove this worktree' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+  });
+
   it('does not offer confirmation for dirty checkouts and keeps removal failures visible', async () => {
     const removed = vi.fn();
     api.gitInspectWorktree.mockResolvedValueOnce({ success: true, worktree, hasChanges: true }).mockResolvedValue({ success: true, worktree, hasChanges: false });
@@ -63,12 +77,12 @@ describe('remote worktree inspection', () => {
     render(<RemoteWorktreeInspect {...props} onRemoved={removed} />);
     fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
     expect(await screen.findByRole('status')).toHaveTextContent('untracked');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
-    await screen.findByRole('dialog');
+    await screen.findByRole('alertdialog');
     fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('uncertain');
     expect(removed).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

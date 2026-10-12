@@ -234,6 +234,9 @@ export interface ElectronAPI {
   zoomInWindow: () => Promise<void>;
   zoomOutWindow: () => Promise<void>;
   resetZoomWindow: () => Promise<void>;
+  onAppCloseRequest: (callback: (id: string | null) => void) => () => void;
+  appCloseReady: (ready: boolean) => Promise<void>;
+  respondAppClose: (id: string, confirmed: boolean) => Promise<void>;
   windowReadyToShow: () => Promise<void>;
   getWindowZoomFactor: () => number;
 

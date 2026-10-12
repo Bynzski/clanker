@@ -90,3 +90,10 @@
   border-top: 1px solid var(--border-default);
   flex-shrink: 0;
 }
+
+.clanker-prompt .clanker-dialog-body {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

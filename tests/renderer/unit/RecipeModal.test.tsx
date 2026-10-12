@@ -1,3 +1,4 @@
+import AppPromptHost from '../../../src/renderer/components/AppPromptHost';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { WorkspaceRecipe } from '../../../src/shared/types/recipes';
@@ -184,7 +185,7 @@ describe('RecipeModal', () => {
       recipeDelete: deleteMock,
     });
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<AppPromptHost />);
 
     render(
       <RecipeModal
@@ -197,6 +198,8 @@ describe('RecipeModal', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    expect(deleteMock).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete recipe' }));
 
     await waitFor(() => {
       expect(deleteMock).toHaveBeenCalledWith('rec-test-1');

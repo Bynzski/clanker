@@ -138,6 +138,9 @@ import {
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
   WINDOW_READY_TO_SHOW,
+  APP_CLOSE_REQUEST,
+  APP_CLOSE_READY,
+  APP_CLOSE_RESPONSE,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
   GET_HARNESS_DEFAULTS,
@@ -450,6 +453,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   zoomInWindow: () => ipcRenderer.invoke(ZOOM_IN_WINDOW),
   zoomOutWindow: () => ipcRenderer.invoke(ZOOM_OUT_WINDOW),
   resetZoomWindow: () => ipcRenderer.invoke(RESET_ZOOM_WINDOW),
+  onAppCloseRequest: (callback: (id: string | null) => void) => {
+    const listener = (_event: IpcRendererEvent, id: string | null) => callback(id);
+    ipcRenderer.on(APP_CLOSE_REQUEST, listener);
+    return () => ipcRenderer.removeListener(APP_CLOSE_REQUEST, listener);
+  },
+  appCloseReady: (ready: boolean) => ipcRenderer.invoke(APP_CLOSE_READY, ready),
+  respondAppClose: (id: string, confirmed: boolean) => ipcRenderer.invoke(APP_CLOSE_RESPONSE, id, confirmed),
   windowReadyToShow: () => ipcRenderer.invoke(WINDOW_READY_TO_SHOW),
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
 
