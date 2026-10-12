@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { _setTestStore, _resetTestStore, _setTestSafeStorage, _resetTestSafeStorage, approveGitLabInstance, revokeGitLabInstance,
   saveGitLabInstancePat, getProviderPat, savePat, deletePat, getCredentialRevision, configureSshForHost, restoreApprovedGitLabInstances } from '../../../../src/main/credential/credentialService';
 import { replaceApprovedGitLabOrigins } from '../../../../src/main/vcs/instancePolicy';
+import { getProviderContext, getProviderPrLink } from '../../../../src/main/vcs/contextService';
 let values: Map<string, unknown>; let root: string;
 let originalHome: string | undefined;
 beforeEach(() => {
@@ -13,7 +14,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-vcs-safety-')); originalHome = process.env.HOME; process.env.HOME = root;
   replaceApprovedGitLabOrigins([]);
 });
-afterEach(() => { _resetTestStore(); _resetTestSafeStorage(); replaceApprovedGitLabOrigins([]);
+afterEach(() => { vi.unstubAllGlobals(); _resetTestStore(); _resetTestSafeStorage(); replaceApprovedGitLabOrigins([]);
   if (originalHome === undefined) delete process.env.HOME; else process.env.HOME = originalHome;
   fs.rmSync(root, { recursive: true, force: true }); });
 describe('main-owned host credentials and SSH configuration safety', () => {
@@ -63,6 +64,20 @@ describe('main-owned host credentials and SSH configuration safety', () => {
     expect((await configureSshForHost('code.example')).success).toBe(true);
     const config = fs.readFileSync(path.join(process.env.HOME, '.ssh', 'config'), 'utf8');
     expect(config).toContain('IdentityFile "'); expect(config).toContain('with\\"quotes\\\\literal');
+  });
+  it.each(['', '   ', 'x'.repeat(65537)])('refuses unusable decrypted plaintext (case %#) without anonymous provider requests', async (plaintext) => {
+    await savePat({ provider: 'github', token: 'saved-secret' });
+    const ciphertext = values.get('encryptedPats.github');
+    _setTestSafeStorage({ isEncryptionAvailable: () => true, encryptString: () => Buffer.alloc(0), decryptString: () => plaintext });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(getProviderPat('github', 'https://github.com')).toEqual({ success: false, error: 'Stored token is invalid. Save the token again.' });
+    expect(await getProviderPrLink('https://github.com/owner/repo.git', 'main')).toBeNull();
+    const result = await getProviderContext('origin', 'https://github.com/owner/repo.git', 'main');
+    expect(result).toMatchObject({ success: false, problem: { code: 'auth-required' }, credential: { stored: true, decryptable: false } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(values.get('encryptedPats.github')).toBe(ciphertext);
   });
   it('blocks token retrieval on a forged hosted origin', async () => {
     await savePat({ provider: 'github', token: 'secret' }); expect(getProviderPat('github', 'https://attacker.test').success).toBe(false);

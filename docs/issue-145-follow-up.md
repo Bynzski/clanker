@@ -1,5 +1,13 @@
 # Issue #145 follow-up
 
+## Current completion review
+
+The presentation and Bitbucket contract corrections below were merged in [PR #165](https://github.com/Bynzski/clanker/pull/165). Issue #145's remaining-scope text predates that merge: those code changes do not need implementing again. The official API-token page was fetched again during this review and still explicitly documents Bearer API tokens without an email. This verifies documentation, not authenticated acceptance.
+
+The remaining live acceptance matrix below is **owner-deferred, not verified**. On 2026-10-12, the owner requested that #145 close when PR #173 merges, accepting deferral of the unperformed live matrix rather than claiming it passed. An existing GitHub CLI login is not a dedicated least-privilege test fixture and was not reused. The implementation/security suites and documentation are complete for the issue's approved closure scope; live acceptance remains an acknowledged limitation.
+
+A further credential-read regression was found during this review: decryption could return an empty string with `success: true`. Full context refused it, but PR-only navigation checked `success` and could dispatch anonymously. Credential reads now reject empty, whitespace-only and oversized plaintext, preserve the ciphertext and return a sanitized error. Regression tests exercise both canonical context and PR-link paths and assert zero network dispatch. This is synthetic storage-failure evidence, not a real keyring lock/unlock test.
+
 ## Corrections
 
 - Source Control Overview consumes normalized `ci` and `review` summaries, not their lossy legacy PR projections. CI is labelled **checkout HEAD** and is shown independently of PR discovery. Confirmed no checks, pending, success, failure and unknown/unavailable remain distinct.
@@ -8,11 +16,11 @@
 - Atlassian's [Using API tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/) was fetched directly during this follow-up. Its “Using Bearer authentication” section explicitly documents `Authorization: Bearer {api_token}` and says this removes the need for the Atlassian email. The existing origin-bound transport therefore already implements the documented API-token form. Settings and provider/configuration docs now describe it accurately; Basic auth is not required and no new secret IPC is introduced.
 - Synthetic Bitbucket regression coverage verifies Bearer repository CI reads remain independent of a forbidden `/user` identity lookup. This is transport-contract evidence, **not live authenticated token acceptance**.
 
-## Live validation remains blocked / not performed
+## Owner-deferred live validation (not performed)
 
-No dedicated provider tokens, self-managed GitLab instance, registered SSH fixture or OS-keyring lock/unlock fixture were supplied for this follow-up. Do not reuse unrelated harness/Git credentials or infer repository permission from identity validation. Issue #145 should remain open for the following matrix; no owner deferral is implied.
+No dedicated provider tokens, self-managed GitLab instance, registered SSH fixture or OS-keyring lock/unlock fixture were supplied for this follow-up. Do not reuse unrelated harness/Git credentials or infer repository permission from identity validation. The owner approved closing #145 on merge of PR #173 with this matrix explicitly deferred, **not marked tested**. Future live acceptance should use dedicated fixtures and record the results separately.
 
-| Matrix | Status | Evidence required before acceptance |
+| Matrix | Status | Evidence required if resumed |
 | --- | --- | --- |
 | GitHub classic/fine-grained; public/private/limited scope; Checks + statuses; reviewers/dismissals; forks; stale/unpublished HEAD | Not performed | Tested scopes and repository visibility, normalized outcomes and UI |
 | Hosted/approved self-managed GitLab; nested namespaces; fork and merged-results SHA; unavailable approvals; host/port isolation | Not performed | Instance/API versions, scopes, origin isolation and SHA association |
