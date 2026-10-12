@@ -54,6 +54,7 @@ vi.mock('@xterm/xterm', () => {
       loadAddon = vi.fn();
       open = vi.fn((container: HTMLElement) => container.appendChild(this.element));
       write = mockTerminalWrite;
+      paste = vi.fn((text: string) => attachedDataHandler?.(text));
       dispose = vi.fn();
       hasSelection = mockHasSelection;
       getSelection = mockGetSelection;
@@ -1278,12 +1279,13 @@ describe('TerminalPane', () => {
   // Drag and Drop
   // =========================================================================
   describe('drag and drop', () => {
-    it('writes the resolved absolute image path to the terminal', () => {
+    it('pastes the resolved absolute image path through xterm to the terminal', async () => {
       setupStoreWithTerminal('t1', 'p1');
       mockResolveDroppedFilePath.mockReturnValue('/workspace/images/photo.png');
 
       render(<TerminalPane paneId="p1" />);
 
+      await waitFor(() => expect(window.electronAPI.terminalReady).toHaveBeenCalled());
       const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
       const content = document.querySelector('.terminal-content');
       expect(content).toBeTruthy();

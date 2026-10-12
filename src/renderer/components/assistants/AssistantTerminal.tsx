@@ -5,6 +5,7 @@ import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } fr
 import { TERMINAL_DEFAULT_FONT_SIZE, TERMINAL_SCROLLBACK_LINES } from '../../../shared/terminal';
 import type { AssistantSurfaceState } from '../../../shared/types/assistants';
 import { Button } from '../ui/Button';
+import { useTerminalImageDrop } from '../../lib/useTerminalImageDrop';
 import '@xterm/xterm/css/xterm.css';
 import './AssistantsRoster.css';
 
@@ -36,6 +37,9 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
   const surface = snapshot?.surfaces.find((entry) => entry.assistantId === assistantId);
   const serviceConnected = snapshot?.service.state === 'connected';
   const surfaceState = surface?.state;
+  const { onDragOver, onDrop, dropError } = useTerminalImageDrop(
+    xtermRef, isActive && serviceConnected && surfaceState === 'open',
+  );
 
   const fitAndResize = () => {
     const xterm = xtermRef.current; const fit = fitRef.current; const host = hostRef.current;
@@ -103,8 +107,9 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
     : surfaceState && surfaceState !== 'open' ? OVERLAY_TEXT[surfaceState] : undefined;
 
   return (
-    <div className="assistant-terminal">
+    <div className="assistant-terminal" onDragOver={onDragOver} onDrop={onDrop}>
       <div className="assistant-surface-terminal" ref={hostRef} />
+      {dropError && <div role="status">{dropError}</div>}
       {overlay && (
         <div className="assistant-surface-overlay" role="status">
           <p>{overlay}</p>

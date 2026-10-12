@@ -1,6 +1,6 @@
 import { IconButton } from './ui/IconButton';
 import { X } from 'lucide-react';
-import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useThemeStore } from '../theme/themeStore';
@@ -42,6 +42,7 @@ import { PanePresentationControls } from './WorkspacePageControls';
 import { executeWorkspacePageCommand } from '../lib/workspacePageCommands';
 import { cacheTerminalInstance, finishTerminalDisposal, getCachedTerminal, isTerminalDisposed, markTerminalRuntimeReady, terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
 import { closeWorkspaceTerminal } from '../lib/workspaceTerminalClose';
+import { useTerminalImageDrop } from '../lib/useTerminalImageDrop';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
@@ -459,52 +460,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
     if (workspace?.id) await closeWorkspaceTerminal(workspace.id, terminal.id);
   }, [isInteractive, terminal, pane, removePane, paneId, workspaceId, workspace?.id]);
 
-  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-    if (!isInteractive) {
-      return;
-    }
-    event.preventDefault();
-  }, [isInteractive]);
-
-  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
-    if (!isInteractive) {
-      return;
-    }
-    event.preventDefault();
-
-    if (!terminalId) return;
-
-    const dt = event.dataTransfer;
-    if (!dt) return;
-
-    const files = dt.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    if (!file) return;
-
-    // Only handle image files for now
-    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name);
-    if (!isImage) return;
-
-    const uriList = dt.getData('text/uri-list');
-    const filePath = window.electronAPI.resolveDroppedFilePath(file, uriList);
-
-    if (!filePath) {
-      // Fallback: just use the filename; agents can still use it if the file
-      // is in the current working directory.
-      const escapedName = file.name.replace(/'/g, "'\"'\"'");
-      const textToSend = `'${escapedName}' `;
-      void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
-      return;
-    }
-
-    // Escape single quotes so paths with spaces/special chars work in shells
-    const escaped = filePath.replace(/'/g, "'\"'\"'");
-    const textToSend = `'${escaped}' `;
-
-    void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
-  }, [isInteractive, terminalId]);
+  const { onDragOver, onDrop, dropError } = useTerminalImageDrop(
+    xtermRef, isInteractive && terminalRuntimeReady && terminalId !== null,
+    !workspace?.environmentId || workspace.environmentId === 'local',
+  );
 
   if (terminal == null && pane == null) {
     return (
@@ -547,10 +506,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
       <div
         className="terminal-content"
         ref={terminalRef}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         aria-disabled={!isInteractive}
       />
+      {dropError && <div role="status">{dropError}</div>}
     </div>
   );
 }
