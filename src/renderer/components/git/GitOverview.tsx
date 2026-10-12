@@ -39,7 +39,7 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
       <dt>Provider repository</dt><dd>{providerContext ? `${getProviderLabel(providerContext.provider)} · ${providerContext.owner}/${providerContext.repo}` : props.provider === 'unknown' ? 'Unknown provider' : getProviderLabel(props.provider)}</dd>
       <dt>Pull request</dt><dd>{isLoadingContext ? 'Loading provider context…' : noPr ? 'No pull request (confirmed)' : foundPr ? `#${pullRequest?.number} · ${pullRequest?.state ?? 'Unknown state'}` : `Unknown / unavailable${pullRequest?.problem ? ` (${pullRequest.problem.code})` : ''}`}</dd>
       <dt>CI (checkout HEAD)</dt><dd>{isLoadingContext ? 'Loading CI…' : summaryLabel(props.ci, 'No checks (confirmed)')}</dd>
-      <dt>Review</dt><dd>{isLoadingContext ? 'Loading reviews…' : noPr ? 'Not applicable (no pull request)' : summaryLabel(props.review, 'No reviews (confirmed)')}</dd>
+      <dt>Review</dt><dd>{isLoadingContext ? 'Loading reviews…' : noPr ? 'Not applicable (no pull request)' : summaryLabel(props.review, 'No active review decisions or requests')}</dd>
     </dl>
     {[statusErrorMessage, branchError, remoteError, vcsContextError, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}

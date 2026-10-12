@@ -237,14 +237,14 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     void loadRemotes();
   }, [workspacePath, loadRemotes]);
 
-  const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean) => Promise<void>>(async () => {});
+  const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean, refreshProvider?: boolean) => Promise<void>>(async () => {});
   const refreshChangesRef = useRef<() => Promise<void>>(async () => {});
   const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
-  const refreshAfterAction = useCallback(async () => {
+  const refreshAfterAction = useCallback(async (refreshProvider = false) => {
     if (!isCurrent()) return;
     await Promise.all([
-      refreshMenuDataRef.current(),
+      refreshMenuDataRef.current(true, refreshProvider),
       refreshChangesRef.current(),
     ]);
   }, [isCurrent]);
@@ -425,7 +425,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   }, [isCurrent, hasMoreHistory, workspaceId, scope.path, scope.checkoutContextId]);
 
   const dataRequest = useRef(0);
-  const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
+  const refreshMenuData = useCallback(async (reloadWorktrees = true, refreshProvider = false) => {
     const request = ++dataRequest.current;
     const startDiffGen = diffGeneration.current;
     const fresh = () => isCurrent() && request === dataRequest.current;
@@ -525,7 +525,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setRemotes([]); setProvider('unknown');
       }
 
-      await loadVcsContext();
+      await loadVcsContext(refreshProvider);
     } catch (error: unknown) {
       if (!fresh()) return;
       const message = error instanceof Error ? error.message : 'Unable to load git data';
@@ -903,7 +903,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onPublish={() => { if (isCurrent()) void handlePublish(); }}
             onPull={() => { if (isCurrent()) void handlePull(); }}
             onPush={() => { if (isCurrent()) void handlePush(); }}
-            onRefresh={() => { void refreshAfterAction().then(() => { if (isCurrent()) setRemoteError(null); }).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
+            onRefresh={() => { void refreshAfterAction(true).then(() => { if (isCurrent()) setRemoteError(null); }).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             onRefreshContext={() => void loadVcsContext(true)}
             onRemotesChanged={() => void loadRemotes()}
             onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
