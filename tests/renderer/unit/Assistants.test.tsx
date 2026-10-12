@@ -11,7 +11,7 @@ import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspa
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useAssistantsStore } from '../../../src/renderer/store/assistantsStore';
 
-const xterms: Array<{ write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; emitData: (data: string) => void; cols: number; rows: number }> = [];
+const xterms: Array<{ write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; emitData: (data: string) => void; paste: ReturnType<typeof vi.fn>; cols: number; rows: number }> = [];
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80; rows = 24;
@@ -20,6 +20,7 @@ vi.mock('@xterm/xterm', () => ({
     open = vi.fn((container: HTMLElement) => container.appendChild(document.createElement('div')));
     onData = vi.fn((handler: (data: string) => void) => { this.handler = handler; return { dispose: vi.fn() }; });
     emitData = (data: string) => this.handler(data);
+    paste = vi.fn((data: string) => this.handler(`\x1b[200~${data}\x1b[201~`));
     options = {};
     constructor() { xterms.push(this as never); }
   },
@@ -181,6 +182,35 @@ it('the surface forwards xterm input and Assistant output over the narrow Assist
   expect(xterms[0].write).not.toHaveBeenCalledWith('other');
   expect(window.electronAPI.openAssistant).toHaveBeenCalledWith('hermes:fred');
   expect(JSON.stringify(vi.mocked(window.electronAPI.openAssistant).mock.calls)).not.toMatch(/token|ws:\/\//i);
+});
+
+it('pastes local image drops through the Assistant PTY with xterm paste framing', async () => {
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'open' }] }));
+  vi.mocked(window.electronAPI.resolveDroppedFilePath).mockReturnValue('/images/photo.png');
+  const { container } = render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(xterms).toHaveLength(1));
+  await waitFor(() => expect(useAssistantsStore.getState().snapshot?.surfaces[0]?.state).toBe('open'));
+  fireEvent.drop(container.querySelector('.assistant-surface-terminal')!, {
+    dataTransfer: { files: [new File(['image'], 'photo.png', { type: 'image/png' })], getData: () => '' },
+  });
+  expect(xterms[0].paste).toHaveBeenCalledWith("'/images/photo.png' ");
+  expect(window.electronAPI.writeAssistantPty).toHaveBeenCalledWith('hermes:fred', "\x1b[200~'/images/photo.png' \x1b[201~");
+  expect(window.electronAPI.writeTerminal).not.toHaveBeenCalled();
+});
+
+it.each([
+  { isActive: false, state: 'open' as const },
+  { isActive: true, state: 'disconnected' as const },
+])('does not paste image drops into an inactive or disconnected Assistant: $state, active=$isActive', async ({ isActive, state }) => {
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state }] }));
+  const { container } = render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive={isActive} />);
+  await waitFor(() => expect(xterms).toHaveLength(1));
+  await waitFor(() => expect(useAssistantsStore.getState().snapshot?.surfaces[0]?.state).toBe(state));
+  expect(fireEvent.drop(container.querySelector('.assistant-terminal')!, {
+    dataTransfer: { files: [new File(['image'], 'photo.png', { type: 'image/png' })], getData: () => '' },
+  })).toBe(false);
+  expect(xterms[0].paste).not.toHaveBeenCalled();
+  expect(window.electronAPI.writeAssistantPty).not.toHaveBeenCalled();
 });
 
 it('an unresolved Bot Chat is explained, offers Retry, and is never replaced by a scratch chat', async () => {
