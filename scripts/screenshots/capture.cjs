@@ -89,7 +89,7 @@ async function clip(theme, scene, description, actions) {
   const file = `${theme}-${scene}.mp4`;
   execFileSync('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', concat, '-an', '-vf', 'fps=24', '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path.join(out, file)], { stdio: 'pipe' });
   const posters = {
-    'isolated-agent-picker-tour': 'isolated-agent-picker', 'isolated-checkout-launch': 'isolated-checkout-agent',
+    'new-session-picker-tour': 'new-session-picker', 'isolated-checkout-launch': 'isolated-checkout-agent',
     'git-menu-tour': 'git-menu', 'usage-status-tour': 'usage-status', 'settings-tour': 'settings',
     'workspace-switching': 'multi-project-agents', 'dev-server-preview': 'dev-server-browser', 'browser-annotation': 'browser-annotation',
   };
@@ -158,9 +158,9 @@ function index(error) {
       await page.getByRole('region', { name: 'Markdown preview' }).waitFor();
       await shot(theme, 'markdown-preview', 'Rendered Markdown guide and task checklist in the editor');
       await page.locator('.tree-node-name').filter({ hasText: /^projects\.ts$/ }).dblclick();
-      await menu(theme, 'New isolated agent', 'isolated-agent-picker', 'Harness selection, existing branches and a real linked worktree');
+      await menu(theme, 'New Session', 'new-session-picker', 'Harness selection, existing branches and a real linked worktree');
       await clip(theme, 'isolated-checkout-launch', 'Creating an isolated branch and launching a real Pi pane (unconfigured model)', async () => {
-        await click('New isolated agent');
+        await click('New Session');
         await page.getByRole('radio', { name: 'Pi', exact: true }).click();
         await page.getByLabel('New branch', { exact: true }).fill(`feat/keyboard-${theme}`);
         await pause(900); await click('Launch Pi');

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { findHarnessProvider } from '../harnesses/registry';
-import type { LaunchAttachmentState, LaunchAttachmentStep } from '../launchAttachments';
+import type { LaunchAttachmentStep } from '../launchAttachments';
 import {
   DEFAULT_AGENT_BRIDGE_CAPABILITIES,
   type AgentBridgeCaller,
@@ -13,14 +13,8 @@ import {
 } from './capabilities';
 import { AgentBridgeCredentials, type AgentBridgeGrant, type AgentBridgeIdentity } from './credentials';
 import { bridgeInstructions } from './instructions';
-import { liveCheckoutToolDescription } from './lifecycleCapabilities';
 import { describeBridgeObservation, type BridgeLocationEvidence } from './observation';
 import { AgentBridgeServer, AGENT_BRIDGE_LIMITS, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
-
-function supportsLiveRelocation(harness: string): boolean {
-  const capability = findHarnessProvider(harness)?.checkoutRehome;
-  return capability?.mode === 'live-relocate' && typeof capability.relocateLiveConversation === 'function';
-}
 
 export const AGENT_BRIDGE_SERVER_NAME = 'clanker-grid';
 /** Environment variable carrying the bearer credential into the launched harness only. */
@@ -54,12 +48,6 @@ export interface AgentBridgeServiceDeps {
   toolTimeoutMs?: number;
 }
 
-/** What this launch can honor; decides which capabilities its credential is granted. */
-export interface AgentBridgeGrants {
-  /** The harness conversation can be re-homed by resuming it in another checkout. */
-  checkoutRehoming?: boolean;
-}
-
 /** Everything a launch needs to wire the bridge, and the means to give it all back. */
 export interface AgentBridgeLaunchLease {
   readonly url: string;
@@ -86,47 +74,19 @@ export class AgentBridgeService implements AgentBridgeToolHost {
    * Starts the endpoint if needed and binds a fresh credential to one launch. The identity is main's
    * own record; callers never pass anything the renderer or a model chose.
    */
-  async lease(identity: AgentBridgeIdentity, grants: AgentBridgeGrants = {}): Promise<AgentBridgeLaunchLease> {
+  async lease(identity: AgentBridgeIdentity): Promise<AgentBridgeLaunchLease> {
     if (this.shutDown) throw new Error('Agent bridge is shut down');
     if (identity.environmentId !== LOCAL_ENVIRONMENT_ID) throw new Error('Agent bridge is local-only');
     const url = await this.server.start();
     // start() awaited: shutdown may have run meanwhile.
     if (this.shutDown) throw new Error('Agent bridge is shut down');
-    // A launch is granted only what it can honor: capabilities that `require` something it lacks are
-    // absent for it (not listed, and refused as unknown), rather than advertised and doomed to fail.
+    // Credentials remain scoped to the installed capability set and one immutable launch identity.
     const granted = [...this.capabilities.values()]
-      .filter((capability) => capability.requires === undefined || (capability.requires === 'checkout-rehoming' && grants.checkoutRehoming === true))
       .map((capability) => capability.name);
     const { token, revoke } = this.credentials.issue(identity, granted);
     // `release` is the registry's own revoke closure (it holds only the digest), so keeping it alive
     // for the terminal's lifetime never keeps the raw token alive.
-    return { url, token, instructions: bridgeInstructions(new Set(granted), supportsLiveRelocation(identity.harnessId)), release: revoke };
-  }
-
-  /**
-   * Main-only grant half of the synchronous relocation commit. Both roots must still belong to the
-   * live workspace. The main-owned committer updates the terminal in the same synchronous step; the
-   * bridge transport itself never mutates terminal resources. Tool arguments cannot invoke this.
-   */
-  rebindCheckoutAuthority(identity: AgentBridgeIdentity, targetId: string): boolean {
-    if (this.shutDown || identity.environmentId !== LOCAL_ENVIRONMENT_ID) return false;
-    const registry = this.deps.getRegistry();
-    const terminal = this.deps.getTerminals().get(identity.terminalId);
-    const source = registry?.getCheckoutContext(identity.checkoutContextId);
-    const target = registry?.getCheckoutContext(targetId);
-    const workspace = registry?.getWorkspace(identity.workspaceId);
-    if (!terminal || !workspace || !source || !target || target.missing
-      || workspace.location.environmentId !== identity.environmentId
-      || source.workspaceId !== identity.workspaceId || source.environmentId !== identity.environmentId
-      || target.workspaceId !== identity.workspaceId || target.environmentId !== identity.environmentId
-      || terminal.workspaceId !== identity.workspaceId || terminal.checkoutContextId !== identity.checkoutContextId
-      || terminal.harnessId !== identity.harnessId || (terminal.environmentId ?? LOCAL_ENVIRONMENT_ID) !== identity.environmentId) return false;
-    return this.credentials.rebindCheckout(identity, targetId);
-  }
-
-  /** Revokes a terminal's authority. Safe for unknown terminals. */
-  revokeTerminal(terminalId: string): void {
-    this.credentials.revokeTerminal(terminalId);
+    return { url, token, instructions: bridgeInstructions(), release: revoke };
   }
 
   async shutdown(): Promise<void> {
@@ -135,17 +95,16 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     await this.server.close();
   }
 
-  instructionsFor(grant: AgentBridgeGrant): string {
-    return bridgeInstructions(grant.capabilities, supportsLiveRelocation(grant.identity.harnessId));
+  instructionsFor(): string {
+    return bridgeInstructions();
   }
 
   listTools(grant: AgentBridgeGrant): AgentBridgeToolDescriptor[] {
     if (!this.resolveCaller(grant)) return [];
-    const live = supportsLiveRelocation(grant.identity.harnessId);
     return [...this.capabilities.values()]
       .filter((capability) => grant.capabilities.has(capability.name))
       .map(({ name, description, inputSchema, annotations }) => ({ name,
-        description: live ? liveCheckoutToolDescription(name, description) : description,
+        description,
         inputSchema, ...(annotations ? { annotations: { ...annotations } } : {}) }));
   }
 
@@ -208,7 +167,7 @@ export class AgentBridgeService implements AgentBridgeToolHost {
         this.deps.getLocationObservation ? registry.getCheckoutContextsForWorkspace(identity.workspaceId) : [], checkoutContext),
       providerCapabilities: {
         resumeWithoutOriginalDirectory: findHarnessProvider(identity.harnessId)?.sessions?.resumesWithoutOriginalDirectory === true,
-        checkoutRehome: findHarnessProvider(identity.harnessId)?.checkoutRehome?.mode ?? null,
+        checkoutRehome: null, // Kept as read-only response compatibility; relocation was retired in #166.
       },
     };
   }
@@ -218,12 +177,6 @@ export interface AgentBridgeLaunchStepInput {
   service: AgentBridgeService;
   harness: string;
   identity: AgentBridgeIdentity;
-  /**
-   * Capabilities this launch can honor beyond the always-available ones. A function is evaluated when the step
-   * runs, against what the earlier attachments of THIS launch actually provided and whether the provider has the
-   * bridge capability at all.
-   */
-  grants?: AgentBridgeGrants | ((launch: { state: LaunchAttachmentState; bridgeAvailable: boolean }) => AgentBridgeGrants);
   platform?: NodeJS.Platform;
 }
 
@@ -240,7 +193,7 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
     async prepare(state) {
       const provider = findHarnessProvider(harness)?.agentBridge;
       if (!provider) return null;
-      const lease = await service.lease(identity, typeof input.grants === 'function' ? input.grants({ state, bridgeAvailable: Boolean(provider) }) : input.grants);
+      const lease = await service.lease(identity);
       let scratch: string | undefined;
       const removeScratch = () => {
         if (scratch) fs.rmSync(scratch, { recursive: true, force: true });

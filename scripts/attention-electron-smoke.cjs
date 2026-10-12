@@ -51,7 +51,9 @@ async function closeOwnedTerminals() {
       await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(path.join(root, name));
       await page.getByRole('dialog').getByText('Where are we working today?').click();
       await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-      await page.getByRole('group', { name: 'New terminal' }).getByRole('button', { name: 'Pi', exact: true }).click();
+      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('radio', { name: 'Pi', exact: true }).click();
+      await page.getByRole('button', { name: 'Launch Pi', exact: true }).click();
       let id;
       await until(async () => { id = await page.evaluate(async () => (await window.electronAPI.getAgentAttentionSnapshots()).filter(s => !window.__smokeIds?.includes(s.terminalId)).at(-1)?.terminalId); return Boolean(id); }, 'No native attachment registration');
       await page.evaluate(id => { (window.__smokeIds ??= []).push(id); }, id);

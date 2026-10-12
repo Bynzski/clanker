@@ -216,49 +216,4 @@
 @keyframes ws-service-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ws-service-spin { animation: none; } }
 
-/* Inactive isolated checkouts: subdued rows under the agents, not agents themselves. */
-.ws-checkout-list,
-.ws-checkout-notices {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 2px;
-}
-
-.ws-checkout-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 22px;
-  padding: 0 8px 0 26px;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-}
-.ws-checkout-icon { flex-shrink: 0; }
-.ws-checkout-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-}
-/* Visible but muted, so cleaning up is findable without hovering; it firms up on hover or focus. */
-.ws-checkout-row .ws-checkout-remove { opacity: 0.7; flex-shrink: 0; }
-.ws-checkout-row:hover .ws-checkout-remove,
-.ws-checkout-row:focus-within .ws-checkout-remove { opacity: 1; }
-
-.ws-checkout-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 2px 8px 2px 26px;
-  font-size: var(--font-size-sm);
-  line-height: 1.35;
-  color: var(--text-secondary);
-}
-.ws-checkout-notice > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.ws-checkout-notice.error { color: var(--status-error); }
-.ws-checkout-notice.warning { color: var(--status-warning); }
-
 .ws-agent-row:focus-visible { outline: 1px solid var(--accent-interactive); outline-offset: -1px; }

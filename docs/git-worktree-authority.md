@@ -1,8 +1,8 @@
 # Git worktree authority (#166)
 
 Owner review: the source-level assessment was approved before implementation. This
-change implements the routine launch/inventory/removal boundary below; native
-provider relocation remains a compatibility feature, not a prerequisite.
+change implements the unified launch/inventory/removal boundary below. Provider
+relocation and MCP checkout lifecycle controls are retired.
 
 ## Authority and dataflow
 
@@ -56,32 +56,26 @@ continues to require its persisted host journal before reservations are cleared.
 
 | Consumer/state | Policy |
 | --- | --- |
-| Isolated-agent picker | Keep create/adopt/reuse; also allow creation without a process. |
-| Sidebar and Source Control | Join Git inventory with registrations/occupancy; one removal route. |
+| New Session | Main by default; fresh create/adopt, committed-HEAD base selection, create-only. |
+| Sidebar | Projects, agents/terminals and services; no checkout inventory or selector. |
+| Source Control | Git inventory with registrations/occupancy; manual creation with the shared form; established removal/unlock/prune/recovery. |
 | Terminal launch/resume | Keep context IDs, environment validation and late identity checks. |
 | Explorer/editor/Git/services | Keep canonical selection and checkout-bound resource identity. |
 | Read-only MCP context / attention | Keep launch authority separate from observed/historical location. |
-| MCP create/complete | Preserve names, arguments, grants and provider behavior for existing callers; explicitly describe as optional conversation relocation with cleanup, not ordinary worktree management. |
-| Provider rehome adapters / pane handoff | Retain behind the existing compatibility tools; add no provider relocation support. |
+| MCP create/complete | Retired; existing clients receive unknown-tool. Use Git and New Session. |
+| Provider rehome adapters / pane handoff | Removed together with their sole lifecycle consumer. |
 | Runtime contexts | Rebuild through validated registration/adoption; do not persist access grants. |
 | Persisted UI/recipes | No schema migration or synthetic workspace; retain existing restoration. |
 | Worktree provenance | Retain for removed-checkout history, never inventory or access authority. |
 | SSH removal records | Retain schema, equivalent-host protection, restart verification and recovery. |
 
-The legacy standalone worktree-launcher components remain compatibility code and
-are not reintroduced into startup. Existing MCP clients are not silently broken
-or given a different meaning for `complete`. Removing those APIs and their
-provider orchestration requires a later consumer migration, not a same-name
-semantic replacement in this change.
+Legacy standalone worktree-launcher components are not rendered at startup. Stored recipes,
+native history/resume, worktree provenance and remote removal journals retain their existing
+formats. `clanker_context.providerCapabilities.checkoutRehome` remains `null` for read-only
+response compatibility. No old mutation tool is repurposed with a new meaning.
 
-## Review/PR sequence
-
-1. Inventory and authority contract (this document).
-2. Main-owned removal, truthful outcomes and race/real-Git regression coverage.
-3. Shared Git presentation, explicit precreation and compatibility guidance.
-4. Validate and open the implementation PR. Retire provider orchestration only
-   after its remaining consumers explicitly migrate; do not claim native live
-   continuity or live SSH coverage from fixture tests.
+See [unified-session-launch.md](unified-session-launch.md) for the consumer audit, #170
+root cause, explicit launch identity and implementation verification.
 
 ## Validation and limits
 
@@ -91,11 +85,10 @@ launch/registration reservations, and Trash rollback/partial recovery. SSH
 coordinator fixtures cover association exclusion, unknown outcomes and journal
 verification; existing equivalent-host and restart safeguards remain covered.
 Renderer coverage includes external discovery without implicit adoption, explicit
-selection/main return, precreation without a process, shared launches, retained
-failed-removal rows, and stale inventory responses.
+new-session main default, creation without a process, shared launches, retained
+failed-removal diagnostics, and stale response checks.
 
 Local built-Electron smoke checks use disposable repositories/profiles with real
-Git, PTYs, IPC and Browser surfaces: `smoke:checkout-presentation` and
+Git, PTYs, IPC and Browser surfaces: `smoke:new-session`, `smoke:checkout-presentation` and
 `smoke:source-control`. Location events in the former are authenticated fixtures,
-not evidence of native provider movement. No live SSH, native relocation or user
-checkout recovery was performed. The final gate is `npm run validate`.
+not evidence of native provider movement. No live SSH transport or paid native model calls were performed. The final gate is `npm run validate`.

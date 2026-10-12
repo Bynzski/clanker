@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { launchIsolatedAgent } from '../../../src/renderer/lib/isolatedAgentLaunch';
+import { launchSession } from '../../../src/renderer/lib/sessionLaunch';
 import { useWorkspaceStore, validateWorkspaceConsistency } from '../../../src/renderer/store/workspaceStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
@@ -43,7 +43,7 @@ function pendingResolution(operation: 'create' | 'adopt', checkoutContext: Check
       finish = () => resolve({ success: true, checkoutContext });
     }));
   }
-  const pending = launchIsolatedAgent({ ...request, target: operation === 'create'
+  const pending = launchSession({ ...request, target: operation === 'create'
     ? { kind: 'new-branch', branch: 'task' } : { kind: 'worktree', path: checkoutContext.path } });
   return { pending, finish: () => finish(), invoked: operation === 'create'
     ? window.electronAPI.gitCreateWorktree : window.electronAPI.adoptWorktreeCheckoutContext };

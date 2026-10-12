@@ -35,7 +35,7 @@ export async function prepareWorkspaceShell(location: WorkspaceLocation): Promis
     const canonicalPath = registration.location.path;
     if (location.environmentId === 'local') {
       const owner = await findGeneratedWorktreeContainerOwner(canonicalPath);
-      if (owner) throw new Error(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it, or open the repository and use New isolated agent.`);
+      if (owner) throw new Error(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it, or open the repository and use New Session.`);
     }
     // Non-Git directories are valid workspaces. Lookup failure conveys no checkout metadata.
     const listed = await window.electronAPI.gitListWorktrees(canonicalPath, id).catch(() => null);

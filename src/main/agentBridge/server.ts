@@ -38,7 +38,7 @@ export interface AgentBridgeToolHost {
   listTools(grant: AgentBridgeGrant): AgentBridgeToolDescriptor[];
   callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<AgentBridgeToolResult>;
   /** Guidance for this caller, derived from what it was granted. */
-  instructionsFor?(grant: AgentBridgeGrant): string | undefined;
+  instructionsFor?(): string | undefined;
 }
 
 export interface AgentBridgeServerOptions {
@@ -220,7 +220,7 @@ export class AgentBridgeServer {
 
   private createProtocolServer(grant: AgentBridgeGrant): McpServer {
     const { host, version } = this.options;
-    const instructions = host.instructionsFor?.(grant);
+    const instructions = host.instructionsFor?.();
     const server = new McpServer(
       { name: 'clanker', version: version() },
       { capabilities: { tools: {} }, ...(instructions ? { instructions } : {}) },

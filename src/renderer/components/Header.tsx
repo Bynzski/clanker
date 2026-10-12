@@ -4,9 +4,8 @@ import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceSto
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import { isExplorerShown, toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { Code, Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
-import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import GitButton from './GitButton';
-import IsolatedAgentButton from './IsolatedAgentButton';
+import NewSessionButton from './NewSessionButton';
 import { useApplicationSettings } from './settings/ApplicationSettingsProvider';
 import HeaderRightControls from './HeaderRightControls';
 import { useConversationHistory } from './useConversationHistory';
@@ -17,10 +16,6 @@ import { captureTerminalLaunches } from '../lib/recipeCapture';
 import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
-import { resolveToolbarLaunch } from '../lib/toolbarLaunch';
-import { launchWorkspaceTerminal } from '../lib/workspaceTerminalLaunch';
-import { launchTerminalInCheckoutContext } from '../lib/checkoutContextLaunch';
-import { currentCheckoutSelection } from '../lib/checkoutSelection';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 
@@ -52,8 +47,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   const explorerShown = useWorkspaceNavigationStore((state) => isExplorerShown(explorerVisible, state.mode, state.sidebarWidth));
-  const harness = focusedWorkspace?.harness ?? '';
-  const model = focusedWorkspace?.model ?? '';
   const [showChatHistory, setShowChatHistory] = useState(false);
   // Background warm-ups are local-only: they must never trigger unattended SSH probes or scans.
   const warmupEnabled = !focusedWorkspace?.environmentId || focusedWorkspace.environmentId === 'local';
@@ -72,31 +65,6 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   useEffect(() => {
     if (showSettings) setHistoryOpen(false);
   }, [showSettings, setHistoryOpen]);
-  const handleAddTerminal = async (harnessId: string) => {
-    if (!focusedWorkspace || !workspacePath || destination.kind !== 'workspace') return;
-    try {
-      const { harness: resolvedHarness, model: resolvedModel } = resolveToolbarLaunch({
-        harnessId,
-        visibleHarnessIds,
-        workspaceHarness: harness,
-        workspaceModel: model,
-        environmentId: focusedWorkspace?.environmentId,
-      });
-
-      const selection = currentCheckoutSelection(focusedWorkspace);
-      if (selection.availability !== 'available') throw new Error('Select an available checkout before launching an agent');
-      const launchOptions = {
-        harness: resolvedHarness,
-        model: resolvedModel,
-        pageId: focusedWorkspace.activePageId,
-      };
-      if (selection.context.kind === 'main') await launchWorkspaceTerminal(focusedWorkspace, selection.root, launchOptions);
-      else await launchTerminalInCheckoutContext(focusedWorkspace, selection.context, launchOptions);
-    } catch (err) {
-      console.error('Failed to spawn terminal:', err);
-    }
-  };
-
   const handleToggleBrowser = () => {
     if (activeAssistantId) toggleAssistantBrowser(activeAssistantId);
     else toggleBrowser();
@@ -238,29 +206,10 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   return (
     <header className={`header${placement === 'titlebar' ? ' header-inline' : ''}`} data-placement={placement}>
       <div className="header-center">
-        {capabilities.terminalLaunch && <div className="harness-pills" role="group" aria-label="New terminal">
-          {HARNESS_OPTIONS.filter((opt) => visibleHarnessIds.includes(opt.id)).map(opt => {
-            const IconComponent = opt.Icon;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                className="harness-pill"
-                onClick={() => void handleAddTerminal(opt.id)}
-                title={opt.id ? `Add ${opt.label} terminal` : 'Add terminal'}
-              >
-                <IconComponent size={14} strokeWidth={2.25} />
-                <span className="harness-pill-label">{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>}
-        {capabilities.isolatedAgent && focusedWorkspace && !focusedWorkspace.isLinkedWorktree && (
-          <>
-            {/* Set apart from the harness launchers: this creates a worktree-backed agent, it is not another harness. */}
-            <span className="toolbar-divider" aria-hidden="true" />
-            <IsolatedAgentButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
-          </>
+        {capabilities.terminalLaunch && focusedWorkspace && (
+          <div className="new-session-group" role="group" aria-label="New session">
+            <NewSessionButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
+          </div>
         )}
 
         {capabilities.git && workspacePath && (

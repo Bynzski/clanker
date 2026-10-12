@@ -239,7 +239,7 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
       </div> : page === 'worktrees' ? <div className="source-control-page">
         <h2 className="clanker-dialog-title">Worktrees</h2>
         {checkoutContext}
-        <p>Main and in-use checkouts are protected. Create checkouts through New isolated agent.</p>
+        <p>Main and in-use checkouts are protected. Worktrees persist until you explicitly remove them.</p>
         {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
         <GitWorktreesSection management workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey}
           isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />

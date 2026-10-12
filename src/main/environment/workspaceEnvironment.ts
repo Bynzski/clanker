@@ -98,7 +98,7 @@ export interface WorkspaceEnvironment {
 
   // Git operations
   execGit(workspacePath: string, args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }>;
-  createWorktree?(workspacePath: string, baseRef: string, branch: string): Promise<GitWorktreeCreateResult>;
+  createWorktree?(workspacePath: string, baseRef: string, branch: string, mode?: 'new' | 'existing'): Promise<GitWorktreeCreateResult>;
   inspectWorktree?(workspacePath: string, worktreePath: string, activePaths: string[]): Promise<GitWorktreeInspectionResult>;
   removeWorktree?(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string, options?: GitWorktreeRemovalOptions): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }>;
   waitForWorktreeOperations?(workspacePath: string, operationId: string): Promise<void>;

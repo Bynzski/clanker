@@ -1,3 +1,5 @@
+> Historical research. The relocation service, adapters and MCP lifecycle tools described below were retired in #166. They are not shipped behavior; see [unified-session-launch.md](unified-session-launch.md).
+
 # Checkout relocation contracts and verification limits
 
 Tracking: #131, superseding #118 (live relocation), #114 (resume redraw) and

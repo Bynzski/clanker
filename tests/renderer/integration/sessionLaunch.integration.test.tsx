@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Header from '../../setup/HeaderWithSettings';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
@@ -9,7 +9,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
-import { createIsolatedAgent } from '../../../src/renderer/lib/isolatedAgentLaunch';
+import { launchSession } from '../../../src/renderer/lib/sessionLaunch';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import type { GitWorktreeCreateResult } from '../../../src/shared/types/git';
@@ -37,7 +37,7 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 
-describe('isolated agents from the toolbar', () => {
+describe('explicit sessions from New Session', () => {
   let spawnTerminal: ReturnType<typeof vi.fn>;
   let gitCreateWorktree: ReturnType<typeof vi.fn>;
   let gitGetBranchState: ReturnType<typeof vi.fn>;
@@ -76,7 +76,7 @@ describe('isolated agents from the toolbar', () => {
   afterEach(() => cleanup());
 
   async function openPopover() {
-    await user.click(await screen.findByRole('button', { name: 'New isolated agent' }));
+    await user.click(await screen.findByRole('button', { name: 'New Session' }));
     return screen.findByLabelText('New branch');
   }
   async function submit(branch = 'issue-90-x', harness?: string) {
@@ -86,60 +86,7 @@ describe('isolated agents from the toolbar', () => {
     await user.click(screen.getByRole('button', { name: /^Launch/ }));
   }
 
-  describe('ordinary agents are untouched', () => {
-    it('a harness pill still launches straight into the main checkout with no prompt and no worktree', async () => {
-      openWorkspace();
-      render(<Header />);
-
-      await user.click(await screen.findByRole('button', { name: 'Codex' }));
-
-      await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      // Ordinary launches are now explicitly scoped to the registered workspace.
-      expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined, undefined, undefined, 'ws', 'local');
-      expect(gitCreateWorktree).not.toHaveBeenCalled();
-      expect(gitGetBranchState).not.toHaveBeenCalled();
-      expect(screen.queryByLabelText('New branch')).toBeNull();
-      expect(workspace().terminals[0].checkoutContextId).toBe(mainCheckoutContextId('ws'));
-      expect(workspace().checkoutContexts).toHaveLength(1);
-    });
-  });
-
-  describe('availability', () => {
-    it('is present for a Git project and offers the harness icons and a working copy, never a model', async () => {
-      openWorkspace();
-      render(<Header />);
-      const branch = await openPopover();
-
-      expect(branch).toBeTruthy();
-      const popover = branch.closest('form') as HTMLElement;
-      expect(within(popover).queryAllByRole('combobox')).toHaveLength(0);
-      expect(within(popover).getAllByRole('radio').map((el) => el.getAttribute('title'))).toEqual(['Terminal', 'Codex', 'Claude']);
-      expect(popover.querySelectorAll('.isolated-agent-harnesses svg, .isolated-agent-harnesses img').length).toBe(3);
-      expect(within(popover).getAllByRole('textbox')).toHaveLength(1);
-      expect(within(popover).queryByText(/base/i)).toBeNull();
-      expect(within(popover).queryByText(/path/i)).toBeNull();
-      expect(within(popover).queryByText(/model/i)).toBeNull();
-    });
-
-    it('is disabled for a workspace that is not a Git repository', async () => {
-      openWorkspace({ gitIsRepo: false });
-      render(<Header />);
-      const button = await screen.findByRole('button', { name: 'New isolated agent' });
-
-      expect(button).toBeDisabled();
-      await user.click(button);
-      expect(screen.queryByLabelText('New branch')).toBeNull();
-    });
-
-    it('is not offered from a legacy linked-worktree workspace', async () => {
-      openWorkspace({ isLinkedWorktree: true });
-      render(<Header />);
-      await screen.findByRole('button', { name: 'Codex' });
-      expect(screen.queryByRole('button', { name: 'New isolated agent' })).toBeNull();
-    });
-  });
-
-  describe('creating an isolated agent', () => {
+  describe('creating a session in a new worktree', () => {
     it('creates with the explicit attach option from the current branch, records the context, and launches into it', async () => {
       openWorkspace();
       render(<Header />);
@@ -148,7 +95,7 @@ describe('isolated agents from the toolbar', () => {
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
       expect(gitGetBranchState).toHaveBeenCalledWith(ROOT, 'ws');
-      expect(gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'feature/base', 'issue-90-x', 'ws', { attachCheckoutContext: true });
+      expect(gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'HEAD', 'issue-90-x', 'ws', { attachCheckoutContext: true, newBranch: {} });
       expect(workspace().checkoutContexts).toEqual([
         { id: mainCheckoutContextId('ws'), workspaceId: 'ws', environmentId: 'local', path: ROOT, kind: 'main' },
         worktreeContext('ws'),
@@ -176,7 +123,7 @@ describe('isolated agents from the toolbar', () => {
       render(<Header />);
       await submit();
       await waitFor(() => expect(gitCreateWorktree).toHaveBeenCalled());
-      expect(gitCreateWorktree.mock.calls[0][1]).toBe('feature/base');
+      expect(gitCreateWorktree.mock.calls[0][1]).toBe('HEAD');
     });
 
     it('launches the harness picked in the popover with the toolbar\'s model rules', async () => {
@@ -203,7 +150,7 @@ describe('isolated agents from the toolbar', () => {
       await submit();
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(SSH_ROOT, 'feature/base', 'issue-90-x', 'ws', { attachCheckoutContext: true });
+      expect(gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(SSH_ROOT, 'HEAD', 'issue-90-x', 'ws', { attachCheckoutContext: true, newBranch: {} });
       expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(SSH_WORKTREE, 'codex', undefined, undefined, undefined, 'ws', 'vps', 'ws::ckt-x');
       expect(workspace().workspacePath).toBe(SSH_ROOT);
       expect(workspace().checkoutContexts!.map((context) => context.path)).toEqual([SSH_ROOT, SSH_WORKTREE]);
@@ -265,9 +212,7 @@ describe('isolated agents from the toolbar', () => {
       expect(workspace().checkoutContexts!.map((context) => context.id)).toEqual([mainCheckoutContextId('ws'), 'ws::ckt-x']);
       expect(workspace().terminals).toHaveLength(0);
       // Nothing was deleted, and the stranded checkout is visible and removable.
-      const rows = await screen.findByRole('list', { name: /inactive checkouts/ });
-      expect(within(rows).getByText('issue-90-x')).toBeTruthy();
-      expect(within(rows).getByRole('button', { name: /Remove checkout for branch issue-90-x/ })).toBeTruthy();
+      expect(workspace().checkoutContexts?.some((context) => context.branch === 'issue-90-x')).toBe(true);
     });
 
     it('refuses to create when the focused workspace is no longer the one the request came from', async () => {
@@ -277,7 +222,7 @@ describe('isolated agents from the toolbar', () => {
       useWorkspaceStore.getState().addWorkspace({ ...other, id: 'other' });
       expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('other');
 
-      const result = await createIsolatedAgent({ workspaceId: 'ws', harnessId: 'codex', taskBranch: 'issue-90-x', visibleHarnessIds: ['codex'] });
+      const result = await launchSession({ workspaceId: 'ws', harnessId: 'codex', target: { kind: 'new-branch' as const, branch: 'issue-90-x' }, visibleHarnessIds: ['codex'] });
 
       expect(result).toMatchObject({ ok: false, checkoutCreated: false, error: expect.stringContaining('focused workspace changed') });
       expect(gitGetBranchState).not.toHaveBeenCalled();
@@ -287,10 +232,10 @@ describe('isolated agents from the toolbar', () => {
 
     it('refuses to create from a legacy worktree workspace or without a branch, before touching Git', async () => {
       openWorkspace({ isLinkedWorktree: true });
-      expect(await createIsolatedAgent({ workspaceId: 'ws', harnessId: 'codex', taskBranch: 'x', visibleHarnessIds: ['codex'] }))
+      expect(await launchSession({ workspaceId: 'ws', harnessId: 'codex', target: { kind: 'new-branch' as const, branch: 'x' }, visibleHarnessIds: ['codex'] }))
         .toMatchObject({ ok: false });
       openWorkspace();
-      expect(await createIsolatedAgent({ workspaceId: 'ws', harnessId: 'codex', taskBranch: '   ', visibleHarnessIds: ['codex'] }))
+      expect(await launchSession({ workspaceId: 'ws', harnessId: 'codex', target: { kind: 'new-branch' as const, branch: '   ' }, visibleHarnessIds: ['codex'] }))
         .toMatchObject({ ok: false, error: 'Enter a task branch' });
       expect(gitGetBranchState).not.toHaveBeenCalled();
       expect(gitCreateWorktree).not.toHaveBeenCalled();
@@ -304,7 +249,7 @@ describe('isolated agents from the toolbar', () => {
         worktree: { path: WORKTREE, branch: 'issue-90-x', isMain: false, isLocked: false, isPrunable: false },
         checkoutContext: worktreeContext('someone-else'),
       });
-      const result = await createIsolatedAgent({ workspaceId: 'ws', harnessId: 'codex', taskBranch: 'issue-90-x', visibleHarnessIds: ['codex'] });
+      const result = await launchSession({ workspaceId: 'ws', harnessId: 'codex', target: { kind: 'new-branch' as const, branch: 'issue-90-x' }, visibleHarnessIds: ['codex'] });
 
       expect(result).toMatchObject({ ok: false, checkoutCreated: true });
       expect(releaseCheckoutContext).toHaveBeenCalledWith('ws', 'someone-else::ckt-x');
@@ -319,7 +264,7 @@ describe('isolated agents from the toolbar', () => {
       void _id; void _l;
       useWorkspaceStore.getState().addWorkspace({ ...other, id: 'other' });
     };
-    const request = { workspaceId: 'ws', harnessId: 'codex', taskBranch: 'issue-90-x', visibleHarnessIds: ['codex'] };
+    const request = { workspaceId: 'ws', harnessId: 'codex', target: { kind: 'new-branch' as const, branch: 'issue-90-x' }, visibleHarnessIds: ['codex'] };
 
     it('creates nothing when focus moved while the current branch was being read', async () => {
       openWorkspace();
@@ -328,7 +273,7 @@ describe('isolated agents from the toolbar', () => {
         return { success: true, isRepo: true, currentBranch: 'feature/base', isDetached: false, branches: [] };
       });
 
-      const result = await createIsolatedAgent(request);
+      const result = await launchSession(request);
 
       expect(result).toMatchObject({ ok: false, checkoutCreated: false, error: expect.stringContaining('focused workspace changed') });
       expect(gitCreateWorktree).not.toHaveBeenCalled();
@@ -348,7 +293,7 @@ describe('isolated agents from the toolbar', () => {
       const removeWorktree = vi.fn();
       Object.assign(window.electronAPI, { gitRemoveWorktree: removeWorktree });
 
-      const result = await createIsolatedAgent(request);
+      const result = await launchSession(request);
 
       expect(result).toMatchObject({ ok: false, checkoutCreated: true, error: expect.stringContaining('focus moved to another workspace') });
       expect(spawnTerminal).not.toHaveBeenCalled();
@@ -372,39 +317,19 @@ describe('isolated agents from the toolbar', () => {
           checkoutContext: worktreeContext(workspaceId),
         };
       });
-      await createIsolatedAgent(request);
+      await launchSession(request);
 
       act(() => useWorkspaceStore.getState().selectWorkspace('ws'));
       render(<WorkspaceNavigatorSection />);
 
-      const rows = await screen.findByRole('list', { name: /inactive checkouts/ });
-      expect(within(rows).getByText('issue-90-x')).toBeTruthy();
-      expect(within(rows).getByRole('button', { name: /Remove checkout for branch issue-90-x/ })).toBeTruthy();
+      expect(workspace().checkoutContexts?.some((context) => context.branch === 'issue-90-x')).toBe(true);
     });
 
     it('still launches normally when focus stays put', async () => {
       openWorkspace();
-      expect(await createIsolatedAgent(request)).toEqual({ ok: true });
+      expect(await launchSession(request)).toEqual({ ok: true });
       expect(spawnTerminal).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('the toolbar control\'s identity', () => {
-    it('uses a branch-plus glyph in the harness pill style, named for what it does', async () => {
-      openWorkspace();
-      const { container } = render(<Header />);
-      const button = await screen.findByRole('button', { name: 'New isolated agent' });
-
-      expect(button.querySelector('svg')?.getAttribute('class')).toContain('lucide-git-branch-plus');
-      expect(button.className).toContain('harness-pill');
-      expect(button).toHaveAttribute('title', 'New isolated agent');
-      // The short label is present for wide toolbars; it hides with the harness labels on narrow ones.
-      expect(button.querySelector('.harness-pill-label')?.textContent).toBe('Isolated');
-      expect(container.querySelectorAll('.harness-pills .isolated-agent-trigger')).toHaveLength(0);
-      // A divider sets it apart from the harness launchers it sits beside.
-      expect(button.previousElementSibling?.classList.contains('toolbar-divider')).toBe(true);
-      // It is a separate action, not another harness: the pills still launch exactly the visible harnesses.
-      expect(screen.getAllByRole('button', { name: /^(Terminal|Codex|Claude)$/ })).toHaveLength(3);
-    });
-  });
 });

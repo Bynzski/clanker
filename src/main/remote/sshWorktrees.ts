@@ -7,7 +7,7 @@ import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 // exclusively, and never recursively delete partial output after a failed add.
 const CREATE_SCRIPT = String.raw`
 import json, os, re, stat, subprocess, sys
-workspace, base, branch, directory = sys.argv[1:]
+workspace, base, branch, directory, mode = sys.argv[1:]
 os.environ['GIT_TERMINAL_PROMPT'] = '0'
 def git(args, check=True):
   result = subprocess.run(['git', '-C', workspace] + args, capture_output=True, timeout=110)
@@ -28,6 +28,10 @@ try:
   if not root or not canonical(root) or not os.path.isdir(root) or os.path.basename(root) == '':
     raise RuntimeError('Repository main worktree is unavailable or not canonical')
   existing = git(['show-ref', '--verify', '--quiet', 'refs/heads/' + branch], False).returncode == 0
+  if mode == 'new' and existing:
+    raise RuntimeError('Branch already exists; choose an unoccupied branch or a new name')
+  if mode == 'existing' and not existing:
+    raise RuntimeError('Branch no longer exists')
   if existing and any(b'branch refs/heads/' + branch.encode() in record.split(b'\0') for record in records):
     raise RuntimeError('Branch already has a worktree')
   commit = ''
@@ -77,7 +81,7 @@ except Exception as error:
   sys.exit(str(error))
 `;
 
-export async function createSshWorktree(executor: SshCommandExecutor, target: string, workspacePath: string, baseRef: string, name: string): Promise<GitWorktreeCreateResult> {
+export async function createSshWorktree(executor: SshCommandExecutor, target: string, workspacePath: string, baseRef: string, name: string, mode?: 'new' | 'existing'): Promise<GitWorktreeCreateResult> {
   if (typeof name !== 'string' || typeof baseRef !== 'string') return { success: false, error: 'Invalid worktree branch or base ref' };
   const branch = name.trim();
   const base = baseRef.trim();
@@ -86,7 +90,7 @@ export async function createSshWorktree(executor: SshCommandExecutor, target: st
     return { success: false, error: 'Choose a valid worktree branch and base ref' };
   }
   try {
-    const { stdout } = await executor.exec(target, 'python3', ['-c', CREATE_SCRIPT, workspacePath, base, branch, worktreeDirectoryName(branch)], { timeoutMs: 120000, maxBuffer: 128 * 1024 });
+    const { stdout } = await executor.exec(target, 'python3', ['-c', CREATE_SCRIPT, workspacePath, base, branch, worktreeDirectoryName(branch), mode ?? 'legacy'], { timeoutMs: 120000, maxBuffer: 128 * 1024 });
     const value: unknown = JSON.parse(stdout);
     const destination = value && typeof value === 'object' && 'path' in value ? value.path : undefined;
     if (typeof destination !== 'string' || !path.posix.isAbsolute(destination) || path.posix.normalize(destination) !== destination ||

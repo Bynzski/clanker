@@ -15,7 +15,6 @@ import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
 import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
-import WorkspaceCheckouts from './WorkspaceCheckouts';
 import DevServerRow, { DevServerControls } from './DevServerRow';
 import { useWorkspaceServiceStore } from '../store/workspaceServiceStore';
 import { isLiveWorkspaceService } from '../../shared/types/workspaceServices';
@@ -304,7 +303,6 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                     </div>
                   </div>
                 ))}
-                <WorkspaceCheckouts workspace={workspace} expanded={isExpanded} label={label} />
               </li>
             );
           })}

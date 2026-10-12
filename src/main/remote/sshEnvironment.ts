@@ -617,8 +617,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     }
   }
 
-  public createWorktree(workspacePath: string, baseRef: string, branch: string) {
-    return createSshWorktree(this.executor, this.target, workspacePath, baseRef, branch);
+  public createWorktree(workspacePath: string, baseRef: string, branch: string, mode?: 'new' | 'existing') {
+    return createSshWorktree(this.executor, this.target, workspacePath, baseRef, branch, mode);
   }
 
   public inspectWorktree(workspacePath: string, worktreePath: string, activePaths: string[]) {

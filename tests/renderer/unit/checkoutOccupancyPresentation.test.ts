@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getUnusedWorktreeContexts, isCheckoutContextInUse } from '../../../src/renderer/lib/worktreeAgents';
+import { isCheckoutContextInUse } from '../../../src/renderer/lib/worktreeAgents';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { useWorkspaceServiceStore } from '../../../src/renderer/store/workspaceServiceStore';
 import { createWorkspaceFixture, createTerminalFixture } from '../../setup/fixtures';
@@ -37,3 +37,7 @@ describe('conservative occupancy labels, not cleanup authority', () => {
     expect(isCheckoutContextInUse(ws(), a)).toBe(false);
   });
 });
+
+function getUnusedWorktreeContexts(workspace: { id: string; checkoutContexts?: import('../../../src/shared/types/checkoutContext').CheckoutContext[]; terminals: import('../../../src/renderer/store/workspaceTypes').Terminal[] }) {
+  return (workspace.checkoutContexts ?? []).filter((context) => context.kind === 'worktree' && context.id !== `${workspace.id}::main` && !context.missing && !isCheckoutContextInUse(workspace, context));
+}

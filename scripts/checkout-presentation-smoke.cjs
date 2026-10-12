@@ -85,14 +85,16 @@ let app, server; let modelRequests = 0;
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-    await page.getByRole('group', { name: 'New terminal' }).getByRole('button', { name: 'OpenCode', exact: true }).click();
+    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('radio', { name: 'OpenCode', exact: true }).click();
+    await page.getByRole('button', { name: 'Launch OpenCode', exact: true }).click();
     const snapshots = () => page.evaluate(() => window.electronAPI.getAgentAttentionSnapshots());
     await until(async () => (await snapshots()).some(value => value.location?.path === project), 'Main fixture did not authenticate a location');
     const mainId = (await snapshots()).find(value => value.location?.path === project).terminalId;
     await until(() => page.evaluate(id => window.__ready.has(id), mainId), 'Main PTY not ready');
     await pause(700); // Let the standard terminal startup/focus handshake finish before opening a popover.
     for (const branch of nativePi ? ['test1'] : ['test1', 'test2']) {
-      await page.getByRole('button', { name: 'New isolated agent', exact: true }).click();
+      await page.getByRole('button', { name: 'New Session', exact: true }).click();
       await page.getByRole('radio', { name: 'Pi', exact: true }).click();
       await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: new RegExp(`^${branch} `) }).click();
       await page.getByRole('button', { name: 'Launch Pi', exact: true }).click();
@@ -189,12 +191,22 @@ let app, server; let modelRequests = 0;
     assert.equal((await view()).root, ''); assert.equal((await view()).badge, '0');
     await send(`loc ${path.join(root, 'unknown')}`); await page.getByText(/outside this workspace’s registered checkouts/).waitFor();
     assert.equal((await view()).root, '');
+    // #170: explicit main launch works while this focused agent remains unregistered.
+    const prior = await mainState(mainId);
+    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
+    await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
+    await until(async () => (await view()).root === project, 'Explicit main launch blocked by unregistered observation');
+    assert.equal((await mainState(mainId)).launch, prior.launch, 'Old agent launch binding moved');
+    await ocRow.click(); await page.getByText(/outside this workspace’s registered checkouts/).waitFor();
+    assert.equal((await view()).root, '', 'Old unregistered observation silently gained authority');
     await send('exit'); await until(async () => !(await snapshots()).some(value => value.terminalId === mainId), 'Agent exit did not retire observed evidence');
     await until(async () => (await view()).root === project, 'After agent retirement launch selection did not return');
-    console.log(JSON.stringify({ realElectron: true, realGit: true, realPTY: true, locationSource: 'authenticated explicit fixture (not native provider cwd movement)', mainAndTwoWorktrees: 'passed', dirtyMatrices: 4, twoAgentSidebarFocus: 'OpenCode main / Pi test1; launch→current; main/renderer/poll identities and generations verified; both panes visible', selectedMainABMain: 'passed', stagedModifiedUntracked: 'passed', historicalAgreeingLaunch: 'launch selection; historical notice; same generation', historicalDisagreementAndUnregistered: 'unavailable without main fallback', agentRetirement: 'launch authority retained; observed evidence retired' }));
+    console.log(JSON.stringify({ realElectron: true, realGit: true, realPTY: true, locationSource: 'authenticated explicit fixture (not native provider cwd movement)', mainAndTwoWorktrees: 'passed', dirtyMatrices: 4, twoAgentSidebarFocus: 'OpenCode main / Pi test1; launch→current; main/renderer/poll identities and generations verified; both panes visible', selectedMainABMain: 'passed', stagedModifiedUntracked: 'passed', historicalAgreeingLaunch: 'launch selection; historical notice; same generation', historicalDisagreementAndUnregistered: 'unavailable without main fallback', explicitMainLaunchWhileUnregistered: 'passed; old binding and unavailable file authority retained', agentRetirement: 'launch authority retained; observed evidence retired' }));
   } catch (error) {
     console.error(error.message);
-    if (app) console.error(JSON.stringify(await (await app.firstWindow()).evaluate(() => ({ popover: document.querySelector('.isolated-agent-popover') !== null, buttons: [...document.querySelectorAll('.isolated-agent-popover button')].map(button => button.textContent), isolatedDisabled: document.querySelector('.isolated-agent-trigger')?.disabled, readyPTYs: window.__ready?.size }))));
+    if (app) console.error(JSON.stringify(await (await app.firstWindow()).evaluate(() => ({ popover: document.querySelector('.new-session-popover') !== null, buttons: [...document.querySelectorAll('.new-session-popover button')].map(button => button.textContent), newSessionDisabled: document.querySelector('.new-session-trigger')?.disabled, readyPTYs: window.__ready?.size }))));
     process.exitCode = 1;
   }
   finally {

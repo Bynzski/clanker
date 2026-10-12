@@ -1,3 +1,4 @@
+import { isCheckoutContextInUse } from '../../../src/renderer/lib/worktreeAgents';
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,9 +6,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import Header from '../../setup/HeaderWithSettings';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
+import { GitWorktreesSection } from '../../../src/renderer/components/git/GitWorktreesSection';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
-import { getSelectedAgentWorktreeContext, getUnusedWorktreeContexts } from '../../../src/renderer/lib/worktreeAgents';
+import { getSelectedAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
@@ -35,7 +37,7 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 
-describe('isolated agent picker: harness + working copy', () => {
+describe('New Session: harness + working copy', () => {
   const user = userEvent.setup();
   let api: ReturnType<typeof installElectronApiMock>;
   let worktrees: GitWorktree[];
@@ -78,7 +80,7 @@ describe('isolated agent picker: harness + working copy', () => {
   afterEach(() => cleanup());
 
   const openPicker = async () => {
-    await user.click(await screen.findByRole('button', { name: 'New isolated agent' }));
+    await user.click(await screen.findByRole('button', { name: 'New Session' }));
     await screen.findByLabelText('New branch');
   };
   const launch = async (harnessLabel?: string) => {
@@ -87,12 +89,26 @@ describe('isolated agent picker: harness + working copy', () => {
   };
   const section = (name: string) => within(screen.getByRole('group', { name }));
 
+  it('reuses the creation form in Source Control without exposing another session launcher', async () => {
+    openWorkspace();
+    render(<GitWorktreesSection management workspacePath={ROOT} workspaceId="ws" refreshKey={0} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create worktree' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create worktree' }));
+    await user.type(await screen.findByLabelText('New branch'), 'manual-management');
+    expect(screen.queryByRole('radiogroup', { name: 'Harness' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Launch/ })).toBeNull();
+    const form = screen.getByLabelText('Create worktree', { selector: '.new-session-popover' });
+    await user.click(within(form).getByRole('button', { name: 'Create worktree' }));
+    await waitFor(() => expect(api.gitCreateWorktree).toHaveBeenCalledWith(ROOT, 'HEAD', 'manual-management', 'ws', { attachCheckoutContext: true, newBranch: {} }));
+    expect(api.spawnTerminal).not.toHaveBeenCalled();
+  });
+
   it('creates a checkout ahead of time without launching or moving an agent', async () => {
     openWorkspace();
     render(<Header />);
     await openPicker();
     await user.type(screen.getByLabelText('New branch'), 'precreated');
-    await user.click(screen.getByRole('button', { name: 'Create checkout' }));
+    await user.click(screen.getByRole('button', { name: 'Create worktree only' }));
     await waitFor(() => expect(workspace().checkoutContexts?.some((context) => context.branch === 'precreated')).toBe(true));
     expect(api.spawnTerminal).not.toHaveBeenCalled();
     expect(workspace().workspacePath).toBe(ROOT);
@@ -107,19 +123,22 @@ describe('isolated agent picker: harness + working copy', () => {
     await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
     expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
-    expect(api.spawnTerminal.mock.calls[0][7]).toBe(mainCheckoutContextId('ws'));
+    expect(api.spawnTerminal.mock.calls[0][7]).toBeUndefined();
     expect(api.gitCreateWorktree).not.toHaveBeenCalled();
   });
 
-  it('toolbar launch follows an explicit validated checkout selection', async () => {
-    openWorkspace();
+  it('has exactly one launch entry point and defaults to main despite an editor checkout pin', async () => {
+    openWorkspace({ fileSurfaceContextId: ctx('selected').id });
     useWorkspaceStore.getState().upsertCheckoutContext('ws', ctx('selected'));
-    useWorkspaceStore.getState().selectCheckoutContext('ws', ctx('selected').id);
     render(<Header />);
-    await user.click(await screen.findByRole('button', { name: 'Codex' }));
+    expect(screen.getAllByRole('button', { name: 'New Session' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+    await openPicker();
+    expect(screen.getByRole('button', { name: 'Main checkout' })).toHaveAttribute('aria-pressed', 'true');
+    await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
-    expect(api.spawnTerminal.mock.calls[0][0]).toBe(WT('selected'));
-    expect(api.spawnTerminal.mock.calls[0][7]).toBe(ctx('selected').id);
+    expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
+    expect(api.spawnTerminal.mock.calls[0][7]).toBeUndefined();
     expect(api.gitCreateWorktree).not.toHaveBeenCalled();
   });
 
@@ -163,7 +182,7 @@ describe('isolated agent picker: harness + working copy', () => {
       await user.click(screen.getByRole('button', { name: 'Launch Terminal' }));
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'main', 'issue-7', 'ws', { attachCheckoutContext: true });
+      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'HEAD', 'issue-7', 'ws', { attachCheckoutContext: true, newBranch: {} });
       expect(api.spawnTerminal).toHaveBeenCalledExactlyOnceWith(WT('issue-7'), undefined, undefined, undefined, undefined, 'ws', 'local', 'ws::ckt-issue-7');
       expect(workspace().terminals[0].checkoutContextId).toBe('ws::ckt-issue-7');
       expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
@@ -190,7 +209,7 @@ describe('isolated agent picker: harness + working copy', () => {
       await launch();
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'main', 'issue-123', 'ws', { attachCheckoutContext: true });
+      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'HEAD', 'issue-123', 'ws', { attachCheckoutContext: true, newBranch: {} });
       expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
     });
 
@@ -198,6 +217,7 @@ describe('isolated agent picker: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
+      await user.click(screen.getByLabelText('New branch'));
       expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
     });
   });
@@ -231,7 +251,7 @@ describe('isolated agent picker: harness + working copy', () => {
 
       await launch('Claude');
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'feature/foo', 'feature/foo', 'ws', { attachCheckoutContext: true });
+      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'feature/foo', 'feature/foo', 'ws', { attachCheckoutContext: true, requireExistingBranch: true });
       expect(workspace().workspacePath).toBe(ROOT);
       expect(workspace().checkoutContexts!.map((context) => context.branch)).toEqual([undefined, 'feature/foo']);
       expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
@@ -263,7 +283,7 @@ describe('isolated agent picker: harness + working copy', () => {
       await launch();
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
+      expect(api.adoptWorktreeCheckoutContext).toHaveBeenCalledWith('ws', WT('task-a'), 'task-a');
       expect(api.gitCreateWorktree).not.toHaveBeenCalled();
       expect(api.spawnTerminal.mock.calls[0][7]).toBe('ws::ckt-task-a');
       expect(workspace().checkoutContexts).toHaveLength(2);
@@ -292,7 +312,7 @@ describe('isolated agent picker: harness + working copy', () => {
 
       expect(workspace().terminals.map((terminal) => terminal.checkoutContextId)).toEqual(['ws::ckt-task-a', 'ws::ckt-task-a']);
       expect(workspace().checkoutContexts!.filter((context) => context.path === WT('task-a'))).toHaveLength(1);
-      expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
+      expect(api.adoptWorktreeCheckoutContext).toHaveBeenCalledTimes(2);
       expect(getUnusedWorktreeContexts(workspace())).toHaveLength(0);
 
       // Closing one keeps it active; closing the last leaves an inactive checkout.
@@ -301,7 +321,8 @@ describe('isolated agent picker: harness + working copy', () => {
       expect(getUnusedWorktreeContexts(workspace())).toHaveLength(0);
       useWorkspaceStore.getState().removeTerminal(second);
       expect(getUnusedWorktreeContexts(workspace()).map((context) => context.branch)).toEqual(['task-a']);
-      expect(await screen.findByRole('list', { name: /inactive checkouts/ })).toBeTruthy();
+      expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
+      expect(workspace().checkoutContexts?.some((context) => context.path === WT('task-a'))).toBe(true);
     });
 
     it('adopts an unmanaged linked worktree through main, sending only the listed path', async () => {
@@ -317,7 +338,7 @@ describe('isolated agent picker: harness + working copy', () => {
       await launch('OpenCode');
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      expect(api.adoptWorktreeCheckoutContext).toHaveBeenCalledExactlyOnceWith('ws', WT('old-task'));
+      expect(api.adoptWorktreeCheckoutContext).toHaveBeenCalledExactlyOnceWith('ws', WT('old-task'), 'old-task');
       expect(api.gitCreateWorktree).not.toHaveBeenCalled();
       expect(workspace().checkoutContexts!.map((context) => context.path)).toEqual([ROOT, WT('old-task')]);
       expect(api.spawnTerminal.mock.calls[0][1]).toBe('opencode');
@@ -343,39 +364,15 @@ describe('isolated agent picker: harness + working copy', () => {
       expect(workspace().checkoutContexts).toHaveLength(1);
     });
 
-    it('disables unhealthy destinations and opens shared confirmed recovery without closing the picker', async () => {
-      worktrees = [
-        MAIN_ENTRY,
-        listed(WT('gone'), 'gone', { isPrunable: true }),
-        listed(WT('stuck'), 'stuck', { isLocked: true }),
-      ];
-      openWorkspace();
-      render(<Header />);
-      await openPicker();
-
-      const gone = await section('Existing worktrees').findByRole('button', { name: /^gone/ });
-      const stuck = section('Existing worktrees').getByRole('button', { name: /^stuck/ });
-      expect(gone).toBeDisabled();
-      expect(gone).toHaveTextContent('Missing');
-      expect(stuck).toBeDisabled();
-      expect(stuck).toHaveTextContent('Locked');
-      expect(gone.getAttribute('title')).toContain('Git menu');
-      expect(stuck.getAttribute('title')).toContain('Git menu');
-      expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
-      await user.click(section('Existing worktrees').getByRole('button', { name: 'Repair checkout for branch stuck' }));
-      await user.click(await screen.findByRole('button', { name: 'Unlock checkout for branch stuck' }));
-      const dialog = await screen.findByRole('alertdialog');
-      expect(dialog.textContent).toContain(WT('stuck'));
-      expect(api.gitUnlockWorktree).not.toHaveBeenCalled();
-      api.gitUnlockWorktree.mockImplementationOnce(async () => {
-        worktrees = worktrees.map((entry) => entry.branch === 'stuck' ? { ...entry, isLocked: false } : entry);
-        return { success: true };
-      });
-      await user.click(screen.getByRole('button', { name: 'Unlock worktree' }));
-      await waitFor(() => expect(api.gitUnlockWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, WT('stuck'), 'ws'));
-      await waitFor(() => expect(section('Existing worktrees').getByRole('button', { name: /^stuck/ })).not.toBeDisabled());
-      expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
-      expect(api.spawnTerminal).not.toHaveBeenCalled();
+    it('disables missing and locked destinations and directs management to Source Control', async () => {
+      worktrees = [MAIN_ENTRY, listed(WT('gone'), 'gone', { isPrunable: true }), listed(WT('stuck'), 'stuck', { isLocked: true })];
+      openWorkspace(); render(<Header />); await openPicker();
+      for (const name of ['gone', 'stuck']) {
+        const row = await section('Existing worktrees').findByRole('button', { name: new RegExp(`^${name}`) });
+        expect(row).toBeDisabled(); expect(row.title).toContain('Source Control');
+      }
+      expect(screen.queryByRole('button', { name: /Repair/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /^Launch/ })).toBeEnabled(); // Main remains the default.
     });
 
     it('does not offer the main checkout or the workspace\'s own root', async () => {
@@ -388,13 +385,19 @@ describe('isolated agent picker: harness + working copy', () => {
     });
   });
 
-  it('keeps ordinary harness launches going straight into the main checkout', async () => {
-    openWorkspace();
-    render(<Header />);
-    await user.click(await screen.findByRole('button', { name: 'Codex' }));
-    await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-    expect(api.spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined, undefined, undefined, 'ws', 'local');
-    expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
-    expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  it('returns to main on each opening after a worktree launch', async () => {
+    worktrees = [MAIN_ENTRY, listed(WT('task-a'), 'task-a')];
+    openWorkspace(); render(<Header />); await openPicker();
+    await user.click(await section('Existing worktrees').findByRole('button', { name: /task-a/ }));
+    await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(1));
+    await openPicker();
+    expect(screen.getByRole('button', { name: 'Main checkout' })).toHaveAttribute('aria-pressed', 'true');
+    await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(2));
+    expect(api.spawnTerminal.mock.calls[1][0]).toBe(ROOT);
   });
+
 });
+
+function getUnusedWorktreeContexts(workspace: { id: string; checkoutContexts?: import('../../../src/shared/types/checkoutContext').CheckoutContext[]; terminals: import('../../../src/renderer/store/workspaceTypes').Terminal[] }) {
+  return (workspace.checkoutContexts ?? []).filter((context) => context.kind === 'worktree' && context.id !== `${workspace.id}::main` && !context.missing && !isCheckoutContextInUse(workspace, context));
+}

@@ -24,8 +24,8 @@ export function findListedWorktree(
 
 /**
  * Attaches a worktree that Git has just created to the workspace that asked for it, as a
- * `worktree` checkout context. This is the only route by which a renderer request leads to a
- * new execution root, and every authoritative field comes from main:
+ * `worktree` checkout context. Creation and explicit adoption are the only renderer routes to
+ * new execution roots; every authoritative field comes from main:
  *
  * - the path is the one Git created and the owning environment then canonicalizes;
  * - Git's own worktree listing must contain it as a linked worktree before it is registered;
@@ -74,6 +74,7 @@ export async function attachCreatedWorktree(params: {
       workspaceId: workspace.workspaceId,
       path: createdPath,
       kind: 'worktree',
+      requireCanonicalPath: true,
       branch: listed.branch ?? worktree.branch,
       mainCheckoutPath: main?.path,
     });
@@ -98,9 +99,10 @@ export async function adoptListedWorktree(params: {
   registry: WorkspaceRegistry;
   workspace: RegisteredWorkspace;
   worktreePath: unknown;
+  expectedBranch?: unknown;
   listWorktrees: () => Promise<GitWorktreeListResult>;
 }): Promise<AdoptWorktreeCheckoutContextResult> {
-  const { registry, workspace, worktreePath, listWorktrees } = params;
+  const { registry, workspace, worktreePath, expectedBranch, listWorktrees } = params;
   const fail = (error: string): AdoptWorktreeCheckoutContextResult => ({ success: false, error });
   if (typeof worktreePath !== 'string' || !worktreePath.trim()) return fail('Choose a worktree to use');
 
@@ -111,7 +113,8 @@ export async function adoptListedWorktree(params: {
     if (!listing.success) return fail(listing.error || 'Git could not list the repository worktrees');
     const listed = findListedWorktree(listing, environmentId, worktreePath);
     if (!listed) return fail('Git does not list that path as a worktree of this repository');
-    if (listed.isMain) return fail('The main checkout cannot be used as an isolated worktree');
+    if (expectedBranch !== undefined && expectedBranch !== listed.branch) return fail('The worktree branch changed; reopen New Session to choose it again');
+    if (listed.isMain) return fail('The main checkout is a separate session destination');
     if (findListedWorktree({ success: true, worktrees: [listed] }, environmentId, workspace.location.path)) {
       return fail('That checkout is already this workspace\'s own checkout');
     }
@@ -123,13 +126,22 @@ export async function adoptListedWorktree(params: {
       workspaceId: workspace.workspaceId,
       path: toPosixPath(listed.path),
       kind: 'worktree',
+      requireCanonicalPath: true,
       branch: listed.branch ?? undefined,
       mainCheckoutPath: main?.path,
     });
     if (!registration.success || !registration.checkoutContext) {
       return fail(registration.error || 'The checkout could not be registered');
     }
-    return { success: true, checkoutContext: registration.checkoutContext };
+    // Validation awaited: check Git again before accepting a stale path/branch or a newly locked root.
+    const latest = await listWorktrees();
+    const verified = latest.success ? findListedWorktree(latest, environmentId, registration.checkoutContext.path) : null;
+    if (!verified || verified.isMain || verified.isPrunable || verified.isLocked || verified.branch !== listed.branch) {
+      return fail('The worktree changed during validation; refresh worktrees before launching');
+    }
+    if (registry.getWorkspace(workspace.workspaceId) !== workspace) return fail('Workspace changed during validation');
+    registry.describeCheckoutContext(registration.checkoutContext.id, { branch: verified.branch, missing: false });
+    return { success: true, checkoutContext: { ...registration.checkoutContext, branch: verified.branch, missing: false } };
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'The checkout could not be registered');
   }

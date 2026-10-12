@@ -1,3 +1,4 @@
+import { isCheckoutContextInUse } from '../../../src/renderer/lib/worktreeAgents';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GitButton from '../../../src/renderer/components/GitButton';
@@ -5,12 +6,12 @@ import FileExplorer from '../../../src/renderer/components/FileExplorer';
 import ExplorerLifecycleCoordinator from '../../../src/renderer/components/ExplorerLifecycleCoordinator';
 import StatusBar from '../../../src/renderer/components/StatusBar';
 import { AgentRow } from '../../../src/renderer/components/WorkspaceNavigatorSection';
-import { buildIsolatedAgentChoices } from '../../../src/renderer/lib/isolatedAgentChoices';
+import { buildSessionLaunchChoices } from '../../../src/renderer/lib/sessionLaunchChoices';
 import { gitManagementScope } from '../../../src/renderer/components/git/gitManagementScope';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { useCheckoutGitStore } from '../../../src/renderer/store/checkoutGitStore';
-import { getUnusedWorktreeContexts, getAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
+import { getAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
 import { checkoutSelectionToken } from '../../../src/renderer/lib/checkoutSelectionRuntime';
 import { selectCheckout } from '../../../src/renderer/lib/checkoutSelection';
 import { installElectronApiMock } from '../../setup/electron';
@@ -168,7 +169,7 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
     useAgentAttentionStore.getState().applyChange({ terminalId: 'agent', revision, snapshot: value }, false);
     mount();
     expect(selectCheckout(workspace(), value)).toMatchObject({ availability: 'unavailable', reason: 'unregistered-observation' });
-    expect(buildIsolatedAgentChoices({ workspace: workspace(), currentBranch: 'main', branchNames: [], worktrees: [{ path: A.path, branch: 'test1', isMain: false, isLocked: false, isPrunable: false }] }).worktrees[0].state).toBe('in-use');
+    expect(buildSessionLaunchChoices({ workspace: workspace(), currentBranch: 'main', branchNames: [], worktrees: [{ path: A.path, branch: 'test1', isMain: false, isLocked: false, isPrunable: false }] }).worktrees[0].state).toBe('in-use');
     expect(document.querySelector('.status-checkout-unavailable')).toHaveTextContent('unregistered location');
     expect(screen.getByText(/outside this workspace’s registered checkouts/)).toBeVisible();
     expect(api.gitStartPolling).not.toHaveBeenCalled(); expect(api.fileListDirectory).not.toHaveBeenCalled();
@@ -253,3 +254,7 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
     expect(workspace().editorTabs.find((entry) => entry.id === tab.id)).toMatchObject({ content: 'unsaved A', isDirty: true, checkoutContextId: A.id, checkoutRoot: A.path });
   });
 });
+
+function getUnusedWorktreeContexts(workspace: { id: string; checkoutContexts?: import('../../../src/shared/types/checkoutContext').CheckoutContext[]; terminals: import('../../../src/renderer/store/workspaceTypes').Terminal[] }) {
+  return (workspace.checkoutContexts ?? []).filter((context) => context.kind === 'worktree' && context.id !== `${workspace.id}::main` && !context.missing && !isCheckoutContextInUse(workspace, context));
+}

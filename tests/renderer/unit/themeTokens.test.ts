@@ -35,6 +35,9 @@ const cssFiles = readdirSync(rendererRoot, { recursive: true, withFileTypes: tru
 // Radix provides only these positioning dimensions at runtime. Keep the theme
 // contract strict for every other reference, including all color/focus roles.
 const runtimeDimensions = new Map([
+  [resolve(rendererRoot, 'components/NewSessionButton.css'), new Set([
+    '--radix-popover-content-available-height',
+  ])],
   [resolve(rendererRoot, 'components/ChatHistoryDropdown.css'), new Set([
     '--radix-popover-content-available-height',
   ])],

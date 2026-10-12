@@ -4,7 +4,6 @@ import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { paneIsPresented } from '../store/workspacePages';
 import { useAssistantNavStore } from '../store/assistantNavStore';
-import { applyAgentCheckoutTransition } from './agentCheckoutTransition';
 
 /** The user can only be looking at an agent while the Clanker window itself has focus. */
 const windowHasFocus = (): boolean => typeof document.hasFocus !== 'function' || document.hasFocus();
@@ -39,12 +38,6 @@ export function startTerminalSessionBridge(): () => void {
       writeCachedTerminalExit(id, exitCode);
       useAgentAttentionStore.getState().retire(id);
     }));
-  }
-
-  // Main moved a conversation to another checkout: the pane adopts its replacement (this arrives before
-  // the old terminal's exit, so the exit is for a terminal the store no longer has).
-  if (typeof window.electronAPI?.onAgentCheckoutTransition === 'function') {
-    disposers.push(window.electronAPI.onAgentCheckoutTransition(applyAgentCheckoutTransition));
   }
 
   // Main owns the lifecycle. Subscribe first, then hydrate: revision ordering in the store makes

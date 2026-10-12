@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import type { WorkspaceLocation, WorkspaceEnvironmentId } from '../shared/types/environments';
 import { LOCAL_ENVIRONMENT_ID } from '../shared/types/environments';
 import type { WorkspaceEnvironment } from './environment/workspaceEnvironment';
@@ -32,6 +34,8 @@ export interface CheckoutContextRegistrationInput {
   kind: CheckoutContextKind;
   branch?: string | null;
   mainCheckoutPath?: string;
+  /** Git already supplied a canonical entry; a replaced symlink must not redirect its grant. */
+  requireCanonicalPath?: boolean;
 }
 
 export interface CheckoutContextRegistrationResult {
@@ -210,7 +214,7 @@ export class WorkspaceRegistry {
    * workspace. The root is validated by the workspace's environment independently of the
    * workspace root; sibling directories are never made reachable by widening the workspace.
    *
-   * Main-process only for now: nothing in the renderer IPC surface can call this yet.
+   * Main-process only. Renderer creation/adoption routes must validate Git membership first.
    */
   public async registerCheckoutContext(
     input: CheckoutContextRegistrationInput,
@@ -235,6 +239,18 @@ export class WorkspaceRegistry {
       return { success: false, error: 'Workspace was closed during checkout registration' };
     }
 
+    if (input.requireCanonicalPath) {
+      // Local directory validation establishes accessibility, but retains the lexical path.
+      // Git-listed roots must also retain their physical identity before granting authority.
+      let physicalPath = root.canonicalPath;
+      if (environmentId === LOCAL_ENVIRONMENT_ID) {
+        try { physicalPath = toPosixPath(fs.realpathSync.native(toNativePath(root.canonicalPath, process.platform))); }
+        catch { return { success: false, error: 'Git worktree directory is unavailable' }; }
+      }
+      if (!isSameWorkspaceIdentity({ environmentId, path: input.path }, { environmentId, path: physicalPath })) {
+        return { success: false, error: 'Git worktree path no longer names its canonical directory' };
+      }
+    }
     const target = { environmentId, path: root.canonicalPath };
     for (const existing of this.checkoutContexts.values()) {
       if (existing.workspaceId === input.workspaceId && isSameWorkspaceIdentity(existing, target)) {

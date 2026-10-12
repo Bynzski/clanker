@@ -303,7 +303,7 @@ describe('DynamicPaneLayout', () => {
     it('shows hint text', () => {
       setupStore();
       render(<DynamicPaneLayout />);
-      expect(screen.getByText('Choose a terminal type in the header')).toBeTruthy();
+      expect(screen.getByText('Use New Session to choose a harness and working copy')).toBeTruthy();
     });
 
     it('applies empty class to container', () => {

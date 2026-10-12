@@ -1,3 +1,4 @@
+import { isCheckoutContextInUse } from '../../../src/renderer/lib/worktreeAgents';
 /**
  * The local isolated-agent flow, end to end, with nothing between the renderer logic and Git faked
  * except Electron's transport and node-pty:
@@ -49,9 +50,9 @@ import * as C from '../../../src/shared/ipcChannels';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 import { createMainCheckoutContext } from '../../../src/shared/checkoutContext';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import { createIsolatedAgent } from '../../../src/renderer/lib/isolatedAgentLaunch';
+import { launchSession } from '../../../src/renderer/lib/sessionLaunch';
 import { removeWorktreeCheckout } from '../../../src/renderer/lib/worktreeCheckoutRemoval';
-import { findManagedWorktreeContext, getAgentWorktreeContext, getUnusedWorktreeContexts } from '../../../src/renderer/lib/worktreeAgents';
+import { findRegisteredWorktreeContext, getAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
 import type { GitWorktree } from '../../../src/shared/types/git';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
@@ -151,7 +152,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
     expect(workspace().terminals).toHaveLength(1);
 
     // Create an isolated agent (a plain shell, as the toolbar's Terminal option would).
-    const created = await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'smoke-task', visibleHarnessIds: [''] });
+    const created = await launchSession({ workspaceId: 'ws', harnessId: '', target: { kind: 'new-branch' as const, branch: 'smoke-task' }, visibleHarnessIds: [''] });
     expect(created).toEqual({ ok: true });
 
     // Both agents live under the one workspace; the isolated shell runs in the new worktree.
@@ -196,7 +197,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
       return realSpawn(...args);
     };
 
-    const created = await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'launch-fails', visibleHarnessIds: [''] });
+    const created = await launchSession({ workspaceId: 'ws', harnessId: '', target: { kind: 'new-branch' as const, branch: 'launch-fails' }, visibleHarnessIds: [''] });
 
     expect(created).toMatchObject({ ok: false, checkoutCreated: true, error: expect.stringContaining('simulated launch failure') });
     const [stranded] = getUnusedWorktreeContexts(workspace());
@@ -210,7 +211,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
 
   it('dirty preflight retains the checkout and its association', async () => {
     await openProjectWithNormalAgent();
-    await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'dirty-task', visibleHarnessIds: [''] });
+    await launchSession({ workspaceId: 'ws', harnessId: '', target: { kind: 'new-branch' as const, branch: 'dirty-task' }, visibleHarnessIds: [''] });
     const isolated = workspace().terminals[1];
     const context = getAgentWorktreeContext(workspace(), isolated)!;
     await api().killTerminal(isolated.id);
@@ -243,12 +244,12 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
   it('lists an external worktree as unmanaged and an isolated one as managed', async () => {
     await openProjectWithNormalAgent();
     const external = externalWorktree('ext-listed');
-    await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'managed-one', visibleHarnessIds: [''] });
+    await launchSession({ workspaceId: 'ws', harnessId: '', target: { kind: 'new-branch' as const, branch: 'managed-one' }, visibleHarnessIds: [''] });
 
     // The repository is shared with the other tests, so look only at the two this test made.
     const entries = (await listing()).filter((entry) => entry.branch === 'managed-one' || path.normalize(entry.path) === path.normalize(external));
-    const managed = entries.filter((entry) => findManagedWorktreeContext(workspace(), entry.path));
-    const unmanaged = entries.filter((entry) => !findManagedWorktreeContext(workspace(), entry.path));
+    const managed = entries.filter((entry) => findRegisteredWorktreeContext(workspace(), entry.path));
+    const unmanaged = entries.filter((entry) => !findRegisteredWorktreeContext(workspace(), entry.path));
 
     expect(entries).toHaveLength(2);
     expect(managed.map((entry) => entry.branch)).toEqual(['managed-one']);
@@ -333,7 +334,7 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
 
   it('removes an unused attached Git entry through the same operation as an external one', async () => {
     await openProjectWithNormalAgent();
-    await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'managed-two', visibleHarnessIds: [''] });
+    await launchSession({ workspaceId: 'ws', harnessId: '', target: { kind: 'new-branch' as const, branch: 'managed-two' }, visibleHarnessIds: [''] });
     const isolated = workspace().terminals[1];
     const context = getAgentWorktreeContext(workspace(), isolated)!;
     const entry = await entryFor(context.path);
@@ -346,3 +347,7 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     expect(await hasBranch('managed-two')).toBe(true);
   });
 });
+
+function getUnusedWorktreeContexts(workspace: { id: string; checkoutContexts?: import('../../../src/shared/types/checkoutContext').CheckoutContext[]; terminals: import('../../../src/renderer/store/workspaceTypes').Terminal[] }) {
+  return (workspace.checkoutContexts ?? []).filter((context) => context.kind === 'worktree' && context.id !== `${workspace.id}::main` && !context.missing && !isCheckoutContextInUse(workspace, context));
+}

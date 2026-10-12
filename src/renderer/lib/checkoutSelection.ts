@@ -83,10 +83,10 @@ export function checkoutUnavailableLabel(reason: CheckoutUnavailableReason): str
 export function checkoutUnavailableMessage(reason: CheckoutUnavailableReason): string {
   const messages: Record<CheckoutUnavailableReason, string> = {
     'invalid-workspace': 'Workspace identity is unavailable.',
-    'historical-observation': 'The agent location is last-reported from an earlier session. Select a registered checkout or wait for a current native report.',
-    'unavailable-observation': 'The agent location source is unavailable. Select a registered checkout or wait for a new native report.',
-    'unknown-provenance': 'The agent location has no current authenticated provenance. Select a registered checkout.',
-    'unregistered-observation': 'The agent location is outside this workspace’s registered checkouts.',
+    'historical-observation': 'The agent location is last-reported from an earlier session. Focus a session in a validated checkout, open an existing editor tab, or use New Session.',
+    'unavailable-observation': 'The agent location source is unavailable. Focus a session in a validated checkout or use New Session.',
+    'unknown-provenance': 'The agent location has no current authenticated provenance. Focus a session in a validated checkout or use New Session.',
+    'unregistered-observation': 'The agent location is outside this workspace’s registered checkouts. Use New Session to launch in main or explicitly validate a Git worktree; this does not move the current agent.',
     'missing-checkout': 'The selected checkout is missing.',
     'released-checkout': 'The selected checkout has been released.',
     'invalid-checkout': 'The selected checkout identity is unavailable.',

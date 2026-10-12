@@ -361,15 +361,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return true;
   },
 
-  selectCheckoutContext: (workspaceId, checkoutContextId) => {
-    const workspace = findWorkspaceById(get().workspaces, workspaceId);
-    const context = workspace?.checkoutContexts?.find((entry) => entry.id === checkoutContextId);
-    if (!workspace || !context || context.missing || context.workspaceId !== workspaceId
-      || context.environmentId !== (workspace.environmentId || 'local')) return false;
-    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, fileSurfaceContextId: checkoutContextId })));
-    return true;
-  },
-
   applyCheckoutContextReconciliation: (workspaceId, result) => {
     const workspace = findWorkspaceById(get().workspaces, workspaceId);
     if (!workspace) return;
@@ -556,29 +547,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     return owner.id === current.activeWorkspaceId ? nextState : { workspaces: nextState.workspaces };
   }),
-
-  replaceTerminal: (workspaceId, previousTerminalId, replacement) => {
-    const workspace = findWorkspaceById(get().workspaces, workspaceId);
-    if (!workspace) return false;
-    const previous = workspace.terminals.find((terminal) => terminal.id === previousTerminalId);
-    const pane = workspace.panes.find((entry) => entry.terminalId === previousTerminalId);
-    if (!previous || !pane) return false;
-    if (replacement.workspaceId !== undefined && replacement.workspaceId !== workspaceId) return false;
-    if (replacement.id !== previousTerminalId && workspace.terminals.some((terminal) => terminal.id === replacement.id)) return false;
-    const adopted = bindTerminalToCheckoutContext(
-      { ...replacement, workspaceId, ...(previous.displayName ? { displayName: previous.displayName } : {}) },
-      workspaceId,
-    );
-    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({
-      ...entry,
-      terminals: entry.terminals.map((terminal) => (terminal.id === previousTerminalId ? adopted : terminal)),
-      pendingTerminalIds: replacement.id === previousTerminalId ? entry.pendingTerminalIds : [...(entry.pendingTerminalIds ?? []).filter((id) => id !== previousTerminalId), replacement.id],
-      panes: entry.panes.map((candidate) => (candidate.id === pane.id ? { ...candidate, terminalId: adopted.id } : candidate)),
-      activeTerminalId: entry.activeTerminalId === previousTerminalId ? adopted.id : entry.activeTerminalId,
-      pages: entry.pages?.map((page) => ({ ...page, activeTerminalId: page.activeTerminalId === previousTerminalId ? adopted.id : page.activeTerminalId })),
-    })));
-    return true;
-  },
 
   setActiveTerminal: (id) => set((state) => {
     const nextState = {

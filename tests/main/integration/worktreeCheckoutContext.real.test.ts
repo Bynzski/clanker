@@ -790,3 +790,67 @@ describe('Git-centered confirmed removal (real Git and main registry)', () => {
     expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('being removed') });
   });
 });
+
+describe('New Session committed-HEAD creation and fresh target validation', () => {
+  it('creates from project HEAD and another worktree committed HEAD without copying dirty files or switching either branch', async () => {
+    await call(REGISTER_OPEN_WORKSPACE, 'new-session', toPosixPath(repo));
+    const projectHead = (await git('rev-parse', 'HEAD')).stdout.trim();
+    const source = path.join(root, 'external-base');
+    await git('worktree', 'add', '-b', 'external-base', source);
+    fs.writeFileSync(path.join(source, 'committed.txt'), 'committed source\n');
+    await execFileAsync('git', ['add', '.'], { cwd: source });
+    await execFileAsync('git', ['commit', '-m', 'Source commit'], { cwd: source });
+    const sourceHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: source })).stdout.trim();
+    fs.writeFileSync(path.join(source, 'dirty.txt'), 'never copied\n');
+    for (const [branch, options, expected] of [
+      ['from-project-head', { newBranch: {} }, projectHead],
+      ['from-worktree-head', { newBranch: { baseWorktree: { path: toPosixPath(source), branch: 'external-base' } } }, sourceHead],
+    ] as const) {
+      const created = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'ignored-renderer-base', branch, 'new-session', { attachCheckoutContext: true, ...options });
+      expect(created.success, created.error).toBe(true);
+      expect((await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: created.worktree!.path })).stdout.trim()).toBe(expected);
+      expect(fs.existsSync(path.join(created.worktree!.path, 'dirty.txt'))).toBe(false);
+    }
+    expect((await git('rev-parse', 'HEAD')).stdout.trim()).toBe(projectHead);
+    expect((await execFileAsync('git', ['branch', '--show-current'], { cwd: source })).stdout.trim()).toBe('external-base');
+    expect(fs.readFileSync(path.join(source, 'dirty.txt'), 'utf8')).toBe('never copied\n');
+    expect(terminals.size).toBe(0); // Create-only creates no session.
+  });
+
+  it('refuses a conflicting new-branch name and a deleted existing branch', async () => {
+    await call(REGISTER_OPEN_WORKSPACE, 'branch-modes', toPosixPath(repo));
+    await git('branch', 'unoccupied-mode');
+    const conflict = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'HEAD', 'unoccupied-mode', 'branch-modes', { attachCheckoutContext: true, newBranch: {} });
+    expect(conflict).toMatchObject({ success: false, error: expect.stringContaining('already exists') });
+    const missing = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'HEAD', 'deleted-mode', 'branch-modes', { attachCheckoutContext: true, requireExistingBranch: true });
+    expect(missing).toMatchObject({ success: false, error: expect.stringContaining('no longer exists') });
+    const existing = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'HEAD', 'unoccupied-mode', 'branch-modes', { attachCheckoutContext: true, requireExistingBranch: true });
+    expect(existing.success, existing.error).toBe(true);
+  });
+
+  it('refuses a Git-listed directory replaced by a symlink to another working copy', async () => {
+    await call(REGISTER_OPEN_WORKSPACE, 'replaced-root', toPosixPath(repo));
+    const target = path.join(root, 'replaced-root');
+    const moved = path.join(root, 'moved-root');
+    const unrelated = path.join(root, 'unrelated-root');
+    await git('worktree', 'add', '-b', 'replaced-root', target);
+    await git('worktree', 'add', '-b', 'unrelated-root', unrelated);
+    fs.renameSync(target, moved);
+    fs.symlinkSync(unrelated, target, 'dir');
+    const result = await call<{ success: boolean; error?: string }>(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'replaced-root', toPosixPath(target), 'replaced-root');
+    expect(result.success).toBe(false);
+    expect(registry.getCheckoutContextsForWorkspace('replaced-root')).toHaveLength(1);
+    expect(fs.readFileSync(path.join(unrelated, 'README.md'), 'utf8')).toBe('initial\n');
+  });
+
+  it('rechecks Git for an already registered target, refusing a changed branch and later lock', async () => {
+    await call(REGISTER_OPEN_WORKSPACE, 'fresh-adoption', toPosixPath(repo));
+    const target = path.join(root, 'fresh-adoption');
+    await git('worktree', 'add', '-b', 'fresh-before', target);
+    expect((await call<{ success: boolean }>(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'fresh-adoption', toPosixPath(target), 'fresh-before')).success).toBe(true);
+    await execFileAsync('git', ['switch', '-c', 'fresh-after'], { cwd: target });
+    expect(await call(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'fresh-adoption', toPosixPath(target), 'fresh-before')).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    await git('worktree', 'lock', target);
+    expect(await call(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'fresh-adoption', toPosixPath(target), 'fresh-after')).toMatchObject({ success: false, error: expect.stringContaining('locked') });
+  });
+});

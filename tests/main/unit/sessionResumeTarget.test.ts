@@ -25,6 +25,7 @@ function setup(options: { contexts?: CheckoutContext[]; worktrees?: GitWorktreeL
     getWorkspace: (id: string) => id === 'ws' ? workspace : null,
     getCheckoutContextsForWorkspace: () => contexts,
     registerCheckoutContext,
+    describeCheckoutContext: vi.fn(),
   } as unknown as WorkspaceRegistry;
   const worktrees = options.worktrees ?? [entry('/p/app', 'main', { isMain: true })];
   const listWorktrees = async (): Promise<GitWorktreeListResult> => ({ success: true, worktrees });

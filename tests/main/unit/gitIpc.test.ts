@@ -1376,7 +1376,7 @@ describe('Git IPC workspace identity routing', () => {
       const { registry, controller, createWorktree } = await sshWorkspace();
       const result = await controller.createWorktreeForSession('ssh-tab', 'task');
       // An existing branch needs no base; the host creates it at its generated path.
-      expect(createWorktree).toHaveBeenCalledExactlyOnceWith(workspacePath, '', 'task');
+      expect(createWorktree).toHaveBeenCalledExactlyOnceWith(workspacePath, '', 'task', 'existing');
       expect(result).toMatchObject({ success: true, checkoutContext: expect.objectContaining({ kind: 'worktree', path: sshTask.path, branch: 'task', workspaceId: 'ssh-tab' }) });
       expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(2);
       expect(await controller.createWorktreeForSession('missing-workspace', 'task')).toMatchObject({ success: false, error: expect.stringContaining('registered workspace') });

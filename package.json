@@ -37,6 +37,7 @@
     "prepare": "husky",
     "branding:generate": "node scripts/generate-branding.cjs",
     "branding:check": "node scripts/check-branding.cjs",
+    "smoke:new-session": "node scripts/new-session-smoke.cjs",
     "smoke:settings": "node scripts/settings-management-smoke.cjs",
     "smoke:source-control": "node scripts/source-control-management-smoke.cjs",
     "smoke:checkout-presentation": "node scripts/checkout-presentation-smoke.cjs",

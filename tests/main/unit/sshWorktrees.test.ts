@@ -56,6 +56,25 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
     expect(environment.capabilities.worktrees).toBe(true);
   });
 
+  it('honors explicit new/existing modes and immutable committed-HEAD bases in the host script', async () => {
+    await git(['branch', 'unoccupied']);
+    expect(await environment.createWorktree(root, 'HEAD', 'unoccupied', 'new')).toMatchObject({ success: false, error: expect.stringContaining('already exists') });
+    expect(await environment.createWorktree(root, 'HEAD', 'gone', 'existing')).toMatchObject({ success: false, error: expect.stringContaining('no longer exists') });
+    const source = join(fixture, 'source');
+    await git(['worktree', 'add', '-b', 'source', source]);
+    await writeFile(join(source, 'tracked.txt'), 'source commit');
+    await exec('git', ['-C', source, 'commit', '-am', 'source commit']);
+    const head = (await exec('git', ['-C', source, 'rev-parse', 'HEAD'])).stdout.trim();
+    await writeFile(join(source, 'dirty.txt'), 'never copied');
+    const created = await environment.createWorktree(root, head, 'from-source', 'new');
+    expect(created.success, created.error).toBe(true);
+    expect(await readFile(join(created.worktree!.path, 'tracked.txt'), 'utf8')).toBe('source commit');
+    await expect(stat(join(created.worktree!.path, 'dirty.txt'))).rejects.toThrow();
+    expect((await git(['branch', '--show-current'])).stdout.trim()).toBe('main');
+    expect((await environment.createWorktree(root, 'HEAD', 'unoccupied', 'existing')).success).toBe(true);
+    expect(await readFile(join(source, 'dirty.txt'), 'utf8')).toBe('never copied');
+  });
+
   it('creates from a linked source beside the main repository and reuses an existing branch', async () => {
     const linked = join(fixture, 'source');
     await git(['worktree', 'add', '-b', 'source', linked]);

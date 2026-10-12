@@ -3,7 +3,6 @@ import { remoteAttentionCapability } from '../attentionCapability';
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
 import { attentionLaunchStep, localAttentionCapability, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { retireTerminal } from '../terminalRetirement';
-import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { findHarnessProvider } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
@@ -292,7 +291,6 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       && resolvedWorkspace && checkoutContext && !isRemote) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness,
-        grants: ({ state, bridgeAvailable }) => ({ checkoutRehoming: grantsCheckoutRehoming(harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED), bridgeAvailable }) }),
         identity: {
           terminalId: id, workspaceId: resolvedWorkspace.workspaceId, environmentId: effectiveEnvironmentId,
           checkoutContextId: checkoutContext.id, harnessId: harness,
