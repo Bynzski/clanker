@@ -9,7 +9,7 @@ import WorkspaceNavigatorSection from '../../../src/renderer/components/Workspac
 import { GitWorktreesSection } from '../../../src/renderer/components/git/GitWorktreesSection';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
-import { getSelectedAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
+import { getAgentWorktreeContext } from '../../../src/renderer/lib/worktreeAgents';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
@@ -343,7 +343,7 @@ describe('New Agent: harness + working copy', () => {
       expect(workspace().checkoutContexts!.map((context) => context.path)).toEqual([ROOT, WT('old-task')]);
       expect(api.spawnTerminal.mock.calls[0][1]).toBe('opencode');
       expect(api.spawnTerminal.mock.calls[0][7]).toBe('ws::ckt-old-task');
-      expect(getSelectedAgentWorktreeContext(workspace())?.branch).toBe('old-task');
+      expect(getAgentWorktreeContext(workspace(), workspace().terminals[0])?.branch).toBe('old-task');
       expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
       expect(registerNotCalled()).toBe(true);
     });

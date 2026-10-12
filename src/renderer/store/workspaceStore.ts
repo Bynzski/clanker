@@ -91,8 +91,7 @@ export type {
   WorkspaceTab,
 } from './workspaceTypes';
 
-export type { DockEdge, EdgeGap, EdgeTerminal, PaneDropTarget } from './workspaceLayout';
-export { getEdgeTerminals } from './workspaceLayout';
+export type { DockEdge, EdgeTerminal, PaneDropTarget } from './workspaceLayout';
 
 export * from './workspaceStoreHelpers';
 

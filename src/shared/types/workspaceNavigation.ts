@@ -33,10 +33,10 @@ export function normalizeWorkspaceNavigationMode(value: unknown): WorkspaceNavig
  * closes the rail without a separate flag.
  */
 export const DEFAULT_WORKSPACE_SIDEBAR_WIDTH = 280;
-export const MIN_WORKSPACE_SIDEBAR_WIDTH = 180;
-export const MAX_WORKSPACE_SIDEBAR_WIDTH = 500;
+const MIN_WORKSPACE_SIDEBAR_WIDTH = 180;
+const MAX_WORKSPACE_SIDEBAR_WIDTH = 500;
 export const WORKSPACE_SIDEBAR_RAIL_WIDTH = 44;
-export const WORKSPACE_SIDEBAR_COLLAPSE_THRESHOLD = 120;
+const WORKSPACE_SIDEBAR_COLLAPSE_THRESHOLD = 120;
 
 export function normalizeWorkspaceSidebarWidth(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_WORKSPACE_SIDEBAR_WIDTH;

@@ -129,10 +129,6 @@ const COMMANDS_BY_ID: ReadonlyMap<string, KeybindingCommand> = new Map(
   KEYBINDING_COMMANDS.map((command) => [command.id, command]),
 );
 
-export function isKeybindingCommandId(value: unknown): value is KeybindingCommandId {
-  return typeof value === 'string' && COMMANDS_BY_ID.has(value);
-}
-
 export function getKeybindingCommand(id: KeybindingCommandId): KeybindingCommand {
   return COMMANDS_BY_ID.get(id) as KeybindingCommand;
 }
@@ -168,7 +164,7 @@ const MODIFIER_CODES = new Set([
   'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock',
 ]);
 
-export function isModifierCode(code: string): boolean {
+function isModifierCode(code: string): boolean {
   return MODIFIER_CODES.has(code);
 }
 

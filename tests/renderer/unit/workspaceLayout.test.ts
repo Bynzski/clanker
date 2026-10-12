@@ -8,12 +8,10 @@ import {
   swapPaneIdsInLayout,
   dockPaneToEdgeInLayout,
   setSplitRatioInLayout,
-  findFirstLeafPaneId,
   insertPaneIntoLayout as insertPaneIntoLayoutStrict,
   normalizeLayoutRoot as normalizeLayoutRootStrict,
   buildWorkspaceLayout as buildWorkspaceLayoutStrict,
   getEdgeTerminals,
-  getEdgeGaps,
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
   movePaneInLayout,
@@ -21,7 +19,6 @@ import {
   restorePanePlacementInLayout,
   insertPaneAtWorkspaceEdgeInLayout,
 } from '../../../src/renderer/store/workspaceLayout';
-import type { EdgeTerminal } from '../../../src/renderer/store/workspaceLayout';
 import type {
   LayoutNode,
   LayoutLeaf,
@@ -338,29 +335,6 @@ describe('setSplitRatioInLayout', () => {
     const outer = split(inner, leaf('c'), 'vertical', 0.5, 'outer');
     const result = setSplitRatioInLayout(outer, 'inner', 0.8) as LayoutSplit;
     expect(((result.first) as LayoutSplit).ratio).toBe(0.8);
-  });
-});
-
-// ===========================================================================
-// findFirstLeafPaneId
-// ===========================================================================
-describe('findFirstLeafPaneId', () => {
-  it('returns null for null input', () => {
-    expect(findFirstLeafPaneId(null)).toBeNull();
-  });
-
-  it('returns pane id of a single leaf', () => {
-    expect(findFirstLeafPaneId(leaf('a'))).toBe('a');
-  });
-
-  it('returns the leftmost leaf pane id', () => {
-    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
-    expect(findFirstLeafPaneId(tree)).toBe('a');
-  });
-
-  it('follows the first branch deeply', () => {
-    const tree = split(split(leaf('deep'), leaf('b')), leaf('c'));
-    expect(findFirstLeafPaneId(tree)).toBe('deep');
   });
 });
 
@@ -856,28 +830,6 @@ describe('setSplitRatioInLayout - additional edge cases', () => {
 });
 
 // ===========================================================================
-// findFirstLeafPaneId - additional edge cases
-// ===========================================================================
-describe('findFirstLeafPaneId - additional edge cases', () => {
-  it('returns right branch when left is null', () => {
-    const tree = {
-      type: 'split' as const,
-      nodeId: 's1',
-      orientation: 'horizontal' as const,
-      ratio: 0.5,
-      first: null as unknown as LayoutNode,
-      second: leaf('b'),
-    };
-    expect(findFirstLeafPaneId(tree)).toBe('b');
-  });
-
-  it('handles deeply nested left-heavy tree', () => {
-    const tree = split(split(split(leaf('deep'), leaf('b')), leaf('c')), leaf('d'));
-    expect(findFirstLeafPaneId(tree)).toBe('deep');
-  });
-});
-
-// ===========================================================================
 // collectLeafPaneIds - additional edge cases
 // ===========================================================================
 describe('collectLeafPaneIds - additional edge cases', () => {
@@ -1094,67 +1046,6 @@ describe('getEdgeTerminals', () => {
     expect(terminals[2].paneId).toBe('c');
     expect(terminals[2].offset).toBeCloseTo(0.7);
     expect(terminals[2].span).toBeCloseTo(0.3);
-  });
-});
-
-// ===========================================================================
-// getEdgeGaps
-// ===========================================================================
-describe('getEdgeGaps', () => {
-  it('returns a single full-span gap for empty terminals', () => {
-    expect(getEdgeGaps([], 4)).toEqual([{ index: 0, start: 0, end: 1 }]);
-  });
-
-  it('returns 2 gaps (before + after) for a single terminal', () => {
-    const terminals: EdgeTerminal[] = [{ paneId: 'a', offset: 0, span: 1 }];
-    expect(getEdgeGaps(terminals, 4)).toEqual([
-      { index: 0, start: 0, end: 0, afterPaneId: undefined, beforePaneId: 'a' },
-      { index: 1, start: 1, end: 1, afterPaneId: 'a', beforePaneId: undefined },
-    ]);
-  });
-
-  it('returns N+1 gaps for N terminals with correct before/after pane ids', () => {
-    const terminals: EdgeTerminal[] = [
-      { paneId: 'a', offset: 0, span: 1 / 3 },
-      { paneId: 'b', offset: 1 / 3, span: 1 / 3 },
-      { paneId: 'c', offset: 2 / 3, span: 1 / 3 },
-    ];
-    const gaps = getEdgeGaps(terminals, 4);
-    expect(gaps).toHaveLength(4);
-    expect(gaps[0]).toMatchObject({ index: 0, afterPaneId: undefined, beforePaneId: 'a' });
-    expect(gaps[1]).toMatchObject({ index: 1, afterPaneId: 'a', beforePaneId: 'b' });
-    expect(gaps[2]).toMatchObject({ index: 2, afterPaneId: 'b', beforePaneId: 'c' });
-    expect(gaps[3]).toMatchObject({ index: 3, afterPaneId: 'c', beforePaneId: undefined });
-  });
-
-  it('caps the number of gaps at maxSegments', () => {
-    const terminals: EdgeTerminal[] = [
-      { paneId: 'a', offset: 0, span: 0.2 },
-      { paneId: 'b', offset: 0.2, span: 0.2 },
-      { paneId: 'c', offset: 0.4, span: 0.2 },
-      { paneId: 'd', offset: 0.6, span: 0.2 },
-      { paneId: 'e', offset: 0.8, span: 0.2 },
-    ];
-    const gaps = getEdgeGaps(terminals, 4);
-    expect(gaps).toHaveLength(4);
-    expect(gaps.map((g) => g.index)).toEqual([0, 1, 2, 3]);
-  });
-
-  it('returns an empty array when maxSegments is 0', () => {
-    const terminals: EdgeTerminal[] = [{ paneId: 'a', offset: 0, span: 1 }];
-    expect(getEdgeGaps(terminals, 0)).toEqual([]);
-    expect(getEdgeGaps([], 0)).toEqual([]);
-  });
-
-  it('positions start/end at terminal boundaries for contiguous terminals', () => {
-    const terminals: EdgeTerminal[] = [
-      { paneId: 'a', offset: 0, span: 0.4 },
-      { paneId: 'b', offset: 0.4, span: 0.6 },
-    ];
-    const gaps = getEdgeGaps(terminals, 4);
-    expect(gaps[0]).toEqual({ index: 0, start: 0, end: 0, afterPaneId: undefined, beforePaneId: 'a' });
-    expect(gaps[1]).toEqual({ index: 1, start: 0.4, end: 0.4, afterPaneId: 'a', beforePaneId: 'b' });
-    expect(gaps[2]).toEqual({ index: 2, start: 1, end: 1, afterPaneId: 'b', beforePaneId: undefined });
   });
 });
 

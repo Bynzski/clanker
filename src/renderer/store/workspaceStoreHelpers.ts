@@ -42,7 +42,7 @@ const generateBrowserTabId = () => generateId('browser-tab');
  * Plan policy (browser-tabs-history v2.2): new tabs use the existing HTTP(S)
  * default page; do not introduce `about:blank` as a sentinel.
  */
-export const DEFAULT_NEW_TAB_URL = 'https://github.com';
+const DEFAULT_NEW_TAB_URL = 'https://github.com';
 
 export function createDefaultBrowserTab(seedUrl?: string): BrowserTab {
   const url = typeof seedUrl === 'string' && seedUrl.length > 0 ? seedUrl : DEFAULT_NEW_TAB_URL;

@@ -49,19 +49,6 @@ export function worktreeDisplayLabel(context: Pick<CheckoutContext, 'branch' | '
 }
 
 /**
- * The worktree the workspace's selected agent is working in (see `getAgentWorktreeContext`),
- * or null when the selected agent (or none) is on the workspace's own checkout. Presentation only:
- * it reads registered contexts and the agent's reported location, never the process or repository.
- */
-export function getSelectedAgentWorktreeContext(
-  workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals' | 'activeTerminalId'>,
-  selectedLocation?: AgentLocation | null,
-): CheckoutContext | null {
-  const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
-  return terminal ? getAgentWorktreeContext(workspace, terminal, selectedLocation) : null;
-}
-
-/**
  * The registered worktree context whose root is this listed worktree, if any. Compared by
  * environment and canonical path identity (not raw strings), so slash style, trailing separators and
  * Windows case do not hide a match. A worktree with no attached context is unmanaged: created

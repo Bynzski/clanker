@@ -7,7 +7,7 @@ export interface FilterState {
   matchingPaths: Set<string>;
 }
 
-export const INACTIVE_FILTER_STATE: FilterState = {
+const INACTIVE_FILTER_STATE: FilterState = {
   active: false,
   visiblePaths: new Set(),
   forcedExpanded: new Set(),

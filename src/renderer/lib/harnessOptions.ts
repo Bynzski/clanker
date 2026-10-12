@@ -74,7 +74,7 @@ export function resolveAvailableHarnessIds(
     .filter((id) => (includeTerminal && id === '') || Boolean(options[id]));
 }
 
-export function isHarnessVisible(defaults: HarnessDefaultsMap | null | undefined, harnessId: string): boolean {
+function isHarnessVisible(defaults: HarnessDefaultsMap | null | undefined, harnessId: string): boolean {
   if (harnessId === '') {
     return true;
   }

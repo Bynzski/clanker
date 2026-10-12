@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'node:path';
-import { useWorkspaceStore, assignWorkspaceLifecycles, getEdgeTerminals } from '../../../src/renderer/store/workspaceStore';
+import { useWorkspaceStore, assignWorkspaceLifecycles } from '../../../src/renderer/store/workspaceStore';
+import { getEdgeTerminals } from '../../../src/renderer/store/workspaceLayout';
 import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
 import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';

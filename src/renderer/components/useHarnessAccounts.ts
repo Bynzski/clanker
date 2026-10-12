@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccountAuthState, HarnessAccountList } from '../../shared/types/harnessAccounts';
 
 /** IPC rejections arrive as "Error invoking remote method '…': Error: <safe message>". */
-export function accountErrorMessage(error: unknown): string {
+function accountErrorMessage(error: unknown): string {
   const text = error instanceof Error ? error.message : '';
   const message = text.split('Error: ').pop()?.trim();
   return message || 'The account operation failed.';
