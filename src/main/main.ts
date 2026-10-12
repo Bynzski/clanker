@@ -7,15 +7,13 @@ import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
 
 import { app, BrowserWindow, dialog, shell, type Rectangle } from 'electron';
 import { AppCloseGuard } from './appCloseGuard';
-import { shouldEnableAttentionDebug, shouldEnableChildProcessCrashLogging } from './attentionDebug';
+import { applyStartupAttentionDebug, shouldEnableChildProcessCrashLogging } from './attentionDebug';
 
 let closeGuard: AppCloseGuard | undefined = undefined;
 
 // Unpackaged runs and packaged versions marked -dev log attention decisions by default.
 // Explicit CLANKER_DEBUG_ATTENTION=0 disables logging; stable releases stay quiet.
-if (shouldEnableAttentionDebug(process.env.CLANKER_DEBUG_ATTENTION, app.isPackaged, app.getVersion())) {
-  process.env.CLANKER_DEBUG_ATTENTION = '1';
-}
+applyStartupAttentionDebug(process.env, app.isPackaged, app.getVersion());
 
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyStartupAttentionDebug,
   isDevVersion,
   shouldEnableAttentionDebug,
   shouldEnableChildProcessCrashLogging,
@@ -58,5 +59,41 @@ describe('child process crash logging defaults', () => {
     expect(shouldEnableChildProcessCrashLogging('production', false, '0.12.0')).toBe(false);
     expect(shouldEnableChildProcessCrashLogging(undefined, false, '0.12.0')).toBe(false);
     expect(shouldEnableChildProcessCrashLogging(undefined, false, '0.12.0-rc.1')).toBe(false);
+  });
+});
+
+describe('startup attention debug application', () => {
+  it('mutates process.env for unpackaged development runs', () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyStartupAttentionDebug(env, false, '0.12.0');
+    expect(env.CLANKER_DEBUG_ATTENTION).toBe('1');
+  });
+
+  it('mutates process.env for packaged dev-version builds', () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyStartupAttentionDebug(env, true, '0.12.0-dev.db51b43');
+    expect(env.CLANKER_DEBUG_ATTENTION).toBe('1');
+  });
+
+  it('does not mutate process.env for packaged stable releases', () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyStartupAttentionDebug(env, true, '0.12.0');
+    expect(env.CLANKER_DEBUG_ATTENTION).toBeUndefined();
+  });
+
+  it('preserves explicit opt-out on unpackaged and dev-version runs', () => {
+    const devEnv: NodeJS.ProcessEnv = { CLANKER_DEBUG_ATTENTION: '0' };
+    applyStartupAttentionDebug(devEnv, false, '0.12.0');
+    expect(devEnv.CLANKER_DEBUG_ATTENTION).toBe('0');
+
+    const pkgDevEnv: NodeJS.ProcessEnv = { CLANKER_DEBUG_ATTENTION: '0' };
+    applyStartupAttentionDebug(pkgDevEnv, true, '0.12.0-dev.db51b43');
+    expect(pkgDevEnv.CLANKER_DEBUG_ATTENTION).toBe('0');
+  });
+
+  it('preserves explicit opt-in on packaged stable releases', () => {
+    const env: NodeJS.ProcessEnv = { CLANKER_DEBUG_ATTENTION: '1' };
+    applyStartupAttentionDebug(env, true, '0.12.0');
+    expect(env.CLANKER_DEBUG_ATTENTION).toBe('1');
   });
 });
