@@ -45,6 +45,28 @@ describe('one renderer removal request', () => {
     await pending;
     expect(workspace().checkoutContexts?.some((entry) => entry.id === checkout.id)).toBe(true);
   });
+  it.each([false, true])('updates other affected workspaces but never a reopened one (reopened: %s)', async (reopened) => {
+    const addOther = () => {
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({ id: 'ws-b', workspacePath: ROOT, terminals: [], panes: [] }));
+      useWorkspaceStore.getState().upsertCheckoutContext('ws-b', { ...checkout, id: 'ws-b::task', workspaceId: 'ws-b' });
+    };
+    addOther();
+    let finish!: (result: unknown) => void;
+    api.gitRemoveCheckout.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const pending = removeWorktreeCheckout(workspace(), checkout);
+    if (reopened) {
+      useWorkspaceStore.setState((state) => ({ workspaces: state.workspaces.filter((entry) => entry.id !== 'ws-b') }));
+      addOther();
+    }
+    finish({ success: true, reconciliations: [
+      { workspaceId: 'ws', result: { success: true, contexts: [], dropped: [checkout.id] } },
+      { workspaceId: 'ws-b', result: { success: true, contexts: [], dropped: ['ws-b::task'] } },
+    ] });
+    await pending;
+    expect(workspace().checkoutContexts?.some((entry) => entry.id === checkout.id)).toBe(false);
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws-b')!.checkoutContexts?.some((entry) => entry.id === 'ws-b::task')).toBe(reopened);
+  });
+
   it('rejects main and closed-workspace requests before dispatch', async () => {
     expect((await removeWorktreeCheckout(workspace(), { path: ROOT, isMain: true })).success).toBe(false);
     expect((await removeWorktreeCheckout({ ...workspace(), id: 'closed' }, checkout)).success).toBe(false);

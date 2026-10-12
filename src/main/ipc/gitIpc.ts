@@ -7,7 +7,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
-import type { WorkspaceRegistry } from '../workspaceRegistry';
+import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistry';
 import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAttachment';
 import { recordListedWorktrees } from '../sessionWorktrees';
 import type { WorktreeProvenance } from '../worktreeProvenance';
@@ -461,10 +461,11 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     });
   });
 
-  const reconcileInScope = async (workspaceId: unknown): Promise<ReconcileCheckoutContextsResult> => {
+  const reconcileInScope = async (workspaceId: unknown, expectedWorkspace?: RegisteredWorkspace): Promise<ReconcileCheckoutContextsResult> => {
     const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
     const registry = getWorkspaceRegistry?.();
     if (!ws || !registry) return { success: false, error: 'A registered workspace is required' };
+    if (expectedWorkspace && ws !== expectedWorkspace) return { success: false, error: 'Workspace changed before checkout reconciliation' };
     const safePath = getValidatedWorkspacePath(ws.location.path);
     if (!safePath) return { success: false, error: getInvalidWorkspaceResult().error };
     const result = await reconcileCheckoutContexts({
@@ -621,7 +622,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       remove: (entry, authority) => remote
         ? remoteWorktrees.remove(ws, entry.path, entry.branch, {}, authority)
         : gitService.removeWorktree(toNativePath(ws.location.path, process.platform), toNativePath(entry.path, process.platform), entry.branch, [], {}, authority),
-      reconcile: () => reconcileInScope(workspaceId),
+      reconcile: (affected) => gitService.withWorkspace({
+        workspacePath: affected.location.path, workspaceId: affected.workspaceId, environmentId: affected.location.environmentId,
+        validateIdentity: () => {
+          if (registry.getWorkspace(affected.workspaceId) !== affected) throw new Error('Workspace changed before checkout reconciliation');
+        },
+      }, () => reconcileInScope(affected.workspaceId, affected)),
     });
   });
   registerGitHandler(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {

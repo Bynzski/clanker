@@ -18,10 +18,14 @@ export async function removeWorktreeCheckout(
   if (!isWorktreeRemovalWorkspaceCurrent(workspace) || worktree.isMain || worktree.path === workspace.workspacePath) {
     return { success: false, outcome: 'unchanged', error: 'Choose a linked worktree of an open workspace' };
   }
+  const workspaces = new Map(useWorkspaceStore.getState().workspaces.map((entry) => [entry.id, entry]));
   try {
     const result = await window.electronAPI.gitRemoveCheckout(workspace.id, worktree.path, worktree.branch ?? null);
-    if (isWorktreeRemovalWorkspaceCurrent(workspace) && result.reconciliation) {
-      useWorkspaceStore.getState().applyCheckoutContextReconciliation(workspace.id, result.reconciliation);
+    for (const update of result.reconciliations ?? (result.reconciliation ? [{ workspaceId: workspace.id, result: result.reconciliation }] : [])) {
+      const original = workspaces.get(update.workspaceId);
+      if (original && isWorktreeRemovalWorkspaceCurrent(original)) {
+        useWorkspaceStore.getState().applyCheckoutContextReconciliation(update.workspaceId, update.result);
+      }
     }
     return result;
   } catch (cause) {

@@ -123,8 +123,9 @@ export class RemoteWorktreeCoordinator {
       try { this.save(); } catch (error) { pending.persisted = false; throw error; }
       uncertain = true;
       const result = await workspace.environment.removeWorktree(workspace.location.path, worktreePath, expectedBranch, activity, operationId, options);
-      uncertain = result.uncertain === true;
-      return { success: result.success, outcome: uncertain ? 'unknown' : result.success ? 'removed' : 'recovery-required', error: result.error, warning: result.warning, recoveryPath: result.recoveryPath };
+      uncertain = result.uncertain === true || result.outcome === 'unknown'
+        || (!result.success && result.outcome !== 'unchanged' && result.outcome !== 'recovery-required');
+      return { success: result.success, outcome: uncertain ? 'unknown' : result.success ? 'removed' : result.outcome, error: result.error, warning: result.warning, recoveryPath: result.recoveryPath };
     } catch (error) {
       return { success: false, outcome: uncertain ? 'unknown' : 'unchanged', error: `${error instanceof Error ? error.message : 'Remote removal failed'}${uncertain ? '\nRefresh worktrees to verify completion before reopening.' : ''}` };
     } finally {

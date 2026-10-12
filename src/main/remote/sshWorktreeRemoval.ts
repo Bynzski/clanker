@@ -25,6 +25,7 @@ const REMOVE_SCRIPT = WORKTREE_INSPECTION_PYTHON + PRIVATE_DIRECTORY_PYTHON + St
 expected, operation = json.loads(sys.argv[4]), sys.argv[5]
 discard_ignored = len(sys.argv) > 6 and sys.argv[6] == 'true'
 stage, bundle, archive, journal = None, None, None, None
+outcome = 'unchanged'
 try:
   common = os.fsdecode(git(workspace, ['rev-parse', '--path-format=absolute', '--git-common-dir']).rstrip(b'\n'))
   if not canonical(common):
@@ -70,7 +71,9 @@ try:
       metadata.flush()
       os.fsync(metadata.fileno())
     original = os.stat(target, follow_symlinks=False)
+    outcome = 'unknown'
     git(workspace, ['worktree', 'move', target, stage])
+    outcome = 'recovery-required'
     moved = os.stat(stage, follow_symlinks=False)
     if not canonical(stage) or (original.st_dev, original.st_ino) != (moved.st_dev, moved.st_ino):
       raise RuntimeError('Worktree directory changed during removal')
@@ -88,14 +91,29 @@ try:
     warning = 'Checkout files preserved at ' + archive + '. The branch remains.'
     if os.path.lexists(target):
       warning += ' New files at the original path were left in place.'
-    result = {'success': True, 'recoveryPath': archive, 'warning': warning}
+    result = {'success': True, 'outcome': 'removed', 'recoveryPath': archive, 'warning': warning}
 except Exception as error:
   message = str(error)
+  if outcome == 'unknown':
+    # A failed Git move can have partially mutated metadata. Only verified original
+    # identity plus Git's listing proves a refusal left the checkout unmoved.
+    try:
+      remaining = git(workspace, ['worktree', 'list', '--porcelain', '-z'])
+      if canonical(target) and os.path.lexists(target) and not os.path.lexists(stage) and b'worktree ' + os.fsencode(target) + b'\0' in remaining:
+        current = os.stat(target, follow_symlinks=False)
+        if (original.st_dev, original.st_ino) == (current.st_dev, current.st_ino):
+          outcome = 'unchanged'
+      elif canonical(stage) and os.path.lexists(stage) and b'worktree ' + os.fsencode(stage) + b'\0' in remaining:
+        current = os.stat(stage, follow_symlinks=False)
+        if (original.st_dev, original.st_ino) == (current.st_dev, current.st_ino):
+          outcome = 'recovery-required'
+    except Exception:
+      pass
   if archive is not None and os.path.isdir(archive):
     message += '\nCheckout files are preserved at ' + archive + '. Git cleanup may be incomplete at ' + stage + '.'
   elif stage is not None and os.path.lexists(stage):
     message += '\nCheckout remains at ' + stage + '; inspect it on the host before retrying.'
-  result = {'success': False, 'error': message}
+  result = {'success': False, 'outcome': outcome, 'error': message}
 if journal is not None:
   with open(journal + '.completed', 'x') as record:
     json.dump({'state': 'completed', 'result': result}, record)
@@ -109,7 +127,7 @@ export async function removeSshWorktree(executor: SshCommandExecutor, target: st
   if (!validRemoteWorktreePath(workspacePath) || !validRemoteWorktreePath(worktreePath) ||
       (typeof expectedBranch !== 'string' && expectedBranch !== null) || !Array.isArray(activePaths) || activePaths.length > 1024 ||
       !activePaths.every(validRemoteWorktreePath) || !/^[0-9a-f-]{36}$/.test(operationId)) {
-    return { success: false, error: 'Invalid remote worktree removal request' };
+    return { success: false, outcome: 'unchanged', error: 'Invalid remote worktree removal request' };
   }
   const { stagingPath, recoveryDirectory } = remoteRemovalPaths(worktreePath, operationId);
   try {
@@ -117,14 +135,16 @@ export async function removeSshWorktree(executor: SshCommandExecutor, target: st
     const result: unknown = JSON.parse(stdout);
     if (!result || typeof result !== 'object' || !('success' in result) || typeof result.success !== 'boolean') throw new Error('Invalid removal response');
     if (result.success) {
+      if (!('outcome' in result) || result.outcome !== 'removed') throw new Error('Invalid removal outcome');
       if (!('recoveryPath' in result) || result.recoveryPath !== path.posix.join(recoveryDirectory, 'checkout') ||
           !('warning' in result) || typeof result.warning !== 'string') throw new Error('Invalid recovery response');
-      return { success: true, recoveryPath: result.recoveryPath, warning: result.warning };
+      return { success: true, outcome: 'removed', recoveryPath: result.recoveryPath, warning: result.warning };
     }
     if (!('error' in result) || typeof result.error !== 'string') throw new Error('Invalid removal error response');
-    return { success: false, error: result.error };
+    if (!('outcome' in result) || (result.outcome !== 'unchanged' && result.outcome !== 'recovery-required' && result.outcome !== 'unknown')) throw new Error('Invalid removal outcome');
+    return { success: false, outcome: result.outcome, uncertain: result.outcome === 'unknown', error: result.error };
   } catch (error) {
-    return { success: false, uncertain: true, error: `${error instanceof Error ? error.message : 'SSH removal failed'}\nRemoval may still be running on the host. Refresh worktrees to verify completion before reopening. Recovery folder: ${recoveryDirectory}; staging path: ${stagingPath}.` };
+    return { success: false, outcome: 'unknown', uncertain: true, error: `${error instanceof Error ? error.message : 'SSH removal failed'}\nRemoval may still be running on the host. Refresh worktrees to verify completion before reopening. Recovery folder: ${recoveryDirectory}; staging path: ${stagingPath}.` };
   }
 }
 

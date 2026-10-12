@@ -38,9 +38,17 @@ No branch is deleted by this operation.
 
 No registration is released before execution. A nonmutating failure retains it.
 After confirmed removal or a verified partial mutation, reconciliation uses Git's
-actual inventory; listing failure or unknown SSH outcomes retain authority and
-reservations. Error presentation never asserts that a directory remains merely
-because an operation failed. Git-listed staging paths survive desktop restart;
+actual inventory for every workspace whose registration participated in the removal
+(including equivalent SSH environments), scoped to each captured workspace identity.
+Occupancy is rechecked before dropping registrations. The renderer applies all
+returned updates only to the original workspace instances. A failed listing retains
+that workspace's registrations and adds a refresh warning without changing the
+removal outcome; other workspaces still reconcile. Unknown SSH outcomes retain
+registrations and reservations until journal verification. The host script reports
+`unchanged` before checkout movement, `recovery-required` after a verified move with
+incomplete cleanup, or `unknown` when movement cannot be verified; a failed Git move
+is checked against Git's listing and the original directory identity. Error
+presentation never asserts that a directory remains merely because an operation failed. Git-listed staging paths survive desktop restart;
 local recovery is explicit, never an automatic destructive retry. SSH completion
 continues to require its persisted host journal before reservations are cleared.
 

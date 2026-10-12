@@ -601,6 +601,59 @@ describe('Git-centered confirmed removal (real Git and main registry)', () => {
     expect(await remove(entry)).toMatchObject({ success: false, outcome: 'unchanged' });
   });
 
+  it.each([false, true])('reconciles every owning workspace in its own scope and rechecks late usage (late usage: %s)', async (lateUsage) => {
+    await openWorkspace();
+    const source = await create('ws', `canonical-source-b-${lateUsage}`, false);
+    expect(await call(REGISTER_OPEN_WORKSPACE, 'ws-b', source.worktree!.path)).toMatchObject({ success: true });
+    const created = await create('ws', `canonical-shared-${lateUsage}`);
+    const adopted = await call<{ checkoutContext: CheckoutContext }>(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'ws-b', created.worktree!.path);
+    const contextB = adopted.checkoutContext;
+    const original = service.listWorktrees.bind(service);
+    const scopes: Array<{ id?: string; path: string }> = [];
+    const spy = vi.spyOn(service, 'listWorktrees').mockImplementation(async (root) => {
+      const result = await original(root);
+      scopes.push({ id: service.getScopedWorkspaceIdentity()?.workspaceId, path: root });
+      if (lateUsage && service.getScopedWorkspaceIdentity()?.workspaceId === 'ws-b') {
+        terminals.set('late-b-agent', { checkoutContextId: contextB.id, environmentId: 'local', cwd: source.worktree!.path });
+      }
+      return result;
+    });
+    try {
+      const result = await remove(created.worktree!);
+      expect(result).toMatchObject({ success: true, outcome: 'removed', reconciliations: [
+        { workspaceId: 'ws', result: { success: true, dropped: [created.checkoutContext!.id] } },
+        { workspaceId: 'ws-b', result: { success: true, dropped: lateUsage ? [] : [contextB.id] } },
+      ] });
+      expect(scopes.slice(-2)).toEqual([{ id: 'ws', path: toPosixPath(repo) }, { id: 'ws-b', path: source.worktree!.path }]);
+      expect(registry.getCheckoutContext(created.checkoutContext!.id)).toBeNull();
+      if (lateUsage) expect(registry.getCheckoutContext(contextB.id)).toMatchObject({ missing: true });
+      else expect(registry.getCheckoutContext(contextB.id)).toBeNull();
+      await expect(spawn(created.worktree!.path, 'ws-b', contextB.id)).rejects.toThrow();
+      expect(registry.getCheckoutContext(mainCheckoutContextId('ws-b'))).not.toBeNull();
+      expect((await git('branch', '--list', created.worktree!.branch!)).stdout).toContain(created.worktree!.branch);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('preserves successful removal and warns when the post-removal Git listing fails', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-reconcile-list-failure');
+    const context = registry.getCheckoutContext(created.checkoutContext!.id);
+    const original = service.removeWorktree.bind(service);
+    let listing: ReturnType<typeof vi.spyOn> | undefined;
+    const removeSpy = vi.spyOn(service, 'removeWorktree').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (result.success) listing = vi.spyOn(service, 'listWorktrees').mockResolvedValueOnce({ success: false, worktrees: [], error: 'Git listing unavailable' });
+      return result;
+    });
+    try {
+      const result = await remove(created.worktree!);
+      expect(result).toMatchObject({ success: true, outcome: 'removed', reconciliation: { success: false, error: 'Git listing unavailable' } });
+      expect(result.warning).toMatch(/Refresh worktrees/);
+      expect(registry.getCheckoutContext(context!.id)).toBe(context);
+      expect(fs.existsSync(created.worktree!.path)).toBe(false);
+    } finally { removeSpy.mockRestore(); listing?.mockRestore(); }
+  });
+
   it.each(['tracked', 'staged', 'untracked', 'ignored'])('retains the exact registration after %s preflight refusal', async (kind) => {
     await openWorkspace();
     const created = await create('ws', `canonical-dirty-${kind}`);

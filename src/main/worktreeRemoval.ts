@@ -20,7 +20,7 @@ export async function removeListedWorktree(params: {
   usages: () => Iterable<TerminalUsage>;
   list: () => Promise<GitWorktreeListResult>;
   remove: (entry: GitWorktree, authority: WorktreeRemovalAuthority) => Promise<GitWorktreeRemoveResult>;
-  reconcile: () => Promise<ReconcileCheckoutContextsResult>;
+  reconcile: (workspace: RegisteredWorkspace) => Promise<ReconcileCheckoutContextsResult>;
 }): Promise<GitWorktreeRemoveResult> {
   const { registry, workspace, expectedBranch } = params;
   const fail = (error: string): GitWorktreeRemoveResult => ({ success: false, outcome: 'unchanged', error });
@@ -42,6 +42,12 @@ export async function removeListedWorktree(params: {
     if (contexts.some((context) => context.id === mainCheckoutContextId(context.workspaceId))) {
       return fail('Close the workspace opened in this checkout before removing it');
     }
+    const affectedWorkspaces = new Map([[workspace.workspaceId, workspace]]);
+    for (const context of contexts) {
+      const owner = registry.getWorkspace(context.workspaceId);
+      if (!owner) return fail('Checkout workspace is no longer registered; refresh worktrees');
+      affectedWorkspaces.set(owner.workspaceId, owner);
+    }
     const authority: WorktreeRemovalAuthority = {
       contextIds: new Set(contexts.map((context) => context.id)),
       validate: () => {
@@ -62,8 +68,23 @@ export async function removeListedWorktree(params: {
     const result = await params.remove(entry, authority);
     // Preflight failure leaves the original association intact. Unknown host outcomes stay reserved.
     if (result.success || result.outcome === 'recovery-required' || (result.outcome === 'unknown' && environmentId === 'local')) {
-      try { return { ...result, reconciliation: await params.reconcile() }; }
-      catch { return { ...result, warning: result.warning || 'Refresh worktrees to reconcile checkout associations' }; }
+      const reconciliations: NonNullable<GitWorktreeRemoveResult['reconciliations']> = [];
+      for (const affected of affectedWorkspaces.values()) {
+        let reconciliation: ReconcileCheckoutContextsResult;
+        try {
+          reconciliation = registry.getWorkspace(affected.workspaceId) === affected
+            ? await params.reconcile(affected)
+            : { success: false, error: 'Workspace changed before checkout reconciliation' };
+        } catch (error) {
+          reconciliation = { success: false, error: error instanceof Error ? error.message : 'Could not reconcile checkout registrations' };
+        }
+        reconciliations.push({ workspaceId: affected.workspaceId, result: reconciliation });
+      }
+      const warning = reconciliations.some((update) => !update.result.success)
+        ? [result.warning, 'Some checkout registrations could not be reconciled. Refresh worktrees in the affected workspaces.'].filter(Boolean).join('\n')
+        : result.warning;
+      return { ...result, warning, reconciliations,
+        reconciliation: reconciliations.find((update) => update.workspaceId === workspace.workspaceId)!.result };
     }
     return result;
   } catch (error) {
