@@ -102,7 +102,7 @@ Only a new accepted native event can resolve the location to B.
 Native location observation and native resume are independent. `providerCapabilities`
 reports resume support and keeps `checkoutRehome: null` for response compatibility.
 Clanker's MCP create/complete and provider relocation pipeline were retired in #166.
-New Session explicitly chooses a validated target without reading this presentation
+New Agent explicitly chooses a validated target without reading this presentation
 selection; Explorer/Source Control still refuse unregistered observations. No
 terminal-text parsing, automatic adoption or SSH MCP was added.
 

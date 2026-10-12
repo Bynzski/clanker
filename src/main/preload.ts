@@ -518,8 +518,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string, checkoutContextId?: string) =>
     ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath, expectedHashes, workspaceId, checkoutContextId),
   gitRefresh: (workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_REFRESH, workspaceId, checkoutContextId),
-  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) =>
-    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId),
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string, checkoutContextId?: string) =>
+    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId, checkoutContextId),
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_REMOTES, workspacePath, workspaceId),
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) =>
     ipcRenderer.invoke(GIT_ADD_REMOTE, workspacePath, name, url, workspaceId),

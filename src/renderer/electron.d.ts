@@ -288,7 +288,7 @@ export interface ElectronAPI {
   gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: (workspaceId?: string, checkoutContextId?: string) => Promise<GitStatusResult | null>;
-  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) => Promise<GitInitResult>;
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitInitResult>;
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => Promise<GitRemotesResult>;
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;

@@ -37,7 +37,7 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 
-describe('explicit sessions from New Session', () => {
+describe('explicit sessions from New Agent', () => {
   let spawnTerminal: ReturnType<typeof vi.fn>;
   let gitCreateWorktree: ReturnType<typeof vi.fn>;
   let gitGetBranchState: ReturnType<typeof vi.fn>;
@@ -76,7 +76,7 @@ describe('explicit sessions from New Session', () => {
   afterEach(() => cleanup());
 
   async function openPopover() {
-    await user.click(await screen.findByRole('button', { name: 'New Session' }));
+    await user.click(await screen.findByRole('button', { name: 'New Agent' }));
     return screen.findByLabelText('New branch');
   }
   async function submit(branch = 'issue-90-x', harness?: string) {

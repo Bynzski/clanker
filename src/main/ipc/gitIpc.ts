@@ -103,7 +103,7 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
 export interface GitIpcController {
   /**
    * Creates the worktree for an *existing* branch at its generated path and attaches it to the
-   * workspace as a checkout context: the same trusted route as `New Session`, including SSH
+   * workspace as a checkout context: the same trusted route as `New Agent`, including SSH
    * recovery blocking and reservations. Used only after the user confirms recreating a removed one.
    */
   createWorktreeForSession(workspaceId: string, branch: string): Promise<GitWorktreeCreateResult>;
@@ -909,9 +909,28 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-    const isAlreadyRepo = await gitService.isRepo(safeWorkspacePath);
-    if (isAlreadyRepo) {
+    const identity = gitService.getScopedWorkspaceIdentity?.();
+    const registered = identity ? resolveWorkspace(identity.workspaceId) : undefined;
+    const status = await gitService.getStatus(safeWorkspacePath);
+    if (!status.success) {
+      return { success: false, error: status.error || 'Repository status unavailable; refresh before initializing' };
+    }
+    if (status.isRepo) {
       return { success: false, error: 'Already a git repository' };
+    }
+    // Recheck the physical root and registration after status discovery, before mutation.
+    // A successful earlier poll cannot authorize a replaced, removed or foreign checkout.
+    if (identity) {
+      if (!registered) return getInvalidWorkspaceResult();
+      const validation = await registered.environment.validateWorkspacePath(safeWorkspacePath);
+      if (!validation.valid || !validation.resolvedPath || toPosixPath(validation.resolvedPath) !== safeWorkspacePath
+        || resolveWorkspace(identity.workspaceId) !== registered
+        || getWorkspaceRegistry?.().isCheckoutPathReserved(identity.environmentId, safeWorkspacePath)) {
+        return { success: false, error: 'Workspace directory is no longer available for initialization' };
+      }
+      identity.validateIdentity?.();
+    } else if (getValidatedWorkspacePath(workspacePath) !== safeWorkspacePath) {
+      return getInvalidWorkspaceResult();
     }
     const result = await gitService.initRepository(safeWorkspacePath, { defaultBranch });
     if (result.success) {

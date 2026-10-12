@@ -230,13 +230,13 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
 
     // Test linked worktree Source Control and context switching
     // First, launch a normal terminal in the main checkout so the workspace has both contexts active
-    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
     await pause(600);
 
     fs.writeFileSync(path.join(root, 'linked-task', 'worktree-note.txt'), 'worktree draft content\n');
-    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.locator('.new-session-popover').waitFor();
     await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button').filter({ hasText: 'linked-task' }).click();
     await page.locator('.new-session-form button[type="submit"]').click();

@@ -64,7 +64,7 @@ export interface RegisterSessionIpcDeps {
   worktreeProvenance?: WorktreeProvenance;
   /**
    * Creates the worktree for an existing branch at its generated path and attaches it to the workspace
-   * (the same trusted route as `New Session`). Only used after the user confirms recreation.
+   * (the same trusted route as `New Agent`). Only used after the user confirms recreation.
    */
   recreateWorktree?: (workspaceId: string, branch: string) => Promise<GitWorktreeCreateResult>;
   /** Optional: without it (or without managed accounts) discovery and resume use the native account only. */

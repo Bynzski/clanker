@@ -573,7 +573,7 @@ function WorkspacePageLayout({ workspaceId }: { workspaceId?: string }) {
         {workspace && <BackgroundTerminals workspace={workspace} visibleIds={visibleIds} />}
         <div className="empty-state">
           <span>{workspace?.pages && (workspace.pages.length > 1 || workspace.panes.length > 0) ? 'No panes on this page' : 'No terminals open'}</span>
-          <span className="hint">Use New Session to choose a harness and working copy</span>
+          <span className="hint">Use New Agent to choose a harness and working copy</span>
         </div>
       </div>
     );

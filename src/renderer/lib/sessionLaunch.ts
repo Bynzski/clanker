@@ -86,10 +86,10 @@ export async function launchSession(request: LaunchSessionRequest): Promise<Sess
 
   // Resolution awaited too. If the user moved on, an agent started now would appear in a workspace
   // they are not looking at. The checkout and its attached context are kept (nothing is deleted);
-  // it stays discoverable in New Session and Source Control.
+  // it stays discoverable in New Agent and Source Control.
   if (!isStillFocused(workspace.id)) {
     if (target.kind === 'main') return fail(FOCUS_CHANGED);
-    return fail(`The worktree for "${label}" is attached to its workspace, but focus moved to another workspace, so no agent was started. Find it in New Session or Source Control → Worktrees.`, resolved.created);
+    return fail(`The worktree for "${label}" is attached to its workspace, but focus moved to another workspace, so no agent was started. Find it in New Agent or Source Control → Worktrees.`, resolved.created);
   }
 
   if (request.createOnly) return { ok: true };
@@ -107,7 +107,7 @@ export async function launchSession(request: LaunchSessionRequest): Promise<Sess
     else await launchTerminalInCheckoutContext(workspace, context, options);
   } catch (cause) {
     if (target.kind === 'main') return fail(`Could not start a session in main: ${messageOf(cause, 'launch failed')}`);
-    return fail(`The worktree for "${label}" ${resolved.created ? 'was created' : 'is attached'} but the agent could not be started: ${messageOf(cause, 'launch failed')}. Find it in New Session or Source Control → Worktrees.`, resolved.created);
+    return fail(`The worktree for "${label}" ${resolved.created ? 'was created' : 'is attached'} but the agent could not be started: ${messageOf(cause, 'launch failed')}. Find it in New Agent or Source Control → Worktrees.`, resolved.created);
   }
   return { ok: true };
 }

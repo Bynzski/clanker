@@ -36,10 +36,10 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-    assert.equal(await page.getByRole('button', { name: 'New Session', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'New Agent', exact: true }).count(), 1);
     assert.equal(await page.locator('.ws-checkout-list,.ws-checkout-row').count(), 0);
     const open = async () => {
-      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
       assert.equal(await page.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
     };
@@ -51,7 +51,7 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
       await pause(150);
       await page.keyboard.press('Escape');
       await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
-      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).waitFor();
       await page.getByRole('button', { name: 'Create worktree only', exact: true }).scrollIntoViewIfNeeded();
       assert(await page.locator('.new-session-panes').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Picker has horizontal overflow');
@@ -64,7 +64,7 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     }
     await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setSize(1100, 760); win.webContents.setZoomFactor(1); });
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
-    await page.getByRole('button', { name: 'New Session', exact: true }).scrollIntoViewIfNeeded();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).scrollIntoViewIfNeeded();
     await until(async () => (await terminals()).length === 1, 'Main PTY absent');
     assert.equal((await terminals())[0].cwd, project);
     const original = (await terminals())[0];
@@ -105,14 +105,14 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     await app.close(); app = undefined;
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
     const restarted = await app.firstWindow(); restarted.setDefaultTimeout(15000);
-    await until(async () => await restarted.getByRole('button', { name: 'New Session', exact: true }).count() > 0 || await restarted.getByRole('button', { name: 'Open Workspace', exact: true }).count() > 0, 'Restarted shell absent');
-    if (await restarted.getByRole('button', { name: 'New Session', exact: true }).count() === 0) {
+    await until(async () => await restarted.getByRole('button', { name: 'New Agent', exact: true }).count() > 0 || await restarted.getByRole('button', { name: 'Open Workspace', exact: true }).count() > 0, 'Restarted shell absent');
+    if (await restarted.getByRole('button', { name: 'New Agent', exact: true }).count() === 0) {
       await restarted.getByRole('button', { name: 'Open Workspace', exact: true }).first().click();
       await restarted.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
       await restarted.getByRole('dialog').getByText('Where are we working today?').click();
       await restarted.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
     }
-    await restarted.getByRole('button', { name: 'New Session', exact: true }).click();
+    await restarted.getByRole('button', { name: 'New Agent', exact: true }).click();
     assert.equal(await restarted.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
     await restarted.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await restarted.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).click();

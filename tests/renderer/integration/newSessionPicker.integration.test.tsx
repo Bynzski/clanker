@@ -37,7 +37,7 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 
-describe('New Session: harness + working copy', () => {
+describe('New Agent: harness + working copy', () => {
   const user = userEvent.setup();
   let api: ReturnType<typeof installElectronApiMock>;
   let worktrees: GitWorktree[];
@@ -80,7 +80,7 @@ describe('New Session: harness + working copy', () => {
   afterEach(() => cleanup());
 
   const openPicker = async () => {
-    await user.click(await screen.findByRole('button', { name: 'New Session' }));
+    await user.click(await screen.findByRole('button', { name: 'New Agent' }));
     await screen.findByLabelText('New branch');
   };
   const launch = async (harnessLabel?: string) => {
@@ -131,7 +131,7 @@ describe('New Session: harness + working copy', () => {
     openWorkspace({ fileSurfaceContextId: ctx('selected').id });
     useWorkspaceStore.getState().upsertCheckoutContext('ws', ctx('selected'));
     render(<Header />);
-    expect(screen.getAllByRole('button', { name: 'New Session' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'New Agent' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
     await openPicker();
     expect(screen.getByRole('button', { name: 'Main checkout' })).toHaveAttribute('aria-pressed', 'true');

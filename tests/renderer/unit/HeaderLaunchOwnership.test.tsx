@@ -30,7 +30,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 async function begin(environmentId = 'local', button = 'Terminal') {
   store().addWorkspace(createWorkspaceFixture({ id: 'owned', workspacePath: '/workspace', environmentId, terminals: [], panes: [] }));
   render(<Header />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
   fireEvent.click(await screen.findByRole('radio', { name: button }));
   fireEvent.click(screen.getByRole('button', { name: `Launch ${button}` }));
   await waitFor(() => expect(window.electronAPI.spawnTerminal).toHaveBeenCalledTimes(1));

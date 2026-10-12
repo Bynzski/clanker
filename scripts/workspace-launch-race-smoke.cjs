@@ -44,7 +44,7 @@ let app;
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-    await page.getByRole('button', { name: 'New Session', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).waitFor();
     // Browser presentation controls must occupy the existing header, not a row above it.
     await page.getByRole('button', { name: 'Toggle browser panel', exact: true }).click();
     const browserHeader = page.locator('.browser-pane-header');
@@ -133,7 +133,7 @@ let app;
     });
     const armAndLaunch = async () => {
       await app.evaluate(() => { globalThis.issue89SpawnGate.armed = true; });
-      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
       await until(() => app.evaluate(() => globalThis.issue89SpawnGate.waiting), 'Real spawn did not reach response gate');
@@ -177,7 +177,7 @@ let app;
     assert.equal(await page.getByRole('navigation', { name: 'Workspace pages' }).getByRole('button', { name: /^Page / }).count(), 3);
     assert(await app.evaluate((_electron, { mainPath, id }) => process.getBuiltinModule('module').createRequire(mainPath)(mainPath).terminals.has(id), { mainPath, id: first.id }));
     assert.equal(await page.locator('.split-root .terminal-pane').count(), 1);
-    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
     await until(async () => { const names = await page.locator('.terminal-title').allTextContents(); return names.length === 2 && !names.includes('Terminal'); }, 'Second shell did not register');
@@ -242,7 +242,7 @@ let app;
       'Cached terminal stopped producing output');
     const late = await armAndLaunch();
     await page.getByRole('button', { name: 'Close workspace', exact: true }).click();
-    await until(() => page.getByRole('button', { name: 'New Session', exact: true }).count().then(count => count === 0), 'Workspace did not close');
+    await until(() => page.getByRole('button', { name: 'New Agent', exact: true }).count().then(count => count === 0), 'Workspace did not close');
     await app.evaluate(() => globalThis.issue89SpawnGate.release());
     await until(() => app.evaluate((_electron, mainPath) => process.getBuiltinModule('module').createRequire(mainPath)(mainPath).terminals.size === 0, mainPath), 'Late PTY remained untracked in main');
     await until(() => { try { process.kill(late.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } },

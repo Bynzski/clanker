@@ -1,3 +1,4 @@
+import { withGitRepositoryDiscovery } from '../gitRepositoryDiscovery';
 import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type { GitWorktreeRemovalOptions } from '../../shared/types/git';
 import { discoverSshWebServices, type RemoteWebEndpoint } from './sshPortDiscovery';
@@ -638,10 +639,20 @@ export class SshEnvironment implements WorkspaceEnvironment {
     args: string[],
     timeoutMs = 15000
   ): Promise<{ stdout: string; stderr: string }> {
-    return this.executor.exec(this.target, 'git', args, {
+    return withGitRepositoryDiscovery(() => this.executor.exec(this.target, 'git', args, {
       cwd: workspacePath,
       timeoutMs,
-      remoteEnv: { GIT_TERMINAL_PROMPT: '0' },
+      remoteEnv: { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+    }), async () => {
+      const result = await this.executor.exec(this.target, 'python3', ['-c', [
+        'import os, stat',
+        'if not stat.S_ISDIR(os.stat(".").st_mode) or not os.access(".", os.R_OK | os.X_OK): raise OSError("Remote directory is unavailable")',
+        'try: os.lstat(".git")',
+        'except FileNotFoundError: print("absent")',
+        'else: print("present")',
+      ].join('\n')], { cwd: workspacePath, timeoutMs, maxBuffer: 1024 });
+      // Unknown output/failure cannot prove absence (including an unreadable .git entry).
+      return result.stdout.trim() !== 'absent';
     });
   }
 

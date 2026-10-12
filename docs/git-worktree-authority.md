@@ -56,13 +56,13 @@ continues to require its persisted host journal before reservations are cleared.
 
 | Consumer/state | Policy |
 | --- | --- |
-| New Session | Main by default; fresh create/adopt, committed-HEAD base selection, create-only. |
+| New Agent | Main by default; fresh create/adopt, committed-HEAD base selection, create-only. |
 | Sidebar | Projects, agents/terminals and services; no checkout inventory or selector. |
 | Source Control | Git inventory with registrations/occupancy; manual creation with the shared form; established removal/unlock/prune/recovery. |
 | Terminal launch/resume | Keep context IDs, environment validation and late identity checks. |
 | Explorer/editor/Git/services | Keep canonical selection and checkout-bound resource identity. |
 | Read-only MCP context / attention | Keep launch authority separate from observed/historical location. |
-| MCP create/complete | Retired; existing clients receive unknown-tool. Use Git and New Session. |
+| MCP create/complete | Retired; existing clients receive unknown-tool. Use Git and New Agent. |
 | Provider rehome adapters / pane handoff | Removed together with their sole lifecycle consumer. |
 | Runtime contexts | Rebuild through validated registration/adoption; do not persist access grants. |
 | Persisted UI/recipes | No schema migration or synthetic workspace; retain existing restoration. |

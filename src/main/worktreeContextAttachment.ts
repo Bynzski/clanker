@@ -113,7 +113,7 @@ export async function adoptListedWorktree(params: {
     if (!listing.success) return fail(listing.error || 'Git could not list the repository worktrees');
     const listed = findListedWorktree(listing, environmentId, worktreePath);
     if (!listed) return fail('Git does not list that path as a worktree of this repository');
-    if (expectedBranch !== undefined && expectedBranch !== listed.branch) return fail('The worktree branch changed; reopen New Session to choose it again');
+    if (expectedBranch !== undefined && expectedBranch !== listed.branch) return fail('The worktree branch changed; reopen New Agent to choose it again');
     if (listed.isMain) return fail('The main checkout is a separate session destination');
     if (findListedWorktree({ success: true, worktrees: [listed] }, environmentId, workspace.location.path)) {
       return fail('That checkout is already this workspace\'s own checkout');

@@ -51,7 +51,7 @@ async function closeOwnedTerminals() {
       await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(path.join(root, name));
       await page.getByRole('dialog').getByText('Where are we working today?').click();
       await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Pi', exact: true }).click();
       await page.getByRole('button', { name: 'Launch Pi', exact: true }).click();
       let id;

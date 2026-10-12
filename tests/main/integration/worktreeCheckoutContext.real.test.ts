@@ -791,7 +791,7 @@ describe('Git-centered confirmed removal (real Git and main registry)', () => {
   });
 });
 
-describe('New Session committed-HEAD creation and fresh target validation', () => {
+describe('New Agent committed-HEAD creation and fresh target validation', () => {
   it('creates from project HEAD and another worktree committed HEAD without copying dirty files or switching either branch', async () => {
     await call(REGISTER_OPEN_WORKSPACE, 'new-session', toPosixPath(repo));
     const projectHead = (await git('rev-parse', 'HEAD')).stdout.trim();

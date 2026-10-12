@@ -132,11 +132,11 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="new-session-trigger" disabled={disabled} aria-label={creationOnly ? 'Create worktree' : 'New Session'} title={creationOnly ? 'Create worktree' : 'New Session'}>
-          <Plus size={14} strokeWidth={2.25} /><span className="new-session-label">{creationOnly ? 'Create worktree…' : 'New Session'}</span>
+        <button type="button" className="new-session-trigger" disabled={disabled} aria-label={creationOnly ? 'Create worktree' : 'New Agent'} title={creationOnly ? 'Create worktree' : 'New Agent'}>
+          <Plus size={14} strokeWidth={2.25} /><span className="new-session-label">{creationOnly ? 'Create worktree…' : 'New Agent'}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent workspaceId={workspace.id} align="start" className={`new-session-popover${creationOnly ? ' new-session-create-only' : ''}`} aria-label={creationOnly ? 'Create worktree' : 'New Session'}>
+      <PopoverContent workspaceId={workspace.id} align="start" className={`new-session-popover${creationOnly ? ' new-session-create-only' : ''}`} aria-label={creationOnly ? 'Create worktree' : 'New Agent'}>
         <form className="new-session-form" onSubmit={(event) => void submit(event)}>
           <div className="new-session-panes">
             {!creationOnly && <div className="new-session-pane new-session-harnesses" role="radiogroup" aria-label="Harness">

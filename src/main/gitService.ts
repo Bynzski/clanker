@@ -1,3 +1,4 @@
+import { GitRepositoryAbsentError, hasLocalGitMetadata, withGitRepositoryDiscovery } from './gitRepositoryDiscovery';
 import { execFile } from 'child_process';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomBytes } from 'crypto';
@@ -200,15 +201,16 @@ export class GitService {
       throw new Error('Remote Git executor is unavailable');
     }
     const execFileAsync = promisify(execFile);
-    return execFileAsync('git', args, {
+    return withGitRepositoryDiscovery(() => execFileAsync('git', args, {
       cwd: workspacePath,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
+        LC_ALL: 'C',
       },
-    }) as Promise<{ stdout: string; stderr: string }>;
+    }) as Promise<{ stdout: string; stderr: string }>, () => hasLocalGitMetadata(workspacePath));
   }
 
   private normalizeBranchName(name: string): string {
@@ -1541,9 +1543,10 @@ export class GitService {
         behind,
       };
     } catch (error) {
+      const notRepository = error instanceof GitRepositoryAbsentError;
       const errorCode = this.classifyError(error);
       return {
-        success: false,
+        success: notRepository,
         isRepo: false,
         currentBranch: null,
         isDetached: false,
@@ -1551,8 +1554,7 @@ export class GitService {
         upstream: null,
         ahead: 0,
         behind: 0,
-        errorCode,
-        error: this.getGitErrorMessage(error, 'Failed to get git status'),
+        ...(notRepository ? {} : { errorCode, error: this.getGitErrorMessage(error, 'Failed to get git status') }),
       };
     }
   }

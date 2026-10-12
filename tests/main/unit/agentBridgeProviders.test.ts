@@ -146,7 +146,7 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
     // A TOML basic string: the exact text round-trips through JSON escaping, and no raw newline reaches argv.
     expect(JSON.parse(value.slice('developer_instructions='.length))).toBe(guidance);
     expect(value).not.toMatch(/[\r\n]/);
-    expect(guidance).toContain('New Session');
+    expect(guidance).toContain('New Agent');
     expect(guidance).not.toContain('clanker_create_isolated_checkout');
     expect(guidance).toContain('removal is a separate confirmed action');
   });

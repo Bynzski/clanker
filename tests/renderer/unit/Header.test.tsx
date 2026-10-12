@@ -261,19 +261,19 @@ describe('Header', () => {
   // =========================================================================
   // Harness Pills
   // =========================================================================
-  describe('New Session', () => {
+  describe('New Agent', () => {
     it('shows one launcher with available harnesses inside it', async () => {
       renderHeader();
-      expect(screen.getAllByRole('button', { name: 'New Session' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'New Agent' })).toHaveLength(1);
       expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
       expect(await screen.findByRole('radio', { name: 'Codex' })).toBeTruthy();
     });
     it('honors harness visibility inside the unified launcher', async () => {
       vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue(Object.fromEntries(['codex', 'claude'].map(name => [name, { name, command: name, args: [], icon: 'terminal' }])));
       vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({ codex: { model: '', favorites: [], flags: '', visible: false }, claude: { model: '', favorites: [], flags: '', visible: true } });
       renderHeader();
-      fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
       expect(await screen.findByRole('radio', { name: 'Claude' })).toBeTruthy();
       expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
     });
@@ -287,7 +287,7 @@ describe('Header', () => {
     it('adds the spawned terminal to the store', async () => {
       const addTerminal = vi.mocked(useWorkspaceStore.getState().addTerminal);
       renderHeader();
-      fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
       fireEvent.click(await screen.findByRole('radio', { name: 'Terminal' }));
       fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
@@ -364,11 +364,11 @@ describe('Header', () => {
     it('handles spawnTerminal failure gracefully', async () => {
       (window.electronAPI.spawnTerminal as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to spawn'));
       renderHeader();
-      fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
       fireEvent.click(await screen.findByRole('radio', { name: 'Terminal' }));
       fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'New Session' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'New Agent' })).toBeTruthy();
       });
     });
 
@@ -691,7 +691,7 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       await waitFor(() => {
         expect(screen.getByText('Codex')).toBeTruthy();
       });
@@ -710,7 +710,7 @@ describe('Header', () => {
         pi: false,
       });
       renderHeader();
-      fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       await waitFor(() => {
         expect(screen.getByText('Claude')).toBeTruthy();
       });
@@ -728,7 +728,7 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
       fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
@@ -743,7 +743,7 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
       fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
@@ -912,7 +912,7 @@ describe('Header', () => {
         workspacePath: '/workspace2',
       });
       renderHeader();
-      expect(screen.getByRole('button', { name: 'New Session' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'New Agent' })).toBeTruthy();
     });
   });
 

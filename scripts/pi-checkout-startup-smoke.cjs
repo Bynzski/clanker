@@ -65,7 +65,7 @@ module.exports = async ({ app, page, repo, project, a, mainId, piId, piRow, ocRo
   await page.locator('.terminal-pane.active').getByRole('button', { name: 'Close terminal', exact: true }).click();
   await until(async () => !(await snapshots()).some(value => value.terminalId === piId) && !(await facts(piId)).launchContextId, 'Native Pi terminal/evidence did not retire');
   await selectMain(); await verifySourceControl(project, mainStatus);
-  await page.getByRole('button', { name: 'New Session', exact: true }).click();
+  await page.getByRole('button', { name: 'New Agent', exact: true }).click();
   await page.getByRole('radio', { name: 'Pi', exact: true }).click();
   const available = page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /^test1 / });
   assert.match(await available.textContent(), /Available/, 'Retired native evidence left phantom checkout occupancy');

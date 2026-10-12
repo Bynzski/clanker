@@ -1,3 +1,4 @@
+import { hasLocalGitMetadata, withGitRepositoryDiscovery } from '../gitRepositoryDiscovery';
 import { findHarnessProvider } from '../harnesses/registry';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -90,7 +91,7 @@ export class LocalEnvironment implements WorkspaceEnvironment {
     timeoutMs = 15000,
   ): Promise<{ stdout: string; stderr: string }> {
     const nativePath = toNativePath(workspacePath, process.platform);
-    return execFileAsync('git', args, {
+    return withGitRepositoryDiscovery(() => execFileAsync('git', args, {
       cwd: nativePath,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
@@ -98,8 +99,9 @@ export class LocalEnvironment implements WorkspaceEnvironment {
         ...process.env,
         PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         GIT_TERMINAL_PROMPT: '0',
+        LC_ALL: 'C',
       },
-    });
+    }), () => hasLocalGitMetadata(nativePath));
   }
 
   public executeHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal) {

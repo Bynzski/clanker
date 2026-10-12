@@ -603,7 +603,7 @@ describe('gitIpc — error-path: git service failures return valid results', () 
   test('GIT_INIT returns error when already a git repository', async () => {
     mockGetValidatedWorkspacePath.mockReturnValueOnce(process.cwd());
     const mockGitService = {
-      isRepo: vi.fn().mockResolvedValue(true),
+      getStatus: vi.fn().mockResolvedValue({ success: true, isRepo: true }),
       initRepository: vi.fn().mockResolvedValue({ success: false, error: 'Already a git repository' }),
     };
     registerGitIpc({

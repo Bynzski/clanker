@@ -158,9 +158,9 @@ function index(error) {
       await page.getByRole('region', { name: 'Markdown preview' }).waitFor();
       await shot(theme, 'markdown-preview', 'Rendered Markdown guide and task checklist in the editor');
       await page.locator('.tree-node-name').filter({ hasText: /^projects\.ts$/ }).dblclick();
-      await menu(theme, 'New Session', 'new-session-picker', 'Harness selection, existing branches and a real linked worktree');
+      await menu(theme, 'New Agent', 'new-session-picker', 'Harness selection, existing branches and a real linked worktree');
       await clip(theme, 'isolated-checkout-launch', 'Creating an isolated branch and launching a real Pi pane (unconfigured model)', async () => {
-        await click('New Session');
+        await click('New Agent');
         await page.getByRole('radio', { name: 'Pi', exact: true }).click();
         await page.getByLabel('New branch', { exact: true }).fill(`feat/keyboard-${theme}`);
         await pause(900); await click('Launch Pi');

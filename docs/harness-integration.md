@@ -868,7 +868,7 @@ exists, leave the capability absent and document why here.
 
 ### Worktrees and independent sessions (#166)
 
-Use **New Session** to select a harness and an explicitly validated working copy. Agents may
+Use **New Agent** to select a harness and an explicitly validated working copy. Agents may
 use ordinary Git and shell tools; discovery and authenticated cwd are descriptive, never
 filesystem authority. Closing/completing a session retains its worktree. Source Control →
 Worktrees owns confirmed cleanup and recovery; branch deletion is separate.
@@ -876,7 +876,7 @@ Worktrees owns confirmed cleanup and recovery; branch deletion is separate.
 The compatibility `clanker_create_isolated_checkout` and `clanker_complete_isolated_checkout`
 tools, `IsolatedCheckoutService`, provider rehome adapters and replacement/resume transition
 pipeline have been removed. Existing MCP clients receive unknown-tool for these names; use Git
-for worktree operations and New Session for new processes. No persisted recipes or native
+for worktree operations and New Agent for new processes. No persisted recipes or native
 session files need migration. Native history/resume and explicit removed-checkout recreation
 remain supported independently. See [unified-session-launch.md](unified-session-launch.md).
 

@@ -35,7 +35,7 @@ async function until(check, message) {
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(path.join(root, 'project'));
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-    await page.getByRole('button', { name: 'New Session', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).waitFor();
     await app.evaluate(({ session }, base) => {
       session.fromPartition('persist:browser-global').webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith(base) }));
     }, base);

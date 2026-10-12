@@ -207,7 +207,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
     <header className={`header${placement === 'titlebar' ? ' header-inline' : ''}`} data-placement={placement}>
       <div className="header-center">
         {capabilities.terminalLaunch && focusedWorkspace && (
-          <div className="new-session-group" role="group" aria-label="New session">
+          <div className="new-session-group" role="group" aria-label="New agent">
             <NewSessionButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
           </div>
         )}

@@ -90,7 +90,7 @@ describe('normal application shell and workspace identity opening', () => {
     expect(state().workspaces[0]).toMatchObject({ terminals: [], panes: [], activeTerminalId: null, layoutRoot: null });
     expect(await screen.findByText('No terminals open')).toBeInTheDocument();
     expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole('button', { name: 'New Session' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'Terminal' }));
     fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
     await waitFor(() => expect(state().workspaces[0].terminals).toHaveLength(1));

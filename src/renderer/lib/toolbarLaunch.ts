@@ -1,5 +1,5 @@
 /**
- * How a toolbar harness launch resolves its harness and model. Used by New Session: a harness that is not visible
+ * How a toolbar harness launch resolves its harness and model. Used by New Agent: a harness that is not visible
  * falls back to a plain terminal, and the workspace's model applies only to the workspace's own
  * harness on a local environment (remote models are resolved on the host).
  */

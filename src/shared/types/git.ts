@@ -16,6 +16,8 @@ export interface GitStatus {
 }
 
 export interface GitStatusResult {
+  // success means status was determined; success + !isRepo is a verified non-repository.
+  // Failures never authorize initialization.
   /** Renderer poll-owner epoch, descriptive ordering only; never execution authority. */
   presentationGeneration?: number;
   workspacePath?: string;

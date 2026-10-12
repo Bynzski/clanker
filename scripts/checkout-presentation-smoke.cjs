@@ -85,7 +85,7 @@ let app, server; let modelRequests = 0;
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
     await page.getByRole('dialog').getByText('Where are we working today?').click();
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'OpenCode', exact: true }).click();
     await page.getByRole('button', { name: 'Launch OpenCode', exact: true }).click();
     const snapshots = () => page.evaluate(() => window.electronAPI.getAgentAttentionSnapshots());
@@ -94,7 +94,7 @@ let app, server; let modelRequests = 0;
     await until(() => page.evaluate(id => window.__ready.has(id), mainId), 'Main PTY not ready');
     await pause(700); // Let the standard terminal startup/focus handshake finish before opening a popover.
     for (const branch of nativePi ? ['test1'] : ['test1', 'test2']) {
-      await page.getByRole('button', { name: 'New Session', exact: true }).click();
+      await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Pi', exact: true }).click();
       await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: new RegExp(`^${branch} `) }).click();
       await page.getByRole('button', { name: 'Launch Pi', exact: true }).click();
@@ -193,7 +193,7 @@ let app, server; let modelRequests = 0;
     assert.equal((await view()).root, '');
     // #170: explicit main launch works while this focused agent remains unregistered.
     const prior = await mainState(mainId);
-    await page.getByRole('button', { name: 'New Session', exact: true }).click();
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
