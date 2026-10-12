@@ -5,7 +5,6 @@ import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { agentBridge } from './agentBridge';
-import { checkoutRehome } from './rehome';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const opencodeProvider = defineHarness({
@@ -27,7 +26,6 @@ export const opencodeProvider = defineHarness({
   },
   attention: { resumePreservesSessionId: true, source: 'native', prepareResources, local, remote },
   agentBridge,
-  checkoutRehome,
   aiCommit: { modelArg: '-m', parseOutput: parseOpenCodeCommitOutput,
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: ['run', '--pure', '--format', 'json', ...(model ? ['-m', model] : [])], env: { OPENCODE_PERMISSION: JSON.stringify({ '*': 'deny' }) }, stdin: prompt, timeoutMs: 90000 }),
   },

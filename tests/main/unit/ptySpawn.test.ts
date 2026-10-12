@@ -141,7 +141,7 @@ describe('ordered startup overflow and geometry', () => {
     expect(f.window.webContents.send.mock.calls.map((call) => call[1].data)).toEqual(['界', '界界']);
   });
 
-  it('spawns a replacement at the known pane size with flow control still disabled', () => {
+  it('spawns a session at the supplied pane size with flow control still disabled', () => {
     fixture(undefined, undefined, { cols: 143, rows: 42 });
     expect(spawn).toHaveBeenLastCalledWith('ssh', [], expect.objectContaining({ cols: 143, rows: 42, handleFlowControl: false }));
   });

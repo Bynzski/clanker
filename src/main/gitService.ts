@@ -1,3 +1,4 @@
+import { GitRepositoryAbsentError, hasLocalGitMetadata, withGitRepositoryDiscovery } from './gitRepositoryDiscovery';
 import { execFile } from 'child_process';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomBytes } from 'crypto';
@@ -200,15 +201,16 @@ export class GitService {
       throw new Error('Remote Git executor is unavailable');
     }
     const execFileAsync = promisify(execFile);
-    return execFileAsync('git', args, {
+    return withGitRepositoryDiscovery(() => execFileAsync('git', args, {
       cwd: workspacePath,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
+        LC_ALL: 'C',
       },
-    }) as Promise<{ stdout: string; stderr: string }>;
+    }) as Promise<{ stdout: string; stderr: string }>, () => hasLocalGitMetadata(workspacePath));
   }
 
   private normalizeBranchName(name: string): string {
@@ -286,6 +288,7 @@ export class GitService {
         const branchRef = lines.find((line) => line.startsWith('branch '))?.slice(7);
         return {
           path: fullPath,
+          head: lines.find((line) => line.startsWith('HEAD '))?.slice(5),
           branch: branchRef?.startsWith('refs/heads/') ? branchRef.slice(11) : null,
           isMain: index === 0,
           isLocked: lines.some((line) => line === 'locked' || line.startsWith('locked ')),
@@ -348,19 +351,27 @@ export class GitService {
     }
   }
 
-  async createWorktree(workspacePath: string, baseRef: string, name: string): Promise<GitWorktreeCreateResult> {
+  /** Only the currently scoped, registered project root is read. */
+  async getHeadCommit(workspacePath: string): Promise<string> {
+    const { stdout } = await this.execGit(workspacePath, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+    const commit = stdout.trim();
+    if (!/^[0-9a-f]{40,64}$/i.test(commit)) throw new Error('HEAD does not resolve to a commit');
+    return commit;
+  }
+
+  async createWorktree(workspacePath: string, baseRef: string, name: string, mode?: 'new' | 'existing'): Promise<GitWorktreeCreateResult> {
     const previous = this.worktreeCreateDrain;
     let release: () => void = () => undefined;
     this.worktreeCreateDrain = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      return await this.createWorktreeExclusive(workspacePath, baseRef, name);
+      return await this.createWorktreeExclusive(workspacePath, baseRef, name, mode);
     } finally {
       release();
     }
   }
 
-  private async createWorktreeExclusive(workspacePath: string, baseRef: string, name: string): Promise<GitWorktreeCreateResult> {
+  private async createWorktreeExclusive(workspacePath: string, baseRef: string, name: string, mode?: 'new' | 'existing'): Promise<GitWorktreeCreateResult> {
     const branch = typeof name === 'string' ? name.trim() : '';
     const base = typeof baseRef === 'string' ? baseRef.trim() : '';
     if (!branch || branch.startsWith('-')) {
@@ -375,6 +386,8 @@ export class GitService {
       if (!repoRoot) throw new Error('Repository has no working tree');
       const existingBranch = await this.execGit(workspacePath, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
         .then(() => true, () => false);
+      if (mode === 'new' && existingBranch) return { success: false, error: `Branch ${branch} already exists; choose an unoccupied branch or a new name` };
+      if (mode === 'existing' && !existingBranch) return { success: false, error: `Branch ${branch} no longer exists` };
       if (existingBranch && listed.worktrees.some((entry) => entry.branch === branch)) {
         return { success: false, error: `Branch ${branch} already has a worktree` };
       }
@@ -571,40 +584,6 @@ export class GitService {
       if (stagingReservation) this.worktreesBeingRemoved.delete(stagingReservation);
       this.worktreeRemovalRevision++;
     }
-  }
-
-  /**
-   * Drops Git's record of ONE linked worktree whose directory is already gone, leaving every other
-   * stale record, every branch and every directory alone. Git cannot delete a branch while a stale
-   * record still names it as checked out, so this is what makes cleanup of a manually deleted checkout
-   * possible without a repository-wide prune. The target must be a listed, linked, prunable and
-   * unlocked entry; Git's own listed path is what is removed, never the caller's string.
-   */
-  async forgetMissingWorktree(workspacePath: string, worktreePath: string): Promise<{ success: boolean; error?: string }> {
-    const listed = await this.listWorktrees(workspacePath);
-    if (!listed.success) return { success: false, error: listed.error };
-    const isRemote = (this.getScopedWorkspaceIdentity()?.environmentId ?? 'local') !== 'local';
-    const target = listed.worktrees.find((entry) => isRemote ? entry.path === worktreePath : this.sameWorktreePath(entry.path, worktreePath));
-    if (!target || target.isMain) return { success: false, error: 'This is not a linked worktree' };
-    // Git never lists a locked worktree as prunable, so the lock is the more precise reason to refuse.
-    if (target.isLocked) return { success: false, error: 'This worktree is locked' };
-    if (!target.isPrunable) return { success: false, error: 'This worktree\'s directory still exists' };
-    try {
-      // A released/missing context is not proof of vacancy. Native observations may arrive during
-      // listing (or after lifecycle release); reread main-owned activity immediately before dispatch.
-      if (this.isOpenWorkspace(target.path, [])) {
-        return { success: false, error: 'A workspace, terminal or dev server is still using this missing checkout; close or stop it before forgetting its Git record' };
-      }
-      await this.execGit(workspacePath, ['worktree', 'remove', target.path], 60000);
-    } catch (error) {
-      return { success: false, error: this.getGitErrorMessage(error, 'Failed to forget the missing worktree') };
-    }
-    const after = await this.listWorktrees(workspacePath);
-    if (!after.success) return { success: false, error: after.error };
-    if (after.worktrees.some((entry) => entry.path === target.path)) {
-      return { success: false, error: 'Git still lists the missing worktree; prune it from the Git menu' };
-    }
-    return { success: true };
   }
 
   private isBranchNotFullyMerged(error: unknown): boolean {
@@ -1564,9 +1543,10 @@ export class GitService {
         behind,
       };
     } catch (error) {
+      const notRepository = error instanceof GitRepositoryAbsentError;
       const errorCode = this.classifyError(error);
       return {
-        success: false,
+        success: notRepository,
         isRepo: false,
         currentBranch: null,
         isDetached: false,
@@ -1574,8 +1554,7 @@ export class GitService {
         upstream: null,
         ahead: 0,
         behind: 0,
-        errorCode,
-        error: this.getGitErrorMessage(error, 'Failed to get git status'),
+        ...(notRepository ? {} : { errorCode, error: this.getGitErrorMessage(error, 'Failed to get git status') }),
       };
     }
   }

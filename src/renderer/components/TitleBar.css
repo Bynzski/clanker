@@ -73,6 +73,7 @@
 /* With the toolbar docked, the brand spans the sidebar column (width set inline). */
 .titlebar-with-toolbar .titlebar-left {
   min-width: 0;
+  max-width: max(40px, calc(100vw - 400px));
   overflow: hidden;
   border-right: 1px solid var(--border-default);
 }

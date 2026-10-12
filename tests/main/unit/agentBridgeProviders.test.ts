@@ -7,7 +7,6 @@ import { AGENT_BRIDGE_HARNESS_IDS, HARNESS_DESCRIPTORS } from '../../../src/shar
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { getHarnessProviders, findHarnessProvider } from '../../../src/main/harnesses/registry';
 import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from '../../../src/main/agentBridge/capabilities';
-import { createCheckoutLifecycleCapabilities } from '../../../src/main/agentBridge/lifecycleCapabilities';
 import { AgentBridgeService, agentBridgeLaunchStep, AGENT_BRIDGE_TOKEN_ENV, withoutAgentBridgeEnvironment } from '../../../src/main/agentBridge/service';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../../../src/main/launchAttachments';
 import { collectGarbage, weakHandle, type WeakHandle } from '../../_helpers/gc';
@@ -134,7 +133,7 @@ describe('Codex attachment', () => {
 });
 
 describe('Codex guidance through its own launch-scoped instruction channel', () => {
-  const guidance = bridgeInstructions(new Set(['clanker_context', 'clanker_create_isolated_checkout', 'clanker_complete_isolated_checkout']));
+  const guidance = bridgeInstructions();
   const overrideValue = (args: readonly string[] | undefined) => {
     const index = args!.findIndex((arg) => arg.startsWith('developer_instructions='));
     return index < 0 ? null : args![index];
@@ -147,8 +146,9 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
     // A TOML basic string: the exact text round-trips through JSON escaping, and no raw newline reaches argv.
     expect(JSON.parse(value.slice('developer_instructions='.length))).toBe(guidance);
     expect(value).not.toMatch(/[\r\n]/);
-    expect(guidance).toContain('clanker_create_isolated_checkout');
-    expect(guidance).toContain('only for explicitly requested conversation relocation');
+    expect(guidance).toContain('New Agent');
+    expect(guidance).not.toContain('clanker_create_isolated_checkout');
+    expect(guidance).toContain('removal is a separate confirmed action');
   });
 
   it('is placed before a resume subcommand, like every other override', () => {
@@ -212,16 +212,16 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
       getRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'w1', location: { environmentId: 'local', path: '/p' } }), getCheckoutContext: () => MAIN }) as never,
       getTerminals: () => new Map([['t1', { workspaceId: 'w1', checkoutContextId: MAIN.id, harnessId: 'codex' }]]),
       version: () => '1',
-      capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities({ create: async () => ({ data: {} }), complete: async () => ({ data: {} }) })],
+      capabilities: DEFAULT_AGENT_BRIDGE_CAPABILITIES,
     });
     const identity = { terminalId: 't1', workspaceId: 'w1', environmentId: 'local', checkoutContextId: MAIN.id, harnessId: 'codex' };
     try {
       const granted = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
-        [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: { checkoutRehoming: true } })], () => undefined);
+        [agentBridgeLaunchStep({ service, harness: 'codex', identity })], () => undefined);
       expect(JSON.parse(granted.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length))).toContain('Git owns worktree state');
       await granted.dispose();
       const contextOnly = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
-        [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: {} })], () => undefined);
+        [agentBridgeLaunchStep({ service, harness: 'codex', identity })], () => undefined);
       const text = JSON.parse(contextOnly.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length));
       expect(text).not.toMatch(/clanker_create|clanker_complete/i);
       await contextOnly.dispose();

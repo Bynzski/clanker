@@ -45,12 +45,11 @@ export interface SpawnPtyOptions {
   onOutput?: (data: string) => void;
   /**
    * Bound on output held until the renderer reports its terminal ready. The default fits an ordinary
-   * launch, whose pane exists before the process starts. A replacement process starts before its pane
-   * adopts it and replays a whole conversation, so it asks for more. At the bound, socket reads pause
+   * launch. Native resume and startup verification share the same buffering rules. At the bound, socket reads pause
    * until READY (not XON/XOFF flow control), retaining at most the bound plus one native PTY chunk.
    */
   startupBufferLimit?: { bytes: number; chunks: number };
-  /** Best-known pane geometry, especially for a replacement adopting the very same pane. */
+  /** Best-known pane geometry supplied by native history/resume. */
   initialGeometry?: { cols: number; rows: number };
   filterData?: (data: string) => string;
 }
@@ -98,8 +97,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     initialCommand,
     recipeCommandStartup,
   };
-  // The process' real exit, owned by the record: lifecycle moves that must not overlap a live process wait on
-  // this, never on the record having left the terminal table (which retirement does immediately).
+  // Native startup/cleanup observers can await the real PTY exit, independently of table removal.
   let markExited!: () => void;
   terminal.exited = new Promise<void>((resolve) => { markExited = resolve; });
   let cleanup: Promise<void> | undefined;

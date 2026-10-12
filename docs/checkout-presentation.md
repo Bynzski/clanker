@@ -99,13 +99,12 @@ and symlink-aware containment against **that context alone**, and preserves A. I
 containment is unavailable; missing/released original contexts remain missing/released.
 Only a new accepted native event can resolve the location to B.
 
-Native location observation, resume in another checkout and same-turn live
-relocation are independent. `providerCapabilities` states proven resume/rehome
-support; it does not grant a tool or infer relocation from location. Existing
-rehome transactions still resume the native conversation through their provider
-strategy. Pi remains context-only; #138 remains on hold. No Pi runtime-control/rehome integration,
-terminal-text parsing, automatic adoption or SSH MCP was added. Fixing the existing
-Pi observer's native startup mapping does not add #138 runtime control/rehome support.
+Native location observation and native resume are independent. `providerCapabilities`
+reports resume support and keeps `checkoutRehome: null` for response compatibility.
+Clanker's MCP create/complete and provider relocation pipeline were retired in #166.
+New Agent explicitly chooses a validated target without reading this presentation
+selection; Explorer/Source Control still refuse unregistered observations. No
+terminal-text parsing, automatic adoption or SSH MCP was added.
 
 ## PR #160 review corrections and screenshot investigation
 

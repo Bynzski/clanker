@@ -25,7 +25,6 @@ export interface HarnessProvider {
   readonly usage?: HarnessUsageCapability;
   readonly accounts?: HarnessAccountsCapability;
   readonly agentBridge?: HarnessAgentBridgeCapability;
-  readonly checkoutRehome?: HarnessCheckoutRehomeCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -305,71 +304,6 @@ export interface HarnessAccountsCapability {
   logout(context: HarnessAccountExecutionContext): Promise<void>;
   /** Same parser as the default discovery, run against a trusted managed home. */
   discoverSessions(workspacePath: string, home: string): Promise<HarnessSession[]>;
-}
-
-/**
- * How a LIVE conversation of this harness may be moved to another checkout (issue #102). This is not
- * implied by `sessions.resumesWithoutOriginalDirectory`, which only says a conversation can be resumed
- * once its original directory is gone. Moving a running one is a different property, so a provider says
- * so explicitly, and shared code never branches on a harness name:
- *
- * - `hot-replace`: a second process may resume the conversation while the first is still alive and
- *   waiting inside the request that asked for the move. Shared code proves the second one, then retires
- *   the first.
- * - `after-turn`: the conversation must not be resumed while its process (or an in-flight turn) still
- *   owns it. The move is scheduled when the request is accepted and performed after the harness'
- *   native root turn completes: the first process is retired completely, and only then is the same
- *   conversation resumed in the target.
- * - `live-relocate`: a proven native operation moves the SAME running root turn, including its tools
- *   and resources. Main waits for matching native location evidence, then atomically rebinds authority.
- *   Neither a resume capability nor an API success response proves this property.
- */
-export type CheckoutRehomeMode = 'hot-replace' | 'after-turn' | 'live-relocate';
-/**
- * A provider helper process that touched native conversation state could not be PROVEN to have exited. Nothing may
- * be resumed afterwards: a second process around the same native session state is exactly what the checkout
- * lifecycle exists to prevent.
- */
-export class UnverifiedProcessExitError extends Error {
-  constructor(message = 'A helper process could not be confirmed stopped') { super(message); this.name = 'UnverifiedProcessExitError'; }
-}
-
-export interface HarnessCheckoutRehomeCapability {
-  readonly mode: CheckoutRehomeMode;
-  /**
-   * Proven provider-native movement of the running root session, including cwd-bound tools/resources.
-   * Required for `live-relocate`. Must honor cancellation and never submit a prompt, restart a process,
-   * or redirect only individual tools. Returning is NOT proof: main waits for native location evidence.
-   * No shipped provider advertises this until a same-turn experiment proves the contract.
-   */
-  relocateLiveConversation?(request: {
-    readonly terminalId: string;
-    readonly sessionId: string;
-    readonly source: import('../../shared/types/checkoutContext').CheckoutContext;
-    readonly target: import('../../shared/types/checkoutContext').CheckoutContext;
-    readonly signal: AbortSignal;
-  }): Promise<void>;
-  /**
-   * The resume argv with the harness' own explicit "work in this directory" option set to `directory`
-   * (any such option already present is replaced: the target is Clanker's, never the user's). `directory`
-   * is a native path taken from a main-owned checkout context. Absent: the launch directory alone decides.
-   */
-  withTargetDirectory?(args: readonly string[], directory: string): string[];
-  /**
-   * Whether the output of a resume that failed at startup is this provider's own recognizable, transient
-   * "the conversation is still owned" failure. Only this provider-owned recognition permits a retry.
-   */
-  isWriterContention?(output: string): boolean;
-  /**
-   * For a CLI whose resume ignores the launch directory and runs in the directory *recorded in the
-   * conversation*: moves that recorded directory with the CLI's own native operation, so the resume that
-   * follows really runs in `directory` (a native path from a main-owned checkout context). Called with the
-   * source process already retired, before every replacement attempt (including recovery, which relocates
-   * back). Rejects when the CLI refuses; the caller then treats the attempt as failed and never resumes.
-   */
-  relocateConversation?(request: { readonly sessionId: string; readonly directory: string; readonly env: NodeJS.ProcessEnv }): Promise<void>;
-  /** Bound for such retries; absent means none. */
-  readonly writerContentionRetry?: { readonly attempts: number; readonly delayMs: number };
 }
 
 /**

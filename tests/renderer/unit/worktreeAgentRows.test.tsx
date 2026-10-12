@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
 import WorkspaceRail from '../../../src/renderer/components/WorkspaceRail';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -13,7 +10,6 @@ import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtu
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
-import { useWorktreeInventory } from '../../../src/renderer/lib/worktreeInventory';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
 const ROOT = '/projects/clanker';
@@ -40,7 +36,6 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
   });
   void _id; void _lifecycle;
   useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws' });
-  useWorktreeInventory.setState({ byWorkspace: { ws: { success: true, worktrees: (input.checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) } } });
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 const agentRows = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('.ws-agent-row')];
@@ -52,27 +47,13 @@ describe('worktree-backed agents in the sidebar', () => {
     installElectronApiMock({ gitListWorktrees: vi.fn(async () => ({ success: true, worktrees: (workspace()?.checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) })) });
   });
 
-  it('discovers an external checkout without granting access, then validates explicit selection', async () => {
-    openWorkspace({ checkoutContexts: [MAIN], terminals: [], activeTerminalId: null });
-    const external = context('external', 'feature/external');
-    const adopt = vi.fn().mockResolvedValue({ success: true, checkoutContext: external });
-    Object.assign(window.electronAPI, {
-      gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [
-        { path: ROOT, branch: 'main', isMain: true, isLocked: false, isPrunable: false },
-        { path: external.path, branch: external.branch, isMain: false, isLocked: false, isPrunable: false },
-      ] }),
-      adoptWorktreeCheckoutContext: adopt,
-    });
+  it('contains no checkout inventory, selection or management, including inactive and external worktrees', () => {
+    openWorkspace({ terminals: [] });
     render(<WorkspaceNavigatorSection />);
-    const select = await screen.findByRole('button', { name: 'Select checkout for branch feature/external' });
-    expect(workspace().checkoutContexts).toHaveLength(1);
-    expect(adopt).not.toHaveBeenCalled();
-    await userEvent.click(select);
-    expect(adopt).toHaveBeenCalledExactlyOnceWith('ws', external.path);
-    expect(workspace().fileSurfaceContextId).toBe(external.id);
-    expect(workspace().terminals).toEqual([]);
-    await userEvent.click(screen.getByRole('button', { name: 'Main checkout' }));
-    expect(workspace().fileSurfaceContextId).toBe(MAIN.id);
+    expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /checkout|Repair|Remove/i })).toBeNull();
+    expect(window.electronAPI.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
+    expect(window.electronAPI.gitListWorktrees).not.toHaveBeenCalled();
   });
 
   it('shows the branch on an agent running in an isolated worktree, with path and harness in its tooltip', () => {
@@ -125,108 +106,6 @@ describe('worktree-backed agents in the sidebar', () => {
     expect(screen.queryByRole('button', { name: /Remove checkout/ })).toBeNull();
   });
 
-  describe('inactive checkouts', () => {
-    it('lists only worktree contexts no agent references, quietly, beneath the agents', () => {
-      openWorkspace({ terminals: [
-        createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id }),
-        createTerminalFixture({ id: 't-wt', displayName: 'Delilah', harnessId: 'claude', checkoutContextId: ACTIVE.id }),
-      ] });
-      render(<WorkspaceNavigatorSection />);
-
-      const list = screen.getByRole('list', { name: /inactive checkouts/ });
-      const rows = within(list).getAllByRole('listitem');
-      expect(rows).toHaveLength(1);
-      expect(rows[0].textContent).toContain('issue-72-finished');
-      expect(rows[0].title).toContain(FINISHED.path);
-      expect(within(list).getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeTruthy();
-    });
-
-    it('keeps Remove… visible without hovering: rendered, and never hidden by the stylesheet', () => {
-      openWorkspace({ terminals: [createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id })] });
-      render(<WorkspaceNavigatorSection />);
-      const remove = screen.getAllByRole('button', { name: /^Remove checkout for branch/ })[0];
-      expect(remove).toBeVisible();
-      expect(remove.textContent).toBe('Remove…');
-
-      // jsdom does not apply the stylesheet, so check the rule itself: muted, but not invisible.
-      const css = fs.readFileSync(path.join(process.cwd(), 'src/renderer/components/WorkspaceNavigatorSection.css'), 'utf8');
-      const rule = css.match(/\.ws-checkout-row \.ws-checkout-remove\s*\{([^}]*)\}/)?.[1] ?? '';
-      const opacity = Number(rule.match(/opacity:\s*([\d.]+)/)?.[1]);
-      expect(opacity).toBeGreaterThanOrEqual(0.5);
-      expect(rule).not.toMatch(/display:\s*none|visibility:\s*hidden/);
-    });
-
-    it('shows no inactive row while an agent is using the checkout, and shows it once the agent is gone', () => {
-      openWorkspace();
-      const { rerender } = render(<WorkspaceNavigatorSection />);
-      expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
-
-      useWorkspaceStore.getState().removeTerminal('t-wt-finished');
-      rerender(<WorkspaceNavigatorSection />);
-
-      const list = screen.getByRole('list', { name: /inactive checkouts/ });
-      expect(within(list).getByText('issue-72-finished')).toBeTruthy();
-      // The agents that remain are untouched.
-      expect(workspace().terminals.map((terminal) => terminal.id)).toEqual(['t-main', 't-wt']);
-    });
-
-    it('keeps a checkout shared by two agents active until both are closed', () => {
-      openWorkspace({ terminals: [
-        createTerminalFixture({ id: 'a', harnessId: 'codex', checkoutContextId: FINISHED.id }),
-        createTerminalFixture({ id: 'b', harnessId: 'claude', checkoutContextId: FINISHED.id }),
-      ], checkoutContexts: [MAIN, FINISHED] });
-      const { rerender } = render(<WorkspaceNavigatorSection />);
-
-      useWorkspaceStore.getState().removeTerminal('a');
-      rerender(<WorkspaceNavigatorSection />);
-      expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
-
-      useWorkspaceStore.getState().removeTerminal('b');
-      rerender(<WorkspaceNavigatorSection />);
-      expect(screen.getByRole('list', { name: /inactive checkouts/ })).toBeTruthy();
-    });
-
-    describe('removing', () => {
-      const user = userEvent.setup();
-      let api: ReturnType<typeof installElectronApiMock>;
-      beforeEach(() => {
-        openWorkspace({ checkoutContexts: [MAIN, FINISHED], terminals: [] });
-        api = installElectronApiMock({
-          gitListWorktrees: vi.fn(async () => ({ success: true, worktrees: (workspace().checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) })),
-          gitRemoveCheckout: vi.fn().mockResolvedValue({ success: true, reconciliation: { success: true, contexts: [], dropped: [FINISHED.id] } }),
-        });
-      });
-      const start = async () => {
-        render(<WorkspaceNavigatorSection />);
-        await user.click(await screen.findByRole('button', { name: 'Remove checkout for branch issue-72-finished' }));
-        return screen.findByRole('alertdialog');
-      };
-      it('confirms branch retention and cancels without dispatch', async () => {
-        const dialog = await start();
-        expect(dialog.textContent).toContain('The branch remains.');
-        await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-        expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
-      });
-      it('removes through main, then refreshes the Git row and applies confirmed reconciliation', async () => {
-        await start();
-        await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
-        await waitFor(() => expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull());
-        expect(api.gitRemoveCheckout).toHaveBeenCalledExactlyOnceWith('ws', FINISHED.path, FINISHED.branch);
-        expect(api.releaseCheckoutContext).not.toHaveBeenCalled();
-        expect(workspace().checkoutContexts?.map((entry) => entry.id)).toEqual([MAIN.id]);
-      });
-      it('keeps the row and original association when preflight refuses', async () => {
-        api.gitRemoveCheckout.mockResolvedValue({ success: false, outcome: 'unchanged', error: 'Worktree has uncommitted, untracked, or ignored files' });
-        await start();
-        await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
-        const alert = await screen.findByRole('alert');
-        expect(alert.textContent).toContain('ignored files');
-        expect(alert.textContent).not.toMatch(/left on disk|no longer attached/);
-        expect(workspace().checkoutContexts?.some((entry) => entry.id === FINISHED.id)).toBe(true);
-        expect(screen.getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeVisible();
-      });
-    });
-  });
 });
 
 describe('worktree-backed agents in the collapsed rail', () => {
@@ -322,18 +201,12 @@ describe('worktree agents follow the location their harness reports', () => {
     expect(within(delilah(container)).getByLabelText('on branch issue-90')).toBeTruthy();
   });
 
-  it('never re-binds the terminal: its launch context stays, so that checkout is not offered as inactive', () => {
-    openWorkspace({ terminals: [
-      createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id }),
-      createTerminalFixture({ id: 't-wt', displayName: 'Delilah', harnessId: 'claude', checkoutContextId: ACTIVE.id }),
-    ] });
-    delilahAt(ROOT, MAIN.id);
+  it('never re-binds a terminal when its authenticated location changes', () => {
+    openWorkspace();
+    delilahAt(FINISHED.path, FINISHED.id);
     render(<WorkspaceNavigatorSection />);
-
     expect(workspace().terminals.find((terminal) => terminal.id === 't-wt')?.checkoutContextId).toBe(ACTIVE.id);
-    const inactive = screen.getByRole('list', { name: /inactive checkouts/ });
-    expect(within(inactive).queryByText('issue-90')).toBeNull();
-    expect(within(inactive).getByText('issue-72-finished')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
   });
 
   it('updates the collapsed rail the same way', () => {
@@ -375,13 +248,9 @@ describe('an agent whose checkout Git no longer has', () => {
     expect(screen.getByRole('button', { name: /Billy · Antigravity · on branch feature\/update-page-subtitle \(checkout removed\)/ })).toBeTruthy();
   });
 
-  it('shows Git-listed missing checkouts for repair without offering removal', () => {
-    openWorkspace({ checkoutContexts: [MAIN, REMOVED, FINISHED], terminals: [] });
+  it('keeps missing checkout recovery out of the sidebar', () => {
+    openWorkspace({ checkoutContexts: [MAIN, { ...ACTIVE, missing: true }] });
     render(<WorkspaceNavigatorSection />);
-    const inactive = screen.getByRole('list', { name: /inactive checkouts/ });
-
-    expect(within(inactive).getByRole('button', { name: /Select checkout for branch feature\/update-page-subtitle/ })).toBeDisabled();
-    expect(within(inactive).queryByRole('button', { name: /Remove checkout for branch feature\/update-page-subtitle/ })).toBeNull();
-    expect(within(inactive).getByText('issue-72-finished')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Repair|Remove|Forget/ })).toBeNull();
   });
 });

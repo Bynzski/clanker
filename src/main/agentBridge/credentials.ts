@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 /**
- * Authority an MCP credential is bound to: main's own record of one launch. Only main's proven
- * live-relocation transaction may compare-and-rebind its checkout; a tool argument, the renderer,
+ * Authority an MCP credential is bound to: main's own record of one launch. Its checkout binding is immutable; a tool argument, the renderer,
  * an arbitrary cwd report or the model can never select or widen it. Deliberately unrelated to attention credentials: they prove a different thing and are
  * never interchangeable.
  */
@@ -77,19 +76,6 @@ export class AgentBridgeCredentials {
   isCurrent(grant: AgentBridgeGrant): boolean {
     const key = this.byTerminal.get(grant.identity.terminalId);
     return !!key && this.grants.get(key) === grant;
-  }
-
-  /** Main-only compare-and-rebind after native relocation proof; the bearer and capability set stay unchanged. */
-  rebindCheckout(expected: AgentBridgeIdentity, checkoutContextId: string): boolean {
-    if (!isNonEmpty(checkoutContextId)) return false;
-    const key = this.byTerminal.get(expected.terminalId);
-    const grant = key ? this.grants.get(key) : undefined;
-    const fields: Array<keyof AgentBridgeIdentity> = ['terminalId', 'workspaceId', 'environmentId', 'checkoutContextId', 'harnessId'];
-    if (!key || !grant || fields.some((field) => grant.identity[field] !== expected[field])) return false;
-    this.grants.set(key, Object.freeze({
-      identity: Object.freeze({ ...grant.identity, checkoutContextId }), capabilities: grant.capabilities,
-    }));
-    return true;
   }
 
   revokeTerminal(terminalId: string): boolean {

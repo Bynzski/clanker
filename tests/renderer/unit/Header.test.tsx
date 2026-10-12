@@ -261,78 +261,21 @@ describe('Header', () => {
   // =========================================================================
   // Harness Pills
   // =========================================================================
-  describe('harness pills', () => {
-    it('renders available harness pills', async () => {
+  describe('New Agent', () => {
+    it('shows one launcher with available harnesses inside it', async () => {
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByText('Codex')).toBeTruthy();
-      });
+      expect(screen.getAllByRole('button', { name: 'New Agent' })).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
+      expect(await screen.findByRole('radio', { name: 'Codex' })).toBeTruthy();
     });
-
-    it('launches the clicked harness without changing the workspace selection', async () => {
-      const setHarness = vi.mocked(useWorkspaceStore.getState().setHarness);
+    it('honors harness visibility inside the unified launcher', async () => {
+      vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue(Object.fromEntries(['codex', 'claude'].map(name => [name, { name, command: name, args: [], icon: 'terminal' }])));
+      vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({ codex: { model: '', favorites: [], flags: '', visible: false }, claude: { model: '', favorites: [], flags: '', visible: true } });
       renderHeader();
-      await waitFor(() => {
-        expect(screen.getByText('Codex')).toBeTruthy();
-      });
-      setHarness.mockClear();
-      fireEvent.click(screen.getByText('Codex'));
-      await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', undefined, undefined, undefined, 'ws-1', 'local');
-      });
-      expect(setHarness).not.toHaveBeenCalled();
-    });
-
-
-    it('renders multiple harnesses when available', async () => {
-      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-        codex: true,
-        claude: true,
-        opencode: false,
-        pi: false,
-      });
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByText('Codex')).toBeTruthy();
-        expect(screen.getByText('Claude')).toBeTruthy();
-      });
-    });
-
-    it('hides harness pills when visibility is disabled', async () => {
-      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-        codex: true,
-        claude: true,
-        opencode: false,
-        pi: false,
-      });
-      (window.electronAPI.getHarnessDefaults as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-        codex: { model: '', favorites: [], flags: '', visible: false },
-        claude: { model: '', favorites: [], flags: '', visible: true },
-        opencode: { model: '', favorites: [], flags: '', visible: true },
-        pi: { model: '', favorites: [], flags: '', visible: true },
-      });
-
-      renderHeader();
-
-      await waitFor(() => {
-        expect(screen.getByText('Claude')).toBeTruthy();
-      });
-      expect(screen.queryByText('Codex')).toBeNull();
-    });
-
-    it('handles getHarnessOptions failure gracefully', async () => {
-      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByText('Terminal')).toBeTruthy();
-      });
-    });
-
-    it('renders harness pills container', async () => {
-      renderHeader();
-      await waitFor(() => {
-        expect(document.querySelector('.harness-pills')).toBeTruthy();
-      });
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
+      expect(await screen.findByRole('radio', { name: 'Claude' })).toBeTruthy();
+      expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
     });
   });
 
@@ -344,7 +287,9 @@ describe('Header', () => {
     it('adds the spawned terminal to the store', async () => {
       const addTerminal = vi.mocked(useWorkspaceStore.getState().addTerminal);
       renderHeader();
-      fireEvent.click(screen.getByText('Terminal'));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
+      fireEvent.click(await screen.findByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
         expect(addTerminal).toHaveBeenCalledWith(expect.objectContaining({
           id: 'new-t',
@@ -419,9 +364,11 @@ describe('Header', () => {
     it('handles spawnTerminal failure gracefully', async () => {
       (window.electronAPI.spawnTerminal as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to spawn'));
       renderHeader();
-      fireEvent.click(screen.getByText('Terminal'));
+      fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
+      fireEvent.click(await screen.findByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
-        expect(screen.getByText('Terminal')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'New Agent' })).toBeTruthy();
       });
     });
 
@@ -744,10 +691,12 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       await waitFor(() => {
         expect(screen.getByText('Codex')).toBeTruthy();
       });
-      fireEvent.click(screen.getByText('Codex'));
+      fireEvent.click(screen.getByRole('radio', { name: 'Codex' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Codex' }));
       await waitFor(() => {
         expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', 'gpt-4', undefined, undefined, 'ws-1', 'local');
       });
@@ -761,10 +710,12 @@ describe('Header', () => {
         pi: false,
       });
       renderHeader();
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
       await waitFor(() => {
         expect(screen.getByText('Claude')).toBeTruthy();
       });
-      fireEvent.click(screen.getByText('Claude'));
+      fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Claude' }));
       await waitFor(() => {
         expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'claude', undefined, undefined, undefined, 'ws-1', 'local');
       });
@@ -777,7 +728,9 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      fireEvent.click(screen.getByText('Terminal'));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
         expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', undefined, undefined, undefined, undefined, 'ws-1', 'local');
       });
@@ -790,7 +743,9 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      fireEvent.click(screen.getByText('Terminal'));
+      fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Terminal' }));
       await waitFor(() => {
         expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
       });
@@ -957,7 +912,7 @@ describe('Header', () => {
         workspacePath: '/workspace2',
       });
       renderHeader();
-      expect(screen.getByText('Terminal')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'New Agent' })).toBeTruthy();
     });
   });
 

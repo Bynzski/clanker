@@ -3,11 +3,12 @@ import { X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
+import NewSessionButton from '../NewSessionButton';
 import type { CheckoutContext } from '../../../shared/types/checkoutContext';
 import type { GitWorktree } from '../../../shared/types/git';
 import { isSameWorkspaceIdentity } from '../../../shared/workspaceIdentity';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { findManagedWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel, useCheckoutOccupancy } from '../../lib/worktreeAgents';
+import { findRegisteredWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel, useCheckoutOccupancy } from '../../lib/worktreeAgents';
 import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../../lib/worktreeCheckoutRemoval';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import './GitWorktreesSection.css';
@@ -25,7 +26,7 @@ type Confirmation =
 
 const unboundScope = () => true;
 interface GitWorktreesSectionProps {
-  /** Permanent Source Control page; picker repair retains linked-only compact presentation. */
+  /** Permanent Source Control page; compact consumers present linked worktrees only. */
   management?: boolean;
   isScopeCurrent?: () => boolean;
   onBusyChange?: (busy: boolean) => void;
@@ -34,7 +35,7 @@ interface GitWorktreesSectionProps {
   workspaceId?: string;
   /** Changes whenever the menu refreshes its data; the list reloads with it (no polling of its own). */
   refreshKey: number;
-  /** Refreshes the isolated-agent picker after reading authoritative recovery state. */
+  /** Notifies a consumer after reading authoritative recovery state. */
   onRefresh?: () => void;
   /**
    * Reports whether this section has a confirmation open. It renders in a portal outside the menu, so
@@ -57,10 +58,11 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
   const [removingPath, setRemovingPath] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const requestRef = useRef(0);
   const modalOpen = confirming !== null;
-  const busy = modalOpen || working || removingPath !== null;
+  const busy = modalOpen || working || creating || removingPath !== null;
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
 
   useEffect(() => {
@@ -80,8 +82,8 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
         setEntries(management ? result.worktrees : result.worktrees.filter((entry: GitWorktree) => !entry.isMain));
         setLoadError(null);
         onRefresh?.();
-        // Reuse this Git listing for presentation while main reconciles access grants.
-        void requestCheckoutReconciliation(workspaceId, result);
+        // This listing is descriptive; main separately reconciles access grants.
+        void requestCheckoutReconciliation(workspaceId);
       } else {
         setEntries([]);
         setLoadError(result.error || 'Could not list worktrees');
@@ -196,7 +198,11 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
 
   return (
     <div className={`git-menu-section${management ? ' source-control-worktrees' : ''}`}>
-      {management && <Button disabled={busy || loading} onClick={() => void load()}>Refresh worktrees</Button>}
+      {management && <div className="source-control-page-heading">
+        <Button disabled={busy || loading} onClick={() => void load()}>Refresh worktrees</Button>
+        {!workspace.isLinkedWorktree && <NewSessionButton workspace={workspace} visibleHarnessIds={[]} creationOnly disabled={busy || loading}
+          onOpenChange={setCreating} onCreated={() => { void load(); onChanged?.(); }} />}
+      </div>}
       <div className="git-menu-section-header">
         {management ? 'Listed checkouts' : 'Worktrees'}
         <span className="git-menu-count">{entries.length + staleContexts.length}</span>
@@ -217,7 +223,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
       <div className="git-worktree-list">
         {entries.map((entry) => {
           const branch = entry.branch ?? 'HEAD';
-          const managed = findManagedWorktreeContext(workspace, entry.path);
+          const managed = findRegisteredWorktreeContext(workspace, entry.path);
           const inUse = isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path });
           const isThisWorkspace = isSameWorkspaceIdentity({ environmentId, path: entry.path }, { environmentId, path: workspace.workspacePath });
           const ownership = entry.isMain ? 'Main checkout' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : 'Available';

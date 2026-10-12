@@ -207,7 +207,7 @@ describe('zero-workspace Assistant shell', () => {
   it('no destination exposes only app controls, including usable Settings', async () => {
     render(<App />);
     await screen.findByText('No workspace open');
-    for (const label of ['Terminal', 'Codex', 'New isolated agent', 'Toggle browser panel', 'Toggle notes panel', 'Toggle File Explorer', 'Recipes', 'Chat history', 'Usage', 'Fit All', 'Undo layout']) {
+    for (const label of ['Terminal', 'Codex', 'New Agent', 'Toggle browser panel', 'Toggle notes panel', 'Toggle File Explorer', 'Recipes', 'Chat history', 'Usage', 'Fit All', 'Undo layout']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
@@ -235,7 +235,7 @@ describe('zero-workspace Assistant shell', () => {
     render(<><Header /><WorkspaceHost /></>);
     expect(await screen.findByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'New terminal' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'New agent' })).toBeNull();
     for (const name of ['Toggle notes panel', 'Toggle File Explorer', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history', 'Usage']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }

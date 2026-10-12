@@ -7,7 +7,6 @@ import { buildInvocation } from './invocation';
 import { codexUsage } from './usage';
 import { codexAccounts } from './accounts';
 import { agentBridge } from './agentBridge';
-import { checkoutRehome } from './rehome';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const codexProvider = defineHarness({
@@ -29,7 +28,6 @@ export const codexProvider = defineHarness({
   attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, hooksRunInAgentDirectory: true, local, remote },
   usage: codexUsage,
   agentBridge,
-  checkoutRehome,
   accounts: codexAccounts,
   aiCommit: { modelArg: '-m', parseOutput: parseCodexCommitOutput,
     buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: ['exec', '--json', '--ephemeral', '--sandbox', 'read-only', ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),

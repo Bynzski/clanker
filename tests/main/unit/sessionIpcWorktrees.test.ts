@@ -66,6 +66,7 @@ function setup(options: {
     isCheckoutPathReserved: () => false,
     getCheckoutContext: (id: string) => contexts.find((entry) => entry.id === id) ?? null,
     registerCheckoutContext,
+    describeCheckoutContext: vi.fn(),
   };
   const listed = [{ path: workspacePath, branch: 'main', isMain: true }, ...(options.listed ?? (options.registered ?? []).map((p) => ({ path: p, branch: 'registered' })))];
   const recreateWorktree = vi.fn(async (_workspaceId: string, branch: string): Promise<GitWorktreeCreateResult> => {

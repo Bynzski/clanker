@@ -14,7 +14,6 @@ import type { HarnessSession, SessionInvokeOptions } from '../shared/types/sessi
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent, HarnessAccountChange } from '../shared/types/harnessAccounts';
 import type { AgentAttentionChange } from '../shared/types/agentAttention';
-import type { AgentCheckoutTransitionEvent } from '../shared/types/checkoutTransition';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
@@ -78,7 +77,6 @@ import {
   TERMINAL_DATA,
   TERMINAL_EXIT,
   AGENT_ATTENTION_CHANGED,
-  AGENT_CHECKOUT_TRANSITION,
   GET_AGENT_ATTENTION_SNAPSHOTS,
   GET_AGENT_ATTENTION_DIAGNOSTICS,
   HARNESS_ACCOUNTS_LIST,
@@ -307,11 +305,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(AGENT_ATTENTION_CHANGED, handler);
     return () => ipcRenderer.removeListener(AGENT_ATTENTION_CHANGED, handler);
   },
-  onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => {
-    const handler = (_event: IpcRendererEvent, data: AgentCheckoutTransitionEvent) => callback(data);
-    ipcRenderer.on(AGENT_CHECKOUT_TRANSITION, handler);
-    return () => ipcRenderer.removeListener(AGENT_CHECKOUT_TRANSITION, handler);
-  },
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => {
     const handler = (_event: IpcRendererEvent, data: { id: string; cols: number; rows: number }) => callback(data);
     ipcRenderer.on(TERMINAL_RESIZED, handler);
@@ -475,8 +468,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>
     ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
-  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) =>
-    ipcRenderer.invoke(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath),
+  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string, expectedBranch?: string | null) =>
+    ipcRenderer.invoke(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath, expectedBranch),
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) =>
     ipcRenderer.invoke(RELEASE_CHECKOUT_CONTEXT, workspaceId, checkoutContextId),
   reconcileCheckoutContexts: (workspaceId: string) =>
@@ -525,8 +518,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string, checkoutContextId?: string) =>
     ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath, expectedHashes, workspaceId, checkoutContextId),
   gitRefresh: (workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_REFRESH, workspaceId, checkoutContextId),
-  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) =>
-    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId),
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string, checkoutContextId?: string) =>
+    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId, checkoutContextId),
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_REMOTES, workspacePath, workspaceId),
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) =>
     ipcRenderer.invoke(GIT_ADD_REMOTE, workspacePath, name, url, workspaceId),

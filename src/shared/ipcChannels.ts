@@ -56,7 +56,6 @@ export const TERMINAL_DATA = 'terminal-data';
 export const TERMINAL_EXIT = 'terminal-exit';
 export const AGENT_ATTENTION_CHANGED = 'agent-attention-changed';
 /** Push-only (main -> renderer): an agent checkout transition performed by main. Not a handle channel. */
-export const AGENT_CHECKOUT_TRANSITION = 'agent-checkout-transition';
 export const GET_AGENT_ATTENTION_SNAPSHOTS = 'get-agent-attention-snapshots';
 export const GET_AGENT_ATTENTION_DIAGNOSTICS = 'get-agent-attention-diagnostics';
 export const TERMINAL_RESIZED = 'terminal-resized';

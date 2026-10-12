@@ -19,7 +19,6 @@ export interface DestinationCapabilities {
   notes: boolean;
   recipes: boolean;
   terminalLaunch: boolean;
-  isolatedAgent: boolean;
   git: boolean;
   layout: boolean;
   sessionHistory: boolean;
@@ -27,15 +26,15 @@ export interface DestinationCapabilities {
 }
 
 const WORKSPACE_CAPABILITIES: DestinationCapabilities = {
-  browser: true, explorer: true, notes: true, recipes: WORKSPACE_RECIPES_ENABLED, terminalLaunch: true, isolatedAgent: true,
+  browser: true, explorer: true, notes: true, recipes: WORKSPACE_RECIPES_ENABLED, terminalLaunch: true,
   git: true, layout: true, sessionHistory: true, usage: true,
 };
 const ASSISTANT_CAPABILITIES: DestinationCapabilities = {
-  browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
+  browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false,
   git: false, layout: false, sessionHistory: false, usage: true,
 };
 const NONE_CAPABILITIES: DestinationCapabilities = {
-  browser: false, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
+  browser: false, explorer: false, notes: false, recipes: false, terminalLaunch: false,
   git: false, layout: false, sessionHistory: false, usage: false,
 };
 export function resolveDestinationCapabilities(destination: ActiveDestination): DestinationCapabilities {

@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
-import { isIsolatedWorktreeContext } from './worktreeAgents';
-import type { GitWorktreeListResult } from '../../shared/types/git';
-import { publishWorktreeInventory, refreshWorktreeInventory } from './worktreeInventory';
+import { isWorktreeContext } from './worktreeAgents';
 import { isWorktreeRemovalWorkspaceCurrent } from './worktreeRemovalScope';
 
 /**
@@ -21,33 +19,30 @@ const queued = new Set<string>();
 
 const hasWorktreeContexts = (workspaceId: string): boolean => {
   const workspace = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
-  return Boolean(workspace?.checkoutContexts?.some((context) => isIsolatedWorktreeContext(workspace, context)));
+  return Boolean(workspace?.checkoutContexts?.some((context) => isWorktreeContext(workspace, context)));
 };
 
-async function reconcileOnce(workspaceId: string, inventory?: GitWorktreeListResult): Promise<void> {
+async function reconcileOnce(workspaceId: string): Promise<void> {
   const workspace = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
   if (!workspace) return;
-  const refresh = inventory ? (publishWorktreeInventory(workspace, inventory), Promise.resolve()) : refreshWorktreeInventory(workspaceId);
-  if (!hasWorktreeContexts(workspaceId)) { await refresh; return; }
+  if (!hasWorktreeContexts(workspaceId)) return;
   try {
     const result = await window.electronAPI.reconcileCheckoutContexts(workspaceId);
     if (!isWorktreeRemovalWorkspaceCurrent(workspace)) return;
     useWorkspaceStore.getState().applyCheckoutContextReconciliation(workspaceId, result);
   } catch {
     // Best effort: a closed workspace or an unreachable host changes nothing; the next trigger retries.
-  } finally {
-    await refresh;
   }
 }
 
 /** Asks main to reconcile one workspace. Requests made while one runs collapse into one follow-up. */
-export function requestCheckoutReconciliation(workspaceId: string, inventory?: GitWorktreeListResult): Promise<void> {
+export function requestCheckoutReconciliation(workspaceId: string): Promise<void> {
   const current = running.get(workspaceId);
   if (current) {
     queued.add(workspaceId);
     return current;
   }
-  const run = reconcileOnce(workspaceId, inventory).finally(() => {
+  const run = reconcileOnce(workspaceId).finally(() => {
     running.delete(workspaceId);
     if (queued.delete(workspaceId)) void requestCheckoutReconciliation(workspaceId);
   });

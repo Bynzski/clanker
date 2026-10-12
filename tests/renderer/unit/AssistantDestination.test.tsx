@@ -68,7 +68,7 @@ it('resolves the capability matrix and the single Browser owner per destination'
   expect(Object.entries(workspace).filter(([key]) => key !== 'recipes').every(([, enabled]) => enabled)).toBe(true);
   const assistant = resolveDestinationCapabilities({ kind: 'assistant', assistantId: FRED });
   expect(assistant).toEqual({
-    browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
+    browser: true, explorer: false, notes: false, recipes: false, terminalLaunch: false,
     git: false, layout: false, sessionHistory: false, usage: true,
   });
   expect(resolveActiveBrowserOwner({ kind: 'assistant', assistantId: FRED })).toBe(FRED_OWNER);
@@ -78,7 +78,7 @@ it('resolves the capability matrix and the single Browser owner per destination'
 
 it('Workspace mode keeps the full toolbar', async () => {
   render(<Header />);
-  expect(await screen.findByRole('group', { name: 'New terminal' })).toBeInTheDocument();
+  expect(await screen.findByRole('group', { name: 'New agent' })).toBeInTheDocument();
   for (const name of ['Toggle browser panel', 'Toggle notes panel', 'Undo layout change', 'Fit all panes', 'Chat history', 'Settings']) {
     expect(screen.getByRole('button', { name })).toBeInTheDocument();
   }
@@ -91,7 +91,7 @@ it('Assistant mode keeps only Browser and Settings; no workspace control remains
   await selectFred();
   expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
-  expect(screen.queryByRole('group', { name: 'New terminal' })).toBeNull();
+  expect(screen.queryByRole('group', { name: 'New agent' })).toBeNull();
   for (const name of ['Toggle notes panel', 'Toggle File Explorer', 'Undo layout change', 'Fit all panes', 'Workspace Launch Recipes', 'Chat history']) {
     expect(screen.queryByRole('button', { name })).toBeNull();
   }
@@ -99,7 +99,7 @@ it('Assistant mode keeps only Browser and Settings; no workspace control remains
   expect(screen.queryByTestId('files-section')).toBeNull();
   // Back to a workspace: everything returns.
   act(() => useWorkspaceStore.getState().selectWorkspace('ws-a'));
-  expect(await screen.findByRole('group', { name: 'New terminal' })).toBeInTheDocument();
+  expect(await screen.findByRole('group', { name: 'New agent' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Toggle notes panel' })).toBeInTheDocument();
 });
 
@@ -192,7 +192,7 @@ it('disabling Assistants clears every Assistant Browser UI state and leaves work
   expect(useAssistantSurfaceStore.getState().byId).toEqual({});
   await flush();
   expect(useWorkspaceStore.getState().workspaces[0]).toBe(workspaceBefore);
-  expect(screen.getByRole('group', { name: 'New terminal' })).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'New agent' })).toBeInTheDocument();
 });
 
 it('an open popover or dialog hides the active Assistant native Browser view like it does for a workspace', async () => {

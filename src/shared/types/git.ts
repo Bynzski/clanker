@@ -16,6 +16,8 @@ export interface GitStatus {
 }
 
 export interface GitStatusResult {
+  // success means status was determined; success + !isRepo is a verified non-repository.
+  // Failures never authorize initialization.
   /** Renderer poll-owner epoch, descriptive ordering only; never execution authority. */
   presentationGeneration?: number;
   workspacePath?: string;
@@ -126,6 +128,8 @@ export interface GitInitResult {
 }
 
 export interface GitWorktree {
+  /** Committed HEAD from Git porcelain; descriptive, never a root grant. */
+  head?: string;
   path: string;
   branch: string | null;
   isMain: boolean;
@@ -150,6 +154,10 @@ export interface GitWorktreeListResult {
  */
 export interface GitCreateWorktreeOptions {
   attachCheckoutContext?: boolean;
+  /** Explicit creation mode: refuse a branch that already exists. Main resolves committed HEAD. */
+  newBranch?: { baseWorktree?: { path: string; branch: string | null } };
+  /** Refuse a deleted branch instead of silently creating it. */
+  requireExistingBranch?: boolean;
 }
 
 export interface GitWorktreeCreateResult {

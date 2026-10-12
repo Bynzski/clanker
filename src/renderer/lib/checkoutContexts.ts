@@ -82,7 +82,7 @@ export function upsertCheckoutContextList(
   if (!current) return [...existing, { ...incoming }];
   // A context id names one root for its whole life; only descriptive fields may change.
   if (current.path !== incoming.path) return null;
-  const unchanged = current.branch === incoming.branch && current.mainCheckoutPath === incoming.mainCheckoutPath;
+  const unchanged = current.branch === incoming.branch && current.mainCheckoutPath === incoming.mainCheckoutPath && current.missing === incoming.missing;
   return unchanged ? (workspace.checkoutContexts ?? existing) : existing.map((context) => (context.id === incoming.id ? { ...incoming } : context));
 }
 

@@ -169,7 +169,7 @@ describe('startPolling - edge cases with real git', () => {
       await waitForStatusEmission();
 
       expect(service.getCurrentWorkspace()).toBe(emptyDir);
-      expect(emittedStatuses[0].success).toBe(false);
+      expect(emittedStatuses[0].success).toBe(true);
     } finally {
       fs.rmSync(emptyDir, { recursive: true, force: true });
     }

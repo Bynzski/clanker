@@ -31,6 +31,7 @@ fs.appendFileSync(path.join(project, 'README.md'), 'uncommitted\n');
 fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ workspaceNavigationMode: 'tabs', harnessDefaults: Object.fromEntries(['codex', 'claude', 'pi', 'opencode', 'omp', 'hermes', 'agy'].map(id => [id, { model: '', favorites: [], flags: '', visible: false, usageVisible: false }])) }));
 const server = http.createServer((_request, response) => response.end('<title>Source Control fixture</title><h1>Native Browser</h1>'));
 let app;
+let createdInManagement = false;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Native capture preserves the physical viewport at app zoom; Playwright's
 // CSS-sized capture otherwise crops the right/bottom of a zoomed Electron page.
@@ -123,6 +124,19 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: 'Remove checkout for branch linked-task' }).waitFor();
             await dialog.getByRole('button', { name: 'Unlock checkout for branch locked' }).waitFor();
             await dialog.getByRole('button', { name: 'Prune missing worktrees…' }).waitFor();
+            if (!createdInManagement) {
+              await dialog.getByRole('button', { name: 'Create worktree', exact: true }).click();
+              const creation = page.locator('.new-session-create-only');
+              await creation.getByLabel('New branch', { exact: true }).fill('management-created');
+              assert.equal(await creation.getByRole('radiogroup', { name: 'Harness' }).count(), 0);
+              assert.equal(await creation.getByRole('button', { name: /^Launch/ }).count(), 0);
+              await creation.getByRole('button', { name: 'Create worktree', exact: true }).click();
+              await creation.waitFor({ state: 'hidden' });
+              assert(await dialog.isVisible(), 'Manual creation closed Source Control');
+              assert(git('worktree', 'list', '--porcelain').toString().includes('branch refs/heads/management-created'));
+              await dialog.getByRole('button', { name: 'Remove checkout for branch management-created' }).waitFor();
+              createdInManagement = true;
+            }
           }
           if (section === 'History') {
             assert.equal(await dialog.getByRole('button', { name: 'Working Tree', exact: true }).count(), 1);
@@ -216,18 +230,17 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
 
     // Test linked worktree Source Control and context switching
     // First, launch a normal terminal in the main checkout so the workspace has both contexts active
-    const addTerminalBtn = page.locator('button.harness-pill[title="Add terminal"]');
-    if (await addTerminalBtn.count() > 0) {
-      await addTerminalBtn.first().click();
-      await pause(600);
-    }
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
+    await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
+    await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
+    await pause(600);
 
     fs.writeFileSync(path.join(root, 'linked-task', 'worktree-note.txt'), 'worktree draft content\n');
-    await page.getByRole('button', { name: 'New isolated agent', exact: true }).click();
-    await page.locator('.isolated-agent-popover').waitFor();
-    await page.locator('.isolated-agent-worktree button.isolated-agent-choice').filter({ hasText: 'linked-task' }).click();
-    await page.locator('.isolated-agent-form button[type="submit"]').click();
-    await page.locator('.isolated-agent-popover').waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'New Agent', exact: true }).click();
+    await page.locator('.new-session-popover').waitFor();
+    await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button').filter({ hasText: 'linked-task' }).click();
+    await page.locator('.new-session-form button[type="submit"]').click();
+    await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
     await pause(500);
 
     // Open Source Control on the linked worktree
@@ -307,6 +320,6 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
+    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; manual worktree creation without a session; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
   } finally { if (app) await app.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

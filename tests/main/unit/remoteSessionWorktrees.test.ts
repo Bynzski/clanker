@@ -46,6 +46,7 @@ function fixture(options: { harness?: HarnessSession['harness']; sessions: Harne
     getCheckoutContext: (id: string) => contexts.find((context) => context.id === id) ?? null,
     getCheckoutContextsForWorkspace: () => contexts,
     registerCheckoutContext,
+    describeCheckoutContext: vi.fn(),
   };
   const worktrees = options.worktrees ?? [entry('/ws', 'main', { isMain: true })];
   const recreateWorktree = vi.fn(async (_id: string, branch: string): Promise<GitWorktreeCreateResult> => {

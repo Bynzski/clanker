@@ -151,13 +151,6 @@ describe('workspace page ownership', () => {
     expect(workspace().minimizedPanes).toEqual([]);
     expect(store().activeTerminalId).toBe('t1');
   });
-  it('replaces a minimized native conversation without changing its pane or membership', () => {
-    open(); store().minimizeWorkspacePane('w', 'p1'); const before = workspace().minimizedPanes;
-    expect(store().replaceTerminal('w', 't1', { id: 'new', pid: 3, workingDir: '/workspace', workspaceId: 'w' })).toBe(true);
-    expect(workspace().minimizedPanes).toEqual(before);
-    store().selectWorkspace('w', 'new'); expect(store().activeTerminalId).toBe('new');
-    expect(workspace().panes.find((pane) => pane.id === 'p1')?.terminalId).toBe('new');
-  });
   it('ignores stale source-pane docking and split callbacks after switching pages', () => {
     open(); const root = workspace().layoutRoot!; store().addWorkspacePage('w');
     store().movePane('p1', { kind: 'workspace-edge', edge: 'left' }, 'w');

@@ -283,17 +283,17 @@ describe('getStatus - edge cases with real git', () => {
 // ============================================================================
 
 describe('getStatus - failure handling with real git', () => {
-  it('returns not-a-repo for non-git directory', async () => {
+  it('returns a verified non-repository status for an existing directory', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-a-repo-'));
     try {
       repo = { path: tempDir, cleanup: async () => {} };
       
       const result = await service.getStatus(repo.path);
       
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
       expect(result.isRepo).toBe(false);
-      expect(result.errorCode).toBe('not-a-repo');
-      expect(result.error).toBeTruthy();
+      expect(result.errorCode).toBeUndefined();
+      expect(result.error).toBeUndefined();
       expect(result.changes).toEqual([]);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -309,7 +309,7 @@ describe('getStatus - failure handling with real git', () => {
     expect(['git-not-found', 'not-a-repo']).toContain(result.errorCode);
   });
 
-  it('returns error for directory without git repo', async () => {
+  it('initializes a populated non-repository and refreshes status', async () => {
     // Create a normal directory without git initialization
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'no-git-'));
     try {
@@ -318,10 +318,10 @@ describe('getStatus - failure handling with real git', () => {
       
       const result = await service.getStatus(repo.path);
       
-      // Should fail with not-a-repo since there's no git directory
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
       expect(result.isRepo).toBe(false);
-      expect(result.errorCode).toBe('not-a-repo');
+      expect(await service.initRepository(repo.path, { defaultBranch: 'main' })).toEqual({ success: true });
+      expect(await service.getStatus(repo.path)).toMatchObject({ success: true, isRepo: true, currentBranch: 'main', changes: [{ path: 'file.txt', status: 'untracked', staged: false }] });
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -413,7 +413,7 @@ describe('getStatus - result structure verification', () => {
     try {
       repo = { path: tempDir, cleanup: async () => {} };
       
-      const result = await service.getStatus(repo.path);
+      const result = await service.getStatus(path.join(repo.path, 'missing'));
       
       expect(result.success).toBe(false);
       expect(result.errorCode).toBeDefined();

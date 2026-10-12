@@ -10,7 +10,6 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 
 vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => null }));
-vi.mock('../../../src/renderer/components/IsolatedAgentButton', () => ({ default: () => null }));
 const store = () => useWorkspaceStore.getState();
 const owner = () => store().getWorkspaceById('owned')!;
 let finish: (info: Awaited<ReturnType<typeof window.electronAPI.spawnTerminal>>) => void;
@@ -31,13 +30,15 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 async function begin(environmentId = 'local', button = 'Terminal') {
   store().addWorkspace(createWorkspaceFixture({ id: 'owned', workspacePath: '/workspace', environmentId, terminals: [], panes: [] }));
   render(<Header />);
-  fireEvent.click(await screen.findByRole('button', { name: button }));
-  expect(window.electronAPI.spawnTerminal).toHaveBeenCalledTimes(1);
+  fireEvent.click(await screen.findByRole('button', { name: 'New Agent' }));
+  fireEvent.click(await screen.findByRole('radio', { name: button }));
+  fireEvent.click(screen.getByRole('button', { name: `Launch ${button}` }));
+  await waitFor(() => expect(window.electronAPI.spawnTerminal).toHaveBeenCalledTimes(1));
   expect(owner().panes).toHaveLength(1);
   expect(owner().panes[0].terminalId).toBeNull();
   return { pageId: owner().activePageId!, paneId: owner().panes[0].id };
 }
-async function complete() { await act(async () => finish({ id: 'spawned', pid: 42 })); }
+async function complete() { await act(async () => finish({ id: 'spawned', pid: 42, checkoutContextId: 'owned::main' })); }
 
 describe('toolbar launch ownership', () => {
   for (const environmentId of ['local', 'ssh-slow']) for (const button of ['Terminal', 'Codex']) {

@@ -58,7 +58,6 @@ import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/typ
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountChange, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
-import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
 import type { ThemeId } from '../../shared/types/theme';
 import type { WorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../../shared/keybindings';
@@ -156,7 +155,6 @@ export interface ElectronAPI {
   getAgentAttentionDiagnostics: (terminalId: string) => Promise<{ main: AttentionSignalDiagnostics | null; trace?: Array<{ at: number; semantic: string; nativeEvent?: string; verdict?: string; revision: number; status: string; session?: string; turn?: string }>; unattributedEnvelopes?: number; eventLoopDelay?: { maxMs: number; p99Ms: number; meanMs: number } | null; terminal: { harness: string | null; workspaceId: string | null; environmentId: string; attention: NativeAttentionCapability | null } | null } | null>;
   getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
-  onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => () => void;
   /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;
   /** Phase 1 startup fix: renderer signals xterm is ready to receive data. Triggers flush of startup buffer. */
@@ -258,7 +256,7 @@ export interface ElectronAPI {
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; checkoutContext?: CheckoutContext; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
   /** Main decides: only a worktree context of that workspace with no live terminals is released. */
-  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) => Promise<AdoptWorktreeCheckoutContextResult>;
+  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string, expectedBranch?: string | null) => Promise<AdoptWorktreeCheckoutContextResult>;
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) => Promise<ReleaseCheckoutContextResult>;
   /** Main reconciles the workspace's worktree contexts with Git: branch refreshed, gone ones dropped or marked missing. */
   reconcileCheckoutContexts: (workspaceId: string) => Promise<ReconcileCheckoutContextsResult>;
@@ -290,7 +288,7 @@ export interface ElectronAPI {
   gitDropStash: (workspacePath: string, stashRef: string, expectedHash?: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitClearStashes: (workspacePath: string, expectedHashes?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: (workspaceId?: string, checkoutContextId?: string) => Promise<GitStatusResult | null>;
-  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) => Promise<GitInitResult>;
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitInitResult>;
   gitGetRemotes: (workspacePath: string, workspaceId?: string) => Promise<GitRemotesResult>;
   gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
   gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;

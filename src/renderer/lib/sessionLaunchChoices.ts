@@ -2,7 +2,7 @@ import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { GitWorktree } from '../../shared/types/git';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import type { WorkspaceTab } from '../store/workspaceTypes';
-import { findManagedWorktreeContext, isCheckoutContextInUse } from './worktreeAgents';
+import { findRegisteredWorktreeContext, isCheckoutContextInUse } from './worktreeAgents';
 
 /** Why a listed worktree is or is not a usable destination, as the picker words it. */
 export type WorktreeChoiceState = 'available' | 'in-use' | 'missing' | 'locked';
@@ -16,11 +16,11 @@ export interface WorktreeChoice {
   state: WorktreeChoiceState;
   /** Missing and locked checkouts are repaired in the Git menu, never launched into. */
   disabled: boolean;
-  /** The attached context to reuse; null means selecting it adopts the worktree. */
+  /** Descriptive registration for occupancy; selection always revalidates through main. */
   managed: CheckoutContext | null;
 }
 
-export interface IsolatedAgentChoices {
+export interface SessionLaunchChoices {
   /** Local branches that have no worktree yet, so a new linked worktree can be created for them. */
   branches: string[];
   worktrees: WorktreeChoice[];
@@ -36,16 +36,16 @@ export const WORKTREE_STATE_LABEL: Record<WorktreeChoiceState, string> = {
 const baseName = (value: string): string => value.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || value;
 
 /**
- * One coherent model of where an isolated agent can run, derived from Git's worktree list plus the
+ * Explicit session destinations, derived from Git's worktree list plus the
  * branch list. A branch that already has a worktree (main's current branch included) appears only
  * as that worktree, never also as a branch Git would refuse to check out a second time.
  */
-export function buildIsolatedAgentChoices(params: {
+export function buildSessionLaunchChoices(params: {
   workspace: Pick<WorkspaceTab, 'id' | 'environmentId' | 'workspacePath' | 'checkoutContexts' | 'terminals'>;
   branchNames: readonly string[];
   currentBranch: string | null;
   worktrees: readonly GitWorktree[];
-}): IsolatedAgentChoices {
+}): SessionLaunchChoices {
   const { workspace, branchNames, currentBranch, worktrees } = params;
   const environmentId = workspace.environmentId || 'local';
 
@@ -58,7 +58,7 @@ export function buildIsolatedAgentChoices(params: {
     if (entry.isMain) continue;
     // The workspace's own root (a legacy linked-worktree workspace) is not a separate destination.
     if (isSameWorkspaceIdentity({ environmentId, path: entry.path }, { environmentId, path: workspace.workspacePath })) continue;
-    const managed = findManagedWorktreeContext(workspace, entry.path);
+    const managed = findRegisteredWorktreeContext(workspace, entry.path);
     const state: WorktreeChoiceState = entry.isPrunable ? 'missing'
       : entry.isLocked ? 'locked'
         : isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path }) ? 'in-use'

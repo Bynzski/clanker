@@ -765,23 +765,23 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const handleUnstageAll = () => runChangeMutation('unstage-all', () => window.electronAPI.gitUnstage(scope.path, undefined, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : [])));
 
   const handleInitRepository = async () => {
-    if (!isCurrent() || !statusKnown || isInitializing) return;
+    if (!isCurrent() || !statusKnown || isRepo || isInitializing) return;
     setIsInitializing(true);
     setInitError(null);
 
     try {
-      const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch, workspaceId);
+      const result = await window.electronAPI.gitInit(scope.path, selectedDefaultBranch, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
       if (!isCurrent()) return;
       if (result.success) {
         await window.electronAPI.gitRefresh(workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
-        setIsMenuOpen(false);
+        if (isCurrent()) setIsMenuOpen(false);
       } else {
         setInitError(result.error || 'Failed to initialize repository');
       }
     } catch (error: unknown) {
-      setInitError(error instanceof Error ? error.message : 'Failed to initialize repository');
+      if (isCurrent()) setInitError(error instanceof Error ? error.message : 'Failed to initialize repository');
     } finally {
-      setIsInitializing(false);
+      if (isCurrent()) setIsInitializing(false);
     }
   };
 
