@@ -1,3 +1,4 @@
+import { requestAppPrompt } from '../lib/appPrompt';
 import { useState, useEffect } from 'react';
 import {
   X,
@@ -186,7 +187,7 @@ export default function RecipeModal({
 
   const handleDelete = async () => {
     if (!initialRecipe?.id) return;
-    if (!window.confirm(`Are you sure you want to delete the recipe "${initialRecipe.name}"?`)) {
+    if (!await requestAppPrompt({ title: 'Delete recipe?', description: `Delete the recipe "${initialRecipe.name}"? This cannot be undone.`, confirmLabel: 'Delete recipe' })) {
       return;
     }
 

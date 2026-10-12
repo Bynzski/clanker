@@ -1,3 +1,5 @@
+import AppPromptHost from '../../../src/renderer/components/AppPromptHost';
+import { useAppPromptStore } from '../../../src/renderer/lib/appPrompt';
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1102,7 +1104,8 @@ describe('S8: Inline create/rename UI', () => {
       fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
       fileCreate,
     });
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    useAppPromptStore.setState({ queue: [] });
+    render(<AppPromptHost />);
 
     try {
       render(<FileExplorer />);
@@ -1113,10 +1116,10 @@ describe('S8: Inline create/rename UI', () => {
 
       await waitFor(() => {
         expect(fileCreate).toHaveBeenCalled();
-        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('Permission denied');
       });
     } finally {
-      alertSpy.mockRestore();
+      useAppPromptStore.setState({ queue: [] });
     }
   });
 });
@@ -1199,7 +1202,8 @@ describe('S10: Delete + Rename coordination', () => {
       }),
       fileDelete,
     });
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    useAppPromptStore.setState({ queue: [] });
+    render(<AppPromptHost />);
 
     try {
       render(<FileExplorer />);
@@ -1211,10 +1215,10 @@ describe('S10: Delete + Rename coordination', () => {
 
       await waitFor(() => {
         expect(fileDelete).toHaveBeenCalled();
-        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('Permission denied');
       });
     } finally {
-      alertSpy.mockRestore();
+      useAppPromptStore.setState({ queue: [] });
     }
   });
 
@@ -1232,7 +1236,8 @@ describe('S10: Delete + Rename coordination', () => {
       }),
       fileRename,
     });
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    useAppPromptStore.setState({ queue: [] });
+    render(<AppPromptHost />);
 
     try {
       render(<FileExplorer />);
@@ -1248,10 +1253,10 @@ describe('S10: Delete + Rename coordination', () => {
 
       await waitFor(() => {
         expect(fileRename).toHaveBeenCalled();
-        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('Permission denied');
       });
     } finally {
-      alertSpy.mockRestore();
+      useAppPromptStore.setState({ queue: [] });
     }
   });
 

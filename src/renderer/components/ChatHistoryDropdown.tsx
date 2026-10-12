@@ -1,3 +1,4 @@
+import { PromptDialog } from './ui/PromptDialog';
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { HarnessSession, RecreateCheckoutOffer } from '../../shared/types/session';
@@ -184,17 +185,10 @@ export default function ChatHistoryDropdown({
       {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
       {resumeNotice && <div className="chat-history-empty" role="status">{resumeNotice}</div>}
       {offer && (
-        <div className="chat-history-empty chat-history-recreate" role="alertdialog" aria-label="Recreate worktree">
-          <div>
-            This conversation ran in the worktree <strong>{offer.checkout.branch}</strong>, which was removed.
-            {' '}{HARNESS_OPTIONS.find((option) => option.id === offer.session.harness)?.label ?? offer.session.harness} can only continue
-            in the directory it started in. Recreate the worktree from its branch and resume there?
-          </div>
-          <div className="chat-history-recreate-actions">
-            <button type="button" disabled={launching} onClick={() => resumeSession(offer.session, true)}>Recreate and resume</button>
-            <button type="button" disabled={launching} onClick={() => setOffer(null)}>Cancel</button>
-          </div>
-        </div>
+        <PromptDialog title="Recreate worktree" workspaceId={workspaceId ?? undefined}
+          description={`This conversation ran in the worktree ${offer.checkout.branch}, which was removed. ${HARNESS_OPTIONS.find((option) => option.id === offer.session.harness)?.label ?? offer.session.harness} can only continue in the directory it started in. Recreate the worktree from its branch and resume there?`}
+          variant="primary" confirmLabel="Recreate and resume" busy={launching}
+          onAnswer={(answer) => { if (answer) void resumeSession(offer.session, true); else setOffer(null); }} />
       )}
       {discoveryError && <div className="chat-history-empty" role="alert">{discoveryError}</div>}
       {isLoading ? (

@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
+import AppPromptHost from './components/AppPromptHost';
 import { ApplicationSettingsProvider } from './components/settings/ApplicationSettingsProvider';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
@@ -183,6 +184,7 @@ function App() {
         </ErrorBoundary>
       </div>
       <ToastViewport />
+      <AppPromptHost />
       <StatusBar />
       
       <OpenWorkspaceDialog isOpen={showOpenWorkspace} onClose={() => setShowOpenWorkspace(false)}

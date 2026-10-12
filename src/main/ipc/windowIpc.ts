@@ -6,6 +6,7 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import type { AppClosePrompt } from '../appClosePrompt';
 import {
   MINIMIZE_WINDOW,
   TOGGLE_MAXIMIZE_WINDOW,
@@ -15,10 +16,14 @@ import {
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
   WINDOW_READY_TO_SHOW,
+  APP_CLOSE_REQUEST,
+  APP_CLOSE_READY,
+  APP_CLOSE_RESPONSE,
 } from '../../shared/ipcChannels';
 
 interface RegisterWindowIpcDeps {
   getMainWindow: () => BrowserWindow | null;
+  closePrompt?: AppClosePrompt;
 }
 
 function clampZoomLevel(level: number): number {
@@ -52,6 +57,10 @@ function resetWindowZoom(
 
 export function registerWindowIpc(deps: RegisterWindowIpcDeps): void {
   const { getMainWindow } = deps;
+  // Record this outbound-only channel alongside the canonical IPC inventory.
+  ipcMain.on(APP_CLOSE_REQUEST, () => { /* main → renderer notification only */ });
+  ipcMain.handle(APP_CLOSE_READY, (event, ready: unknown) => deps.closePrompt?.setReady(event, ready));
+  ipcMain.handle(APP_CLOSE_RESPONSE, (event, id: unknown, answer: unknown) => deps.closePrompt?.respond(event, id, answer));
 
   ipcMain.handle(MINIMIZE_WINDOW, () => {
     getMainWindow()?.minimize();

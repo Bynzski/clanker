@@ -25,6 +25,11 @@ export default tseslint.config(
       },
     },
     rules: {
+      'no-restricted-globals': ['error', 'alert', 'confirm', 'prompt'],
+      'no-restricted-syntax': ['error',
+        { selector: "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(alert|confirm|prompt)$/]", message: 'Use shared Dialog/AlertDialog for app-owned prompts.' },
+        { selector: "CallExpression[callee.type='MemberExpression'][callee.property.name=/^(showMessageBox|showMessageBoxSync|showErrorBox)$/]", message: 'Use the renderer dialog handshake; OS file pickers remain native.' },
+      ],
       'no-console': 'off',
       'no-control-regex': 'off',
       'react-hooks/refs': 'off',

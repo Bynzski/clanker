@@ -96,7 +96,8 @@ vi.mock('node-pty', () => ({
 }));
 
 import { registerTerminalIpc, setAppShuttingDown } from '../../../src/main/ipc/terminalIpc';
-import { app, dialog } from 'electron';
+import { app } from 'electron';
+import { AppClosePrompt } from '../../../src/main/appClosePrompt';
 import { RemotePreviewManager } from '../../../src/main/remote/remotePreviewManager';
 
 describe('Terminal Shutdown Behavior', () => {
@@ -115,15 +116,15 @@ describe('Terminal Shutdown Behavior', () => {
     vi.mocked(app.quit).mockClear();
     const kill = vi.fn(() => terminals.delete('live'));
     terminals.set('live', { pty: { kill } } as never);
-    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 0, checkboxChecked: false });
+    const request = vi.spyOn(AppClosePrompt.prototype, 'request').mockResolvedValueOnce(false);
     handler(event);
-    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(close).not.toHaveBeenCalled();
     expect(kill).not.toHaveBeenCalled();
     expect(terminals.has('live')).toBe(true);
     expect(app.quit).not.toHaveBeenCalled();
-    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false });
+    request.mockResolvedValueOnce(true);
     handler(event);
     await vi.waitFor(() => expect(app.quit).toHaveBeenCalledOnce());
     // Mocked app.quit does not emit before-quit; simulate Electron's re-entry.
@@ -133,7 +134,7 @@ describe('Terminal Shutdown Behavior', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(4);
     expect(kill).toHaveBeenCalledWith('SIGTERM');
     expect(terminals.size).toBe(0);
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledTimes(1);
     expect(app.quit).not.toHaveBeenCalled();
     finish();
@@ -141,6 +142,7 @@ describe('Terminal Shutdown Behavior', () => {
     handler(event);
     expect(event.preventDefault).toHaveBeenCalledTimes(4);
     close.mockRestore();
+    request.mockRestore();
   });
 
   test('setAppShuttingDown flag is exported and accessible', () => {

@@ -1,3 +1,4 @@
+import { PromptDialog } from './ui/PromptDialog';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { useState } from 'react';
@@ -145,11 +146,8 @@ export default function WorktreeLauncher({ repoPath, openPaths, launchReady, onO
       )}
       {error && <p className="gate-worktree-error" role="alert">{error}</p>}
       {ready && pendingRemoval && (
-        <div className="gate-worktree-confirm" role="dialog" aria-label="Confirm worktree removal">
-          <p>Remove checkout at <strong>{pendingRemoval.path}</strong> on branch <strong>{pendingRemoval.branch || 'Detached'}</strong>? The branch remains.</p>
-          <Button type="button" onClick={() => setPendingRemoval(null)}>Cancel</Button>
-          <Button type="button" onClick={() => void removeWorktree()} disabled={busy}>Remove this worktree</Button>
-        </div>
+        <PromptDialog title="Confirm worktree removal" description={`Remove checkout at ${pendingRemoval.path} on branch ${pendingRemoval.branch || 'Detached'}? The branch remains.`}
+          confirmLabel="Remove this worktree" busy={busy} onAnswer={(answer) => { if (answer) void removeWorktree(); else setPendingRemoval(null); }} />
       )}
     </div>
   );

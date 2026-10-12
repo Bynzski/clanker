@@ -172,6 +172,9 @@ export const IS_MAXIMIZED_WINDOW = 'is-maximized-window';
 export const ZOOM_IN_WINDOW = 'zoom-in-window';
 export const ZOOM_OUT_WINDOW = 'zoom-out-window';
 export const RESET_ZOOM_WINDOW = 'reset-zoom-window';
+export const APP_CLOSE_REQUEST = 'app-close-request';
+export const APP_CLOSE_READY = 'app-close-ready';
+export const APP_CLOSE_RESPONSE = 'app-close-response';
 export const WINDOW_READY_TO_SHOW = 'window-ready-to-show';
 
 /* ============================================================================
@@ -397,6 +400,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
   WINDOW_READY_TO_SHOW,
+  APP_CLOSE_READY,
+  APP_CLOSE_RESPONSE,
   // Git
   GIT_START_POLLING,
   GIT_STOP_POLLING,
@@ -442,6 +447,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GIT_PULL,
   GIT_PUSH,
   // Event channels (main -> renderer, registered via ipcMain.on or webContents.send)
+  APP_CLOSE_REQUEST,
   TERMINAL_DATA,
   TERMINAL_EXIT,
   TERMINAL_RESIZED,

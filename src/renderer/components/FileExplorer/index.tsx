@@ -1,3 +1,4 @@
+import { showAppError } from '../../lib/appPrompt';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
@@ -515,7 +516,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     if (!result.success) {
       const message = result.error ?? 'Failed to create entry';
       console.error('Failed to create entry:', message);
-      window.alert(message);
+      showAppError(message);
       setCreating(null);
       return;
     }
