@@ -20,7 +20,6 @@ const useExplorerFilterStore = create<{
   }),
 }));
 
-export { useExplorerFilterStore };
 
 /** Dock explorers keep the filter in component state; sidebar sections keep it per workspace. */
 export function useExplorerFilter(workspaceId: string | null, perWorkspace: boolean): [string, (value: string) => void] {

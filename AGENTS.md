@@ -226,7 +226,7 @@ npm run security-check # scripts/security-audit.cjs (npm audit, high threshold, 
 npm run validate   # branding check, lint, typecheck, Fallow, security-check, build, test
 ```
 
-CI (`.github/workflows/validate.yml`): `changes` → `ubuntu-validation` (dependency review on PRs, informational audit artifact, lint, typecheck, Fallow dead-code regression check, build, full tests with coverage) → final `validate` aggregate, the stable required check. Code changes require Ubuntu success; docs-only changes require Ubuntu to be skipped. Failed/cancelled jobs and invalid change-detection output fail the gate. No automatic native Windows job runs; Windows simulation/path/process tests remain in the full Ubuntu suite.
+CI (`.github/workflows/validate.yml`): `changes` → `ubuntu-validation` (dependency review on PRs, informational audit artifact, lint, typecheck, Fallow dead-code regression check, build, full tests with coverage) → final `validate` aggregate, the stable required check. Code changes (including Fallow baseline JSON policy changes under `docs/evidence/`) require Ubuntu success; ordinary docs-only changes require Ubuntu to be skipped. The Fallow check gates full and production issue identities and rejects stale exemptions in both baselines. Failed/cancelled jobs and invalid change-detection output fail the gate. No automatic native Windows job runs; Windows simulation/path/process tests remain in the full Ubuntu suite.
 
 ## File Size Thresholds
 

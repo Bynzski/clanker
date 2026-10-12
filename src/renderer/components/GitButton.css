@@ -9,8 +9,8 @@
   -webkit-app-region: no-drag;
 }
 
-/* The Git button sits at the start of the toolbar, so the menu opens rightward;
-   useKeepInViewport shifts it back inside the window when it would overflow. */
+/* The Git button sits at the start of the toolbar, so the menu opens rightward.
+   The shared Popover handles viewport collision avoidance. */
 .git-menu {
   position: absolute;
   top: calc(100% + 6px);

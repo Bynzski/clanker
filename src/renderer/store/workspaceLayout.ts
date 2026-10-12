@@ -29,14 +29,6 @@ export interface EdgeTerminal {
   span: number;
 }
 
-export interface EdgeGap {
-  index: number;
-  start: number;
-  end: number;
-  afterPaneId?: string;
-  beforePaneId?: string;
-}
-
 interface LayoutVisibilityState extends Pick<WorkspaceTab, 'pages' | 'activePageId' | 'minimizedPanes'> {
   panes: Pane[];
   explorerPane: ExplorerPaneState | null;
@@ -197,37 +189,6 @@ export function getEdgeTerminals(
   }
 
   return walk(node, 0, 1);
-}
-
-export function getEdgeGaps(
-  edgeTerminals: EdgeTerminal[],
-  maxSegments: number
-): EdgeGap[] {
-  if (maxSegments <= 0) {
-    return [];
-  }
-
-  if (edgeTerminals.length === 0) {
-    return [{ index: 0, start: 0, end: 1 }];
-  }
-
-  const total = edgeTerminals.length + 1;
-  const gaps: EdgeGap[] = [];
-  for (let k = 0; k < total; k++) {
-    const before = edgeTerminals[k - 1];
-    const after = edgeTerminals[k];
-    const start = before ? before.offset + before.span : 0;
-    const end = after ? after.offset : 1;
-    gaps.push({
-      index: k,
-      start,
-      end,
-      afterPaneId: before?.paneId,
-      beforePaneId: after?.paneId,
-    });
-  }
-
-  return gaps.slice(0, maxSegments);
 }
 
 function splitLeafByPaneId(
@@ -632,19 +593,6 @@ export function movePaneInLayout(
     target.targetPaneId,
   );
 }
-
-export function findFirstLeafPaneId(node: LayoutNode | null): string | null {
-  if (node == null) {
-    return null;
-  }
-
-  if (node.type === 'leaf') {
-    return node.paneId;
-  }
-
-  return findFirstLeafPaneId(node.first) ?? findFirstLeafPaneId(node.second);
-}
-
 
 function findTargetPaneForInsert(
   layoutRoot: LayoutNode | null,

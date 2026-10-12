@@ -34,7 +34,7 @@ check the assets and notes of the actual [GitHub release](https://github.com/Byn
 - [SSH/VPS procedure](remote-vps-smoke-test.md) — guarded fixtures and remote checks
 - [Checkout files](checkout-files-smoke-test.md), [dev servers](dev-services-smoke-test.md) and [Markdown preview](markdown-preview-smoke-test.md)
 - [Dated screenshots](screenshots/README.md) and [SSH preview capture evidence](evidence/issue-56/README.md) — historical assets, not current release acceptance
-- `evidence/fallow-dead-code-baseline.json` — active regression-gate input; keep it under review
+- `evidence/fallow-dead-code-baseline.json` and `evidence/fallow-production-dead-code-baseline.json` — active full/production identity-gate inputs; new findings and stale exemptions fail validation
 
 ## Deferred designs
 

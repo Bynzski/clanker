@@ -4,7 +4,7 @@
  * Assistant id. Main validates the owner before any view exists (an Assistant owner must currently
  * resolve through the Hermes Assistant service); the renderer never supplies a richer object.
  */
-export const ASSISTANT_BROWSER_OWNER_PREFIX = 'assistant-browser:';
+const ASSISTANT_BROWSER_OWNER_PREFIX = 'assistant-browser:';
 
 export function assistantBrowserOwnerId(assistantId: string): string {
   return `${ASSISTANT_BROWSER_OWNER_PREFIX}${assistantId}`;

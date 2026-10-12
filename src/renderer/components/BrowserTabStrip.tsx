@@ -4,7 +4,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { BrowserTab } from '../store/workspaceTypes';
 
-export function getBrowserTabLabel(tab: BrowserTab): string {
+function getBrowserTabLabel(tab: BrowserTab): string {
   const title = tab.title.trim();
   if (title) return title;
   try {
