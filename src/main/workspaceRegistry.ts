@@ -57,11 +57,18 @@ export class WorkspaceRegistry {
   private readonly checkoutContexts = new Map<string, CheckoutContext>();
   private readonly pendingRegistrations = new Map<string, { environmentId: string }>();
   private readonly isWorktreeBeingRemoved?: (path: string) => boolean;
+  private readonly getLocalRemovalRevision?: () => number;
   private readonly remoteReservations = new Map<symbol, { environmentId: string; resourceId: string; paths: string[] }>();
   private readonly worktreeResourceIds = new Map<string, string>();
 
   public getWorktreeResourceId(environmentId: string): string {
     return this.worktreeResourceIds.get(environmentId) ?? environmentId;
+  }
+
+  public isCheckoutPathReserved(environmentId: string, checkoutPath: string): boolean {
+    return environmentId === LOCAL_ENVIRONMENT_ID
+      ? this.isWorktreeBeingRemoved?.(checkoutPath) === true
+      : this.isRemotePathReserved(environmentId, checkoutPath);
   }
 
   public isRemotePathReserved(environmentId: string, workspacePath: string): boolean {
@@ -93,9 +100,11 @@ export class WorkspaceRegistry {
     private readonly resolveEnvironment: EnvironmentResolver,
     options?: {
       isWorktreeBeingRemoved?: (path: string) => boolean;
+      getLocalRemovalRevision?: () => number;
     }
   ) {
     this.isWorktreeBeingRemoved = options?.isWorktreeBeingRemoved;
+    this.getLocalRemovalRevision = options?.getLocalRemovalRevision;
   }
 
   public async registerWorkspace(
@@ -173,6 +182,7 @@ export class WorkspaceRegistry {
       return { error: REMOVAL_IN_PROGRESS_REMOTE };
     }
 
+    const removalRevision = environmentId === LOCAL_ENVIRONMENT_ID ? this.getLocalRemovalRevision?.() : undefined;
     const validation = await environment.validateWorkspacePath(rootPath);
     if (isCancelled()) {
       return { error: `${subject} registration was cancelled` };
@@ -182,6 +192,12 @@ export class WorkspaceRegistry {
     }
 
     const canonicalPath = normalizeWorkspacePath(validation.resolvedPath);
+    if (removalRevision !== undefined && removalRevision !== this.getLocalRemovalRevision?.()) {
+      return { error: 'A worktree removal occurred during path validation; retry registration' };
+    }
+    if (environmentId === LOCAL_ENVIRONMENT_ID && this.isWorktreeBeingRemoved?.(canonicalPath)) {
+      return { error: REMOVAL_IN_PROGRESS_LOCAL };
+    }
     // Validation crosses SSH; a removal may start while it is in flight.
     if (environmentId !== LOCAL_ENVIRONMENT_ID && this.isRemotePathReserved(environmentId, canonicalPath)) {
       return { error: REMOVAL_IN_PROGRESS_REMOTE };
@@ -326,12 +342,12 @@ export class WorkspaceRegistry {
   }
 
   /** Every local root in use: workspace roots plus checkout-context roots, for removal safeguards. */
-  public getLocalOpenWorkspacePaths(): string[] {
+  public getLocalOpenWorkspacePaths(excludedContextIds?: ReadonlySet<string>): string[] {
     const paths = [...this.workspaces.values()]
       .filter((w) => w.location.environmentId === LOCAL_ENVIRONMENT_ID)
       .map((w) => w.location.path);
     for (const context of this.checkoutContexts.values()) {
-      if (context.environmentId === LOCAL_ENVIRONMENT_ID) paths.push(context.path);
+      if (context.environmentId === LOCAL_ENVIRONMENT_ID && !excludedContextIds?.has(context.id)) paths.push(context.path);
     }
     return [...new Set(paths)];
   }

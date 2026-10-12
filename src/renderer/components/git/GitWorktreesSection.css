@@ -63,7 +63,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.git-worktree-tag.managed { color: var(--text-secondary); }
 
 .git-worktree-notice {
   display: flex;

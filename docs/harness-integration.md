@@ -871,7 +871,12 @@ referencing the token by variable name, returns `null` on conflicting user confi
 `agentBridge` flag to the descriptor. Write temp files only through `scratchDir()`. If no such mechanism
 exists, leave the capability absent and document why here.
 
-### Isolated checkout lifecycle
+### Isolated checkout lifecycle (compatibility)
+
+Git is authoritative for worktrees. Routine creation, selection and removal use
+Git inventory and the main-owned operation described in [Git worktree authority](git-worktree-authority.md).
+The tools below remain optional compatibility APIs for an explicitly requested
+move of an existing conversation. Finishing/closing an agent does not request cleanup.
 
 An agent can ask Clanker to move its own conversation into a fresh Clanker-owned worktree and, when it is done,
 back to the main checkout, without ever naming a path, workspace, terminal or checkout:
@@ -887,13 +892,11 @@ a split between where the conversation runs and what Clanker thinks it owns. The
 harness and every path come from the authenticated caller and main's own state; the checkout being completed is
 `caller.checkoutContext`, resolved from the terminal's launch binding in main.
 
-**The lifecycle tools are authoritative when granted.** Inside Clanker, creating and finishing an isolated
-checkout is Clanker's job. An agent that has these tools should use them instead of `git worktree add/remove`,
-`git branch -d/-D` on the checkout's branch, Claude's `EnterWorktree` / `ExitWorktree`, Codex's `--worktree`, or any
-manual cwd switching: Clanker must track the checkout and move the same conversation with it. Everything else
-stays normal (edits, commits, pushes, pull requests and merges use ordinary Git and GitHub tools; there are no
-PR or Git tools in the bridge). Outside Clanker, or for a launch that was not granted the tools, provider-native
-behavior is unchanged: nothing intercepts shell commands or disables a provider's own worktree feature.
+**Granting the lifecycle tools does not make Clanker the owner of Git worktree state.**
+Normal Git and provider-native worktree operations remain available. Default launch
+guidance prefers selecting/creating a checkout before launching a new agent; an
+explicit conversation move can still invoke the compatibility transaction. These
+APIs retain their existing semantics and do not add native live relocation support.
 
 Completion stays strict by default. A checkout with only ignored artifacts returns `reason: "ignored-only"`,
 structured `changes` (tracked/untracked/ignored counts and at most 20 relative examples per category), and

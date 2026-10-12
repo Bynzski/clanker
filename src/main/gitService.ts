@@ -6,10 +6,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
 import { detectProvider as detectTrustedProvider } from './vcs/providerDetector';
-import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult, GitWorktreeRemovalOptions } from '../shared/types/git';
+import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult, GitWorktreeRemovalOptions, GitWorktreeRemoveResult } from '../shared/types/git';
 import { utf8ByteLength } from '../shared/utf8';
 import { canRemoveWorktree, inspectWorktreeChanges } from './worktreeChanges';
-import { worktreeDirectoryName } from './worktreePaths';
+import type { WorktreeRemovalAuthority } from './worktreeRemoval';
+import { resolveWorktreeUsagePath, worktreeDirectoryName } from './worktreePaths';
 
 export interface GitStatusEntry {
   path: string;
@@ -125,6 +126,9 @@ export class GitService {
   private worktreeCreateDrain: Promise<void> = Promise.resolve();
   private readonly openWorkspaces = new Map<string, string>();
   private readonly worktreesBeingRemoved = new Set<string>();
+  private worktreeRemovalRevision = 0;
+
+  public getWorktreeRemovalRevision(): number { return this.worktreeRemovalRevision; }
   private pollingInterval: NodeJS.Timeout | null = null;
   private currentWorkspacePath: string | null = null;
   private currentWorkspaceId: string | null = null;
@@ -141,7 +145,7 @@ export class GitService {
     private readonly emitStatus: (status: GitStatusResult) => void,
     private readonly trashWorktree: (worktreePath: string) => Promise<void> = async () => { throw new Error('System trash is unavailable'); },
     private readonly getLiveTerminalPaths: () => string[] | null = () => [],
-    private readonly getOpenWorkspacePaths: () => string[] = () => [],
+    private readonly getOpenWorkspacePaths: (excludedContextIds?: ReadonlySet<string>) => string[] = () => [],
     private gitExecutor?: GitCommandExecutor,
   ) {}
 
@@ -150,7 +154,18 @@ export class GitService {
   }
 
   public isWorktreeBeingRemoved(worktreePath: string): boolean {
-    return [...this.worktreesBeingRemoved].some((w) => this.isOpenWorkspace(w, [worktreePath]));
+    if (this.worktreesBeingRemoved.size === 0) return false;
+    try {
+      const target = resolveWorktreeUsagePath(worktreePath);
+      return [...this.worktreesBeingRemoved].some((reserved) => {
+        const root = resolveWorktreeUsagePath(reserved);
+        const contained = (a: string, b: string) => {
+          const relative = path.relative(a, b);
+          return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+        };
+        return contained(root, target) || contained(target, root);
+      });
+    } catch { return true; }
   }
 
   /** Scope all commands in an IPC operation to its registered workspace, even across awaits. */
@@ -427,7 +442,7 @@ export class GitService {
     if (!id || this.openWorkspaces.has(id)) return { success: false, error: 'Workspace identity is invalid or already registered' };
     try {
       if (!fs.statSync(workspacePath).isDirectory()) return { success: false, error: 'Workspace directory is invalid' };
-      if ([...this.worktreesBeingRemoved].some((worktreePath) => this.isOpenWorkspace(worktreePath, [workspacePath]))) {
+      if (this.isWorktreeBeingRemoved(workspacePath)) {
         return { success: false, error: 'This worktree is being removed' };
       }
       this.openWorkspaces.set(id, workspacePath);
@@ -449,34 +464,17 @@ export class GitService {
     this.openWorkspaces.clear();
   }
 
-  private isOpenWorkspace(worktreePath: string, openWorkspacePaths: string[]): boolean {
-    const comparable = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
+  private isOpenWorkspace(worktreePath: string, openWorkspacePaths: string[], authority?: WorktreeRemovalAuthority): boolean {
+    authority?.validate();
     // Resolve missing tails on both sides: metadata cleanup must protect a root even after its
     // directory disappeared, including roots beneath a symlinked parent. Non-ENOENT errors fail closed.
-    const resolveUsagePath = (usagePath: string): string => {
-      let existingPath = usagePath;
-      const missingSegments: string[] = [];
-      while (true) {
-        try {
-          existingPath = path.join(fs.realpathSync.native(existingPath), ...missingSegments);
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          const parent = path.dirname(existingPath);
-          if (parent === existingPath) throw error;
-          missingSegments.unshift(path.basename(existingPath));
-          existingPath = parent;
-        }
-      }
-      return comparable(existingPath);
-    };
-    const target = resolveUsagePath(worktreePath);
-    const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths() : [];
+    const target = resolveWorktreeUsagePath(worktreePath);
+    const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths(authority?.contextIds) : [];
     const livePaths = this.getLiveTerminalPaths();
     // Unknown local resource directories never become proof that an unmanaged checkout is free.
     if (livePaths === null) return true;
     return [...registryPaths, ...this.openWorkspaces.values(), ...livePaths, ...openWorkspacePaths].some((openPath) => {
-      const relative = path.relative(target, resolveUsagePath(openPath));
+      const relative = path.relative(target, resolveWorktreeUsagePath(openPath));
       return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
     });
   }
@@ -487,7 +485,7 @@ export class GitService {
    * it: `removeWorktree` always runs the full inspection.
    */
   async inspectWorktree(
-    workspacePath: string, worktreePath: string, openWorkspacePaths: string[] = [], options: { skipOpenCheck?: boolean } = {},
+    workspacePath: string, worktreePath: string, openWorkspacePaths: string[] = [], options: { skipOpenCheck?: boolean; authority?: WorktreeRemovalAuthority } = {},
   ): Promise<GitWorktreeInspectionResult> {
     const listed = await this.listWorktrees(workspacePath);
     if (!listed.success) return { success: false, error: listed.error };
@@ -495,7 +493,7 @@ export class GitService {
     if (!worktree || worktree.isMain) return { success: false, error: 'This is not a linked worktree' };
     if (worktree.isPrunable || worktree.isLocked) return { success: false, error: 'Worktree is missing or locked' };
     try {
-      if (options.skipOpenCheck !== true && this.isOpenWorkspace(worktree.path, openWorkspacePaths)) {
+      if (options.skipOpenCheck !== true && this.isOpenWorkspace(worktree.path, openWorkspacePaths, options.authority)) {
         return { success: false, error: 'Close this workspace tab before removing its worktree' };
       }
       const changes = await inspectWorktreeChanges(worktree.path, (cwd, args) => this.execGit(cwd, args));
@@ -505,8 +503,10 @@ export class GitService {
     }
   }
 
-  async removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[] = [], options: GitWorktreeRemovalOptions = {}): Promise<{ success: boolean; error?: string; warning?: string }> {
+  async removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[] = [], options: GitWorktreeRemovalOptions = {}, authority?: WorktreeRemovalAuthority): Promise<GitWorktreeRemoveResult> {
+    let outcome: GitWorktreeRemoveResult['outcome'] = 'unchanged';
     let removalKey: string;
+    let stagingReservation: string | undefined;
     try {
       const realPath = fs.realpathSync.native(worktreePath);
       removalKey = process.platform === 'win32' ? realPath.toLowerCase() : realPath;
@@ -515,8 +515,9 @@ export class GitService {
     }
     if (this.worktreesBeingRemoved.has(removalKey)) return { success: false, error: 'Worktree removal is already in progress' };
     this.worktreesBeingRemoved.add(removalKey);
+    this.worktreeRemovalRevision++;
     try {
-      const inspection = await this.inspectWorktree(workspacePath, worktreePath, openWorkspacePaths);
+      const inspection = await this.inspectWorktree(workspacePath, worktreePath, openWorkspacePaths, { authority });
       if (!inspection.success || !inspection.worktree) return { success: false, error: inspection.error };
       if (inspection.worktree.branch !== expectedBranch) return { success: false, error: 'Worktree branch changed; inspect it again' };
       if (!canRemoveWorktree(inspection, options.discardIgnored === true)) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
@@ -530,38 +531,45 @@ export class GitService {
       const stagingPath = path.join(path.dirname(targetPath), `.clanker-removing-${randomBytes(8).toString('hex')}`);
       // Inspection and repository listing await Git. Re-read live recorded/observed occupancy
       // immediately before dispatch; a native location report may have arrived in either gap.
-      if (this.isOpenWorkspace(targetPath, openWorkspacePaths)) {
+      if (this.isOpenWorkspace(targetPath, openWorkspacePaths, authority)) {
         return { success: false, error: 'A workspace, terminal or dev server is now using this checkout; inspect it again' };
       }
+      outcome = 'unknown';
+      stagingReservation = resolveWorktreeUsagePath(stagingPath);
+      this.worktreesBeingRemoved.add(stagingReservation);
       await this.execGit(gitCwd, ['worktree', 'move', targetPath, stagingPath], 120000);
+      outcome = 'recovery-required';
       try {
         await this.trashWorktree(stagingPath);
       } catch (error) {
         const restored = await this.execGit(gitCwd, ['worktree', 'move', stagingPath, targetPath], 120000)
           .then(() => true, () => false);
         if (!restored) {
-          return { success: false, error: `Could not move checkout to Trash; Git still lists it at ${stagingPath}. The checkout may be there or in Trash. ${this.getGitErrorMessage(error, 'Trash failed')}` };
+          return { success: false, outcome, recoveryPath: stagingPath, error: `Could not restore checkout after Trash failed. Inspect ${stagingPath}, ${targetPath} and Trash before retrying. ${this.getGitErrorMessage(error, 'Trash failed')}` };
         }
+        outcome = 'unchanged';
         throw error;
       }
       try {
         await this.execGit(gitCwd, ['worktree', 'remove', stagingPath], 120000);
       } catch (error) {
-        return { success: false, error: `Checkout is in Trash, but Git cleanup failed for ${stagingPath}: ${this.getGitErrorMessage(error, 'Git removal failed')}` };
+        return { success: false, outcome, recoveryPath: stagingPath, error: `Checkout is in Trash, but Git cleanup failed for ${stagingPath}: ${this.getGitErrorMessage(error, 'Git removal failed')}` };
       }
       const remaining = await this.listWorktrees(gitCwd);
       if (!remaining.success || remaining.worktrees.some((entry) => this.sameWorktreePath(entry.path, stagingPath))) {
-        return { success: false, error: 'Checkout was moved to Trash, but Git still lists its worktree; run git worktree prune to finish' };
+        return { success: false, outcome, recoveryPath: stagingPath, error: 'Checkout was moved to Trash, but Git cleanup could not be verified; refresh worktrees before pruning missing records' };
       }
       let originalPathRecreated = false;
       try { fs.lstatSync(targetPath); originalPathRecreated = true; } catch { /* original path remains absent */ }
       return originalPathRecreated
-        ? { success: true, warning: `New files appeared at ${targetPath} during removal and were left in place` }
-        : { success: true };
+        ? { success: true, outcome: 'removed', warning: `New files appeared at ${targetPath} during removal and were left in place` }
+        : { success: true, outcome: 'removed' };
     } catch (error) {
-      return { success: false, error: this.getGitErrorMessage(error, 'Failed to remove worktree') };
+      return { success: false, outcome, error: this.getGitErrorMessage(error, 'Failed to remove worktree') };
     } finally {
       this.worktreesBeingRemoved.delete(removalKey);
+      if (stagingReservation) this.worktreesBeingRemoved.delete(stagingReservation);
+      this.worktreeRemovalRevision++;
     }
   }
 

@@ -42,6 +42,7 @@ function fixture(options: { harness?: HarnessSession['harness']; sessions: Harne
     getWorkspace: (id: string) => id === 'remote-ws' ? workspace : null,
     isRemotePathReserved: (_environmentId: string, p: string) => options.reserved?.(p) ?? false,
     resolveCheckoutContext: () => main,
+    isCheckoutPathReserved: (_environmentId: string, p: string) => options.reserved?.(p) ?? false,
     getCheckoutContext: (id: string) => contexts.find((context) => context.id === id) ?? null,
     getCheckoutContextsForWorkspace: () => contexts,
     registerCheckoutContext,

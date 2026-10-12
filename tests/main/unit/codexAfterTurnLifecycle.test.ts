@@ -146,6 +146,7 @@ async function build() {
     getWorkspace: (id: string) => (id === 'ws' ? workspace : null),
     getWorkspaceByLocation: () => null,
     resolveCheckoutContext: (id: string, contextId?: string) => (id !== 'ws' ? null : contextId ? contexts.find((entry) => entry.id === contextId) ?? null : contexts[0]),
+    isCheckoutPathReserved: () => false,
     getCheckoutContext: (id: string) => contexts.find((entry) => entry.id === id) ?? null,
     getCheckoutContextsForWorkspace: () => contexts,
     unregisterCheckoutContext: (id: string) => { const before = contexts.length; contexts = contexts.filter((entry) => entry.id !== id); return contexts.length < before; },

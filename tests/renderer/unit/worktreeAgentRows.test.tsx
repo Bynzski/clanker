@@ -13,6 +13,7 @@ import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtu
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
+import { useWorktreeInventory } from '../../../src/renderer/lib/worktreeInventory';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
 const ROOT = '/projects/clanker';
@@ -39,6 +40,7 @@ function openWorkspace(overrides: Parameters<typeof createWorkspaceFixture>[0] =
   });
   void _id; void _lifecycle;
   useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws' });
+  useWorktreeInventory.setState({ byWorkspace: { ws: { success: true, worktrees: (input.checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) } } });
 }
 const workspace = () => useWorkspaceStore.getState().getWorkspaceById('ws')!;
 const agentRows = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('.ws-agent-row')];
@@ -47,7 +49,30 @@ describe('worktree-backed agents in the sidebar', () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
-    installElectronApiMock();
+    installElectronApiMock({ gitListWorktrees: vi.fn(async () => ({ success: true, worktrees: (workspace()?.checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) })) });
+  });
+
+  it('discovers an external checkout without granting access, then validates explicit selection', async () => {
+    openWorkspace({ checkoutContexts: [MAIN], terminals: [], activeTerminalId: null });
+    const external = context('external', 'feature/external');
+    const adopt = vi.fn().mockResolvedValue({ success: true, checkoutContext: external });
+    Object.assign(window.electronAPI, {
+      gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [
+        { path: ROOT, branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+        { path: external.path, branch: external.branch, isMain: false, isLocked: false, isPrunable: false },
+      ] }),
+      adoptWorktreeCheckoutContext: adopt,
+    });
+    render(<WorkspaceNavigatorSection />);
+    const select = await screen.findByRole('button', { name: 'Select checkout for branch feature/external' });
+    expect(workspace().checkoutContexts).toHaveLength(1);
+    expect(adopt).not.toHaveBeenCalled();
+    await userEvent.click(select);
+    expect(adopt).toHaveBeenCalledExactlyOnceWith('ws', external.path);
+    expect(workspace().fileSurfaceContextId).toBe(external.id);
+    expect(workspace().terminals).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Main checkout' }));
+    expect(workspace().fileSurfaceContextId).toBe(MAIN.id);
   });
 
   it('shows the branch on an agent running in an isolated worktree, with path and harness in its tooltip', () => {
@@ -163,106 +188,42 @@ describe('worktree-backed agents in the sidebar', () => {
 
     describe('removing', () => {
       const user = userEvent.setup();
-      let releaseCheckoutContext: ReturnType<typeof vi.fn>;
-      let gitInspectWorktree: ReturnType<typeof vi.fn>;
-      let gitRemoveWorktree: ReturnType<typeof vi.fn>;
-
+      let api: ReturnType<typeof installElectronApiMock>;
       beforeEach(() => {
-        openWorkspace({
-          checkoutContexts: [MAIN, FINISHED],
-          terminals: [createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id })],
+        openWorkspace({ checkoutContexts: [MAIN, FINISHED], terminals: [] });
+        api = installElectronApiMock({
+          gitListWorktrees: vi.fn(async () => ({ success: true, worktrees: (workspace().checkoutContexts ?? []).map((entry) => ({ path: entry.path, branch: entry.branch ?? null, isMain: entry.id === MAIN.id, isLocked: false, isPrunable: entry.missing === true })) })),
+          gitRemoveCheckout: vi.fn().mockResolvedValue({ success: true, reconciliation: { success: true, contexts: [], dropped: [FINISHED.id] } }),
         });
-        releaseCheckoutContext = vi.fn().mockResolvedValue({ success: true });
-        gitInspectWorktree = vi.fn().mockImplementation(async (_repo: string, path: string) => ({
-          success: true, hasChanges: false, worktree: { path, branch: 'issue-72-finished', isMain: false, isLocked: false, isPrunable: false },
-        }));
-        gitRemoveWorktree = vi.fn().mockResolvedValue({ success: true });
-        installElectronApiMock({ releaseCheckoutContext, gitInspectWorktree, gitRemoveWorktree });
       });
-
-      const startRemoval = async () => {
+      const start = async () => {
         render(<WorkspaceNavigatorSection />);
-        await user.click(screen.getByRole('button', { name: 'Remove checkout for branch issue-72-finished' }));
+        await user.click(await screen.findByRole('button', { name: 'Remove checkout for branch issue-72-finished' }));
         return screen.findByRole('alertdialog');
       };
-      const confirm = async () => user.click(screen.getByRole('button', { name: 'Remove worktree' }));
-
-      it('asks first, naming the branch and saying it remains, and does nothing on Cancel', async () => {
-        const dialog = await startRemoval();
-
-        expect(within(dialog).getByText('Remove checkout for branch issue-72-finished?')).toBeTruthy();
+      it('confirms branch retention and cancels without dispatch', async () => {
+        const dialog = await start();
         expect(dialog.textContent).toContain('The branch remains.');
-        expect(dialog.textContent).toContain(FINISHED.path);
         await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-        expect(releaseCheckoutContext).not.toHaveBeenCalled();
-        expect(workspace().checkoutContexts).toHaveLength(2);
+        expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
       });
-
-      it('runs the existing removal on confirm, then the row disappears and the workspace stays open', async () => {
-        await startRemoval();
-        await confirm();
-
+      it('removes through main, then refreshes the Git row and applies confirmed reconciliation', async () => {
+        await start();
+        await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
         await waitFor(() => expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull());
-        expect(releaseCheckoutContext).toHaveBeenCalledExactlyOnceWith('ws', FINISHED.id);
-        expect(gitInspectWorktree).toHaveBeenCalledWith(ROOT, FINISHED.path, [ROOT], 'ws');
-        expect(gitRemoveWorktree).toHaveBeenCalledWith(ROOT, FINISHED.path, 'issue-72-finished', [ROOT], 'ws');
-        expect(workspace().checkoutContexts!.map((entry) => entry.id)).toEqual([MAIN.id]);
-        expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
-        expect(workspace().workspacePath).toBe(ROOT);
-        expect(screen.queryByRole('alert')).toBeNull();
+        expect(api.gitRemoveCheckout).toHaveBeenCalledExactlyOnceWith('ws', FINISHED.path, FINISHED.branch);
+        expect(api.releaseCheckoutContext).not.toHaveBeenCalled();
+        expect(workspace().checkoutContexts?.map((entry) => entry.id)).toEqual([MAIN.id]);
       });
-
-      it('shows a refusal from main and keeps the checkout row, since nothing was released', async () => {
-        releaseCheckoutContext.mockResolvedValue({ success: false, error: '1 running terminal is still using this checkout; close it first' });
-        await startRemoval();
-        await confirm();
-
+      it('keeps the row and original association when preflight refuses', async () => {
+        api.gitRemoveCheckout.mockResolvedValue({ success: false, outcome: 'unchanged', error: 'Worktree has uncommitted, untracked, or ignored files' });
+        await start();
+        await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
         const alert = await screen.findByRole('alert');
-        expect(alert.textContent).toContain('1 running terminal is still using this checkout');
-        expect(alert.textContent).toContain('left on disk');
-        expect(alert.textContent).toContain('branch was not deleted');
-        // Nothing was released, so nothing is claimed to be detached.
-        expect(alert.textContent).not.toContain('no longer attached');
-        expect(screen.getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeTruthy();
-        expect(gitInspectWorktree).not.toHaveBeenCalled();
-        expect(workspace().checkoutContexts).toHaveLength(2);
-      });
-
-      it('shows the existing removal error when it fails after release, explains the checkout was left on disk, and keeps the message', async () => {
-        gitInspectWorktree.mockResolvedValue({ success: true, hasChanges: true, worktree: { path: FINISHED.path, branch: 'issue-72-finished', isMain: false, isLocked: false, isPrunable: false } });
-        await startRemoval();
-        await confirm();
-
-        const alert = await screen.findByRole('alert');
-        expect(alert.textContent).toContain('uncommitted, untracked, or ignored files');
-        expect(alert.textContent).toContain(`left on disk at ${FINISHED.path}`);
-        // The state is described, not this screen: Git may well still list the checkout elsewhere.
-        expect(alert.textContent).toContain('is no longer attached to this workspace');
-        expect(alert.textContent).not.toContain('no longer listed');
-        expect(alert.textContent).toContain('branch was not deleted');
-        // Released and forgotten: the row is gone, but the explanation stays readable until dismissed.
-        expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
-        expect(workspace().checkoutContexts!.map((entry) => entry.id)).toEqual([MAIN.id]);
-        expect(gitRemoveWorktree).not.toHaveBeenCalled();
-        expect(screen.getByRole('alert')).toBeTruthy();
-
-        await user.click(within(alert).getByRole('button', { name: 'Dismiss message' }));
-        expect(screen.queryByRole('alert')).toBeNull();
-      });
-
-      it('surfaces a removal failure and never retries, forces, or re-attaches', async () => {
-        gitRemoveWorktree.mockResolvedValue({ success: false, error: 'Worktree branch changed; inspect it again' });
-        await startRemoval();
-        await confirm();
-
-        // The existing error is not a sentence; the explanation that follows it still reads as one.
-        expect((await screen.findByRole('alert')).textContent).toContain('Worktree branch changed; inspect it again. It was left on disk');
-        expect(screen.getByRole('alert').textContent).toContain('no longer attached to this workspace');
-        expect(gitRemoveWorktree).toHaveBeenCalledTimes(1);
-        expect(releaseCheckoutContext).toHaveBeenCalledTimes(1);
-        expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(FINISHED.id);
+        expect(alert.textContent).toContain('ignored files');
+        expect(alert.textContent).not.toMatch(/left on disk|no longer attached/);
+        expect(workspace().checkoutContexts?.some((entry) => entry.id === FINISHED.id)).toBe(true);
+        expect(screen.getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeVisible();
       });
     });
   });
@@ -414,12 +375,13 @@ describe('an agent whose checkout Git no longer has', () => {
     expect(screen.getByRole('button', { name: /Billy · Antigravity · on branch feature\/update-page-subtitle \(checkout removed\)/ })).toBeTruthy();
   });
 
-  it('never offers a missing checkout as an inactive one to remove', () => {
+  it('shows Git-listed missing checkouts for repair without offering removal', () => {
     openWorkspace({ checkoutContexts: [MAIN, REMOVED, FINISHED], terminals: [] });
     render(<WorkspaceNavigatorSection />);
     const inactive = screen.getByRole('list', { name: /inactive checkouts/ });
 
-    expect(within(inactive).queryByText(/update-page-subtitle/)).toBeNull();
+    expect(within(inactive).getByRole('button', { name: /Select checkout for branch feature\/update-page-subtitle/ })).toBeDisabled();
+    expect(within(inactive).queryByRole('button', { name: /Remove checkout for branch feature\/update-page-subtitle/ })).toBeNull();
     expect(within(inactive).getByText('issue-72-finished')).toBeTruthy();
   });
 });

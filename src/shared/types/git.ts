@@ -195,6 +195,9 @@ export interface GitWorktreeRemoveResult {
   error?: string;
   warning?: string;
   recoveryPath?: string;
+  /** A failed dispatch can have changed Git/Trash state; never infer directory existence. */
+  outcome?: 'unchanged' | 'removed' | 'recovery-required' | 'unknown';
+  reconciliation?: import('./checkoutContext').ReconcileCheckoutContextsResult;
 }
 
 /**

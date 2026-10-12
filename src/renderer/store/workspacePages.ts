@@ -109,12 +109,10 @@ export function synchronizePages(previous: WorkspaceTab | undefined, next: Works
       maximizedPaneId };
   });
   const selected = updatedPages.find((page) => page.id === activePageId)!;
-  const editorPresented = next.editorVisible && next.editorPane && collectLeafPaneIds(selected.layoutRoot).includes(next.editorPane.id)
-    && (!selected.maximizedPaneId || selected.maximizedPaneId === next.editorPane.id);
   return { ...projectPageBrowser(next, selected), pages: updatedPages, activePageId, minimizedPanes,
     pendingTerminalIds: next.pendingTerminalIds?.filter((id) => next.terminals.some((terminal) => terminal.id === id)),
     layoutRoot: selected.layoutRoot, layoutRevision: selected.layoutRevision, layoutUndoStack: selected.layoutUndoStack,
-    activeTerminalId: selected.activeTerminalId, fileSurfaceContextId: !switched && editorPresented ? next.fileSurfaceContextId : undefined };
+    activeTerminalId: selected.activeTerminalId, fileSurfaceContextId: !switched ? next.fileSurfaceContextId : undefined };
 }
 
 export function selectPage(workspace: WorkspaceTab, pageId: string): WorkspaceTab {

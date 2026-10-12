@@ -209,7 +209,7 @@ describe('Permanent Branches and Worktrees', () => {
     api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [managed, used], dropped: [] });
     api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true }, ...[managed, used].map((entry) => ({ path: entry.path, branch: entry.branch, isMain: false })), { path: '/repo-worktrees/external', branch: 'external', isMain: false }] });
     const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Worktrees' }));
-    expect(await screen.findByText('Managed', { exact: true })).toBeVisible(); expect(screen.getByText('Unmanaged', { exact: true })).toBeVisible(); expect(screen.getByText('In use', { exact: true })).toBeVisible();
+    expect((await screen.findAllByText('Available', { exact: true })).length).toBe(2); expect(screen.getByText('In use', { exact: true })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Remove checkout for branch used' })).toBeNull(); expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove checkout for branch managed' })).toBeEnabled(); expect(api.reconcileCheckoutContexts).toHaveBeenCalledTimes(1);
   });

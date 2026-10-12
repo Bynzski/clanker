@@ -115,6 +115,8 @@ export interface WorkspaceState {
    * that main would not produce. Idempotent for the same context.
    */
   upsertCheckoutContext: (workspaceId: string, checkoutContext: CheckoutContext) => boolean;
+  /** Explicit presentation selection of a validated root; never registers a path. */
+  selectCheckoutContext: (workspaceId: string, checkoutContextId: string) => boolean;
   /**
    * Forgets a worktree context on its workspace after main has released it. Never removes the main
    * context or another workspace's context, and leaves the workspace root, layout and terminals

@@ -37,7 +37,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       }),
       gitListWorktrees: vi.fn().mockImplementation(async () => ({ success: true, worktrees: remaining })),
       gitInspectWorktree: vi.fn().mockImplementation(async (_r: string, path: string) => ({ success: true, hasChanges: false, worktree: remaining.find((e) => e.path === path) })),
-      gitRemoveWorktree: vi.fn().mockImplementation(async (_r: string, path: string) => {
+      gitRemoveCheckout: vi.fn().mockImplementation(async (_r: string, path: string) => {
         if (removeResult.success) remaining = remaining.filter((e) => e.path !== path);
         return removeResult;
       }),
@@ -70,9 +70,9 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     await clickRemove();
     await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
 
-    await waitFor(() => expect(api.gitRemoveWorktree).toHaveBeenCalledTimes(1));
-    expect(api.gitInspectWorktree).toHaveBeenCalledTimes(1);
-    expect(api.gitRemoveWorktree.mock.calls[0][1]).toBe(OLD_TASK.path);
+    await waitFor(() => expect(api.gitRemoveCheckout).toHaveBeenCalledTimes(1));
+    expect(api.gitInspectWorktree).not.toHaveBeenCalled();
+    expect(api.gitRemoveCheckout.mock.calls[0][1]).toBe(OLD_TASK.path);
     await waitFor(() => expect(screen.queryByText('old-task')).toBeNull());
   });
 
@@ -94,7 +94,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(screen.getByText('old-task')).toBeTruthy();
-    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+    expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
   });
 
   it('still closes the menu on an outside click when no confirmation is active', async () => {
@@ -127,7 +127,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     await user.click(screen.getByRole('button', { name: 'Forget checkout' }));
     await waitFor(() => expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.checkoutContexts!.some((entry) => entry.id === context.id)).toBe(false));
     expect(screen.queryByRole('button', { name: 'Forget stale checkout…' })).toBeNull();
-    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+    expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
     expect(api.gitPruneWorktrees).not.toHaveBeenCalled();
     expect(api.releaseCheckoutContext).not.toHaveBeenCalled();
     cleanup();
@@ -144,7 +144,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     await user.click(await screen.findByRole('button', { name: 'Forget checkout' }));
     expect((await screen.findByRole('alert')).textContent).toContain('still registered');
     expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.checkoutContexts!.some((entry) => entry.id === context.id)).toBe(true);
-    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+    expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
   });
 
   describe('missing worktrees', () => {
@@ -180,7 +180,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       expect(screen.queryByRole('button', { name: 'Prune missing worktrees…' })).toBeNull();
       expect(screen.getByRole('status').textContent).toContain('Pruned 1 stale worktree record');
       expect(api.gitInspectWorktree).not.toHaveBeenCalled();
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+      expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
     });
 
     it('Cancel runs nothing, and a failed prune stays visible', async () => {
@@ -208,7 +208,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     const LOCKED = listed('/projects/app-worktrees/external-task', 'external-task', { isLocked: true });
     beforeEach(() => {
       remaining = [MAIN_ENTRY, LOCKED];
-      api.gitUnlockWorktree.mockImplementation(async (_repo: string, path: string) => {
+      api.gitUnlockWorktree.mockImplementation(async (_workspaceId: string, path: string) => {
         remaining = remaining.map((entry) => (entry.path === path ? { ...entry, isLocked: false } : entry));
         return { success: true };
       });
@@ -226,11 +226,11 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       await user.click(screen.getByRole('button', { name: 'Unlock worktree' }));
       await waitFor(() => expect(api.gitUnlockWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, LOCKED.path, 'ws'));
       await waitFor(() => expect(screen.queryByText('Locked')).toBeNull());
-      expect(within(await row()).getByText('Unmanaged')).toBeTruthy();
+      expect(within(await row()).getByText('Available')).toBeTruthy();
       expect(within(await row()).queryByRole('button', { name: /Unlock/ })).toBeNull();
       // Unlock removed nothing; removal is its own confirmed step.
       expect(api.gitInspectWorktree).not.toHaveBeenCalled();
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+      expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
       expect(within(await row()).getByRole('button', { name: 'Remove checkout for branch external-task' })).toBeTruthy();
     });
 
@@ -257,7 +257,7 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       const ctx = { id: 'ws::ckt-ext', workspaceId: 'ws', environmentId: 'local', path: LOCKED.path, kind: 'worktree' as const, branch: 'external-task' };
       useWorkspaceStore.getState().upsertCheckoutContext('ws', ctx);
       await openMenu('external-task');
-      expect(within(await row()).getByText('Managed · Locked')).toBeTruthy();
+      expect(within(await row()).getByText('Locked')).toBeTruthy();
       expect(within(await row()).getByRole('button', { name: /Unlock/ })).toBeTruthy();
       expect(within(await row()).queryByRole('button', { name: /Remove checkout/ })).toBeNull();
     });

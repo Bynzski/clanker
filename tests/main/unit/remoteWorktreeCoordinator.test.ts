@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { removeListedWorktree } from '../../../src/main/worktreeRemoval';
 import { RemoteWorktreeCoordinator } from '../../../src/main/remote/remoteWorktreeCoordinator';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
@@ -24,6 +25,37 @@ async function setup() {
 describe('remote worktree removal coordination', () => {
   const saved = (operationId = '12345678-1234-1234-1234-123456789abc'): RemoteWorktreeRemovalRecord => ({
     operationId, environmentId: 'ssh', resourceId: 'ssh:host', workspacePath: '/srv/repo', worktreePath: '/srv/task',
+  });
+
+  it.each([false, true])('removes an associated SSH entry without early release (unknown outcome: %s)', async (unknown) => {
+    const f = await setup();
+    const attached = await f.registry.registerCheckoutContext({ workspaceId: 'source', path: '/srv/task', kind: 'worktree', branch: 'task' });
+    expect(attached.success).toBe(true);
+    const context = f.registry.getCheckoutContext(attached.checkoutContext!.id)!;
+    const reconcile = vi.fn(async () => ({ success: true, contexts: [], dropped: [context.id] }));
+    f.environment.removeWorktree.mockImplementationOnce(async () => {
+      expect(f.registry.getCheckoutContext(context.id)).toBe(context);
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+      return unknown ? { success: false, uncertain: true, error: 'SSH disconnected' } : { success: true };
+    });
+    const result = await removeListedWorktree({
+      registry: f.registry, workspace: f.source, path: '/srv/task', expectedBranch: 'task', usages: () => [],
+      list: async () => ({ success: true, worktrees: [f.worktree] }),
+      remove: (entry, authority) => f.coordinator.remove(f.source, entry.path, entry.branch, {}, authority), reconcile,
+    });
+    expect(result).toMatchObject({ success: !unknown, outcome: unknown ? 'unknown' : 'removed' });
+    expect(f.environment.inspectWorktree).toHaveBeenCalledWith('/srv/repo', '/srv/task', ['/srv/repo']);
+    if (unknown) {
+      expect(reconcile).not.toHaveBeenCalled();
+      expect(f.registry.getCheckoutContext(context.id)).toBe(context);
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+      await f.coordinator.reconcile('ssh');
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+      expect(f.environment.waitForWorktreeOperations).toHaveBeenCalled();
+    } else {
+      expect(reconcile).toHaveBeenCalledOnce();
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+    }
   });
 
   it('starts with malformed evidence intact, protects other valid records, and fails remote operations closed', async () => {

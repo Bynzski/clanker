@@ -39,6 +39,7 @@ vi.mock('../../../src/main/ipc/settingsIpc', async () => {
   };
 });
 
+import { releaseCheckoutContext } from '../../../src/main/checkoutContextRelease';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { GitService } from '../../../src/main/gitService';
@@ -51,7 +52,6 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createIsolatedAgent } from '../../../src/renderer/lib/isolatedAgentLaunch';
 import { removeWorktreeCheckout } from '../../../src/renderer/lib/worktreeCheckoutRemoval';
 import { findManagedWorktreeContext, getAgentWorktreeContext, getUnusedWorktreeContexts } from '../../../src/renderer/lib/worktreeAgents';
-import { removeUnmanagedWorktree } from '../../../src/renderer/lib/unmanagedWorktreeRemoval';
 import type { GitWorktree } from '../../../src/shared/types/git';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
@@ -90,9 +90,10 @@ beforeEach(() => {
     () => undefined,
     async () => undefined,
     () => [...terminals.values()].map((terminal) => terminal.cwd as string | undefined).filter((cwd): cwd is string => typeof cwd === 'string'),
-    () => registry.getLocalOpenWorkspacePaths(),
+    (excluded) => registry.getLocalOpenWorkspacePaths(excluded),
   );
-  registerGitIpc({ getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry });
+  registerGitIpc({ getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry, getCheckoutUsages: () => terminals.values(),
+    releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry, terminals: terminals.values(), workspaceId, checkoutContextId }) });
   registerTerminalIpc({
     getTerminals: () => terminals,
     getMainWindow: () => null,
@@ -113,6 +114,7 @@ beforeEach(() => {
     gitListWorktrees: (p: string, id?: string) => call(C.GIT_LIST_WORKTREES, p, id),
     gitInspectWorktree: (...args: unknown[]) => call(C.GIT_INSPECT_WORKTREE, ...args),
     gitRemoveWorktree: (...args: unknown[]) => call(C.GIT_REMOVE_WORKTREE, ...args),
+    gitRemoveCheckout: (...args: unknown[]) => call(C.GIT_REMOVE_CHECKOUT, ...args),
   };
   (globalThis as { window?: unknown }).window = { electronAPI: bridge };
   (globalThis as { localStorage?: unknown }).localStorage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined, clear: () => undefined };
@@ -167,7 +169,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
     expect((await git('branch', '--list', 'smoke-task')).stdout).toContain('smoke-task');
 
     // While the isolated agent runs, the checkout cannot be released or removed.
-    expect(await removeWorktreeCheckout(workspace(), context)).toMatchObject({ success: false, stage: 'release', released: false });
+    expect(await removeWorktreeCheckout(workspace(), context)).toMatchObject({ success: false, outcome: 'unchanged' });
     expect(fs.existsSync(path.join(context.path, 'README.md'))).toBe(true);
 
     // Close the isolated agent.
@@ -206,7 +208,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
     expect(workspace().terminals).toHaveLength(1);
   });
 
-  it('removal of a dirty inactive checkout is refused, the checkout stays on disk, and the context stays released', async () => {
+  it('dirty preflight retains the checkout and its association', async () => {
     await openProjectWithNormalAgent();
     await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'dirty-task', visibleHarnessIds: [''] });
     const isolated = workspace().terminals[1];
@@ -217,11 +219,11 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
 
     const result = await removeWorktreeCheckout(workspace(), context);
 
-    expect(result).toMatchObject({ success: false, stage: 'inspect', released: true, error: expect.stringContaining('uncommitted') });
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('uncommitted') });
     expect(fs.existsSync(path.join(context.path, 'wip.txt'))).toBe(true);
     expect((await git('branch', '--list', 'dirty-task')).stdout).toContain('dirty-task');
-    expect(getUnusedWorktreeContexts(workspace())).toEqual([]);
-    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+    expect(getUnusedWorktreeContexts(workspace())).toEqual([context]);
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(2);
   });
 });
 
@@ -257,7 +259,7 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     await openProjectWithNormalAgent();
     const external = externalWorktree('ext-clean');
 
-    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+    const result = await removeWorktreeCheckout(workspace(), await entryFor(external));
 
     expect(result).toMatchObject({ success: true });
     expect(fs.existsSync(external)).toBe(false);
@@ -281,9 +283,9 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     const external = externalWorktree(name);
     dirty(external);
 
-    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+    const result = await removeWorktreeCheckout(workspace(), await entryFor(external));
 
-    expect(result).toMatchObject({ success: false, stage: 'inspect', error: expect.stringContaining('uncommitted') });
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('uncommitted') });
     expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
     expect(await hasBranch(name)).toBe(true);
   });
@@ -310,9 +312,9 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     useWorkspaceStore.getState().addWorkspace({ ...workspace(), id: 'legacy-tab', workspacePath: toPosixPath(external), isLinkedWorktree: true, terminals: [], activeTerminalId: null });
     useWorkspaceStore.getState().selectWorkspace('ws');
 
-    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+    const result = await removeWorktreeCheckout(workspace(), await entryFor(external));
 
-    expect(result).toMatchObject({ success: false, stage: 'inspect', error: expect.stringContaining('Close this workspace tab') });
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('Close the workspace') });
     expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
     expect(useWorkspaceStore.getState().getWorkspaceById('legacy-tab')).not.toBeNull();
     expect(registry.getWorkspace('legacy-tab')).not.toBeNull();
@@ -323,13 +325,13 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     const external = externalWorktree('ext-busy');
     await api().spawnTerminal(toPosixPath(external), undefined, undefined);
 
-    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+    const result = await removeWorktreeCheckout(workspace(), await entryFor(external));
 
-    expect(result).toMatchObject({ success: false, stage: 'inspect' });
+    expect(result).toMatchObject({ success: false });
     expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
   });
 
-  it('keeps managed and unmanaged lifecycles apart: an attached checkout is never removed directly', async () => {
+  it('removes an unused attached Git entry through the same operation as an external one', async () => {
     await openProjectWithNormalAgent();
     await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'managed-two', visibleHarnessIds: [''] });
     const isolated = workspace().terminals[1];
@@ -338,13 +340,8 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
     await api().killTerminal(isolated.id);
     useWorkspaceStore.getState().removeTerminal(isolated.id);
 
-    // Even inactive, the direct path refuses; nothing is touched and the context stays attached.
-    expect(await removeUnmanagedWorktree(workspace(), entry)).toMatchObject({ success: false, stage: 'validate' });
-    expect(fs.existsSync(path.join(context.path, 'README.md'))).toBe(true);
-    expect(workspace().checkoutContexts!.map((item) => item.id)).toContain(context.id);
-
-    // The lifecycle path does release, inspect and remove, and the branch stays.
-    expect(await removeWorktreeCheckout(workspace(), context)).toMatchObject({ success: true });
+    // Creation source is not a removal permission class.
+    expect(await removeWorktreeCheckout(workspace(), entry)).toMatchObject({ success: true });
     expect(fs.existsSync(context.path)).toBe(false);
     expect(await hasBranch('managed-two')).toBe(true);
   });

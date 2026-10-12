@@ -12,6 +12,7 @@ import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAt
 import { recordListedWorktrees } from '../sessionWorktrees';
 import type { WorktreeProvenance } from '../worktreeProvenance';
 import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
+import { removeListedWorktree } from '../worktreeRemoval';
 import { guardWorktreePrune } from '../worktreePruneGuard';
 import type { TerminalUsage } from '../checkoutContextRelease';
 import type { ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
@@ -32,6 +33,7 @@ import {
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_REMOVE_CHECKOUT,
   GIT_PRUNE_WORKTREES,
   GIT_UNLOCK_WORKTREE,
   ADOPT_WORKTREE_CHECKOUT_CONTEXT,
@@ -171,6 +173,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     [GIT_RENAME_REMOTE]: 3,
     [GIT_INSPECT_WORKTREE]: 3,
     [GIT_REMOVE_WORKTREE]: 4,
+    [GIT_REMOVE_CHECKOUT]: 0,
     [GIT_PRUNE_WORKTREES]: 1,
     [GIT_UNLOCK_WORKTREE]: 2,
     [ADOPT_WORKTREE_CHECKOUT_CONTEXT]: 0,
@@ -183,6 +186,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     GIT_CREATE_WORKTREE,
     GIT_INSPECT_WORKTREE,
     GIT_REMOVE_WORKTREE,
+    GIT_REMOVE_CHECKOUT,
     GIT_PRUNE_WORKTREES,
     GIT_UNLOCK_WORKTREE,
     ADOPT_WORKTREE_CHECKOUT_CONTEXT,
@@ -214,7 +218,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
           if (typeof scopeObj.checkoutContextId !== 'string' || !scopeObj.checkoutContextId.trim()) throw new Error('Invalid checkout identity');
           checkoutContextId = scopeObj.checkoutContextId.trim();
         }
-      } else if (channel !== GIT_CREATE_WORKTREE && channel !== ADOPT_WORKTREE_CHECKOUT_CONTEXT && args[idPosition + 1] !== undefined) {
+      } else if (channel !== GIT_CREATE_WORKTREE && channel !== ADOPT_WORKTREE_CHECKOUT_CONTEXT && channel !== GIT_REMOVE_CHECKOUT && args[idPosition + 1] !== undefined) {
         const checkout = args[idPosition + 1];
         if (typeof checkout !== 'string' || !checkout.trim()) throw new Error('Invalid checkout identity');
         checkoutContextId = checkout.trim();
@@ -598,6 +602,27 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return remoteWorktrees.remove(ws, worktreePath, expectedBranch);
     }
     return removeLocalWorktree(workspacePath, worktreePath, expectedBranch, openWorkspacePaths);
+  });
+
+  // No renderer release, occupancy claims or association exceptions cross this boundary.
+  registerGitHandler(GIT_REMOVE_CHECKOUT, async (_, workspaceId: string, worktreePath: unknown, expectedBranch: unknown) => {
+    const registry = getWorkspaceRegistry?.();
+    const ws = resolveWorkspace(workspaceId);
+    if (!registry || !ws || !deps.getCheckoutUsages) return { success: false, outcome: 'unchanged', error: 'Cannot verify checkout usage' };
+    const remote = ws.location.environmentId !== 'local';
+    if (remote) {
+      try { await remoteWorktrees.requireIdle(ws.location.environmentId); }
+      catch (error) { return { success: false, outcome: 'unknown', error: error instanceof Error ? error.message : 'Verify pending remote removals first' }; }
+    }
+    return removeListedWorktree({
+      registry, workspace: ws, path: worktreePath, expectedBranch,
+      usages: deps.getCheckoutUsages,
+      list: () => gitService.listWorktrees(ws.location.path),
+      remove: (entry, authority) => remote
+        ? remoteWorktrees.remove(ws, entry.path, entry.branch, {}, authority)
+        : gitService.removeWorktree(toNativePath(ws.location.path, process.platform), toNativePath(entry.path, process.platform), entry.branch, [], {}, authority),
+      reconcile: () => reconcileInScope(workspaceId),
+    });
   });
   registerGitHandler(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);

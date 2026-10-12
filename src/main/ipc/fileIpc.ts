@@ -33,7 +33,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       if (!workspaceId || typeof checkoutContextId !== 'string' || !checkoutContextId) return null;
       const workspace = reg.getWorkspace(workspaceId);
       const context = reg.resolveCheckoutContext(workspaceId, checkoutContextId);
-      if (!workspace || !context || context.missing) return null;
+      if (!workspace || !context || context.missing || reg.isCheckoutPathReserved(context.environmentId, context.path)) return null;
       // Only a validated root of this workspace authorizes access. Renderer paths are descriptive.
       return { ...workspace, location: { ...workspace.location, path: context.path } };
     }

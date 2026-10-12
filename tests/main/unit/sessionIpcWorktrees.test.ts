@@ -63,6 +63,7 @@ function setup(options: {
     getWorkspace: (id: string) => id === 'ws' ? workspace : null,
     resolveCheckoutContext: () => contexts[0],
     getCheckoutContextsForWorkspace: () => contexts,
+    isCheckoutPathReserved: () => false,
     getCheckoutContext: (id: string) => contexts.find((entry) => entry.id === id) ?? null,
     registerCheckoutContext,
   };

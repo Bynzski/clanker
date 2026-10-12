@@ -5,7 +5,7 @@ import type { WorkspaceTab } from '../store/workspaceTypes';
 import { findManagedWorktreeContext, isCheckoutContextInUse } from './worktreeAgents';
 
 /** Why a listed worktree is or is not a usable destination, as the picker words it. */
-export type WorktreeChoiceState = 'available' | 'in-use' | 'unmanaged' | 'missing' | 'locked';
+export type WorktreeChoiceState = 'available' | 'in-use' | 'missing' | 'locked';
 
 export interface WorktreeChoice {
   /** The path Git lists; the only thing sent back to main to select it. */
@@ -29,7 +29,6 @@ export interface IsolatedAgentChoices {
 export const WORKTREE_STATE_LABEL: Record<WorktreeChoiceState, string> = {
   available: 'Available',
   'in-use': 'In use',
-  unmanaged: 'Unmanaged',
   missing: 'Missing',
   locked: 'Locked',
 };
@@ -63,7 +62,7 @@ export function buildIsolatedAgentChoices(params: {
     const state: WorktreeChoiceState = entry.isPrunable ? 'missing'
       : entry.isLocked ? 'locked'
         : isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path }) ? 'in-use'
-          : managed ? 'available' : 'unmanaged';
+          : 'available';
     choices.push({
       path: entry.path,
       branch: entry.branch,

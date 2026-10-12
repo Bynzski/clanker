@@ -2,13 +2,9 @@ import { defineCapability, type AgentBridgeCallContext, type AgentBridgeCapabili
 import type { AgentBridgeCaller } from './capabilities';
 
 /**
- * The two high-level checkout transactions an agent may ask Clanker to perform. They are
- * transactions, not Git wrappers: there is deliberately no create-branch, create-worktree,
- * change-cwd, delete-worktree or delete-branch primitive, because each exposes an unsafe ordering and
- * allows a split between where the conversation runs and what Clanker thinks it owns.
- *
- * The model supplies operation data only (a branch name, a cleanup preference). The workspace,
- * terminal, checkout, harness and every path come from the authenticated caller and main's own state.
+ * Compatibility conversation-relocation transactions. Routine Git worktree management
+ * does not depend on these provider adapters. Inputs never select caller authority:
+ * workspace, terminal, checkout, harness and paths come from authenticated main state.
  */
 export interface AgentCheckoutLifecyclePort {
   /** Move the calling conversation into a new Clanker-owned isolated checkout. */
@@ -30,29 +26,21 @@ export const MAX_BRANCH_LENGTH = 200;
 export const CREATE_ISOLATED_CHECKOUT = 'clanker_create_isolated_checkout';
 export const COMPLETE_ISOLATED_CHECKOUT = 'clanker_complete_isolated_checkout';
 
-/**
- * The text the model reads when it decides how to create or finish a worktree. It is discoverability, not
- * a security boundary (nothing here stops a shell command), and it exists because smoke tests showed both
- * Claude and Codex otherwise reach for their own worktree mechanisms: Claude's `EnterWorktree`, Codex's
- * `git worktree remove`. Some harnesses load tool schemas lazily, so the description itself carries the
- * rule rather than relying on the server instructions alone.
- */
-export const CREATE_DESCRIPTION = 'Use this whenever you need to create or enter an isolated worktree or branch to work in while running in Clanker. '
-  + 'Prefer this over `git worktree add`, Claude `EnterWorktree`, Codex `--worktree` or any other provider-native worktree creation, because '
-  + 'Clanker must track the checkout and move this same conversation into it. Give it a new branch name; Clanker creates the worktree, '
-  + 'then restarts this conversation inside it. After calling it, finish your reply without running more tools: the conversation continues '
-  + 'in the isolated checkout on its next turn. Use normal Git and GitHub tools for everything else. Native conversation identification is required; for Codex, enable Clanker hooks in /hooks before requesting a move.';
-export const COMPLETE_DESCRIPTION = 'Use this after the work in an isolated checkout is merged or finished, whenever you would otherwise remove or leave that worktree. '
-  + 'Prefer this over `git worktree remove`, Claude `ExitWorktree`, `git branch -d/-D` or any manual worktree or branch cleanup, because '
-  + 'Clanker must move this same conversation back to the main checkout before it removes the isolated one. Pass deleteBranch to also delete '
-  + 'the branch when Git considers it fully merged (it is never force-deleted). After calling it, finish your reply without running more '
-  + 'tools: the conversation continues in the main checkout on its next turn. Use normal Git and GitHub tools to commit, push, open and merge pull requests first. Native conversation identification is required; for Codex, enable Clanker hooks in /hooks before requesting a move.';
+/** Optional relocation guidance, not Git authority or a security boundary. */
+export const CREATE_DESCRIPTION = 'Compatibility operation: use only when the user explicitly requests moving this existing conversation into a new isolated checkout. '
+  + 'For ordinary worktree creation or a new agent, use Git/provider-native tools or Clanker checkout selection instead. '
+  + 'Clanker creates a worktree and resumes this conversation there using the provider-specific strategy; this is not same-turn live relocation. '
+  + 'After calling, finish your reply without running more tools; the conversation continues on its next turn. Native conversation identification and attached attention hooks are required.';
+export const COMPLETE_DESCRIPTION = 'Compatibility operation: use only when the user explicitly requests moving this conversation back to main AND removing its old checkout. '
+  + 'Do not call merely because an agent or task is finished; worktrees remain until separately removed. '
+  + 'This resumes the conversation before safe cleanup. deleteBranch optionally deletes only a fully merged branch, never force-deletes it. '
+  + 'After calling, finish your reply without running more tools; the conversation continues on its next turn. Native conversation identification and attached attention hooks are required.';
 
 export function liveCheckoutToolDescription(name: string, fallback: string): string {
-  if (name === CREATE_ISOLATED_CHECKOUT) return 'Use this to create and enter a Clanker-owned isolated checkout for a new branch. '
+  if (name === CREATE_ISOLATED_CHECKOUT) return 'Compatibility operation: use only for explicitly requested relocation of this conversation into a new isolated checkout. '
     + 'Clanker moves this same live root conversation through the provider native mechanism and confirms its checkout before returning. '
     + 'On success, continue this same turn in the returned checkout. On failure do not assume movement or remove any checkout.';
-  if (name === COMPLETE_ISOLATED_CHECKOUT) return 'Use this after isolated work is merged or finished to move this same live root conversation back to the main checkout before safe cleanup. '
+  if (name === COMPLETE_ISOLATED_CHECKOUT) return 'Compatibility operation: use only for explicitly requested relocation back to main AND removal of the old checkout, never merely because a task finished. '
     + 'Clanker confirms native movement before releasing or removing the isolated checkout. On success continue this same turn in main. '
     + 'deleteBranch only deletes a fully merged branch; discardIgnored preserves ignored-only contents in Trash/recovery. '
     + 'On failure or partial cleanup, do not remove checkouts yourself.';

@@ -106,5 +106,6 @@ export function isCurrentCheckoutContext(registry: WorkspaceRegistry | undefined
   if (!registry || !context) return true;
   const current = registry.getCheckoutContext(context.id);
   return Boolean(current) && current!.workspaceId === context.workspaceId && current!.environmentId === context.environmentId
-    && current!.path === context.path && current!.kind === context.kind;
+    && current!.path === context.path && current!.kind === context.kind
+    && !current!.missing && !registry.isCheckoutPathReserved(context.environmentId, context.path);
 }
