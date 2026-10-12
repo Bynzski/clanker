@@ -37,6 +37,12 @@ function resolveElectronBuilderBin(cwd = process.cwd()) {
   return 'electron-builder';
 }
 
+function resolveProcessExitCode(result) {
+  if (!result || result.error || result.signal) return 1;
+  if (typeof result.status === 'number') return result.status;
+  return 1;
+}
+
 function runDevBuild() {
   const devVersion = computeDevVersion({ cwd: process.cwd() });
   console.log(`[build:dist:dev] Packaging dev build with version: ${devVersion}`);
@@ -58,10 +64,11 @@ function runDevBuild() {
 
   if (result.error) {
     console.error('[build:dist:dev] Failed to execute electron-builder:', result.error.message);
-    process.exit(1);
+  } else if (result.signal) {
+    console.error(`[build:dist:dev] Packaging terminated by signal: ${result.signal}`);
   }
 
-  process.exit(result.status ?? 0);
+  process.exit(resolveProcessExitCode(result));
 }
 
 if (require.main === module) {
@@ -72,4 +79,5 @@ module.exports = {
   getGitCommitSha,
   computeDevVersion,
   resolveElectronBuilderBin,
+  resolveProcessExitCode,
 };

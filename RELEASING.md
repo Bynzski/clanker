@@ -171,24 +171,40 @@ Dev builds are configured for troubleshooting and diagnosing issues:
 3. **Detached DevTools:**
    Launch with `--debug` or `CLANKER_DEBUG=1` to open detached Chromium DevTools on launch, and use `F12` or `Ctrl+Shift+I` to toggle DevTools.
 4. **Renderer and Chromium logging:**
-   Launch with `--enable-logging` (or `ELECTRON_ENABLE_LOGGING=1`) to stream internal Chromium logs and renderer `console` calls to stdout/stderr.
-5. **Log file capture:**
-   On Windows (where GUI executables detach from the console) or Linux, specify `ELECTRON_LOG_FILE=<path>` to persist output.
+   Launch with `--enable-logging` (or `ELECTRON_ENABLE_LOGGING=1`) to stream internal Chromium engine logs and renderer `console` calls to stdout/stderr.
+5. **Main-process console vs. Chromium log files:**
+   `ELECTRON_LOG_FILE=<path>` redirects Chromium's internal log output to a file, but does *not* automatically capture Node.js main-process `console.debug` statements (such as agent-attention traces) or `[diag]` crash lines. To capture main-process output, stream stdout/stderr from a terminal session or pipe output as described below.
 
 #### Recommended invocation for issue review:
 
 **Linux:**
+The AppImage executes directly and inherits the terminal's stdout/stderr streams:
 ```bash
-CLANKER_DEBUG=1 ./release/Clanker\ Grid-0.12.0-dev.*.AppImage --enable-logging 2>&1 | tee clanker-dev.log
+CLANKER_DEBUG=1 ./release/Clanker\ Grid-0.12.0-dev.<sha>.AppImage --enable-logging 2>&1 | tee clanker-dev.log
 ```
 
-**Windows (PowerShell):**
-```powershell
-$env:CLANKER_DEBUG = "1"
-$env:ELECTRON_ENABLE_LOGGING = "1"
-$env:ELECTRON_LOG_FILE = "clanker-dev.log"
-.\release\"Clanker Grid Setup 0.12.0-dev.*.exe"
-```
+**Windows:**
+On Windows, GUI executables do not attach to the terminal console by default. To review agent-attention diagnostics and crash logs:
+
+- **Portable executable (recommended for testing):**
+  Use the standalone portable binary `release/Clanker Grid <version>.exe` (substitute your actual commit SHA):
+  ```powershell
+  $env:CLANKER_DEBUG = "1"
+  & ".\release\Clanker Grid 0.12.0-dev.<sha>.exe" --enable-logging 2>&1 | Tee-Object -FilePath clanker-dev.log
+  ```
+- **Installed application (via NSIS installer):**
+  After running `release/Clanker Grid Setup <version>.exe` to install, launch the installed application executable (located by default in `%LOCALAPPDATA%\Programs\clanker-grid`):
+  ```powershell
+  $env:CLANKER_DEBUG = "1"
+  & "$env:LOCALAPPDATA\Programs\clanker-grid\Clanker Grid.exe" --enable-logging 2>&1 | Tee-Object -FilePath clanker-dev.log
+  ```
+- **From Command Prompt (`cmd.exe`):**
+  ```cmd
+  set CLANKER_DEBUG=1
+  "release\Clanker Grid 0.12.0-dev.<sha>.exe" --enable-logging > clanker-dev.log 2>&1
+  ```
+- **Interactive DevTools:**
+  In both portable and installed builds launched with `--debug` or `CLANKER_DEBUG=1`, detached Chromium DevTools opens automatically on launch. The DevTools Console provides real-time renderer logs, while the PowerShell / cmd redirection above captures the main-process attention diagnostics.
 
 ## Hotfix releases
 
