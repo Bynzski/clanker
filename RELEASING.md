@@ -125,6 +125,71 @@ Not currently produced or supported:
 
 Code signing for Windows artifacts is planned for a follow-up release; current NSIS and portable builds are unsigned and will trigger SmartScreen on first launch when they are produced.
 
+## Creating dev builds
+
+Dev builds are preview artifacts produced from feature branches or `main` for debugging, verification, and smoke-testing without cutting a tagged release.
+
+### Versioning and naming
+
+Dev builds automatically embed the git commit SHA and `-dev` prerelease tag into the version metadata:
+
+```
+<baseVersion>-dev.<commitSha>
+```
+
+For example, on commit `db51b43` with `package.json` at `0.12.0`, the generated version is `0.12.0-dev.db51b43`.
+
+The produced artifacts in `release/` include this metadata in their filenames:
+- **Linux:** `release/Clanker Grid-<baseVersion>-dev.<commitSha>.AppImage`
+- **Windows NSIS:** `release/Clanker Grid Setup <baseVersion>-dev.<commitSha>.exe`
+- **Windows portable:** `release/Clanker Grid <baseVersion>-dev.<commitSha>.exe`
+
+The running application reports this version via `app.getVersion()` and displays `v<baseVersion>-dev.<commitSha>` in the status bar.
+
+### Packaging command
+
+Run the dev packaging script:
+
+```bash
+# Linux (builds AppImage for x64)
+npm run build:dist:dev -- --linux AppImage --x64
+
+# Windows (builds NSIS installer and portable executable)
+npm run build:dist:dev
+```
+
+This runs `npm run build` and invokes `electron-builder --publish never` with `-c.extraMetadata.version=<baseVersion>-dev.<commitSha>`. Any additional flags passed after `--` are forwarded directly to electron-builder.
+
+### Debugging flags and reviewing issues
+
+Dev builds are configured for troubleshooting and diagnosing issues:
+
+1. **Automatic agent-attention logging:**
+   Packaged builds with `-dev` in the version string automatically enable bounded agent-attention diagnostics (`CLANKER_DEBUG_ATTENTION=1` default). To opt out, launch with `CLANKER_DEBUG_ATTENTION=0`.
+2. **Child process crash diagnostics:**
+   Dev builds automatically listen for `child-process-gone` events on the Electron app and emit `[diag] child process gone ...` messages to stderr.
+3. **Detached DevTools:**
+   Launch with `--debug` or `CLANKER_DEBUG=1` to open detached Chromium DevTools on launch, and use `F12` or `Ctrl+Shift+I` to toggle DevTools.
+4. **Renderer and Chromium logging:**
+   Launch with `--enable-logging` (or `ELECTRON_ENABLE_LOGGING=1`) to stream internal Chromium logs and renderer `console` calls to stdout/stderr.
+5. **Log file capture:**
+   On Windows (where GUI executables detach from the console) or Linux, specify `ELECTRON_LOG_FILE=<path>` to persist output.
+
+#### Recommended invocation for issue review:
+
+**Linux:**
+```bash
+CLANKER_DEBUG=1 ./release/Clanker\ Grid-0.12.0-dev.*.AppImage --enable-logging 2>&1 | tee clanker-dev.log
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:CLANKER_DEBUG = "1"
+$env:ELECTRON_ENABLE_LOGGING = "1"
+$env:ELECTRON_LOG_FILE = "clanker-dev.log"
+.\release\"Clanker Grid Setup 0.12.0-dev.*.exe"
+```
+
 ## Hotfix releases
 
 For a critical fix against the latest release:

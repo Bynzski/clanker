@@ -32,6 +32,7 @@
     "validate": "npm run branding:check && npm run lint && npm run typecheck && npm run fallow:check && npm run security-check && npm run build && npm run test",
     "security-check": "node scripts/security-audit.cjs",
     "build:dist": "npm run build && electron-builder --publish never",
+    "build:dist:dev": "npm run build && node scripts/build-dist-dev.cjs",
     "start": "electron .",
     "prepare": "husky",
     "branding:generate": "node scripts/generate-branding.cjs",
