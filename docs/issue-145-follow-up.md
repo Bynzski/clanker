@@ -1,5 +1,13 @@
 # Issue #145 follow-up
 
+## Current completion review
+
+The presentation and Bitbucket contract corrections below were merged in [PR #165](https://github.com/Bynzski/clanker/pull/165). Issue #145's remaining-scope text predates that merge: those code changes do not need implementing again. The official API-token page was fetched again during this review and still explicitly documents Bearer API tokens without an email. This verifies documentation, not authenticated acceptance.
+
+The remaining acceptance blocker is the live matrix below (or an explicit owner-approved deferral). An existing GitHub CLI login is not a dedicated least-privilege test fixture and was not reused. Do not close #145 as fully validated on the strength of deterministic tests.
+
+A further credential-read regression was found during this review: decryption could return an empty string with `success: true`. Full context refused it, but PR-only navigation checked `success` and could dispatch anonymously. Credential reads now reject empty, whitespace-only and oversized plaintext, preserve the ciphertext and return a sanitized error. Regression tests exercise both canonical context and PR-link paths and assert zero network dispatch. This is synthetic storage-failure evidence, not a real keyring lock/unlock test.
+
 ## Corrections
 
 - Source Control Overview consumes normalized `ci` and `review` summaries, not their lossy legacy PR projections. CI is labelled **checkout HEAD** and is shown independently of PR discovery. Confirmed no checks, pending, success, failure and unknown/unavailable remain distinct.

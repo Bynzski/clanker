@@ -324,6 +324,11 @@ function getPatFromKey(provider: string): { success: boolean; token?: string; er
       return { success: false, error: 'Secure token storage is unavailable. Unlock your OS credential store and try again.' };
     }
 
+    // Treat unusable plaintext as a failed read, not a successful empty credential.
+    // PR-only navigation must never turn a stored credential into anonymous access.
+    if (!token || token.length > 65536 || token.trim().length === 0) {
+      return { success: false, error: 'Stored token is invalid. Save the token again.' };
+    }
     return { success: true, token };
   } catch {
     // Decryption errors may contain sensitive implementation details.
