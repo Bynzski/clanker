@@ -15,6 +15,8 @@ const { mockHandle, mockOn } = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   app: {
+    isPackaged: true,
+    getVersion: vi.fn(() => '0.12.0'),
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
       if (name === 'home') return testHome();

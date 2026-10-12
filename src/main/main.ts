@@ -7,8 +7,13 @@ import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
 
 import { app, BrowserWindow, dialog, shell, type Rectangle } from 'electron';
 import { AppCloseGuard } from './appCloseGuard';
+import { applyStartupAttentionDebug, shouldEnableChildProcessCrashLogging } from './attentionDebug';
 
 let closeGuard: AppCloseGuard | undefined = undefined;
+
+// Unpackaged runs and packaged versions marked -dev log attention decisions by default.
+// Explicit CLANKER_DEBUG_ATTENTION=0 disables logging; stable releases stay quiet.
+applyStartupAttentionDebug(process.env, app.isPackaged, app.getVersion());
 
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
@@ -52,7 +57,7 @@ import { DEFAULT_THEME_ID } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { isHarnessId } from './harnesses/registry';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
-import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialTheme, resolveInitialWindowBackground } from './windowManager';
+import { createMainWindow, getPreloadPath, isDebugMode, isWindowAvailable, resolveInitialTheme, resolveInitialWindowBackground } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
@@ -666,7 +671,7 @@ app.whenReady().then(() => {
   });
 });
 
-if (process.env.NODE_ENV === 'development') {
+if (shouldEnableChildProcessCrashLogging(process.env.NODE_ENV, isDebugMode(), app.getVersion())) {
   app.on('child-process-gone', (_event, details) => {
     console.error(`[diag] child process gone type=${details.type} name=${details.name ?? ''} reason=${details?.reason} exitCode=${details?.exitCode}`);
   });

@@ -156,5 +156,6 @@ On first launch after upgrade, the app automatically migrates legacy `localStora
 | Variable | Description |
 |----------|-------------|
 | `NODE_ENV` | `development` or `production` |
+| `CLANKER_DEBUG_ATTENTION` | Set to `1` for bounded agent-attention decision, transport-rejection and publication logs, or `0` to disable them. Defaults on for unpackaged app runs and packaged versions containing the `-dev` prerelease marker (for example `0.12.0-dev.5613a24`); defaults off for stable packaged releases. These logs go to the main-process console, not to an automatically saved log file. |
 | `SHELL` | User's shell on Linux/macOS (fallback: `bash`); Windows uses `powershell.exe` |
 | `CLANKER_GRID_WATCHER_POLLING` | Set to `1` to force polling-based file watching (auto-enabled for UNC paths on Windows). |
