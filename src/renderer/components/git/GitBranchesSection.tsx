@@ -89,7 +89,7 @@ export function GitBranchesSection({
               {provider.owner}/{provider.repo}
             </span>
             <ProviderBadge
-              pullRequest={contextError || isLoadingContext ? null : pullRequest}
+              pullRequest={isLoadingContext || contextError && !['found', 'none'].includes(pullRequest?.outcome ?? '') ? null : pullRequest}
               providerName={providerName}
               onViewPr={handleViewPr}
               onCreatePr={handleCreatePr}

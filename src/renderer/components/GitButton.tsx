@@ -34,6 +34,7 @@ import type {
 import type { GitStatusResult } from '../../shared/types/git';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
+import type { ProviderContextResult } from '../../shared/types/vcs';
 import { Dialog } from './ui/Dialog';
 import { ManagementShell } from './ui/ManagementShell';
 import { gitManagementScope } from './git/gitManagementScope';
@@ -115,6 +116,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [provider, setProvider] = useState<'github' | 'bitbucket' | 'gitlab' | 'unknown'>('unknown');
   const [vcsProviderContext, setVcsProviderContext] = useState<ProviderContext | null>(null);
   const [pullRequest, setPullRequest] = useState<PullRequestContext | null>(null);
+  const [providerSummaries, setProviderSummaries] = useState<Pick<ProviderContextResult, 'ci' | 'review'>>({});
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [isLoadingVcsContext, setIsLoadingVcsContext] = useState(false);
   const [vcsContextError, setVcsContextError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   useEffect(() => {
     invalidateVcsRequest();
     useVcsStore.getState().setContextSnapshot(null);
-    setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+    setVcsProviderContext(null); setPullRequest(null); setProviderSummaries({}); setDeepLinks([]);
     setVcsContextError(null); setIsLoadingVcsContext(false);
     return () => {
       invalidateVcsRequest();
@@ -171,6 +173,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     if (!workspacePath || checkoutContextId === null) {
       setVcsProviderContext(null);
       setPullRequest(null);
+      setProviderSummaries({});
       setDeepLinks([]);
       return;
     }
@@ -184,6 +187,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         : await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
       if (!fresh()) return;
       useVcsStore.getState().setContextSnapshot(result);
+      setProviderSummaries({ ci: result.ci, review: result.review });
       setVcsContextError(result.error ?? (result.success ? null : 'Provider context unavailable'));
       if (result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
@@ -197,7 +201,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     } catch {
       if (fresh()) {
         setVcsContextError('Failed to load provider context');
-        setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+        setVcsProviderContext(null); setPullRequest(null); setProviderSummaries({}); setDeepLinks([]);
         useVcsStore.getState().setContextSnapshot(null);
       }
     } finally {
@@ -233,14 +237,14 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     void loadRemotes();
   }, [workspacePath, loadRemotes]);
 
-  const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean) => Promise<void>>(async () => {});
+  const refreshMenuDataRef = useRef<(reloadWorktrees?: boolean, refreshProvider?: boolean) => Promise<void>>(async () => {});
   const refreshChangesRef = useRef<() => Promise<void>>(async () => {});
   const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
-  const refreshAfterAction = useCallback(async () => {
+  const refreshAfterAction = useCallback(async (refreshProvider = false) => {
     if (!isCurrent()) return;
     await Promise.all([
-      refreshMenuDataRef.current(),
+      refreshMenuDataRef.current(true, refreshProvider),
       refreshChangesRef.current(),
     ]);
   }, [isCurrent]);
@@ -421,7 +425,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   }, [isCurrent, hasMoreHistory, workspaceId, scope.path, scope.checkoutContextId]);
 
   const dataRequest = useRef(0);
-  const refreshMenuData = useCallback(async (reloadWorktrees = true) => {
+  const refreshMenuData = useCallback(async (reloadWorktrees = true, refreshProvider = false) => {
     const request = ++dataRequest.current;
     const startDiffGen = diffGeneration.current;
     const fresh = () => isCurrent() && request === dataRequest.current;
@@ -521,7 +525,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         setRemotes([]); setProvider('unknown');
       }
 
-      await loadVcsContext();
+      await loadVcsContext(refreshProvider);
     } catch (error: unknown) {
       if (!fresh()) return;
       const message = error instanceof Error ? error.message : 'Unable to load git data';
@@ -899,7 +903,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onPublish={() => { if (isCurrent()) void handlePublish(); }}
             onPull={() => { if (isCurrent()) void handlePull(); }}
             onPush={() => { if (isCurrent()) void handlePush(); }}
-            onRefresh={() => { void refreshAfterAction().then(() => { if (isCurrent()) setRemoteError(null); }).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
+            onRefresh={() => { void refreshAfterAction(true).then(() => { if (isCurrent()) setRemoteError(null); }).catch((error: unknown) => { if (isCurrent()) setRemoteError(error instanceof Error ? error.message : 'Refresh failed'); }); }}
             onRefreshContext={() => void loadVcsContext(true)}
             onRemotesChanged={() => void loadRemotes()}
             onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
@@ -915,6 +919,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             provider={provider}
             providerContext={vcsProviderContext}
             pullRequest={pullRequest}
+            ci={providerSummaries.ci}
+            review={providerSummaries.review}
             refreshKey={menuRefreshCount}
             remoteAction={remoteAction}
             remoteError={remoteError}

@@ -48,6 +48,18 @@ describe('Bitbucket production provider', () => {
     expect(await provider.getReviewSummary(ctx, 7)).toMatchObject({ state });
     expect(fetch.mock.calls.some(([url]) => url.endsWith('/participants'))).toBe(false);
   });
+  it('uses the documented scoped API-token Bearer form for repository CI even when identity access is forbidden', async () => {
+    const fetch = installFetch((url) => url.pathname.endsWith('/user') ? json({}, 403) : json({ values: [{ key: 'build', state: 'SUCCESSFUL' }] }));
+    // Synthetic token: transport contract coverage, not live token acceptance.
+    const token = 'synthetic-scoped-api-token';
+    expect(await provider.validateToken(token)).toBe(false);
+    expect(await provider.getChecksSummary(ctx, branch, token)).toMatchObject({ state: 'success', sha: SHA });
+    expect(fetch.mock.calls).toHaveLength(2);
+    for (const [url, init] of fetch.mock.calls) {
+      expect(new URL(url).origin).toBe('https://api.bitbucket.org');
+      expect(init).toMatchObject({ headers: { Authorization: `Bearer ${token}` }, redirect: 'error' });
+    }
+  });
   it('uses Bearer auth, not app-password Basic auth', async () => {
     const fetch = installFetch(() => json({ uuid: 'a' }));
     expect(await provider.validateToken('token')).toBe(true);
