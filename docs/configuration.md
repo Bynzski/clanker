@@ -118,7 +118,7 @@ The app can automatically configure your SSH config to use the generated key for
 |----------|-------------|
 | GitHub | Fine-grained PAT with selected-repository Metadata, Pull requests, Checks and Commit statuses read access; classic private-repository PATs typically use `repo` |
 | GitLab | Personal Access Token with `read_api` scope |
-| Bitbucket | Bearer OAuth/repository/project/workspace access token with appropriate repository/pull-request/pipeline read permissions; not retired app passwords or email+API-token Basic auth |
+| Bitbucket | Scoped API token via Bearer (no email needed), or OAuth/repository/project/workspace access token with appropriate repository/pull-request/pipeline read permissions; not retired app passwords. Email+API-token Basic auth is not implemented |
 
 Saving/decrypting a token, validating identity, and accessing a repository/CI/reviews are separate facts. Declared scopes are metadata, not verified permissions. A repository-scoped Bitbucket token may lack `/user` access while repository reads work.
 

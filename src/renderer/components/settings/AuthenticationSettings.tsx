@@ -13,7 +13,7 @@ import './AuthenticationSettings.css';
 const providers = [
   { id: 'github', name: 'GitHub', help: 'Use a personal access token. Classic and fine-grained tokens have different repository/API permission models; consult the documentation for the access you need.', docs: 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens' },
   { id: 'gitlab', name: 'GitLab', help: 'Use a personal access token with the API permissions required by your intended operations.', docs: 'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html' },
-  { id: 'bitbucket', name: 'Bitbucket', help: 'Use a repository access token with only the repository permissions you need.', docs: 'https://support.atlassian.com/bitbucket-cloud/docs/using-repository-access-tokens/' },
+  { id: 'bitbucket', name: 'Bitbucket', help: 'Use a scoped Bitbucket API token or an OAuth/repository/project/workspace access token. API tokens use Bearer authentication here; no email is needed. Grant the repository, pull-request and pipeline read permissions you need. Identity validation does not prove repository access.', docs: 'https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/' },
 ] as const;
 // The existing status API validates tokens in main. Share only its in-flight
 // metadata request, including across page/provider remounts, and drain it before

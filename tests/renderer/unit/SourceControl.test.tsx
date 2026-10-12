@@ -52,20 +52,43 @@ describe('Source Control foundation', () => {
     await user.click(screen.getByRole('button', { name: 'Source Control' })); expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   });
   it('does not invent PR or CI absence when provider discovery fails', async () => {
-    const { dialog } = await open(); expect(within(dialog).getByText('Unknown / unavailable')).toBeVisible();
+    const { dialog } = await open(); expect(within(dialog).getAllByText('Unknown / unavailable')[0]).toBeVisible();
     expect(within(dialog).queryByText(/No pull request/)).toBeNull(); expect(within(dialog).queryByText('Create PR')).toBeNull();
     expect(within(dialog).getByText('Provider context unavailable')).toBeVisible();
   });
   it('does not turn permission failures into PR absence even when a response carries exists=false', async () => {
     api.vcsGetContext.mockResolvedValue({ success: false, error: 'Authorization required', provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: false }, deepLinks: [] });
-    const { dialog } = await open(); await waitFor(() => expect(within(dialog).getByText('Unknown / unavailable')).toBeVisible());
+    const { dialog } = await open(); await waitFor(() => expect(within(dialog).getAllByText('Unknown / unavailable')[0]).toBeVisible());
     expect(within(dialog).queryByText(/No pull request/)).toBeNull();
   });
   it('shows confirmed PR and CI metadata without synthesizing provider actions', async () => {
-    api.vcsGetContext.mockResolvedValue({ success: true, provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: true, outcome: 'found', number: 12, state: 'open', checksStatus: 'failed', url: 'https://github.com/a/b/pull/12' }, deepLinks: [] });
+    api.vcsGetContext.mockResolvedValue({ success: true, provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: true, outcome: 'found', number: 12, state: 'open', url: 'https://github.com/a/b/pull/12' }, ci: { state: 'failure' }, review: { state: 'approved' }, deepLinks: [] });
     const { dialog, user } = await open(); await waitFor(() => expect(within(dialog).getByText('#12 · open')).toBeVisible());
-    expect(within(dialog).getByText('failed')).toBeVisible(); await user.click(within(dialog).getByRole('button', { name: 'View pull request' }));
+    expect(within(dialog).getByText('failure')).toBeVisible(); await user.click(within(dialog).getByRole('button', { name: 'View pull request' }));
     expect(api.openExternal).toHaveBeenCalledWith('https://github.com/a/b/pull/12');
+  });
+  it.each(['success', 'pending', 'failure', 'none', 'unknown'] as const)('shows checkout HEAD CI %s without a PR', async (state) => {
+    api.vcsGetContext.mockResolvedValue({ success: true, provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: false, outcome: 'none' }, ci: { state }, review: { state: 'none' } });
+    const { dialog } = await open();
+    expect(await within(dialog).findByText('No pull request (confirmed)')).toBeVisible();
+    expect(within(dialog).getByText(state === 'none' ? 'No checks (confirmed)' : state === 'unknown' ? 'Unknown / unavailable' : state)).toBeVisible();
+    expect(within(dialog).getByText('Not applicable (no pull request)')).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: 'View pull request' })).toBeNull();
+  });
+  it('preserves a confirmed PR and partial failure while review permissions are unavailable', async () => {
+    api.vcsGetContext.mockResolvedValue({ success: false, error: 'Provider data incomplete', provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: true, outcome: 'found', number: 12, state: 'open', url: 'https://github.com/a/b/pull/12' }, ci: { state: 'failure', problem: { code: 'incomplete' } }, review: { state: 'unknown', problem: { code: 'forbidden' } } });
+    const { dialog } = await open();
+    expect(await within(dialog).findByText('#12 · open')).toBeVisible();
+    expect(within(dialog).getByText('failure · partial / unavailable (incomplete)')).toBeVisible();
+    expect(within(dialog).getByText('Unknown / unavailable · partial / unavailable (forbidden)')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'View pull request' })).toBeEnabled();
+  });
+  it('retains confirmed PR absence despite unavailable CI', async () => {
+    api.vcsGetContext.mockResolvedValue({ success: false, error: 'CI forbidden', provider: { provider: 'github', owner: 'a', repo: 'b' }, pullRequest: { exists: false, outcome: 'none' }, ci: { state: 'unknown', problem: { code: 'forbidden' } } });
+    const { dialog } = await open();
+    expect(await within(dialog).findByText('No pull request (confirmed)')).toBeVisible();
+    expect(within(dialog).getByText('Unknown / unavailable · partial / unavailable (forbidden)')).toBeVisible();
+    expect(within(dialog).queryByText('No checks (confirmed)')).toBeNull();
   });
   it('closes when its workspace is no longer active, releasing suppression', async () => {
     await open(); act(() => { useWorkspaceStore.setState({ activeWorkspaceId: null }); });

@@ -34,6 +34,7 @@ import type {
 import type { GitStatusResult } from '../../shared/types/git';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
+import type { ProviderContextResult } from '../../shared/types/vcs';
 import { Dialog } from './ui/Dialog';
 import { ManagementShell } from './ui/ManagementShell';
 import { gitManagementScope } from './git/gitManagementScope';
@@ -115,6 +116,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [provider, setProvider] = useState<'github' | 'bitbucket' | 'gitlab' | 'unknown'>('unknown');
   const [vcsProviderContext, setVcsProviderContext] = useState<ProviderContext | null>(null);
   const [pullRequest, setPullRequest] = useState<PullRequestContext | null>(null);
+  const [providerSummaries, setProviderSummaries] = useState<Pick<ProviderContextResult, 'ci' | 'review'>>({});
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [isLoadingVcsContext, setIsLoadingVcsContext] = useState(false);
   const [vcsContextError, setVcsContextError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   useEffect(() => {
     invalidateVcsRequest();
     useVcsStore.getState().setContextSnapshot(null);
-    setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+    setVcsProviderContext(null); setPullRequest(null); setProviderSummaries({}); setDeepLinks([]);
     setVcsContextError(null); setIsLoadingVcsContext(false);
     return () => {
       invalidateVcsRequest();
@@ -171,6 +173,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     if (!workspacePath || checkoutContextId === null) {
       setVcsProviderContext(null);
       setPullRequest(null);
+      setProviderSummaries({});
       setDeepLinks([]);
       return;
     }
@@ -184,6 +187,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
         : await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
       if (!fresh()) return;
       useVcsStore.getState().setContextSnapshot(result);
+      setProviderSummaries({ ci: result.ci, review: result.review });
       setVcsContextError(result.error ?? (result.success ? null : 'Provider context unavailable'));
       if (result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
@@ -197,7 +201,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
     } catch {
       if (fresh()) {
         setVcsContextError('Failed to load provider context');
-        setVcsProviderContext(null); setPullRequest(null); setDeepLinks([]);
+        setVcsProviderContext(null); setPullRequest(null); setProviderSummaries({}); setDeepLinks([]);
         useVcsStore.getState().setContextSnapshot(null);
       }
     } finally {
@@ -915,6 +919,8 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             provider={provider}
             providerContext={vcsProviderContext}
             pullRequest={pullRequest}
+            ci={providerSummaries.ci}
+            review={providerSummaries.review}
             refreshKey={menuRefreshCount}
             remoteAction={remoteAction}
             remoteError={remoteError}

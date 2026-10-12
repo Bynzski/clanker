@@ -24,6 +24,7 @@ import type {
   VcsProvider,
 } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
+import type { CiSummary, ReviewSummary } from '../../../shared/types/vcs';
 
 export interface GitRepoMenuProps {
   scope: ReturnType<typeof gitManagementScope>;
@@ -102,6 +103,8 @@ export interface GitRepoMenuProps {
   provider: VcsProvider;
   providerContext: ProviderContext | null;
   pullRequest: PullRequestContext | null;
+  ci?: CiSummary;
+  review?: ReviewSummary;
   /** Bumped by the menu's data refresh; the Worktrees section reloads with it. */
   refreshKey?: number;
   remoteAction: 'fetch' | 'pull' | 'push' | 'publish' | null;
