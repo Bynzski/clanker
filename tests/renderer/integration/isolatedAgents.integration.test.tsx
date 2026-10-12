@@ -66,6 +66,9 @@ describe('isolated agents from the toolbar', () => {
         codex: { model: '', favorites: [], flags: '', visible: true },
         claude: { model: '', favorites: [], flags: '', visible: true },
       }),
+      gitListWorktrees: vi.fn().mockImplementation(async () => ({ success: true, worktrees: (workspace()?.checkoutContexts ?? []).map((context) => ({
+        path: context.path, branch: context.branch ?? 'feature/base', isMain: context.kind === 'main', isLocked: false, isPrunable: false,
+      })) })),
       spawnTerminal, gitCreateWorktree, gitGetBranchState, registerOpenWorkspace, releaseCheckoutContext,
       killTerminal: vi.fn().mockResolvedValue({ success: true }),
     });

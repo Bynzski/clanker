@@ -87,6 +87,42 @@ describe('isolated agent picker: harness + working copy', () => {
   };
   const section = (name: string) => within(screen.getByRole('group', { name }));
 
+  it('creates a checkout ahead of time without launching or moving an agent', async () => {
+    openWorkspace();
+    render(<Header />);
+    await openPicker();
+    await user.type(screen.getByLabelText('New branch'), 'precreated');
+    await user.click(screen.getByRole('button', { name: 'Create checkout' }));
+    await waitFor(() => expect(workspace().checkoutContexts?.some((context) => context.branch === 'precreated')).toBe(true));
+    expect(api.spawnTerminal).not.toHaveBeenCalled();
+    expect(workspace().workspacePath).toBe(ROOT);
+    expect(workspace().terminals).toHaveLength(0);
+  });
+
+  it('explicitly launches a new agent in main without creating a worktree', async () => {
+    openWorkspace();
+    render(<Header />);
+    await openPicker();
+    await user.click(screen.getByRole('button', { name: 'Main checkout' }));
+    await launch();
+    await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+    expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
+    expect(api.spawnTerminal.mock.calls[0][7]).toBe(mainCheckoutContextId('ws'));
+    expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
+
+  it('toolbar launch follows an explicit validated checkout selection', async () => {
+    openWorkspace();
+    useWorkspaceStore.getState().upsertCheckoutContext('ws', ctx('selected'));
+    useWorkspaceStore.getState().selectCheckoutContext('ws', ctx('selected').id);
+    render(<Header />);
+    await user.click(await screen.findByRole('button', { name: 'Codex' }));
+    await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+    expect(api.spawnTerminal.mock.calls[0][0]).toBe(WT('selected'));
+    expect(api.spawnTerminal.mock.calls[0][7]).toBe(ctx('selected').id);
+    expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
+
   describe('harness pane', () => {
     it('shows the toolbar harnesses with icons, marks the selection and changes the launched harness', async () => {
       openWorkspace();
@@ -275,7 +311,7 @@ describe('isolated agent picker: harness + working copy', () => {
       await openPicker();
 
       const row = await section('Existing worktrees').findByRole('button', { name: /old-task/ });
-      expect(row).toHaveTextContent('Unmanaged');
+      expect(row).toHaveTextContent('Available');
       await user.click(row);
       expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
       await launch('OpenCode');

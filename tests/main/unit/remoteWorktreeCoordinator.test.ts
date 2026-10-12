@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { removeListedWorktree } from '../../../src/main/worktreeRemoval';
 import { RemoteWorktreeCoordinator } from '../../../src/main/remote/remoteWorktreeCoordinator';
-import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import { WorkspaceRegistry, type RegisteredWorkspace } from '../../../src/main/workspaceRegistry';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 import { remoteRemovalPaths } from '../../../src/main/remote/sshWorktreeRemoval';
+import type { ReconcileCheckoutContextsResult } from '../../../src/shared/types/checkoutContext';
 import type { RemoteWorktreeRemovalRecord } from '../../../src/shared/types/store';
 
 async function setup() {
@@ -24,6 +26,116 @@ async function setup() {
 describe('remote worktree removal coordination', () => {
   const saved = (operationId = '12345678-1234-1234-1234-123456789abc'): RemoteWorktreeRemovalRecord => ({
     operationId, environmentId: 'ssh', resourceId: 'ssh:host', workspacePath: '/srv/repo', worktreePath: '/srv/task',
+  });
+
+  it.each([false, true])('removes an associated SSH entry without early release (unknown outcome: %s)', async (unknown) => {
+    const f = await setup();
+    const attached = await f.registry.registerCheckoutContext({ workspaceId: 'source', path: '/srv/task', kind: 'worktree', branch: 'task' });
+    expect(attached.success).toBe(true);
+    const context = f.registry.getCheckoutContext(attached.checkoutContext!.id)!;
+    const reconcile = vi.fn(async () => ({ success: true, contexts: [], dropped: [context.id] }));
+    f.environment.removeWorktree.mockImplementationOnce(async () => {
+      expect(f.registry.getCheckoutContext(context.id)).toBe(context);
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+      return unknown ? { success: false, uncertain: true, error: 'SSH disconnected' } : { success: true };
+    });
+    const result = await removeListedWorktree({
+      registry: f.registry, workspace: f.source, path: '/srv/task', expectedBranch: 'task', usages: () => [],
+      list: async () => ({ success: true, worktrees: [f.worktree] }),
+      remove: (entry, authority) => f.coordinator.remove(f.source, entry.path, entry.branch, {}, authority), reconcile,
+    });
+    expect(result).toMatchObject({ success: !unknown, outcome: unknown ? 'unknown' : 'removed' });
+    expect(f.environment.inspectWorktree).toHaveBeenCalledWith('/srv/repo', '/srv/task', ['/srv/repo']);
+    if (unknown) {
+      expect(reconcile).not.toHaveBeenCalled();
+      expect(f.registry.getCheckoutContext(context.id)).toBe(context);
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+      await f.coordinator.reconcile('ssh');
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+      expect(f.environment.waitForWorktreeOperations).toHaveBeenCalled();
+    } else {
+      expect(reconcile).toHaveBeenCalledOnce();
+      expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+    }
+  });
+
+  it.each(['unchanged', 'recovery-required', 'unknown', undefined] as const)('preserves the host removal outcome %s', async (outcome) => {
+    const f = await setup();
+    f.environment.removeWorktree.mockResolvedValue({ success: false, outcome, error: 'Host refusal or failure' });
+    const result = await f.coordinator.remove(f.source, '/srv/task', 'task');
+    expect(result).toMatchObject({ success: false, outcome: outcome ?? 'unknown' });
+    expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(outcome === 'unknown' || outcome === undefined);
+  });
+
+  it('includes associations from equivalent SSH environments in post-removal reconciliation', async () => {
+    const f = await setup();
+    Object.assign(f.environment, { worktreeResourceId: 'ssh:user@host' });
+    f.registry.unregisterWorkspace('source');
+    await f.registry.registerWorkspace({ workspaceId: 'source', environmentId: 'ssh', workspacePath: '/srv/repo' });
+    await f.registry.registerWorkspace({ workspaceId: 'other', environmentId: 'ssh-alias', workspacePath: '/srv/repo' });
+    for (const workspaceId of ['source', 'other']) {
+      expect(await f.registry.registerCheckoutContext({ workspaceId, path: '/srv/task', kind: 'worktree' })).toMatchObject({ success: true });
+    }
+    const source = f.registry.getWorkspace('source')!;
+    const reconcile = vi.fn<(workspace: RegisteredWorkspace) => Promise<ReconcileCheckoutContextsResult>>().mockResolvedValue({ success: true, contexts: [], dropped: [] });
+    const result = await removeListedWorktree({
+      registry: f.registry, workspace: source, path: '/srv/task', expectedBranch: 'task', usages: () => [],
+      list: async () => ({ success: true, worktrees: [f.worktree] }),
+      remove: (entry, authority) => f.coordinator.remove(source, entry.path, entry.branch, {}, authority), reconcile,
+    });
+    expect(result).toMatchObject({ success: true, reconciliations: [
+      { workspaceId: 'source', result: { success: true } }, { workspaceId: 'other', result: { success: true } },
+    ] });
+    expect(reconcile.mock.calls.map(([workspace]) => workspace.workspaceId)).toEqual(['source', 'other']);
+  });
+
+  it('continues reconciling affected workspaces after reported and thrown failures and preserves removal warnings', async () => {
+    const f = await setup();
+    for (const workspaceId of ['source', 'other', 'last']) {
+      if (workspaceId !== 'source') await f.registry.registerWorkspace({ workspaceId, environmentId: 'ssh', workspacePath: '/srv/repo' });
+      await f.registry.registerCheckoutContext({ workspaceId, path: '/srv/task', kind: 'worktree' });
+    }
+    f.environment.removeWorktree.mockResolvedValue({ success: true, warning: 'Files preserved in host recovery folder' });
+    const reconcile = vi.fn(async (workspace: RegisteredWorkspace) => {
+      if (workspace.workspaceId === 'source') throw new Error('SSH disconnected');
+      if (workspace.workspaceId === 'other') return { success: false, error: 'Git listing failed' };
+      return { success: true, contexts: [], dropped: [] };
+    });
+    const result = await removeListedWorktree({
+      registry: f.registry, workspace: f.source, path: '/srv/task', expectedBranch: 'task', usages: () => [],
+      list: async () => ({ success: true, worktrees: [f.worktree] }),
+      remove: (entry, authority) => f.coordinator.remove(f.source, entry.path, entry.branch, {}, authority), reconcile,
+    });
+    expect(result).toMatchObject({ success: true, outcome: 'removed', reconciliations: [
+      { workspaceId: 'source', result: { success: false, error: 'SSH disconnected' } },
+      { workspaceId: 'other', result: { success: false, error: 'Git listing failed' } },
+      { workspaceId: 'last', result: { success: true } },
+    ] });
+    expect(result.warning).toContain('Files preserved in host recovery folder');
+    expect(result.warning).toContain('Refresh worktrees');
+    expect(reconcile).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not reconcile a replacement workspace against the removed checkout', async () => {
+    const f = await setup();
+    await f.registry.registerWorkspace({ workspaceId: 'other', environmentId: 'ssh', workspacePath: '/srv/repo' });
+    await f.registry.registerCheckoutContext({ workspaceId: 'other', path: '/srv/task', kind: 'worktree' });
+    f.environment.removeWorktree.mockImplementationOnce(async () => {
+      f.registry.unregisterWorkspace('other');
+      await f.registry.registerWorkspace({ workspaceId: 'other', environmentId: 'ssh', workspacePath: '/srv/repo' });
+      return { success: true };
+    });
+    const reconcile = vi.fn<(workspace: RegisteredWorkspace) => Promise<ReconcileCheckoutContextsResult>>().mockResolvedValue({ success: true, contexts: [], dropped: [] });
+    const result = await removeListedWorktree({
+      registry: f.registry, workspace: f.source, path: '/srv/task', expectedBranch: 'task', usages: () => [],
+      list: async () => ({ success: true, worktrees: [f.worktree] }),
+      remove: (entry, authority) => f.coordinator.remove(f.source, entry.path, entry.branch, {}, authority), reconcile,
+    });
+    expect(result).toMatchObject({ success: true, reconciliations: [
+      { workspaceId: 'source', result: { success: true } }, { workspaceId: 'other', result: { success: false, error: expect.stringContaining('Workspace changed') } },
+    ] });
+    expect(reconcile.mock.calls.map(([workspace]) => workspace.workspaceId)).toEqual(['source']);
+    expect(result.warning).toContain('Refresh worktrees');
   });
 
   it('starts with malformed evidence intact, protects other valid records, and fails remote operations closed', async () => {

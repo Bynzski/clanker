@@ -46,7 +46,7 @@ import { toPosixPath } from '../../../src/shared/pathNormalize';
 import {
   REGISTER_OPEN_WORKSPACE, SPAWN_TERMINAL, GIT_CREATE_WORKTREE, GIT_LIST_WORKTREES,
   RELEASE_CHECKOUT_CONTEXT, GIT_INSPECT_WORKTREE, GIT_REMOVE_WORKTREE, KILL_TERMINAL, ADOPT_WORKTREE_CHECKOUT_CONTEXT,
-  RECONCILE_CHECKOUT_CONTEXTS,
+  RECONCILE_CHECKOUT_CONTEXTS, GIT_REMOVE_CHECKOUT,
 } from '../../../src/shared/ipcChannels';
 import type { CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../../src/shared/types/checkoutContext';
 import { releaseCheckoutContext } from '../../../src/main/checkoutContextRelease';
@@ -61,6 +61,7 @@ let service: GitService;
 let registry: WorkspaceRegistry;
 const terminals = new Map();
 const onCheckoutContextsGone = vi.fn();
+const trashWorktree = vi.fn<(path: string) => Promise<void>>();
 
 async function git(...args: string[]) {
   return execFileAsync('git', args, { cwd: repo });
@@ -84,20 +85,22 @@ beforeEach(() => {
   terminals.clear();
   mockPtySpawn.mockReset();
   mockPtySpawn.mockReturnValue({ pid: 99, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), resize: vi.fn() });
+  trashWorktree.mockReset().mockResolvedValue(undefined);
   const local = new LocalEnvironment();
-  registry = new WorkspaceRegistry(() => local, { isWorktreeBeingRemoved: (p) => service.isWorktreeBeingRemoved(p) });
+  registry = new WorkspaceRegistry(() => local, { isWorktreeBeingRemoved: (p) => service.isWorktreeBeingRemoved(p), getLocalRemovalRevision: () => service.getWorktreeRemovalRevision() });
   // Live terminal directories feed the removal safeguards exactly as in main.ts.
   service = new GitService(
     () => undefined,
-    async () => undefined,
+    trashWorktree,
     () => [...terminals.values()].map((terminal) => terminal.cwd as string | undefined).filter((cwd): cwd is string => typeof cwd === 'string'),
-    () => registry.getLocalOpenWorkspacePaths(),
+    (excluded) => registry.getLocalOpenWorkspacePaths(excluded),
   );
   registerGitIpc({
     getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry,
     // Exactly as main.ts wires it: the release check over main's own terminal table.
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry, terminals: terminals.values(), workspaceId, checkoutContextId }),
     onCheckoutContextsGone,
+    getCheckoutUsages: () => terminals.values(),
   });
   registerTerminalIpc({
     getTerminals: () => terminals,
@@ -579,5 +582,211 @@ describe('reconciling worktree contexts with Git after an agent finishes a workt
     // Like every workspace-scoped Git channel, an unknown or malformed identity is refused outright.
     await expect(reconcile('nope')).rejects.toThrow('no longer registered');
     await expect(reconcile(42)).rejects.toThrow('Invalid workspace identity');
+  });
+});
+
+
+describe('Git-centered confirmed removal (real Git and main registry)', () => {
+  const remove = (worktree: { path: string; branch: string | null }) => call<GitWorktreeRemoveResult>(GIT_REMOVE_CHECKOUT, 'ws', worktree.path, worktree.branch);
+
+  it.each([true, false])('removes attached and external worktrees identically, retaining branches (attached: %s)', async (attached) => {
+    await openWorkspace();
+    const created = await create('ws', attached ? 'canonical-attached' : 'canonical-external', attached);
+    const entry = created.worktree!;
+    expect(await remove(entry)).toMatchObject({ success: true, outcome: 'removed', reconciliation: { success: true } });
+    expect(fs.existsSync(entry.path)).toBe(false);
+    expect((await git('branch', '--list', entry.branch!)).stdout).toContain(entry.branch);
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+    // A duplicate retry cannot remove another path or its branch.
+    expect(await remove(entry)).toMatchObject({ success: false, outcome: 'unchanged' });
+  });
+
+  it.each([false, true])('reconciles every owning workspace in its own scope and rechecks late usage (late usage: %s)', async (lateUsage) => {
+    await openWorkspace();
+    const source = await create('ws', `canonical-source-b-${lateUsage}`, false);
+    expect(await call(REGISTER_OPEN_WORKSPACE, 'ws-b', source.worktree!.path)).toMatchObject({ success: true });
+    const created = await create('ws', `canonical-shared-${lateUsage}`);
+    const adopted = await call<{ checkoutContext: CheckoutContext }>(ADOPT_WORKTREE_CHECKOUT_CONTEXT, 'ws-b', created.worktree!.path);
+    const contextB = adopted.checkoutContext;
+    const original = service.listWorktrees.bind(service);
+    const scopes: Array<{ id?: string; path: string }> = [];
+    const spy = vi.spyOn(service, 'listWorktrees').mockImplementation(async (root) => {
+      const result = await original(root);
+      scopes.push({ id: service.getScopedWorkspaceIdentity()?.workspaceId, path: root });
+      if (lateUsage && service.getScopedWorkspaceIdentity()?.workspaceId === 'ws-b') {
+        terminals.set('late-b-agent', { checkoutContextId: contextB.id, environmentId: 'local', cwd: source.worktree!.path });
+      }
+      return result;
+    });
+    try {
+      const result = await remove(created.worktree!);
+      expect(result).toMatchObject({ success: true, outcome: 'removed', reconciliations: [
+        { workspaceId: 'ws', result: { success: true, dropped: [created.checkoutContext!.id] } },
+        { workspaceId: 'ws-b', result: { success: true, dropped: lateUsage ? [] : [contextB.id] } },
+      ] });
+      expect(scopes.slice(-2)).toEqual([{ id: 'ws', path: toPosixPath(repo) }, { id: 'ws-b', path: source.worktree!.path }]);
+      expect(registry.getCheckoutContext(created.checkoutContext!.id)).toBeNull();
+      if (lateUsage) expect(registry.getCheckoutContext(contextB.id)).toMatchObject({ missing: true });
+      else expect(registry.getCheckoutContext(contextB.id)).toBeNull();
+      await expect(spawn(created.worktree!.path, 'ws-b', contextB.id)).rejects.toThrow();
+      expect(registry.getCheckoutContext(mainCheckoutContextId('ws-b'))).not.toBeNull();
+      expect((await git('branch', '--list', created.worktree!.branch!)).stdout).toContain(created.worktree!.branch);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('preserves successful removal and warns when the post-removal Git listing fails', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-reconcile-list-failure');
+    const context = registry.getCheckoutContext(created.checkoutContext!.id);
+    const original = service.removeWorktree.bind(service);
+    let listing: ReturnType<typeof vi.spyOn> | undefined;
+    const removeSpy = vi.spyOn(service, 'removeWorktree').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (result.success) listing = vi.spyOn(service, 'listWorktrees').mockResolvedValueOnce({ success: false, worktrees: [], error: 'Git listing unavailable' });
+      return result;
+    });
+    try {
+      const result = await remove(created.worktree!);
+      expect(result).toMatchObject({ success: true, outcome: 'removed', reconciliation: { success: false, error: 'Git listing unavailable' } });
+      expect(result.warning).toMatch(/Refresh worktrees/);
+      expect(registry.getCheckoutContext(context!.id)).toBe(context);
+      expect(fs.existsSync(created.worktree!.path)).toBe(false);
+    } finally { removeSpy.mockRestore(); listing?.mockRestore(); }
+  });
+
+  it.each(['tracked', 'staged', 'untracked', 'ignored'])('retains the exact registration after %s preflight refusal', async (kind) => {
+    await openWorkspace();
+    const created = await create('ws', `canonical-dirty-${kind}`);
+    const entry = created.worktree!;
+    const context = registry.getCheckoutContext(created.checkoutContext!.id);
+    const file = kind === 'tracked' || kind === 'staged' ? 'README.md' : kind === 'ignored' ? 'ignored.txt' : 'new.txt';
+    if (kind === 'ignored') fs.writeFileSync(path.join(entry.path, '.gitignore'), 'ignored.txt\n');
+    fs.writeFileSync(path.join(entry.path, file), 'keep me\n');
+    if (kind === 'staged') await execFileAsync('git', ['add', file], { cwd: entry.path });
+    if (kind === 'ignored') {
+      await execFileAsync('git', ['add', '.gitignore'], { cwd: entry.path });
+      await execFileAsync('git', ['commit', '-m', 'Ignore fixture'], { cwd: entry.path });
+    }
+    expect(await remove(entry)).toMatchObject({ success: false, error: expect.stringContaining('uncommitted') });
+    expect(registry.getCheckoutContext(context!.id)).toBe(context);
+    expect(fs.readFileSync(path.join(entry.path, file), 'utf8')).toBe('keep me\n');
+    expect((await service.listWorktrees(repo)).worktrees.some((worktree) => worktree.path === entry.path)).toBe(true);
+  });
+
+  it('retains the registration when Trash fails and Git restores the original checkout', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-trash-refusal');
+    const context = registry.getCheckoutContext(created.checkoutContext!.id);
+    trashWorktree.mockRejectedValueOnce(new Error('Trash unavailable'));
+    expect(await remove(created.worktree!)).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('Trash unavailable') });
+    expect(registry.getCheckoutContext(context!.id)).toBe(context);
+    expect(fs.readFileSync(path.join(created.worktree!.path, 'README.md'), 'utf8')).toBe('initial\n');
+    expect((await service.listWorktrees(repo)).worktrees.some((entry) => entry.path === created.worktree!.path)).toBe(true);
+  });
+
+  it('reconciles a partial Trash/rollback failure from Git and reports recovery without asserting files remain', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-trash-recovery');
+    const recovery = path.join(root, 'uncertain-trash-recovery');
+    trashWorktree.mockImplementationOnce(async (staging) => {
+      fs.renameSync(staging, recovery);
+      throw new Error('Trash completion unavailable');
+    });
+    const result = await remove(created.worktree!);
+    expect(result).toMatchObject({ success: false, outcome: 'recovery-required', reconciliation: { dropped: [created.checkoutContext!.id] } });
+    expect(result.error).toContain('Inspect');
+    expect(result.error).not.toMatch(/left on disk|Git still lists it/);
+    expect(registry.getCheckoutContext(created.checkoutContext!.id)).toBeNull();
+    expect(fs.readFileSync(path.join(recovery, 'README.md'), 'utf8')).toBe('initial\n');
+    expect((await service.listWorktrees(repo)).worktrees).toContainEqual(expect.objectContaining({ path: result.recoveryPath, isPrunable: true }));
+    expect((await git('branch', '--list', created.worktree!.branch!)).stdout).toContain(created.worktree!.branch);
+  });
+
+  it('retains a locked checkout and rejects stale branch identity without mutation', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-locked');
+    const entry = created.worktree!;
+    await git('worktree', 'lock', entry.path, '--reason', 'fixture');
+    expect(await remove(entry)).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('locked') });
+    await git('worktree', 'unlock', entry.path);
+    expect(await remove({ ...entry, branch: 'stale' })).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('branch changed') });
+    expect(registry.getCheckoutContext(created.checkoutContext!.id)).not.toBeNull();
+  });
+
+  it('keeps associations throughout async inspection and refuses new launches/registrations', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-reservation');
+    const entry = created.worktree!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let inspecting!: () => void;
+    const entered = new Promise<void>((resolve) => { inspecting = resolve; });
+    const original = service.listWorktrees.bind(service);
+    let calls = 0;
+    const spy = vi.spyOn(service, 'listWorktrees').mockImplementation(async (...args) => {
+      if (++calls === 2) { inspecting(); await gate; }
+      return original(...args);
+    });
+    const pending = remove(entry);
+    await entered;
+    expect(registry.getCheckoutContext(created.checkoutContext!.id)).not.toBeNull();
+    expect(service.isWorktreeBeingRemoved(entry.path)).toBe(true);
+    await expect(spawn(entry.path, 'ws', created.checkoutContext!.id)).rejects.toThrow(/being removed/);
+    expect(await registry.registerWorkspace({ workspaceId: 'racer', workspacePath: entry.path })).toMatchObject({ success: false });
+    release();
+    expect(await pending).toMatchObject({ success: true });
+    spy.mockRestore();
+  });
+
+  it('rechecks authenticated observed occupancy after the final async Git listing', async () => {
+    await openWorkspace();
+    const created = await create('ws', 'canonical-observation-race');
+    const original = service.listWorktrees.bind(service);
+    let calls = 0;
+    const spy = vi.spyOn(service, 'listWorktrees').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (++calls === 3) terminals.set('moved-agent', { environmentId: 'local', cwd: repo, observedLocation: { path: created.worktree!.path, checkoutContextId: null } });
+      return result;
+    });
+    expect(await remove(created.worktree!)).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('using this checkout') });
+    expect(registry.getCheckoutContext(created.checkoutContext!.id)).not.toBeNull();
+    expect(fs.existsSync(created.worktree!.path)).toBe(true);
+    spy.mockRestore();
+  });
+
+  it('rejects a registration validated across a completed removal, even after the reservation ends', async () => {
+    let revision = 0;
+    let entered!: () => void;
+    const validating = new Promise<void>((done) => { entered = done; });
+    let finish!: () => void;
+    const gate = new Promise<void>((done) => { finish = done; });
+    const environment = new LocalEnvironment();
+    const validate = environment.validateWorkspacePath.bind(environment);
+    vi.spyOn(environment, 'validateWorkspacePath').mockImplementation(async (root) => {
+      const result = await validate(root);
+      entered();
+      await gate;
+      return result;
+    });
+    const registry = new WorkspaceRegistry(() => environment, { isWorktreeBeingRemoved: () => false, getLocalRemovalRevision: () => revision });
+    const pending = registry.registerWorkspace({ workspaceId: 'late-after-removal', workspacePath: repo });
+    await validating;
+    revision += 2;
+    finish();
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('removal occurred') });
+  });
+
+  it('rechecks local registration reservations after asynchronous environment validation', async () => {
+    let reserved = false;
+    let resolve!: () => void;
+    const gate = new Promise<void>((done) => { resolve = done; });
+    const environment = new LocalEnvironment();
+    const validate = environment.validateWorkspacePath.bind(environment);
+    vi.spyOn(environment, 'validateWorkspacePath').mockImplementation(async (root) => { await gate; return validate(root); });
+    const registry = new WorkspaceRegistry(() => environment, { isWorktreeBeingRemoved: () => reserved });
+    const pending = registry.registerWorkspace({ workspaceId: 'late', workspacePath: repo });
+    reserved = true;
+    resolve();
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('being removed') });
   });
 });

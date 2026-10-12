@@ -19,6 +19,8 @@ import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 import { resolveToolbarLaunch } from '../lib/toolbarLaunch';
 import { launchWorkspaceTerminal } from '../lib/workspaceTerminalLaunch';
+import { launchTerminalInCheckoutContext } from '../lib/checkoutContextLaunch';
+import { currentCheckoutSelection } from '../lib/checkoutSelection';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 
@@ -81,11 +83,15 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
         environmentId: focusedWorkspace?.environmentId,
       });
 
-      await launchWorkspaceTerminal(focusedWorkspace, workspacePath, {
+      const selection = currentCheckoutSelection(focusedWorkspace);
+      if (selection.availability !== 'available') throw new Error('Select an available checkout before launching an agent');
+      const launchOptions = {
         harness: resolvedHarness,
         model: resolvedModel,
         pageId: focusedWorkspace.activePageId,
-      });
+      };
+      if (selection.context.kind === 'main') await launchWorkspaceTerminal(focusedWorkspace, selection.root, launchOptions);
+      else await launchTerminalInCheckoutContext(focusedWorkspace, selection.context, launchOptions);
     } catch (err) {
       console.error('Failed to spawn terminal:', err);
     }

@@ -298,13 +298,13 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
   it('rechecks branch, dirty contents, locks, and active paths without removing the checkout', async () => {
     const checkout = join(fixture, 'task');
     await git(['worktree', 'add', '-b', 'task', checkout]);
-    expect(await environment.removeWorktree(root, checkout, 'old-branch', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    expect(await environment.removeWorktree(root, checkout, 'old-branch', [], randomUUID())).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('branch changed') });
     expect(await environment.removeWorktree(root, checkout, 'task', [join(checkout, 'src')], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('active terminals') });
     await git(['worktree', 'lock', checkout]);
     expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('locked') });
     await git(['worktree', 'unlock', checkout]);
     await writeFile(join(checkout, 'late-file'), 'preserve');
-    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('untracked') });
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, outcome: 'unchanged', error: expect.stringContaining('untracked') });
     expect(await readFile(join(checkout, 'late-file'), 'utf8')).toBe('preserve');
     expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(checkout);
   });
@@ -383,6 +383,19 @@ os.lstat = foreign_owner
     });
   }
 
+  it.each([false, true])('verifies the Git state when move exits unsuccessfully (moved first: %s)', async (moved) => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    await wrapGit(`if [ "$3" = worktree ] && [ "$4" = move ]; then\n${moved ? '  "$CLANKER_TEST_REAL_GIT" "$@" || exit $?\n' : ''}  printf 'move failed' >&2\n  exit 1\nfi\nexec "$CLANKER_TEST_REAL_GIT" "$@"\n`);
+    const operation = randomUUID();
+    const result = await environment.removeWorktree(root, checkout, 'task', [], operation);
+    expect(result).toMatchObject({ success: false, outcome: moved ? 'recovery-required' : 'unchanged', uncertain: false });
+    const preserved = moved ? join(fixture, `.clanker-removing-${operation}`) : checkout;
+    expect(await readFile(join(preserved, 'tracked.txt'), 'utf8')).toBe('initial');
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(`worktree ${preserved}`);
+    await environment.waitForWorktreeOperations(root, operation);
+  });
+
   it('preserves files written during removal and leaves recreated original paths untouched', async () => {
     const checkout = join(fixture, 'task');
     await git(['worktree', 'add', '-b', 'task', checkout]);
@@ -399,7 +412,7 @@ os.lstat = foreign_owner
     await wrapGit('if [ "$3" = worktree ] && [ "$4" = remove ]; then\n  printf "cleanup failed" >&2\n  exit 1\nfi\nexec "$CLANKER_TEST_REAL_GIT" "$@"\n');
     const operation = randomUUID();
     const result = await environment.removeWorktree(root, checkout, 'task', [], operation);
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining('preserved at') });
+    expect(result).toMatchObject({ success: false, outcome: 'recovery-required', error: expect.stringContaining('preserved at') });
     const archive = join(fixture, '.clanker-worktree-recovery', `removed-${operation}`, 'checkout');
     expect(await readFile(join(archive, 'tracked.txt'), 'utf8')).toBe('initial');
     await environment.waitForWorktreeOperations(root, operation);
@@ -414,7 +427,7 @@ os.lstat = foreign_owner
       throw new Error('SSH disconnected after completion');
     });
     const operation = randomUUID();
-    expect(await environment.removeWorktree(root, checkout, 'task', [], operation)).toMatchObject({ success: false, uncertain: true });
+    expect(await environment.removeWorktree(root, checkout, 'task', [], operation)).toMatchObject({ success: false, outcome: 'unknown', uncertain: true });
     await environment.waitForWorktreeOperations(root, operation);
     await expect(environment.waitForWorktreeOperations(root, randomUUID())).rejects.toThrow();
   });

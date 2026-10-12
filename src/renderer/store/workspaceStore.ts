@@ -361,6 +361,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return true;
   },
 
+  selectCheckoutContext: (workspaceId, checkoutContextId) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    const context = workspace?.checkoutContexts?.find((entry) => entry.id === checkoutContextId);
+    if (!workspace || !context || context.missing || context.workspaceId !== workspaceId
+      || context.environmentId !== (workspace.environmentId || 'local')) return false;
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, fileSurfaceContextId: checkoutContextId })));
+    return true;
+  },
+
   applyCheckoutContextReconciliation: (workspaceId, result) => {
     const workspace = findWorkspaceById(get().workspaces, workspaceId);
     if (!workspace) return;

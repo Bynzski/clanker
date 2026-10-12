@@ -250,7 +250,10 @@ const environmentManager = new EnvironmentManager(() => store);
 const accountLocalEnvironment = environmentManager.getLocalEnvironment();
 const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   (id) => environmentManager.getEnvironment(id),
-  { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
+  {
+    isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p),
+    getLocalRemovalRevision: () => gitService.getWorktreeRemovalRevision(),
+  }
 );
 
 // Account metadata lives in its own store (never the renderer-writable settings map); managed
@@ -315,7 +318,7 @@ const gitService: GitService = new GitService(
   },
   (worktreePath) => shell.trashItem(worktreePath),
   () => localCheckoutUsagePaths(checkoutUsages()),
-  () => workspaceRegistry.getLocalOpenWorkspacePaths(),
+  (excludedContextIds) => workspaceRegistry.getLocalOpenWorkspacePaths(excludedContextIds),
   async (workspacePath, args, timeoutMs, workspaceId, environmentId, checkoutContextId) => {
     if (workspaceId !== undefined) {
       const ws = workspaceRegistry.getWorkspace(workspaceId);

@@ -4,6 +4,7 @@ import { createMainCheckoutContext } from '../../src/shared/checkoutContext';
 interface RegistryDouble {
   // Method syntax (bivariant) so doubles may narrow the id type, as some tests do.
   getWorkspace(workspaceId: string): unknown;
+  isRemotePathReserved?(environmentId: string, path: string): boolean;
 }
 
 interface WorkspaceLike {
@@ -22,6 +23,7 @@ export function withCheckoutContexts<T extends RegistryDouble>(
 ): T & {
   resolveCheckoutContext: (workspaceId: string, contextId?: string) => CheckoutContext | null;
   getCheckoutContext: (contextId: string) => CheckoutContext | null;
+  isCheckoutPathReserved: (environmentId: string, path: string) => boolean;
 } {
   const mains = new Map<string, CheckoutContext>();
   const mainFor = (workspaceId: string): CheckoutContext | null => {
@@ -53,5 +55,7 @@ export function withCheckoutContexts<T extends RegistryDouble>(
     }
     return extra.find((context) => context.id === contextId) ?? null;
   };
-  return Object.assign(registry, { resolveCheckoutContext, getCheckoutContext });
+  return Object.assign(registry, { resolveCheckoutContext, getCheckoutContext,
+    isCheckoutPathReserved: (environmentId: string, path: string) => environmentId !== 'local' && (registry.isRemotePathReserved?.(environmentId, path) ?? false),
+  });
 }

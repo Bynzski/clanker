@@ -9,7 +9,6 @@ import { isSameWorkspaceIdentity } from '../../../shared/workspaceIdentity';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { findManagedWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel, useCheckoutOccupancy } from '../../lib/worktreeAgents';
 import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../../lib/worktreeCheckoutRemoval';
-import { removeUnmanagedWorktree } from '../../lib/unmanagedWorktreeRemoval';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import './GitWorktreesSection.css';
 
@@ -19,7 +18,7 @@ interface Notice {
 }
 
 type Confirmation =
-  | { kind: 'remove'; entry: GitWorktree; managed: CheckoutContext | null }
+  | { kind: 'remove'; entry: GitWorktree }
   | { kind: 'unlock'; entry: GitWorktree }
   | { kind: 'forget'; context: CheckoutContext }
   | { kind: 'prune'; entries: GitWorktree[] };
@@ -45,19 +44,7 @@ interface GitWorktreesSectionProps {
   onModalOpenChange?: (open: boolean) => void;
 }
 
-/**
- * The linked worktrees that exist, for inspection and cleanup only. Nothing here creates a worktree:
- * that is `New isolated agent`. Each row says whose it is:
- *
- * - in use / managed: attached to this workspace as a checkout context. Removal goes through
- *   `removeWorktreeCheckout` (release, inspect, remove), never directly;
- * - unmanaged: no context (made outside Clanker, by the old launcher, or released). Removal goes
- *   through the existing inspect/remove calls with all their protections.
- *
- * Two Git-authoritative cleanups sit beside removal, neither of which deletes a branch or files:
- * `Unlock` clears the lock of one listed worktree (removal stays a separate step), and a section-level
- * prune drops Git's stale records for checkouts whose directory is already gone (repository-wide).
- */
+/** Git inventory with descriptive occupancy; all confirmed removals use the same main transaction. */
 export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, onModalOpenChange, onRefresh, management = false, isScopeCurrent = unboundScope, onBusyChange, onChanged }: GitWorktreesSectionProps) {
   useCheckoutOccupancy();
   const mounted = useRef(true);
@@ -93,8 +80,8 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
         setEntries(management ? result.worktrees : result.worktrees.filter((entry: GitWorktree) => !entry.isMain));
         setLoadError(null);
         onRefresh?.();
-        // The same listing may show a managed checkout changed or gone: let main reconcile its contexts.
-        void requestCheckoutReconciliation(workspaceId);
+        // Reuse this Git listing for presentation while main reconciles access grants.
+        void requestCheckoutReconciliation(workspaceId, result);
       } else {
         setEntries([]);
         setLoadError(result.error || 'Could not list worktrees');
@@ -133,7 +120,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
       if (!isCurrent()) return;
       if (result.success) onChanged?.();
       useWorkspaceStore.getState().applyCheckoutContextReconciliation(workspace.id, result);
-      setNotice(result.success && !result.contexts.some((entry: CheckoutContext) => entry.id === context.id)
+      setNotice(result.success && !result.contexts?.some((entry: CheckoutContext) => entry.id === context.id)
         ? { tone: 'info', message: 'Stale checkout forgotten; no files or branches were deleted' }
         : { tone: 'error', message: result.success ? 'Checkout is still registered: it is in use or Git lists it again. Close its terminals and stop its dev servers before retrying.' : result.error || 'Could not verify checkout state' });
     } catch (cause) {
@@ -186,31 +173,20 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
     }
   };
 
-  const remove = async (entry: GitWorktree, managed: CheckoutContext | null) => {
+  const remove = async (entry: GitWorktree) => {
     setConfirming(null);
     if (removingPath || working || !isCurrent()) return;
     setRemovingPath(entry.path);
     setNotice(null);
     const branch = entry.branch ?? 'HEAD';
     try {
-      if (managed) {
-        const result = await removeWorktreeCheckout(workspace, managed);
-        if (!isCurrent()) return;
-        if (result.success || result.released) onChanged?.();
-        if (result.success) {
-          if (result.warning) setNotice({ tone: 'warning', message: result.warning });
-        } else {
-          setNotice({ tone: 'error', message: formatCheckoutRemovalFailure({ branch: worktreeBranchLabel(managed), path: managed.path, error: result.error, released: result.released }) });
-        }
+      const result = await removeWorktreeCheckout(workspace, entry);
+      if (!isCurrent()) return;
+      if (result.success || result.reconciliation?.success) onChanged?.();
+      if (result.success) {
+        if (result.warning) setNotice({ tone: 'warning', message: result.warning });
       } else {
-        const result = await removeUnmanagedWorktree(workspace, entry);
-        if (!isCurrent()) return;
-        if (result.success) onChanged?.();
-        if (result.success) {
-          if (result.warning) setNotice({ tone: 'warning', message: result.warning });
-        } else {
-          setNotice({ tone: 'error', message: formatCheckoutRemovalFailure({ branch, path: entry.path, error: result.error, released: false }) });
-        }
+        setNotice({ tone: 'error', message: formatCheckoutRemovalFailure({ branch, path: entry.path, error: result.error || 'Could not remove worktree' }) });
       }
     } finally {
       // Whatever happened, re-list once; the parent refresh does not bump this section's refresh key.
@@ -244,13 +220,13 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
           const managed = findManagedWorktreeContext(workspace, entry.path);
           const inUse = isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path });
           const isThisWorkspace = isSameWorkspaceIdentity({ environmentId, path: entry.path }, { environmentId, path: workspace.workspacePath });
-          const ownership = entry.isMain ? 'Main checkout' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : managed ? 'Managed' : 'Unmanaged';
+          const ownership = entry.isMain ? 'Main checkout' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : 'Available';
 
-          // The tag says whose checkout this is and why it cannot be removed: a missing directory is
+          // The tag describes checkout availability and why it cannot be removed: a missing directory is
           // cleaned up by the section-level prune, a lock is cleared by Unlock (removal stays separate).
           const tag = entry.isPrunable
             ? (entry.isLocked ? 'Missing · Locked' : 'Missing')
-            : entry.isLocked ? (managed || isThisWorkspace ? `${ownership} · Locked` : 'Locked') : ownership;
+            : entry.isLocked ? (isThisWorkspace ? `${ownership} · Locked` : 'Locked') : ownership;
           const canRemove = !entry.isMain && !isThisWorkspace && !inUse && !entry.isPrunable && !entry.isLocked;
           const canUnlock = entry.isLocked && !entry.isMain && !isThisWorkspace;
 
@@ -265,7 +241,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
                 {inUse && <span className="git-worktree-explanation">Close terminals and stop dev servers to remove.</span>}
               </div>
               <div className="git-worktree-actions">
-                <span className={`git-worktree-tag${managed ? ' managed' : ''}`}>{tag}</span>
+                <span className="git-worktree-tag">{tag}</span>
                 {canRemove && (
                   <Button
                     size="xs"
@@ -274,7 +250,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
                     className="git-branch-action danger"
                     disabled={removingPath !== null || working || loading}
                     aria-label={`Remove checkout for branch ${branch}`}
-                    onClick={() => setConfirming({ kind: 'remove', entry, managed })}
+                    onClick={() => setConfirming({ kind: 'remove', entry })}
                   >
                     {removingPath === entry.path ? 'Removing…' : 'Remove…'}
                   </Button>
@@ -341,7 +317,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
             ? [{ label: 'Unlock worktree', variant: 'danger', action: () => void unlock(confirming.entry) }]
             : confirming.kind === 'forget'
               ? [{ label: 'Forget checkout', variant: 'danger', action: () => void forget(confirming.context) }]
-              : [{ label: 'Remove worktree', variant: 'danger', action: () => void remove(confirming.entry, confirming.managed) }]}
+              : [{ label: 'Remove worktree', variant: 'danger', action: () => void remove(confirming.entry) }]}
         onCancel={() => setConfirming(null)}
       />
     </div>

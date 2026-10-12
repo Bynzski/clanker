@@ -148,7 +148,7 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
     expect(JSON.parse(value.slice('developer_instructions='.length))).toBe(guidance);
     expect(value).not.toMatch(/[\r\n]/);
     expect(guidance).toContain('clanker_create_isolated_checkout');
-    expect(guidance).toMatch(/search for them by name/);
+    expect(guidance).toContain('only for explicitly requested conversation relocation');
   });
 
   it('is placed before a resume subcommand, like every other override', () => {
@@ -218,12 +218,12 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
     try {
       const granted = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
         [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: { checkoutRehoming: true } })], () => undefined);
-      expect(JSON.parse(granted.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length))).toContain('Checkout lifecycle belongs to Clanker');
+      expect(JSON.parse(granted.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length))).toContain('Git owns worktree state');
       await granted.dispose();
       const contextOnly = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
         [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: {} })], () => undefined);
       const text = JSON.parse(contextOnly.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length));
-      expect(text).not.toMatch(/worktree|clanker_create|clanker_complete/i);
+      expect(text).not.toMatch(/clanker_create|clanker_complete/i);
       await contextOnly.dispose();
     } finally { await service.shutdown(); }
   });

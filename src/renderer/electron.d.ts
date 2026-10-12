@@ -2,7 +2,7 @@ import type { NativeAttentionCapability, AttentionSignalDiagnostics } from '../s
 import type { BrowserPresentation } from '../shared/types/browserPresentation';
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
-import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
+import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../shared/types/checkoutContext';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
@@ -39,7 +39,7 @@ import type {
   GitWorktreeRemoveResult,
   GitWorktreePruneResult,
   GitWorktreeUnlockResult,
-} from '../../shared/types/git';
+} from '../shared/types/git';
 import type {
   CredentialOperationResult,
   SshKeyGenerationResult,
@@ -264,6 +264,7 @@ export interface ElectronAPI {
   reconcileCheckoutContexts: (workspaceId: string) => Promise<ReconcileCheckoutContextsResult>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
+  gitRemoveCheckout: (workspaceId: string, worktreePath: string, expectedBranch: string | null) => Promise<GitWorktreeRemoveResult>;
   gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreePruneResult>;
   gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => Promise<GitWorktreeUnlockResult>;
   gitGetOperationState: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitOperationStateResult>;

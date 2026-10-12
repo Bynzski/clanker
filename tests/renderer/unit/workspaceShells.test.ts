@@ -126,7 +126,7 @@ describe('canonical workspace opening', () => {
     vi.mocked(window.electronAPI.registerOpenWorkspace).mockImplementation(async (id: string) => ({ success: true, location: local('/repo-worktrees/topic'),
       checkoutContext: { id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/repo-worktrees/topic', kind: 'main' } }));
     vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [
-      { path: '/repo', isMain: true, branch: 'main' }, { path: '/repo-worktrees/topic', isMain: false, branch: 'topic' },
+      { path: '/repo', isMain: true, branch: 'main', isLocked: false, isPrunable: false }, { path: '/repo-worktrees/topic', isMain: false, branch: 'topic', isLocked: false, isPrunable: false },
     ] });
     const shell = await openWorkspace(local('/alias'));
     expect(shell).toMatchObject({ workspacePath: '/repo-worktrees/topic', projectName: 'repo', isLinkedWorktree: true,
@@ -145,9 +145,9 @@ describe('canonical workspace opening', () => {
     expect(window.electronAPI.unregisterOpenWorkspace).toHaveBeenCalledOnce();
   });
   it('refuses generated worktree containers and cleans up registration', async () => {
-    vi.mocked(window.electronAPI.gitGetBranchState).mockResolvedValue({ success: true, isRepo: true });
+    vi.mocked(window.electronAPI.gitGetBranchState).mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', isDetached: false, branches: [] });
     vi.mocked(window.electronAPI.gitListWorktrees).mockImplementation(async (path: string) => ({ success: true, worktrees: path === '/repo'
-      ? [{ path: '/repo', isMain: true }, { path: '/repo-worktrees/topic', isMain: false }] : [] }));
+      ? [{ path: '/repo', isMain: true, branch: 'main', isLocked: false, isPrunable: false }, { path: '/repo-worktrees/topic', isMain: false, branch: 'topic', isLocked: false, isPrunable: false }] : [] }));
     await expect(openWorkspace(local('/repo-worktrees'))).rejects.toThrow('holds worktrees');
     expect(window.electronAPI.unregisterOpenWorkspace).toHaveBeenCalledOnce();
   });

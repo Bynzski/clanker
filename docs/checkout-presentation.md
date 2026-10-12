@@ -5,7 +5,7 @@
 One selector (`renderer/lib/checkoutSelection.ts`) drives Explorer, Source Control,
 header dirty counts and status-bar checkout/Git labels:
 
-1. An explicit file/editor-surface pin.
+1. An explicit checkout or file/editor-surface pin.
 2. The focused terminal's **current authenticated observation**, if its checkout
    is registered to this workspace/environment and usable.
 3. Its launch context when an observation is absent, or when **historical evidence
@@ -13,6 +13,13 @@ header dirty counts and status-bar checkout/Git labels:
    case has source `launch`, not `observed`, and displays **Launch checkout · agent
    location last-reported**. The observation remains historical.
 4. The workspace's registered main root if there is no focused terminal.
+
+The sidebar lists Git's linked worktrees, including entries created outside Clanker.
+Selecting an available row explicitly adopts/validates it before pinning the checkout;
+inventory refresh alone grants no authority. The main checkout can be selected again.
+Pins survive ordinary updates on the same page; changing page or terminal focus clears them.
+The ordinary harness buttons launch in that selected, authorized checkout. The isolated
+agent picker can also create a checkout without launching a process.
 
 Terminal focus clears the explicit pin. Selecting an editor tab pins that tab's
 original context. Unknown provenance, historical disagreement, unavailable/unregistered

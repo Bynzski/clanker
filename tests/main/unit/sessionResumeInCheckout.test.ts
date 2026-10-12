@@ -49,6 +49,7 @@ function setup(options: { registered?: CheckoutContext[]; listed?: Array<{ path:
     getWorkspace: (id: string) => (id === 'ws' ? workspace : null),
     resolveCheckoutContext: () => contexts[0],
     getCheckoutContextsForWorkspace: () => contexts,
+    isCheckoutPathReserved: () => false,
     getCheckoutContext: (id: string) => contexts.find((entry) => entry.id === id) ?? null,
   };
   const listed = [{ path: workspacePath, branch: 'main', isMain: true }, ...(options.listed ?? (options.registered ?? []).map((context) => ({ path: context.path, branch: context.branch ?? null })))];

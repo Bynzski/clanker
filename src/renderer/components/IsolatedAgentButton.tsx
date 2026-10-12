@@ -15,6 +15,7 @@ import type { IsolatedAgentChoices } from '../lib/isolatedAgentChoices';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import './IsolatedAgentButton.css';
+import { refreshWorktreeInventory } from '../lib/worktreeInventory';
 
 interface IsolatedAgentButtonProps {
   workspace: Pick<WorkspaceTab, 'id' | 'gitIsRepo' | 'isLinkedWorktree' | 'harness'>;
@@ -22,6 +23,7 @@ interface IsolatedAgentButtonProps {
 }
 
 type Destination =
+  | { kind: 'main' }
   | { kind: 'new' }
   | { kind: 'branch'; name: string }
   | { kind: 'worktree'; path: string };
@@ -118,20 +120,22 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
   };
 
   const target = (): IsolatedAgentTarget | null => {
+    if (destination.kind === 'main') return { kind: 'main' };
     if (destination.kind === 'new') return taskBranch.trim() ? { kind: 'new-branch', branch: taskBranch.trim() } : null;
     if (destination.kind === 'branch') return { kind: 'existing-branch', branch: destination.name };
     return { kind: 'worktree', path: destination.path };
   };
   const pending = target();
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const submit = async (event: FormEvent | null, createOnly = false) => {
+    event?.preventDefault();
     if (busy || !pending) return;
     setBusy(true);
     setError('');
     try {
-      const result = await launchIsolatedAgent({ workspaceId: workspace.id, harnessId: effectiveHarnessId, visibleHarnessIds, target: pending });
+      const result = await launchIsolatedAgent({ workspaceId: workspace.id, harnessId: effectiveHarnessId, visibleHarnessIds, target: pending, createOnly });
       if (result.ok) {
+        void refreshWorktreeInventory(workspace.id);
         setOpen(false);
         setTaskBranch('');
       } else {
@@ -187,6 +191,7 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
 
             <div className="isolated-agent-pane isolated-agent-copies" role="group" aria-label="Working copy">
               <div className="isolated-agent-heading">Working copy</div>
+              <button type="button" aria-pressed={destination.kind === 'main'} className={`isolated-agent-choice${destination.kind === 'main' ? ' selected' : ''}`} disabled={busy} onClick={() => setDestination({ kind: 'main' })}>Main checkout</button>
 
               <div className={`isolated-agent-new${destination.kind === 'new' ? ' selected' : ''}`}>
                 <label className="isolated-agent-subheading" htmlFor="isolated-agent-branch">New branch</label>
@@ -264,6 +269,7 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
           <Button type="submit" size="sm" variant="primary" disabled={busy || !pending || !effectiveHarness}>
             {launchLabel}
           </Button>
+          <Button type="button" size="sm" variant="ghost" disabled={busy || !pending || pending.kind === 'worktree' || pending.kind === 'main'} onClick={() => void submit(null, true)}>Create checkout</Button>
         </form>
       </PopoverContent>
     </Popover>
@@ -279,7 +285,7 @@ function rebuildStates(choices: IsolatedAgentChoices, workspace: WorkspaceTab): 
       if (entry.state === 'missing' || entry.state === 'locked') return entry;
       const managed = (workspace.checkoutContexts ?? []).find((context) => context.id === entry.managed?.id) ?? null;
       if (isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path })) return { ...entry, state: 'in-use' as const };
-      if (!managed) return entry.managed ? { ...entry, managed: null, state: 'unmanaged' as const } : { ...entry, state: 'unmanaged' as const };
+      if (!managed) return { ...entry, managed: null, state: 'available' as const };
       return { ...entry, state: 'available' as const };
     }),
   };

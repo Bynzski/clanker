@@ -338,47 +338,30 @@ describe('Codex explicit target directory', () => {
 describe('what the model is told about checkout lifecycle', () => {
   const all = new Set(['clanker_context', CREATE_ISOLATED_CHECKOUT, COMPLETE_ISOLATED_CHECKOUT]);
 
-  it('a launch granted the lifecycle tools is told they are authoritative and what NOT to use instead', () => {
+  it('makes Git authoritative and keeps relocation an explicit compatibility choice', () => {
     const text = bridgeInstructions(all);
-    expect(text).toContain(CREATE_ISOLATED_CHECKOUT);
-    expect(text).toContain(COMPLETE_ISOLATED_CHECKOUT);
-    expect(text).toMatch(/Checkout lifecycle belongs to Clanker/);
-    for (const rival of ['git worktree add', 'EnterWorktree', 'git worktree remove', 'ExitWorktree']) expect(text).toContain(rival);
-    expect(text).toMatch(/instead of/);
-    expect(text).toMatch(/ordinary Git and GitHub tools for edits, commits, pushes, pull requests and merges/);
-    expect(text).toMatch(/finish your reply/);
+    expect(text).toContain('Git owns worktree state');
+    expect(text).toContain('ordinary Git or provider-native tools');
+    expect(text).toContain('separate confirmed action');
+    expect(text).toContain('explicitly requested conversation relocation');
+    expect(text).not.toMatch(/lifecycle belongs to Clanker|instead of|strands the conversation/);
+    expect(text).toContain('finish your reply');
+    expect(text).toContain('does not preserve the in-flight turn');
   });
-
-  it('the stale "nothing is required" wording is gone, from the instructions and from the tool descriptions', () => {
-    for (const text of [bridgeInstructions(all), bridgeInstructions(new Set(['clanker_context'])), CREATE_DESCRIPTION, COMPLETE_DESCRIPTION]) {
-      expect(text).not.toMatch(/required for normal work|nothing here is required|optional/i);
-    }
-  });
-
-  it('a launch with only the context tool is NOT told it owns worktree lifecycle or that tools exist that it cannot call', () => {
+  it('does not advertise ungranted compatibility tools', () => {
     const text = bridgeInstructions(new Set(['clanker_context']));
-    expect(text).toContain('clanker_context');
-    expect(text).not.toMatch(/lifecycle|worktree|clanker_create|clanker_complete|EnterWorktree/i);
-  });
-
-  it('a launch granted only one of the two is told only about that one', () => {
-    const createOnly = bridgeInstructions(new Set(['clanker_context', CREATE_ISOLATED_CHECKOUT]));
+    expect(text).toContain('Git owns worktree state');
+    expect(text).not.toMatch(/clanker_create|clanker_complete/);
+    const createOnly = bridgeInstructions(new Set([CREATE_ISOLATED_CHECKOUT]));
     expect(createOnly).toContain(CREATE_ISOLATED_CHECKOUT);
     expect(createOnly).not.toContain(COMPLETE_ISOLATED_CHECKOUT);
   });
-
-  it('the create description steers away from every competing mechanism seen in smoke tests and says why', () => {
-    expect(CREATE_DESCRIPTION).toMatch(/Use this whenever you need to create or enter an isolated worktree/);
-    for (const rival of ['git worktree add', 'EnterWorktree']) expect(CREATE_DESCRIPTION).toContain(rival);
-    expect(CREATE_DESCRIPTION).toMatch(/Prefer this over/);
-    expect(CREATE_DESCRIPTION).toMatch(/Clanker must track the checkout and move this same conversation/);
-  });
-
-  it('the complete description steers away from manual removal and ExitWorktree and says why', () => {
-    expect(COMPLETE_DESCRIPTION).toMatch(/after the work in an isolated checkout is merged or finished/i);
-    for (const rival of ['git worktree remove', 'ExitWorktree', 'git branch -d/-D']) expect(COMPLETE_DESCRIPTION).toContain(rival);
-    expect(COMPLETE_DESCRIPTION).toMatch(/Clanker must move this same conversation back to the main checkout before it removes the isolated one/);
-    expect(COMPLETE_DESCRIPTION).toMatch(/never force-deleted/);
+  it('tool discovery does not make relocation or cleanup the default workflow', () => {
+    expect(CREATE_DESCRIPTION).toContain('Compatibility operation');
+    expect(CREATE_DESCRIPTION).toContain('user explicitly requests');
+    expect(CREATE_DESCRIPTION).toContain('not same-turn live relocation');
+    expect(COMPLETE_DESCRIPTION).toContain('Do not call merely because an agent or task is finished');
+    expect(COMPLETE_DESCRIPTION).toContain('never force-deletes');
   });
 
   it('the capabilities carry exactly those descriptions (the text some harnesses show before loading a schema)', () => {
@@ -413,13 +396,13 @@ describe('what the model is told about checkout lifecycle', () => {
     it('a lifecycle-capable launch receives the lifecycle guidance in its server instructions', async () => {
       const text = await initialize({ checkoutRehoming: true });
       expect(text).toContain(CREATE_ISOLATED_CHECKOUT);
-      expect(text).toContain('EnterWorktree');
+      expect(text).toContain('explicitly requested conversation relocation');
     });
 
     it('any other launch receives guidance that never mentions tools it does not have', async () => {
       const text = await initialize({});
       expect(text).toContain('clanker_context');
-      expect(text).not.toMatch(/worktree|clanker_create|clanker_complete/i);
+      expect(text).not.toMatch(/clanker_create|clanker_complete/i);
     });
   });
 });

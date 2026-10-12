@@ -153,6 +153,7 @@ import {
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_REMOVE_CHECKOUT,
   GIT_PRUNE_WORKTREES,
   GIT_UNLOCK_WORKTREE,
   REGISTER_OPEN_WORKSPACE,
@@ -484,6 +485,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(GIT_INSPECT_WORKTREE, workspacePath, worktreePath, openWorkspacePaths, workspaceId),
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) =>
     ipcRenderer.invoke(GIT_REMOVE_WORKTREE, workspacePath, worktreePath, expectedBranch, openWorkspacePaths, workspaceId),
+  gitRemoveCheckout: (workspaceId: string, worktreePath: string, expectedBranch: string | null) =>
+    ipcRenderer.invoke(GIT_REMOVE_CHECKOUT, workspaceId, worktreePath, expectedBranch),
   gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_PRUNE_WORKTREES, workspacePath, workspaceId),
   gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_UNLOCK_WORKTREE, workspacePath, worktreePath, workspaceId),
   gitGetOperationState: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath, workspaceId, checkoutContextId),

@@ -58,10 +58,10 @@ describe('GitWorktreesSection', () => {
         callOrder.push('inspect');
         return { success: true, hasChanges: false, worktree: remaining.find((entry) => entry.path === path) };
       }),
-      gitRemoveWorktree: vi.fn().mockImplementation(async (_repo: string, path: string) => {
+      gitRemoveCheckout: vi.fn().mockImplementation(async (_workspaceId: string, path: string) => {
         callOrder.push('remove');
         remaining = remaining.filter((entry) => entry.path !== path);
-        return { success: true };
+        return { success: true, reconciliation: { success: true, contexts: [BUSY_CTX], dropped: [MANAGED_CTX.id] } };
       }),
     });
     openWorkspace();
@@ -143,7 +143,7 @@ describe('GitWorktreesSection', () => {
   describe('managed or unmanaged', () => {
     it('tags a checkout with no attached context as unmanaged', async () => {
       show();
-      expect(within(await rowOf('old-task')).getByText('Unmanaged')).toBeTruthy();
+      expect(within(await rowOf('old-task')).getByText('Available')).toBeTruthy();
     });
 
     it('recognizes an attached context by path identity, not raw string equality', async () => {
@@ -152,7 +152,7 @@ describe('GitWorktreesSection', () => {
         context('managed', MANAGED, `${MANAGED.path}/`),
       ] , terminals: [] });
       show();
-      expect(within(await rowOf('issue-90')).getByText('Managed')).toBeTruthy();
+      expect(within(await rowOf('issue-90')).getByText('Available')).toBeTruthy();
     });
 
     it('does not count another workspace\'s or the main context as managing a checkout', async () => {
@@ -160,7 +160,7 @@ describe('GitWorktreesSection', () => {
         { id: mainCheckoutContextId('ws'), workspaceId: 'ws', environmentId: 'local', path: MANAGED.path, kind: 'main' },
       ], terminals: [] });
       show();
-      expect(within(await rowOf('issue-90')).getByText('Unmanaged')).toBeTruthy();
+      expect(within(await rowOf('issue-90')).getByText('Available')).toBeTruthy();
     });
 
     it('tags a checkout an agent is using as In use and offers no removal', async () => {
@@ -182,197 +182,57 @@ describe('GitWorktreesSection', () => {
     });
   });
 
-  describe('removing an unmanaged worktree', () => {
-    it('confirms, then runs the existing inspect and remove calls, and refreshes the list', async () => {
+  describe('one confirmed removal operation', () => {
+    it.each(['old-task', 'issue-90'])('uses the same main-owned operation for %s', async (branch) => {
       show();
-      await user.click((await removeButton('old-task'))!);
-      const dialog = await screen.findByRole('alertdialog');
-      expect(dialog.textContent).toContain('Remove checkout for branch old-task?');
-      expect(dialog.textContent).toContain('The branch remains.');
-      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
-      await user.click(screen.getByRole('button', { name: 'Remove worktree' }));
-
-      await waitFor(() => expect(screen.queryByText('old-task')).toBeNull());
-      expect(callOrder).toEqual(['inspect', 'remove']);
-      // The same protections' inputs: local open workspace paths, the inspected branch, the workspace id.
-      expect(api.gitInspectWorktree).toHaveBeenCalledWith(ROOT, UNMANAGED.path, [ROOT], 'ws');
-      expect(api.gitRemoveWorktree).toHaveBeenCalledWith(ROOT, UNMANAGED.path, 'old-task', [ROOT], 'ws');
+      await user.click((await removeButton(branch))!);
+      expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
+      await confirmRemoval();
+      await waitFor(() => expect(screen.queryByText(branch)).toBeNull());
+      const entry = branch === 'old-task' ? UNMANAGED : MANAGED;
+      expect(api.gitRemoveCheckout).toHaveBeenCalledWith('ws', entry.path, branch);
       expect(api.releaseCheckoutContext).not.toHaveBeenCalled();
+      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
+      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
       expect(api.gitDeleteBranch).not.toHaveBeenCalled();
       expect(api.gitForceDeleteBranch).not.toHaveBeenCalled();
-      expect(api.gitListWorktrees.mock.calls.length).toBeGreaterThanOrEqual(2);
-      expect(screen.queryByRole('alert')).toBeNull();
     });
-
+    it('retains the attached row and association after dirty preflight refusal', async () => {
+      api.gitRemoveCheckout.mockResolvedValue({ success: false, outcome: 'unchanged', error: 'Worktree has uncommitted, untracked, or ignored files' });
+      show();
+      await user.click((await removeButton('issue-90'))!);
+      await confirmRemoval();
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('ignored files');
+      expect(alert.textContent).not.toMatch(/left on disk|no longer attached/);
+      expect(workspace().checkoutContexts?.some((entry) => entry.id === MANAGED_CTX.id)).toBe(true);
+      expect(await rowOf('issue-90')).toBeTruthy();
+    });
     it('does nothing on Cancel', async () => {
       show();
       await user.click((await removeButton('old-task'))!);
       await user.click(await screen.findByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
+      expect(api.gitRemoveCheckout).not.toHaveBeenCalled();
     });
-
-    it('refuses a checkout with uncommitted, untracked or ignored files, and keeps the row and the error', async () => {
-      api.gitInspectWorktree.mockResolvedValue({ success: true, hasChanges: true, worktree: UNMANAGED });
-      show();
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-
-      const alert = await screen.findByRole('alert');
-      expect(alert.textContent).toContain('uncommitted, untracked, or ignored files');
-      expect(alert.textContent).toContain('left on disk');
-      expect(alert.textContent).toContain('branch was not deleted');
-      // An unmanaged checkout was never attached, so it is not described as detached.
-      expect(alert.textContent).not.toContain('no longer attached');
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-      expect(await rowOf('old-task')).toBeTruthy();
-    });
-
-    it('keeps the row and shows the error when the branch changed before removal', async () => {
-      api.gitRemoveWorktree.mockResolvedValue({ success: false, error: 'Worktree branch changed; inspect it again' });
-      show();
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-
-      expect((await screen.findByRole('alert')).textContent).toContain('Worktree branch changed; inspect it again. It was left on disk');
-      expect(await rowOf('old-task')).toBeTruthy();
-    });
-
-    it('shows main\'s refusal for a checkout that is open as a workspace, and keeps the workspace open', async () => {
-      const asWorkspace = createWorkspaceFixture({ id: 'legacy-tab', workspacePath: UNMANAGED.path, isLinkedWorktree: true, terminals: [] });
-      useWorkspaceStore.getState().addWorkspace(asWorkspace);
-      useWorkspaceStore.getState().selectWorkspace('ws');
-      api.gitInspectWorktree.mockResolvedValue({ success: false, error: 'Close this workspace tab before removing its worktree' });
-      show();
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-
-      expect((await screen.findByRole('alert')).textContent).toContain('Close this workspace tab before removing its worktree');
-      // That open path is among the ones sent to the existing safeguard; nothing was closed or removed.
-      expect(api.gitInspectWorktree).toHaveBeenCalledWith(ROOT, UNMANAGED.path, [ROOT, UNMANAGED.path], 'ws');
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-      expect(useWorkspaceStore.getState().getWorkspaceById('legacy-tab')).not.toBeNull();
-      expect(await rowOf('old-task')).toBeTruthy();
-    });
-
-    it('passes the removal warning through', async () => {
-      api.gitRemoveWorktree.mockImplementation(async (_r: string, path: string) => {
-        remaining = remaining.filter((entry) => entry.path !== path);
-        return { success: true, warning: 'New files appeared during removal and were left in place' };
-      });
-      show();
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-      expect((await screen.findByRole('status')).textContent).toContain('left in place');
-    });
-  });
-
-  describe('removing a managed checkout', () => {
-    it('never sends a managed checkout straight to Git removal: release comes first, through removeWorktreeCheckout', async () => {
-      show();
-      expect(within(await rowOf('issue-90')).getByText('Managed')).toBeTruthy();
-      await user.click((await removeButton('issue-90'))!);
-      await confirmRemoval();
-
-      await waitFor(() => expect(screen.queryByText('issue-90')).toBeNull());
-      expect(callOrder).toEqual(['release', 'inspect', 'remove']);
-      expect(api.releaseCheckoutContext).toHaveBeenCalledExactlyOnceWith('ws', MANAGED_CTX.id);
-      expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(MANAGED_CTX.id);
-      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
-    });
-
-    it('lets main refuse the release and keeps the context attached and the row visible', async () => {
-      api.releaseCheckoutContext.mockResolvedValue({ success: false, error: '1 running terminal is still using this checkout; close it first' });
+    it('reports actual partial outcomes without inventing directory existence', async () => {
+      api.gitRemoveCheckout.mockResolvedValue({ success: false, outcome: 'recovery-required', error: 'Checkout is in Trash, but Git cleanup failed' });
       show();
       await user.click((await removeButton('issue-90'))!);
       await confirmRemoval();
-
-      const alert = await screen.findByRole('alert');
-      expect(alert.textContent).toContain('1 running terminal is still using this checkout');
-      expect(alert.textContent).not.toContain('no longer attached');
-      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-      expect(workspace().checkoutContexts!.map((entry) => entry.id)).toContain(MANAGED_CTX.id);
-      expect(within(await rowOf('issue-90')).getByText('Managed')).toBeTruthy();
-    });
-
-    it('after a failure that followed the release, the checkout is still listed, now honestly as unmanaged', async () => {
-      api.gitInspectWorktree.mockResolvedValue({ success: true, hasChanges: true, worktree: MANAGED });
-      show();
-      await user.click((await removeButton('issue-90'))!);
-      await confirmRemoval();
-
-      const alert = await screen.findByRole('alert');
-      expect(alert.textContent).toContain(`left on disk at ${MANAGED.path}`);
-      // It is still listed right below, so the message must not claim otherwise.
-      expect(alert.textContent).toContain('is no longer attached to this workspace');
-      expect(alert.textContent).not.toContain('no longer listed');
-      await waitFor(() => expect(within(screen.getByText('issue-90').closest('.git-worktree-item') as HTMLElement).getByText('Unmanaged')).toBeTruthy());
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-      expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(MANAGED_CTX.id);
+      expect((await screen.findByRole('alert')).textContent).toContain('Checkout is in Trash');
+      expect(screen.getByRole('alert').textContent).not.toContain('left on disk');
     });
   });
-
-  describe('the direct-removal path refuses an attached checkout', () => {
-    it('removeUnmanagedWorktree will not touch a path with an attached context', async () => {
-      const { removeUnmanagedWorktree } = await import('../../../src/renderer/lib/unmanagedWorktreeRemoval');
-      const result = await removeUnmanagedWorktree(workspace(), MANAGED);
-
-      expect(result).toMatchObject({ success: false, stage: 'validate' });
-      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-    });
-
-    it('nor the main checkout, nor a workspace that is no longer open', async () => {
-      const { removeUnmanagedWorktree } = await import('../../../src/renderer/lib/unmanagedWorktreeRemoval');
-      expect(await removeUnmanagedWorktree(workspace(), MAIN_ENTRY)).toMatchObject({ success: false, stage: 'validate' });
-      expect(await removeUnmanagedWorktree({ ...workspace(), id: 'closed' }, UNMANAGED)).toMatchObject({ success: false, stage: 'validate' });
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-    });
-  });
-
   describe('SSH', () => {
-    const REMOTE_ROOT = '/srv/app';
-    const REMOTE_OLD = listed('/srv/app-worktrees/old-task', 'old-task');
-
-    beforeEach(() => {
-      remaining = [listed(REMOTE_ROOT, 'main', { isMain: true }), REMOTE_OLD];
-      openWorkspace({
-        workspacePath: REMOTE_ROOT, environmentId: 'vps',
-        checkoutContexts: [{ id: mainCheckoutContextId('ws'), workspaceId: 'ws', environmentId: 'vps', path: REMOTE_ROOT, kind: 'main' }],
-        terminals: [],
-      });
-    });
-
-    it('lists through the scoped call and removes with no desktop paths, leaving host protections to main', async () => {
-      render(<GitWorktreesSection workspacePath={REMOTE_ROOT} workspaceId="ws" refreshKey={0} />);
-      expect(within(await rowOf('old-task')).getByText('Unmanaged')).toBeTruthy();
-      expect(api.gitListWorktrees).toHaveBeenCalledWith(REMOTE_ROOT, 'ws');
+    it('passes only Git identity, never desktop occupancy claims', async () => {
+      const remote = '/srv/app';
+      remaining = [listed(remote, 'main', { isMain: true }), UNMANAGED];
+      openWorkspace({ workspacePath: remote, environmentId: 'vps', terminals: [], checkoutContexts: [] });
+      render(<GitWorktreesSection workspacePath={remote} workspaceId="ws" refreshKey={0} />);
       await user.click((await removeButton('old-task'))!);
       await confirmRemoval();
-
-      await waitFor(() => expect(screen.queryByText('old-task')).toBeNull());
-      expect(api.gitInspectWorktree).toHaveBeenCalledWith(REMOTE_ROOT, REMOTE_OLD.path, [], 'ws');
-      expect(api.gitRemoveWorktree).toHaveBeenCalledWith(REMOTE_ROOT, REMOTE_OLD.path, 'old-task', [], 'ws');
-    });
-
-    it('shows the host\'s refusal (active terminal, reservation, recovery) and keeps the row', async () => {
-      api.gitInspectWorktree.mockResolvedValue({ success: false, error: 'Close workspace tabs and stop active terminals using this checkout before removal' });
-      render(<GitWorktreesSection workspacePath={REMOTE_ROOT} workspaceId="ws" refreshKey={0} />);
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-
-      expect((await screen.findByRole('alert')).textContent).toContain('stop active terminals');
-      expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
-      expect(await rowOf('old-task')).toBeTruthy();
-    });
-
-    it('a successful remote removal refreshes the list and leaves no error behind', async () => {
-      render(<GitWorktreesSection workspacePath={REMOTE_ROOT} workspaceId="ws" refreshKey={0} />);
-      await user.click((await removeButton('old-task'))!);
-      await confirmRemoval();
-      await waitFor(() => expect(screen.queryByText('old-task')).toBeNull());
-      expect(screen.queryByRole('alert')).toBeNull();
+      expect(api.gitRemoveCheckout).toHaveBeenCalledWith('ws', UNMANAGED.path, 'old-task');
+      expect(api.gitInspectWorktree).not.toHaveBeenCalled();
     });
   });
 });

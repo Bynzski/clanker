@@ -16,6 +16,7 @@ export type IsolatedAgentResult =
 
 /** Where the agent runs. Only identities cross here; main derives every root, branch and kind. */
 export type IsolatedAgentTarget =
+  | { kind: 'main' }
   /** A new branch from the current branch/HEAD, in a new linked worktree. */
   | { kind: 'new-branch'; branch: string }
   /** An existing local branch that has no worktree yet, in a new linked worktree. */
@@ -24,6 +25,8 @@ export type IsolatedAgentTarget =
   | { kind: 'worktree'; path: string };
 
 export interface LaunchIsolatedAgentRequest {
+  /** Explicitly create a checkout ahead of time without starting any process. */
+  createOnly?: boolean;
   /** The workspace the request was made from. */
   workspaceId: string;
   harnessId: string;
@@ -67,6 +70,7 @@ type Resolved = { ok: true; context: CheckoutContext; label: string; created: bo
 export async function launchIsolatedAgent(request: LaunchIsolatedAgentRequest): Promise<IsolatedAgentResult> {
   const fail = (error: string, checkoutCreated = false): IsolatedAgentResult => ({ ok: false, error, checkoutCreated });
   const { target } = request;
+  if (request.createOnly && (target.kind === 'worktree' || target.kind === 'main')) return fail('Choose a new or existing branch to create a checkout');
 
   if (target.kind === 'new-branch' && !target.branch.trim()) return fail('Enter a task branch');
   if (target.kind === 'existing-branch' && !target.branch.trim()) return fail('Choose a branch');
@@ -98,6 +102,8 @@ export async function launchIsolatedAgent(request: LaunchIsolatedAgentRequest): 
     return fail(`The worktree for "${label}" is attached to its workspace, but focus moved to another workspace, so no agent was started. It is listed there as an inactive checkout.`, resolved.created);
   }
 
+  if (request.createOnly) return { ok: true };
+
   const launch = resolveToolbarLaunch({
     harnessId: request.harnessId,
     visibleHarnessIds: request.visibleHarnessIds,
@@ -114,6 +120,11 @@ export async function launchIsolatedAgent(request: LaunchIsolatedAgentRequest): 
 }
 
 async function resolveContext(workspace: WorkspaceTab, target: IsolatedAgentTarget): Promise<Resolved> {
+  if (target.kind === 'main') {
+    const context = workspace.checkoutContexts?.find((entry) => entry.kind === 'main');
+    return context ? { ok: true, context, label: 'main checkout', created: false, attached: false }
+      : { ok: false, error: 'The main checkout is not registered', created: false };
+  }
   if (target.kind === 'worktree') {
     const existing = findManagedWorktreeContext(workspace, target.path);
     if (existing) return { ok: true, context: existing, label: existing.branch || 'HEAD', created: false, attached: false };

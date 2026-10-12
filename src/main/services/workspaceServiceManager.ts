@@ -129,6 +129,7 @@ export class WorkspaceServiceManager {
     if (location && !contextId) throw new Error('Agent is outside a registered checkout');
     const context = this.deps.registry.resolveCheckoutContext(workspace.workspaceId, contextId ?? undefined);
     if (!context || context.missing) throw new Error('Checkout is missing or no longer registered');
+    if (this.deps.registry.isCheckoutPathReserved(context.environmentId, context.path)) throw new Error('Checkout is being removed');
     const canonicalRoot = this.deps.canonicalRoot?.(context.path)
       ?? normalizeWorkspacePath(fs.realpathSync.native(toNativePath(context.path, process.platform)));
     return { workspace, terminal, context, canonicalRoot };

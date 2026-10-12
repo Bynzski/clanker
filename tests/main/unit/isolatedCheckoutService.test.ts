@@ -75,6 +75,7 @@ function makeWorld(options: Options = {}) {
   const registry = {
     getWorkspace: (id: string) => (id === 'ws' ? workspace : null),
     resolveCheckoutContext: (id: string, contextId?: string) => (id !== 'ws' ? null : contextId ? contexts.get(contextId) ?? null : MAIN),
+    isCheckoutPathReserved: () => false,
     getCheckoutContext: (id: string) => contexts.get(id) ?? null,
     getCheckoutContextsForWorkspace: () => [...contexts.values()],
     getWorktreeResourceId: (id: string) => id,

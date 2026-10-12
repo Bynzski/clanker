@@ -247,7 +247,7 @@ describe('registerGitIpc', () => {
     });
   });
 
-  test('registers exactly 41 git IPC handlers', () => {
+  test('registers exactly 42 git IPC handlers', () => {
     const mockGitService = createMockGitService();
 
     registerGitIpc({
@@ -256,7 +256,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(41);
+    expect(handleCalls.length).toBe(42);
   });
 
   test('validates worktree paths and returns POSIX paths across IPC', async () => {
@@ -306,7 +306,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(82);
+    expect(handleCalls.length).toBe(84);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {

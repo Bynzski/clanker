@@ -32,7 +32,8 @@ export function resolveTerminalLaunchTarget(
   const isResolvedTargetCurrent = (): boolean => {
     if (!resolvedWorkspace) return true;
     if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace) return false;
-    return !checkoutContext || registry.getCheckoutContext(checkoutContext.id) === checkoutContext;
+    return !checkoutContext || (registry.getCheckoutContext(checkoutContext.id) === checkoutContext
+      && !checkoutContext.missing && !registry.isCheckoutPathReserved(checkoutContext.environmentId, checkoutContext.path));
   };
   return { resolvedWorkspace, checkoutContext, isResolvedTargetCurrent };
 }

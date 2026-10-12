@@ -6,6 +6,7 @@ import { validRemoteWorktreePath } from './sshWorktreeInspection';
 import { remoteRemovalPaths } from './sshWorktreeRemoval';
 import { isPathContained } from './remotePaths';
 import type { RemoteWorktreeRemovalRecord } from '../../shared/types/store';
+import type { WorktreeRemovalAuthority } from '../worktreeRemoval';
 
 export interface RemoteWorktreeRemovalPersistence {
   read(): RemoteWorktreeRemovalRecord[];
@@ -69,32 +70,33 @@ export class RemoteWorktreeCoordinator {
     this.pending.delete(operationId);
   }
 
-  private activity(workspace: RegisteredWorkspace): string[] | null {
+  private activity(workspace: RegisteredWorkspace, authority?: WorktreeRemovalAuthority): string[] | null {
+    authority?.validate();
     const terminals = this.terminalPaths ? this.terminalPaths(workspace.location.environmentId) : [];
     if (terminals === null) return null;
     // Checkout-context roots (each workspace's main root included) are the registered activity.
     return [...new Set([...terminals, ...(this.registry()?.getAllCheckoutContexts() ?? [])
-      .filter((entry) => entry.environmentId !== 'local' && this.registry()?.getWorktreeResourceId(entry.environmentId) ===
+      .filter((entry) => !authority?.contextIds.has(entry.id) && entry.environmentId !== 'local' && this.registry()?.getWorktreeResourceId(entry.environmentId) ===
         this.registry()?.getWorktreeResourceId(workspace.location.environmentId)).map((entry) => entry.path)])].sort();
   }
 
-  public async inspect(workspace: RegisteredWorkspace, worktreePath: string): Promise<GitWorktreeInspectionResult> {
+  public async inspect(workspace: RegisteredWorkspace, worktreePath: string, authority?: WorktreeRemovalAuthority): Promise<GitWorktreeInspectionResult> {
     if (this.recoveryError) return { success: false, error: this.recoveryError };
     if (!workspace.environment.inspectWorktree) return { success: false, error: 'Worktree inspection is unavailable for this environment' };
     if (!validRemoteWorktreePath(worktreePath)) return { success: false, error: 'Invalid remote worktree inspection path' };
-    const before = this.activity(workspace);
+    const before = this.activity(workspace, authority);
     if (!before) return { success: false, error: 'An active SSH terminal directory could not be verified; stop it before inspection' };
     if (before.some((active) => isPathContained(worktreePath, active) || isPathContained(active, worktreePath))) {
       return { success: false, error: 'Close workspace tabs and stop active terminals using this checkout before removal' };
     }
     const result = await workspace.environment.inspectWorktree(workspace.location.path, worktreePath, before);
-    if (this.registry()?.getWorkspace(workspace.workspaceId) !== workspace || JSON.stringify(before) !== JSON.stringify(this.activity(workspace))) {
+    if (this.registry()?.getWorkspace(workspace.workspaceId) !== workspace || JSON.stringify(before) !== JSON.stringify(this.activity(workspace, authority))) {
       return { success: false, error: 'Workspace or terminal activity changed during inspection; inspect it again' };
     }
     return result;
   }
 
-  public async remove(workspace: RegisteredWorkspace, worktreePath: string, expectedBranch: string | null, options: GitWorktreeRemovalOptions = {}): Promise<GitWorktreeRemoveResult> {
+  public async remove(workspace: RegisteredWorkspace, worktreePath: string, expectedBranch: string | null, options: GitWorktreeRemovalOptions = {}, authority?: WorktreeRemovalAuthority): Promise<GitWorktreeRemoveResult> {
     if (this.recoveryError) return { success: false, error: this.recoveryError };
     if (!workspace.environment.removeWorktree || !workspace.environment.waitForWorktreeOperations) return { success: false, error: 'Remote worktree removal is unavailable for this environment' };
     if (!validRemoteWorktreePath(worktreePath) || (typeof expectedBranch !== 'string' && expectedBranch !== null)) return { success: false, error: 'Invalid remote worktree removal request' };
@@ -109,11 +111,11 @@ export class RemoteWorktreeCoordinator {
     this.pending.set(operationId, pending);
     let uncertain = false;
     try {
-      const inspection = await this.inspect(workspace, worktreePath);
+      const inspection = await this.inspect(workspace, worktreePath, authority);
       if (!inspection.success || !inspection.worktree) return { success: false, error: inspection.error || 'Could not inspect worktree' };
       if (!canRemoveWorktree(inspection, options.discardIgnored === true)) return { success: false, error: 'Worktree has uncommitted, untracked, or ignored files' };
       if (inspection.worktree.branch !== expectedBranch) return { success: false, error: 'Worktree branch changed; inspect it again' };
-      const activity = this.activity(workspace);
+      const activity = this.activity(workspace, authority);
       if (!activity) return { success: false, error: 'Active terminal directories could not be verified' };
       // No await between the final activity snapshot and dispatch. Registrations
       // and terminal spawns reject the reserved paths throughout the operation.
@@ -121,10 +123,11 @@ export class RemoteWorktreeCoordinator {
       try { this.save(); } catch (error) { pending.persisted = false; throw error; }
       uncertain = true;
       const result = await workspace.environment.removeWorktree(workspace.location.path, worktreePath, expectedBranch, activity, operationId, options);
-      uncertain = result.uncertain === true;
-      return { success: result.success, error: result.error, warning: result.warning, recoveryPath: result.recoveryPath };
+      uncertain = result.uncertain === true || result.outcome === 'unknown'
+        || (!result.success && result.outcome !== 'unchanged' && result.outcome !== 'recovery-required');
+      return { success: result.success, outcome: uncertain ? 'unknown' : result.success ? 'removed' : result.outcome, error: result.error, warning: result.warning, recoveryPath: result.recoveryPath };
     } catch (error) {
-      return { success: false, error: `${error instanceof Error ? error.message : 'Remote removal failed'}${uncertain ? '\nRefresh worktrees to verify completion before reopening.' : ''}` };
+      return { success: false, outcome: uncertain ? 'unknown' : 'unchanged', error: `${error instanceof Error ? error.message : 'Remote removal failed'}${uncertain ? '\nRefresh worktrees to verify completion before reopening.' : ''}` };
     } finally {
       pending.active = false;
       if (!uncertain) this.complete(operationId, pending);
