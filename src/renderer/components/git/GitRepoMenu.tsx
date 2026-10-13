@@ -5,6 +5,8 @@ import { GitHistorySection } from './GitHistorySection';
 import { useState } from 'react';
 import { ManagementShell } from '../ui/ManagementShell';
 import { GitOverview } from './GitOverview';
+import { GitResourceNotice } from './GitResourceNotice';
+import type { GitMenuPage, useGitMenuResources } from './useGitMenuResources';
 import { GitChanges } from './GitChanges';
 import type { useCommitComposer } from './useCommitComposer';
 import type { gitManagementScope } from './gitManagementScope';
@@ -27,6 +29,9 @@ import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/
 import type { CiSummary, ReviewSummary } from '../../../shared/types/vcs';
 
 export interface GitRepoMenuProps {
+  page?: GitMenuPage;
+  onSelectPage?: (page: GitMenuPage) => void;
+  resources?: ReturnType<typeof useGitMenuResources>;
   scope: ReturnType<typeof gitManagementScope>;
   statusKnown: boolean;
   branchConfirmationOpen: boolean;
@@ -57,6 +62,7 @@ export interface GitRepoMenuProps {
   diffError: string | null;
   diffResult: GitDiffResult | null;
   hasMoreHistory?: boolean;
+  historyLimit?: number;
   history: GitHistoryEntry[];
   historyError: string | null;
   includeUntracked: boolean;
@@ -125,7 +131,20 @@ export interface GitRepoMenuProps {
 }
 
 export function GitRepoMenu(props: GitRepoMenuProps) {
-  const [page, setPage] = useState('changes');
+  const [localPage, setLocalPage] = useState<GitMenuPage>('changes');
+  const page = props.page ?? localPage;
+  const setPage = (page: GitMenuPage) => { setLocalPage(page); props.onSelectPage?.(page); };
+  const notices = (names: Array<'branch' | 'operation' | 'history' | 'stash' | 'remote' | 'provider'>) => props.resources
+    ? names.map(name => <GitResourceNotice key={name} name={name} resource={props.resources![name]} onRetry={() => {
+      const r = props.resources!;
+      if (name === 'branch') void r.readBranches(true);
+      if (name === 'operation') void r.readOperation(true);
+      if (name === 'history') void r.readHistory(true, props.historyLimit ?? 10);
+      if (name === 'stash') void r.readStashes(true);
+      if (name === 'remote') void r.readRemotes(true);
+      if (name === 'provider') void r.readProvider(true);
+    }} />) : null;
+  const unavailable = (name: 'branch' | 'operation' | 'stash' | 'remote') => props.resources ? props.resources[name].phase !== 'ready' : false;
   const [worktreeBusy, setWorktreeBusy] = useState(false);
   const [remoteBusy, setRemoteBusy] = useState(false);
   const busy = props.isBusy || props.branchConfirmationOpen || props.stashConfirmationOpen || props.mergeConfirmationOpen || worktreeBusy || remoteBusy;
@@ -206,19 +225,23 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         { id: 'remotes', label: 'Remotes', group: 'Operations' },
         { id: 'merge', label: 'Merge', group: 'Operations' },
       ]}
-      selectedId={page} onSelect={(id) => { if (!busy) setPage(id); }}>
+      selectedId={page} onSelect={(id) => { if (!busy) setPage(id as GitMenuPage); }}>
+      {!props.statusKnown && page !== 'changes' && <div role="alert">Current Git status unavailable. Operations are disabled. <Button disabled={props.isBusy || props.isLoadingChanges} onClick={() => void props.onRefreshChanges()}>Refresh changes</Button></div>}
       {page === 'changes' ? <GitChanges {...props} /> : page === 'overview' ? <GitOverview {...props} onReviewChanges={() => { if (!busy) setPage('changes'); }} /> : page === 'branches' ? <div className="source-control-page">
       <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Branches</h2>
-        <Button size="xs" disabled={busy || isLoadingBranches} onClick={props.onRefresh}>Refresh branches</Button></div>
+        <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh branches</Button></div>
       {checkoutContext}
       <p>Switch or create a branch in the selected checkout. Branches checked out elsewhere are protected by Git; the current branch cannot be deleted.</p>
+      {notices(['branch', 'provider'])}
+      {providerContext && props.resources && props.resources.provider.phase !== 'ready' && <p>Provider (last known / partial): {providerContext.owner}/{providerContext.repo}</p>}
       {branchError && <FormMessage variant="error">{branchError}</FormMessage>}
       <GitBranchesSection
+        emptyMessage={unavailable('branch') ? 'Branches unavailable' : undefined}
         activeAction={activeAction}
         branches={branches}
         createBranchInputRef={createBranchInputRef}
         currentBranch={currentBranch}
-        isBusy={isBusy || isLoadingBranches || !props.statusKnown}
+        isBusy={isBusy || isLoadingBranches || unavailable('branch') || !props.statusKnown}
         isLoadingBranches={isLoadingBranches}
         management
         newBranchName={newBranchName}
@@ -226,11 +249,11 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         onDeleteBranch={onDeleteBranch}
         onSetNewBranchName={onSetNewBranchName}
         onSwitchBranch={onSwitchBranch}
-        provider={providerContext}
+        provider={!props.resources || props.resources.provider.phase === 'ready' ? providerContext : null}
         pullRequest={pullRequest}
         deepLinks={deepLinks}
         isLoadingContext={isLoadingContext}
-        contextError={vcsContextError}
+        contextError={props.resources ? null : vcsContextError}
         onRefreshContext={onRefreshContext}
         workspacePath={workspacePath}
         workspaceId={workspaceId}
@@ -245,14 +268,16 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />
       </div> : page === 'stashes' ? <div className="source-control-page">
         <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Stashes</h2>
-          <Button size="xs" disabled={busy || isLoadingStashes} onClick={props.onRefresh}>Refresh stashes</Button></div>
+          <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh stashes</Button></div>
         {checkoutContext}
         <p>Apply keeps the stash; Pop removes it only after Git applies it cleanly.</p>
+        {notices(['stash'])}
         {stashError && <FormMessage variant="error">{stashError}</FormMessage>}
         <GitStashSection
+          emptyMessage={unavailable('stash') ? 'Stashes unavailable' : undefined}
           activeAction={activeAction}
           includeUntracked={includeUntracked}
-          isBusy={isBusy || isLoadingStashes}
+          isBusy={isBusy || isLoadingStashes || unavailable('stash') || !props.statusKnown}
           isLoadingStashes={isLoadingStashes}
           management
           onApplyStash={onApplyStash}
@@ -267,11 +292,14 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         />
       </div> : page === 'remotes' ? <div className="source-control-page">
         <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Remotes</h2>
-          <Button size="xs" disabled={busy} onClick={onRemotesChanged}>Refresh remotes</Button></div>
+          <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh remotes</Button></div>
         {checkoutContext}
         <p>Remote configuration is shared by all checkouts of this repository.</p>
         {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
+        {notices(['remote'])}
+        <fieldset disabled={!props.statusKnown || unavailable('remote')} style={{ border: 0, padding: 0, minWidth: 0 }}>
         <GitRemotesSection
+          emptyMessage={unavailable('remote') ? 'Remote configuration unavailable' : undefined}
           management
           workspacePath={workspacePath}
           workspaceId={workspaceId}
@@ -281,18 +309,19 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
           onError={onSetRemoteError}
           isScopeCurrent={props.isScopeCurrent}
           onBusyChange={setRemoteBusy}
-        />
+        /></fieldset>
       </div> : page === 'merge' ? <div className="source-control-page">
         <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Merge</h2>
-          <Button size="xs" disabled={busy || isLoadingOperation} onClick={props.onRefresh}>Refresh merge state</Button></div>
+          <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh merge state</Button></div>
         {checkoutContext}
         <p>Integrate another branch into the selected checkout.</p>
+        {notices(['operation', 'branch'])}
         {mergeError && <FormMessage variant="error">{mergeError}</FormMessage>}
         <GitMergeSection
           activeAction={activeAction}
           availableMergeTargets={availableMergeTargets}
           currentBranch={currentBranch}
-          isBusy={isBusy || isLoadingOperation}
+          isBusy={isBusy || isLoadingOperation || unavailable('operation') || unavailable('branch') || !props.statusKnown}
           isDetached={isDetached}
           isLoadingOperation={isLoadingOperation}
           management
@@ -304,10 +333,12 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         />
       </div> : <div className="source-control-page source-control-history">
         <div className="source-control-page-heading"><h2 className="clanker-dialog-title">History</h2>
-          <Button size="xs" disabled={busy || isLoadingHistory} onClick={props.onRefresh}>Refresh history</Button></div>
+          <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh history</Button></div>
         {checkoutContext}
-        {historyError && <FormMessage variant="error">{historyError}</FormMessage>}
+        {notices(['history'])}
+        {!props.resources && historyError && <FormMessage variant="error">{historyError}</FormMessage>}
         <GitHistorySection
+          emptyMessage={props.resources?.history.phase === 'error' ? 'History unavailable' : undefined}
           management
           diffError={diffError}
           diffResult={diffResult}

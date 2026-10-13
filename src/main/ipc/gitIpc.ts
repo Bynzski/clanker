@@ -18,7 +18,7 @@ import { guardWorktreePrune } from '../worktreePruneGuard';
 import type { TerminalUsage } from '../checkoutContextRelease';
 import type { ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type {
-  GitCreateWorktreeOptions, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemovalOptions,
+  GitChangeMutationResult, GitStatusResult, GitCreateWorktreeOptions, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemovalOptions,
 } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -312,28 +312,48 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     return scoped?.workspacePath ?? getValidatedLocalWorkspacePath(workspacePath);
   };
 
-  const refreshGitStatus = async (workspacePath: string): Promise<void> => {
+  const refreshGitStatus = async (workspacePath: string): Promise<GitStatusResult | null> => {
     // Zero means no presentation owner; a delayed notification from the poller gap
     // cannot be adopted by a later same-root controller.
     const presentationGeneration = gitService.getPresentationGeneration?.() ?? 0;
-    const status = await gitService.getStatus(workspacePath);
+    let status: GitStatusResult;
+    try { status = await gitService.getStatus(workspacePath); }
+    catch (error) {
+      status = { success: false, isRepo: false, currentBranch: null, isDetached: false, changes: [], upstream: null, ahead: 0, behind: 0,
+        error: error instanceof Error ? error.message : 'Status acquisition failed', errorCode: 'unknown' };
+    }
+    if ((gitService.getPresentationGeneration?.() ?? 0) !== presentationGeneration) return null;
     status.presentationGeneration = presentationGeneration;
     const scoped = gitService.getScopedWorkspaceIdentity?.();
     if (scoped) {
       const registered = resolveWorkspace(scoped.workspaceId);
-      if (!registered || registered.location.environmentId !== scoped.environmentId) return;
+      if (!registered || registered.location.environmentId !== scoped.environmentId) return null;
       if (scoped.checkoutContextId) {
         const ctx = getWorkspaceRegistry?.().resolveCheckoutContext(scoped.workspaceId, scoped.checkoutContextId);
-        if (!ctx || ctx.path !== scoped.workspacePath || ctx.missing) return;
+        if (!ctx || ctx.path !== scoped.workspacePath || ctx.missing) return null;
       } else {
-        if (registered.location.path !== scoped.workspacePath) return;
+        if (registered.location.path !== scoped.workspacePath) return null;
       }
       status.workspaceId = scoped.workspaceId;
       status.environmentId = scoped.environmentId;
       status.checkoutContextId = scoped.checkoutContextId;
     }
     status.workspacePath = workspacePath;
-    getMainWindow()?.webContents.send(GIT_STATUS_UPDATE, status);
+    const win = getMainWindow();
+    try { if (win && !win.webContents.isDestroyed?.()) win.webContents.send(GIT_STATUS_UPDATE, status); }
+    catch { /* Renderer loss cannot change a completed mutation's outcome; the caller still receives status. */ }
+    return status;
+  };
+
+  const finishChangeMutation = async (workspacePath: string, result: { success: boolean; error?: string }): Promise<GitChangeMutationResult> => {
+    // Refresh failed mutations too: index writes/hooks can partially change files. Never repeat the mutation.
+    try {
+      const status = await refreshGitStatus(workspacePath);
+      return { ...result, ...(status ? { status } : {}),
+        ...(!status?.success ? { refreshError: status?.error || 'Repository scope changed during status acquisition' } : {}) };
+    } catch (error) {
+      return { ...result, refreshError: error instanceof Error ? error.message : 'Status acquisition failed' };
+    }
   };
 
   registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => {
@@ -676,8 +696,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.stage(safeWorkspacePath, files);
-    await refreshGitStatus(safeWorkspacePath);
-    return result;
+    return finishChangeMutation(safeWorkspacePath, result);
   });
 
   registerGitHandler(GIT_UNSTAGE, async (_, workspacePath: string, files?: string[]) => {
@@ -686,8 +705,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.unstage(safeWorkspacePath, files);
-    await refreshGitStatus(safeWorkspacePath);
-    return result;
+    return finishChangeMutation(safeWorkspacePath, result);
   });
 
   registerGitHandler(GIT_COMMIT, async (_, workspacePath: string, message: string) => {
@@ -696,8 +714,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.commit(safeWorkspacePath, message);
-    await refreshGitStatus(safeWorkspacePath);
-    return result;
+    return finishChangeMutation(safeWorkspacePath, result);
   });
 
   registerGitHandler(GIT_CREATE_BRANCH, async (_, workspacePath: string, name: string, baseBranch?: string) => {

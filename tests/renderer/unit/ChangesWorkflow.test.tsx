@@ -5,10 +5,12 @@ import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture, createTerminalFixture } from '../../setup/fixtures';
+import { installGitMutationResponses } from '../../_helpers/gitMutationResponses';
 import type { GitStatusResult } from '../../../src/shared/types/git';
 
 let api: ReturnType<typeof installElectronApiMock>;
 let status: GitStatusResult;
+const postMutationStatus = vi.fn<() => Promise<GitStatusResult>>();
 beforeEach(() => {
   status = { success: true, isRepo: true, workspaceId: 'ws', workspacePath: '/repo', environmentId: 'local',
     currentBranch: 'main', isDetached: false, upstream: null, ahead: 0, behind: 0,
@@ -35,6 +37,8 @@ beforeEach(() => {
     }),
     gitCommit: vi.fn(async () => { status = { ...status, changes: status.changes.filter((entry) => !entry.staged) }; return { success: true }; }),
   });
+  postMutationStatus.mockReset().mockImplementation(async () => status);
+  installGitMutationResponses(postMutationStatus);
   useWorkspaceStore.setState({ activeWorkspaceId: 'ws', workspaces: [createWorkspaceFixture({ id: 'ws', workspacePath: '/repo', environmentId: 'local', browserVisible: true, browserOverlayCount: 0, terminals: [] })] });
 });
 async function open() {
@@ -84,7 +88,7 @@ describe('Changes-first workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Unstage All' }));
     expect(api.gitUnstage).toHaveBeenLastCalledWith('/repo', undefined, 'ws');
     expect(screen.getByRole('heading', { name: 'Unstaged changes (2)' })).toBeVisible();
-    expect(api.gitRefresh).toHaveBeenCalledTimes(4); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
+    expect(postMutationStatus).toHaveBeenCalledTimes(4); expect(api.gitRefresh).not.toHaveBeenCalled(); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
   });
 
   it('blocks duplicate mutations and navigation, reports failure without optimistic success, and retries', async () => {
@@ -236,14 +240,14 @@ describe('Changes-first workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
     expect(api.gitCommit).toHaveBeenCalledTimes(1);
     await act(async () => finishCommit({ success: false, error: 'Hooks rejected' }));
-    expect(screen.getByText('Hooks rejected')).toBeVisible();
+    expect(screen.getByText('Staging succeeded, but commit failed: Hooks rejected')).toBeVisible();
     expect(screen.getByRole('textbox')).toHaveValue('explicit all');
     expect(screen.getByRole('button', { name: 'History' })).toBeEnabled();
   });
 
   it('correctly distinguishes commit success with refresh failure, settles the draft and requires refresh', async () => {
     api.gitCommit.mockResolvedValueOnce({ success: true });
-    api.gitRefresh.mockRejectedValueOnce(new Error('Network glitch'));
+    postMutationStatus.mockRejectedValueOnce(new Error('Network glitch'));
     const user = await open();
     await user.type(screen.getByRole('textbox'), 'feat: committed changes');
     await user.click(screen.getByRole('button', { name: 'Commit Staged' }));
@@ -285,6 +289,7 @@ describe('Changes-first workflow', () => {
     });
     api.onGitStatusUpdate.mockImplementation((callback) => { callback(worktreeStatus); return vi.fn(); });
     api.gitRefresh.mockResolvedValue(worktreeStatus);
+    postMutationStatus.mockResolvedValue(worktreeStatus);
 
     const user = userEvent.setup();
     render(<GitButton workspacePath="/repo" workspaceId="ws" />);

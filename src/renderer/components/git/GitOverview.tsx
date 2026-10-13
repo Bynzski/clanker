@@ -1,6 +1,7 @@
 import { Button } from '../ui/Button';
 import { FormMessage } from '../ui/Field';
 import { getProviderLabel } from './gitButtonViewModels';
+import { GitResourceNotice } from './GitResourceNotice';
 import { GitRemoteActionsSection } from './GitRemoteActionsSection';
 import type { GitRepoMenuProps } from './GitRepoMenu';
 import type { CiSummary, ReviewSummary } from '../../../shared/types/vcs';
@@ -14,19 +15,24 @@ import './SourceControl.css';
 
 export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => void }) {
   const { currentBranchLabel, upstream, ahead, behind, changeCount, operationState, isLoadingOperation,
-    isLoadingBranches, isBusy, remoteAction, providerContext, pullRequest, vcsContextError, isLoadingContext,
-    statusErrorMessage, branchError, remoteError, scope, statusKnown } = props;
+    isBusy, remoteAction, providerContext, pullRequest, vcsContextError, isLoadingContext,
+    statusErrorMessage, remoteError, scope, statusKnown } = props;
   // A CI/review failure does not invalidate independently confirmed PR discovery.
   const foundPr = !isLoadingContext && pullRequest?.exists === true && (pullRequest.outcome === 'found' || !pullRequest.outcome && !vcsContextError);
   const noPr = !isLoadingContext && (pullRequest?.outcome === 'none' || pullRequest?.exists === false && !pullRequest.outcome && !vcsContextError);
   return <div className="source-control-overview">
     <div className="source-control-page-heading"><h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
-      <Button size="xs" disabled={isBusy || isLoadingBranches || isLoadingOperation} onClick={props.onRefresh}>Refresh</Button></div>
+      <Button size="xs" disabled={isBusy} onClick={props.onRefresh}>Refresh</Button></div>
     <div className="source-control-actions">
       <Button disabled={isBusy} onClick={props.onReviewChanges}>Review Changes</Button>
     </div>
     {!props.isDetached && <GitRemoteActionsSection currentBranch={props.currentBranch} hasRemotes={props.remotes.length > 0}
-      isBusy={isBusy || !statusKnown} remoteAction={remoteAction} upstream={upstream} onFetch={props.onFetch} onPull={props.onPull} onPush={props.onPush} onPublish={props.onPublish} />}
+      isBusy={isBusy || !statusKnown || Boolean(props.resources && props.resources.remote.phase !== 'ready')} remoteAction={remoteAction} upstream={upstream} onFetch={props.onFetch} onPull={props.onPull} onPush={props.onPush} onPublish={props.onPublish} />}
+    {props.resources && (['operation', 'remote', 'provider'] as const).map(name => <GitResourceNotice key={name} name={name} resource={props.resources![name]} onRetry={() => {
+      if (name === 'operation') void props.resources!.readOperation(true);
+      if (name === 'remote') void props.resources!.readRemotes(true);
+      if (name === 'provider') void props.resources!.readProvider(true);
+    }} />)}
     <dl className="source-control-identity">
       <dt>Working checkout</dt><dd>{scope.path}</dd>
       <dt>Environment</dt><dd>{scope.environmentId === 'local' ? 'Local' : `SSH · ${scope.environmentId}`}</dd>
@@ -41,7 +47,7 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
       <dt>CI (checkout HEAD)</dt><dd>{isLoadingContext ? 'Loading CI…' : summaryLabel(props.ci, 'No checks (confirmed)')}</dd>
       <dt>Review</dt><dd>{isLoadingContext ? 'Loading reviews…' : noPr ? 'Not applicable (no pull request)' : summaryLabel(props.review, 'No active review decisions or requests')}</dd>
     </dl>
-    {[statusErrorMessage, branchError, remoteError, vcsContextError, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
+    {[statusErrorMessage, remoteError, !props.resources ? vcsContextError : null, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
     {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
   </div>;
 }

@@ -45,10 +45,11 @@ describe('last-known toolbar is descriptive, never actionable', () => {
     expect(useCheckoutGitStore.getState().active!.generation).toBeGreaterThan(old.generation);
     const calls = api.gitStartPolling.mock.calls.length;
     fireEvent.click(button());
-    expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Initial Branch' })).toBeDisabled();
-    for (const action of ['Stage All', 'Commit Staged', 'Stage All & Commit', 'Branches', 'Merge']) expect(screen.queryByRole('button', { name: action })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Initialize Repository' }));
+    expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Initial Branch' })).toBeNull();
+    for (const action of ['Commit Staged', 'Stage All & Commit']) expect(screen.getByRole('button', { name: action })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Stage All' })).toBeNull();
+    expect(api.gitGetBranchState).not.toHaveBeenCalled(); expect(api.gitGetHistory).not.toHaveBeenCalled();
     expect(api.gitInit).not.toHaveBeenCalled(); expect(api.gitStage).not.toHaveBeenCalled(); expect(api.gitCommit).not.toHaveBeenCalled();
     expect(api.gitStartPolling).toHaveBeenCalledTimes(calls); expect(api.gitRefresh).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -81,14 +82,14 @@ describe('last-known toolbar is descriptive, never actionable', () => {
     emit(0, 'wrong', { success: false, error: 'SSH disconnected', errorCode: 'unknown' });
     expect(button()).toHaveTextContent('main · 0 changes · Last known · Git unavailable');
     expect(button().title).toContain('SSH disconnected'); expect(checkoutGitAvailability(useCheckoutGitStore.getState().active)).toBe('unavailable');
-    fireEvent.click(button()); expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
+    fireEvent.click(button()); expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     expect(document.querySelector('.git-badge')).toBeNull();
   });
 
   it('does not initialize from cached confirmed non-repository until current polling verifies it again', () => {
     render(<HeaderGit />); emit(0, '', { isRepo: false, currentBranch: null }); switchTo('B'); emit(); switchTo('A');
     expect(button()).toHaveTextContent('Not a repository · Last known');
-    fireEvent.click(button()); expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
+    fireEvent.click(button()); expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     emit(0, '', { isRepo: false, currentBranch: null }); expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeEnabled();
     expect(button()).not.toHaveTextContent('Last known');
   });

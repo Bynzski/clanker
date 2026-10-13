@@ -940,8 +940,8 @@ export class GitService {
         ref,
         message,
       }));
-    } catch {
-      return [];
+    } catch (error) {
+      throw new Error(this.getGitErrorMessage(error, 'Unable to load stashes'));
     }
   }
 
@@ -1061,10 +1061,10 @@ export class GitService {
       }));
     } catch (error) {
       const errorText = String((error as { stderr?: string; message?: string })?.stderr ?? (error as { message?: string })?.message ?? '');
-      if (errorText.includes('does not have any commits yet') || errorText.includes('unknown revision')) {
+      if (errorText.includes('does not have any commits yet')) {
         return [];
       }
-      return [];
+      throw new Error(this.getGitErrorMessage(error, 'Unable to load history'));
     }
   }
 
@@ -1525,7 +1525,13 @@ export class GitService {
     return 'unknown';
   }
 
+  private statusAcquisitionSequence = 0;
   async getStatus(workspacePath: string): Promise<GitStatusResult> {
+    const acquisitionSequence = ++this.statusAcquisitionSequence;
+    return { ...await this.readStatus(workspacePath), acquisitionSequence };
+  }
+
+  private async readStatus(workspacePath: string): Promise<GitStatusResult> {
     return measureSwitchRead('git-status', () => this.getStatusMeasured(workspacePath));
   }
 

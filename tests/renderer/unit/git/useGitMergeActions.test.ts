@@ -175,7 +175,7 @@ describe('useGitMergeActions', () => {
     });
 
     expect(result.current.mergeError).toBe('Automatic merge failed; fix conflicts');
-    expect(refreshAfterAction).not.toHaveBeenCalled();
+    expect(refreshAfterAction).toHaveBeenCalledOnce();
   });
 
   it('opens abort dialog and aborts on confirmation when in progress', async () => {

@@ -20,6 +20,7 @@ import type {
   VcsPrInfoResult,
 } from '../../shared/types/vcs';
 import type {
+  GitChangeMutationResult,
   GitStatusResult,
   GitBranchStateResult,
   GitDeleteBranchResult,
@@ -250,9 +251,9 @@ export interface ElectronAPI {
   gitStartPolling: (workspacePath: string, workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => Promise<void>;
   gitStopPolling: (workspaceId?: string, checkoutContextId?: string, presentationGeneration?: number) => Promise<void>;
   generateCommitMessage: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GenerateCommitMessageResult>;
-  gitStage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
-  gitCommit: (workspacePath: string, message: string, workspaceId?: string, checkoutContextId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitStage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<GitChangeMutationResult>;
+  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string, checkoutContextId?: string) => Promise<GitChangeMutationResult>;
+  gitCommit: (workspacePath: string, message: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitChangeMutationResult>;
   gitGetBranchState: (workspacePath: string, workspaceId?: string, checkoutContextId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
   gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) => Promise<GitWorktreeCreateResult>;

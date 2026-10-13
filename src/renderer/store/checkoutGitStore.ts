@@ -22,6 +22,8 @@ export interface CheckoutGitSnapshot {
   identity: CheckoutGitIdentity;
   key: string;
   generation: number;
+  /** Retained on invalidation to reject older in-flight poll/status answers. */
+  acquisitionSequence?: number;
   state: 'loading' | 'ready' | 'error';
   result: GitStatusResult | null;
 }
@@ -81,6 +83,8 @@ export const useCheckoutGitStore = create<CheckoutGitState>((set) => ({
   apply: (generation, result) => set((state) => {
     const active = state.active;
     if (!active || active.generation !== generation || (result.presentationGeneration !== undefined && result.presentationGeneration !== generation)) return state;
+    if (result.acquisitionSequence !== undefined && active.acquisitionSequence !== undefined
+      && result.acquisitionSequence <= active.acquisitionSequence) return state;
     const identity = active.identity;
     if (identity.workspaceId && identity.selectionGeneration !== undefined) {
       const workspace = useWorkspaceStore.getState().getWorkspaceById(identity.workspaceId);
@@ -108,7 +112,8 @@ export const useCheckoutGitStore = create<CheckoutGitState>((set) => ({
         changeCount: result.isRepo ? changedFileCount(result.changes) : 0, upstream: result.upstream, ahead: result.ahead, behind: result.behind };
       cache = [...cache.filter(entry => entry.key !== active.key), description].slice(-CHECKOUT_GIT_CACHE_LIMIT);
     }
-    return { active: { ...active, state: result.success ? 'ready' : 'error', result }, cache };
+    return { active: { ...active, ...(result.acquisitionSequence !== undefined ? { acquisitionSequence: result.acquisitionSequence } : {}),
+      state: result.success ? 'ready' : 'error', result }, cache };
   }),
   clear: (generation) => set((state) => state.active?.generation === generation ? { active: null } : state),
   invalidate: (generation) => set((state) => state.active?.generation === generation

@@ -112,12 +112,12 @@ describe('GitHistorySection', () => {
       expect(screen.getByText('No commits found')).toBeTruthy();
     });
 
-    it('does not show history list when loading or empty', () => {
+    it('retains previous history rows while reloading', () => {
       render(<GitHistorySection {...defaultProps} isLoadingHistory={true} history={[
         { hash: 'abc123', shortHash: 'abc123', author: 'Test', date: 'now', subject: 'Test' },
       ]} />);
       
-      expect(screen.queryByText('abc123')).toBeNull();
+      expect(screen.getByText('abc123')).toBeVisible();
     });
   });
 

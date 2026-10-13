@@ -23,8 +23,9 @@ module.exports = async function ({ app, page, repo, checkout, row, id, explain, 
     const native = await mainState(id); assert.equal(native.generation, data.git.generation);
     await page.getByRole('button', { name: 'Source Control', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Source Control', exact: true });
-    assert(await dialog.getByRole('button', { name: 'Initialize Repository', exact: true }).isDisabled());
-    for (const name of ['Stage All', 'Commit Staged', 'Branches', 'Merge']) assert.equal(await dialog.getByRole('button', { name, exact: true }).count(), 0);
+    assert.equal(await dialog.getByRole('button', { name: 'Initialize Repository', exact: true }).count(), 0);
+    for (const name of ['Commit Staged', 'Stage All & Commit']) assert(await dialog.getByRole('button', { name, exact: true }).isDisabled());
+    assert.equal(await dialog.getByRole('button', { name: 'Stage All', exact: true }).count(), 0);
     await page.keyboard.press('Escape');
   } finally {
     await app.evaluate((_electron, entry) => process.getBuiltinModule('module').createRequire(entry)(entry).gitService.__smokeGitGate?.(), entry);

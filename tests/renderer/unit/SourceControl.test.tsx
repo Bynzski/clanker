@@ -49,7 +49,7 @@ describe('Source Control foundation', () => {
     await user.keyboard('{Escape}'); expect(screen.queryByRole('dialog')).toBeNull();
     expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.browserOverlayCount).toBe(0);
     expect(screen.getByRole('button', { name: 'Source Control' })).toHaveFocus();
-    await user.click(screen.getByRole('button', { name: 'Source Control' })); expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
+    await user.click(screen.getByRole('button', { name: 'Source Control' })); expect(screen.getByRole('button', { name: 'Changes' })).toHaveAttribute('aria-current', 'page');
   });
   it('does not invent PR or CI absence when provider discovery fails', async () => {
     const { dialog } = await open(); expect(within(dialog).getAllByText('Unknown / unavailable')[0]).toBeVisible();
@@ -85,8 +85,8 @@ describe('Source Control foundation', () => {
     expect(within(dialog).getByText('Unknown / unavailable · partial / unavailable (forbidden)')).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'View pull request' })).toBeEnabled();
     await user.click(within(dialog).getByRole('button', { name: 'Branches' }));
-    await user.click(within(dialog).getByRole('button', { name: '#12open' }));
-    expect(api.openExternal).toHaveBeenCalledWith('https://github.com/a/b/pull/12');
+    expect(within(dialog).queryByRole('button', { name: '#12open' })).toBeNull();
+    expect(within(dialog).getByText(/Provider \(last known \/ partial\)/)).toBeVisible();
   });
   it('does not describe comment-only reviews as no reviews', async () => {
     // COMMENTED-only provider reviews normalize to none: no active decisions/requests.
@@ -224,7 +224,7 @@ describe('Permanent Branches and Worktrees', () => {
     const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Worktrees' })); await user.click(await screen.findByRole('button', { name: 'Unlock checkout for branch locked' }));
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Locks may be intentional'); await user.click(screen.getByRole('button', { name: 'Unlock worktree' })); expect(screen.getByRole('button', { name: 'Branches' })).toBeDisabled();
     await act(async () => finish({ success: true })); await waitFor(() => expect(api.gitListWorktrees).toHaveBeenCalledTimes(2));
-    expect(api.gitRemoveWorktree).not.toHaveBeenCalled(); expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(1);
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled(); expect(api.gitGetBranchState).not.toHaveBeenCalled();
   });
   it('creates through existing branch validation and keeps failed drafts', async () => {
     api.gitCreateBranch.mockResolvedValue({ success: false, error: 'Invalid branch name' }); const { user } = await branchesPage();
@@ -813,7 +813,8 @@ describe('Permanent Stashes, Remotes, and Merge (Phase 3C)', () => {
       api.gitGetDiff.mockResolvedValue({ success: false, error: 'Commit object unavailable' });
       await user.click(within(dialog).getByRole('button', { name: 'Refresh history' }));
       expect((await within(dialog).findAllByText('Commit object unavailable'))[0]).toBeVisible();
-      expect(within(dialog).queryByText('selected object summary')).toBeNull();
+      expect(within(dialog).getByText('selected object summary')).toBeVisible();
+      expect(within(dialog).getByText(/Last known summary/)).toBeVisible();
       expect(within(dialog).queryByText('No file changes recorded in this commit')).toBeNull();
       api.gitGetHistory.mockResolvedValue(mockCommits);
       api.gitGetDiff.mockResolvedValue({ success: true, output: 'recovered summary' });

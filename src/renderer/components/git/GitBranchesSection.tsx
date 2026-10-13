@@ -11,6 +11,7 @@ import './GitBranchesSection.css';
 
 interface GitBranchesSectionProps {
   management?: boolean;
+  emptyMessage?: string;
   activeAction: string | null;
   branches: GitBranch[];
   createBranchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -35,6 +36,7 @@ interface GitBranchesSectionProps {
 
 export function GitBranchesSection({
   management = false,
+  emptyMessage = 'No local branches found',
   activeAction,
   branches,
   createBranchInputRef,
@@ -143,10 +145,10 @@ export function GitBranchesSection({
           <span className="git-menu-count">{branches.length}</span>
         </div>
 
-        {isLoadingBranches ? (
+        {isLoadingBranches && !branches.length ? (
           <div className="git-menu-empty">Loading branches…</div>
         ) : branches.length === 0 ? (
-          <div className="git-menu-empty">No local branches found</div>
+          <div className="git-menu-empty">{emptyMessage}</div>
         ) : (
           <div className={`git-branch-list${management ? ' source-control-branch-list' : ''}`}>
             {branches.map((listedBranch) => {

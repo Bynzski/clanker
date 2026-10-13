@@ -932,7 +932,7 @@ describe('GitButton', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Close Source Control' }));
       });
 
-      mockGitGetRemotes
+      mockGitGetRemotes.mockReset()
         .mockResolvedValueOnce({
           success: true,
           remotes: [{ name: 'origin', fetchUrl: 'https://bitbucket.org/team/repo.git', pushUrl: 'https://bitbucket.org/team/repo.git' }],
@@ -952,6 +952,8 @@ describe('GitButton', () => {
         vi.runAllTimers();
       });
 
+      expect(mockGitGetRemotes).not.toHaveBeenCalled(); // Reopening Changes is not a remote dependency.
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Overview' })); });
       expect(screen.getByText('Bitbucket')).toBeTruthy();
     });
   });

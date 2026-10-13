@@ -238,10 +238,8 @@ describe('getHistory - failure handling with real git', () => {
     try {
       fs.writeFileSync(path.join(nonGitDir, 'file.txt'), 'content');
       
-      const history = await service.getHistory(nonGitDir);
-      
-      // Should return empty array for non-repo
-      expect(history).toEqual([]);
+      // Failure is not a verified empty history resource.
+      await expect(service.getHistory(nonGitDir)).rejects.toThrow();
     } finally {
       fs.rmSync(nonGitDir, { recursive: true, force: true });
     }

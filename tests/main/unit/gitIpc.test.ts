@@ -326,6 +326,26 @@ describe('registerGitIpc', () => {
     expect(mockGitService.stopPolling).toHaveBeenCalledTimes(1);
   });
 
+  test.each(['stage', 'unstage', 'commit'] as const)('%s has one main-owned acquisition and preserves success independently of read failure', async operation => {
+    mockIpcMain.handle.mockClear();
+    const service = createMockGitService();
+    registerGitIpc({ getGitService: () => service as never, getMainWindow: () => mockMainWindow as never });
+    const channels = await import('../../../src/shared/ipcChannels');
+    const channel = operation === 'stage' ? channels.GIT_STAGE : operation === 'unstage' ? channels.GIT_UNSTAGE : channels.GIT_COMMIT;
+    const run = mockIpcMain.handle.mock.calls.find(call => call[0] === channel)![1];
+    const argument = operation === 'commit' ? 'intent' : ['tracked.txt'];
+    for (const mutationSucceeded of [true, false]) {
+      service[operation].mockResolvedValue({ success: mutationSucceeded, error: mutationSucceeded ? undefined : 'Mutation failed' });
+      service.getStatus.mockClear();
+      service.getStatus.mockRejectedValueOnce(new Error('Status failed'));
+      const result = await run(null, process.cwd(), argument);
+      expect(result).toMatchObject({ success: mutationSucceeded, refreshError: 'Status failed', status: { success: false, error: 'Status failed' } });
+      expect(service.getStatus).toHaveBeenCalledTimes(1);
+      expect(service[operation]).toHaveBeenCalledTimes(mutationSucceeded ? 1 : 2);
+      expect(mockMainWindow.webContents.send).toHaveBeenLastCalledWith(channels.GIT_STATUS_UPDATE, expect.objectContaining({ success: false }));
+    }
+  });
+
   test('git-stage validates workspace path', async () => {
     const mockGitService = createMockGitService();
 
@@ -1568,7 +1588,7 @@ describe('Git IPC workspace identity routing', () => {
     });
     expect(local.readFile).not.toHaveBeenCalled();
 
-    expect(await handle('git-stage')(null, workspacePath, ['tracked.txt'], 'ssh-tab')).toEqual({ success: true });
+    expect(await handle('git-stage')(null, workspacePath, ['tracked.txt'], 'ssh-tab')).toMatchObject({ success: true, status: { success: true, workspaceId: 'ssh-tab', environmentId: 'ssh' } });
     expect(mainWindow.webContents.send).toHaveBeenLastCalledWith('git-status-update',
       expect.objectContaining({ workspaceId: 'ssh-tab', environmentId: 'ssh', workspacePath, currentBranch: 'ssh' }));
     expect(await handle('git-push')(null, workspacePath, 'origin', 'main', false, true, 'ssh-tab')).toEqual({ success: true });
