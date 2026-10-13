@@ -51,9 +51,9 @@ Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows*
 2. Clanker shows its normal shell immediately, including navigation and Settings
 3. Click **Open Workspace** (`+`) and choose **This PC**, then type an absolute local directory or use **Choose Folder…**; alternatively select a saved SSH environment and enter/browse an absolute remote directory
 4. Click **Open Workspace**. The workspace opens empty
-5. Choose **Terminal** or an AI harness in the Header to start work explicitly. Configure local harness defaults in Settings
+5. Choose **New Agent**, select **Terminal** or an installed AI harness, confirm its checkout (the project checkout is the default), and launch. Configure local harness defaults in **Settings → Harnesses**.
 
-On subsequent launches Clanker revalidates and reopens the previously open workspace identities in their saved order, with the previously active workspace selected. It does not restore terminals, agents, conversations, Browser views, editor tabs, Notes visibility, or pane layouts. Notes content is retained. Failed restores produce a compact warning and are removed from the saved open set; the first surviving workspace becomes active if the saved active workspace failed.
+On subsequent launches Clanker revalidates and reopens the previously open workspace identities in their saved order, with the previously active workspace selected. It does not revive terminals, agents, conversations, Browser views, editor tabs or Notes visibility. Saved workspace page arrangements are revalidated without creating missing runtime resources. Notes content is retained. Failed restores produce a compact warning and are removed from the saved open set; the first surviving workspace becomes active if the saved active workspace failed.
 
 ## Opening Workspaces
 
@@ -63,7 +63,7 @@ Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python
 
 ## Navigation
 
-New installs use **Sidebar** navigation. Choose **Tabs** under **Settings → Appearance → Workspaces** to switch; installs that already existed before the sidebar was introduced keep Tabs until you change it.
+New installs use **Sidebar** navigation. Choose **Tabs** under **Settings → Workspaces & Layout** to switch; installs that already existed before the sidebar was introduced keep Tabs until you change it.
 
 | Element | Sidebar mode (default) | Tabs mode |
 |---------|------------------------|-----------|
@@ -74,7 +74,7 @@ New installs use **Sidebar** navigation. Choose **Tabs** under **Settings → Ap
 | Main Area | Terminals, browser, editor, and notes panes | Terminals, browser, editor, and notes panes |
 | Status Bar | Bottom | Bottom |
 
-The toolbar holds the new-terminal launchers, **New isolated agent** and Git, then layout undo, Fit All, launch recipes, the **Browser** and **Notes** toggles, Chat History, Usage, and Settings. Agent rows can also run [local checkout dev servers](dev-services.md). Enabled Hermes Assistants remain reachable through navigation even without an open workspace; their toolbar exposes only Browser and Settings. In Tabs mode it also has an **Explorer** toggle. Drag the sidebar's edge narrow (or use **Collapse sidebar**) to shrink it to an icon rail; drag it out or use **Expand sidebar** to restore it. See [Workspaces](workspaces.md#managing-workspaces).
+The toolbar uses **New Agent** to start a Terminal or AI harness in the project checkout or an explicitly chosen worktree. **Git** opens Source Control's permanent pages; layout controls, Browser, Notes, Chat History and Settings remain available as appropriate. **Usage** is in the status bar. Launch Recipes are temporarily disabled, with saved data retained. Agent rows can run [local checkout dev servers](dev-services.md). Enabled Hermes Assistants remain available with no workspace open; their toolbar has Browser and Settings only. Tabs mode also has an **Explorer** toggle. For the `1`, `2`, `+` page controls and pane minimize/restore, see [Workspace pages](workspace-pages.md). Drag the sidebar's edge narrow (or use **Collapse sidebar**) to shrink it to an icon rail; drag it out or use **Expand sidebar** to restore it. See [Workspaces](workspaces.md#managing-workspaces).
 
 ## Quick Commands
 
