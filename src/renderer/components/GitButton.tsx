@@ -1,9 +1,11 @@
 import { Button } from './ui/Button';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { gitPresentation } from '../lib/workspaceSwitchDebug';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useVcsStore } from '../store/vcsStore';
-import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../store/checkoutGitStore';
+import { matchingCheckoutGit, lastKnownCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../store/checkoutGitStore';
+import { GitLastKnown, gitLastKnownTitle } from './git/GitLastKnown';
 import { checkoutSelectionToken } from '../lib/checkoutSelectionRuntime';
 import { sameWorkspacePath } from '../lib/pathUtils';
 import { selectedVcsCheckoutId, currentVcsCheckoutId } from '../lib/vcsCheckout';
@@ -75,6 +77,13 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const gitAvailability = checkoutGitAvailability(selectedStatus);
   const gitLabel = gitAvailability === 'loading' ? 'Git loading…' : 'Git status unavailable';
   const statusKnown = gitAvailability === 'ready';
+  const cached = useCheckoutGitStore(state => lastKnownCheckoutGit(state.cache, { workspaceId, environmentId: scope.environmentId, contextId: scope.checkoutContextId, root: scope.path }));
+  const lastKnown = statusKnown ? null : cached;
+  const lastKnownTitle = lastKnown ? gitLastKnownTitle(lastKnown, gitAvailability === 'unavailable', selectedStatus?.result?.error) : undefined;
+  useLayoutEffect(() => {
+    if (import.meta.env.DEV) gitPresentation(workspaceId, selectedStatus?.generation, statusKnown ? 'current'
+      : gitAvailability === 'unavailable' ? 'unavailable' : lastKnown ? 'last-known' : 'loading', Boolean(lastKnown));
+  }, [workspaceId, selectedStatus?.generation, statusKnown, gitAvailability, lastKnown]);
   const changes = statusKnown ? selectedStatus?.result?.changes ?? [] : [];
   const changeCount = statusKnown ? changedFileCount(changes) : null;
   const setStatusKnown = useCallback((known: boolean) => { if (!known) useCheckoutGitStore.getState().invalidate(statusGeneration.current); }, []);
@@ -831,10 +840,12 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
           className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
           onClick={handleToggleMenu}
           aria-expanded={isMenuOpen}
-          title={!statusKnown ? gitLabel : !isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
+          aria-description={lastKnownTitle}
+          title={lastKnownTitle ?? (!statusKnown ? gitLabel : !isRepo ? 'Initialize Git Repository' : currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches')}
         >
           <GitBranchIcon size={14} strokeWidth={2} />
-          {!statusKnown ? <span data-git-state={gitAvailability} title={gitLabel}>{gitAvailability === 'loading' ? 'Git…' : 'Git unavailable'}</span> : !isRepo && <span>Init Git</span>}
+          {lastKnown ? <GitLastKnown description={lastKnown} unavailable={gitAvailability === 'unavailable'} />
+            : !statusKnown ? <span data-git-state={gitAvailability} title={gitLabel}>{gitAvailability === 'loading' ? 'Git…' : 'Git unavailable'}</span> : !isRepo && <span>Init Git</span>}
           {changeCount !== null && changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}

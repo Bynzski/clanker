@@ -1,6 +1,8 @@
 /* global window, document */
 // Isolated local Git fixture, real built app and native Browser. No user profile or remote operations.
 const { _electron: electron } = require('playwright');
+const { createSmokeOwner, cleanupSmokeFixture } = require('./lib/smoke-fixture-cleanup.cjs');
+const owner = createSmokeOwner();
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,7 +15,7 @@ const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-source-contro
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
 const project = path.join(root, 'project');
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
-Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
+Object.assign(env, { [owner.key]: owner.value, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'pipe' });
 git('init', '-b', 'main'); git('config', 'user.name', 'Smoke'); git('config', 'user.email', 'smoke@example.invalid');
 fs.writeFileSync(path.join(project, 'README.md'), 'fixture\n'); git('add', '.'); git('commit', '-m', `fixture ${'long history subject '.repeat(8)}`);
@@ -321,5 +323,8 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
     console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; manual worktree creation without a session; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
-  } finally { if (app) await app.close(); server.close(); }
+  } finally {
+    const result = await cleanupSmokeFixture({ app, repo, owner, workspaceRoots: [project, path.join(root, 'linked-task')], servers: [server] });
+    console.error(JSON.stringify({ fixtureCleanup: result }));
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });

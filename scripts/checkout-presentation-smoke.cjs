@@ -165,6 +165,7 @@ let app, server; let modelRequests = 0;
     await focus(ocRow, mainId, project, 1, 'main', 'observed');
     assert.equal(await piRow.locator('.ws-agent-branch').textContent(), 'test1');
     assert((await explain(piId)).renderer.terminalPanePresented, 'Pi pane must remain visible while OpenCode is selected');
+    await require('./lib/git-last-known-checkout-smoke.cjs')({ app, page, repo, checkout: a, row: piRow, id: piId, explain, mainState, oldGeneration: launched.git.generation, until });
     await focus(piRow, piId, a, 2, 'test1', 'observed');
     assert((await explain(mainId)).renderer.terminalPanePresented, 'OpenCode pane must remain visible while Pi is selected');
     assert.equal((await mainState(piId)).launch, launched.selection.contextId);
@@ -206,7 +207,7 @@ let app, server; let modelRequests = 0;
     assert.equal((await view()).root, '', 'Old unregistered observation silently gained authority');
     await send('exit'); await until(async () => !(await snapshots()).some(value => value.terminalId === mainId), 'Agent exit did not retire observed evidence');
     await until(async () => (await view()).root === project, 'After agent retirement launch selection did not return');
-    console.log(JSON.stringify({ realElectron: true, realGit: true, realPTY: true, locationSource: 'authenticated explicit fixture (not native provider cwd movement)', mainAndTwoWorktrees: 'passed', dirtyMatrices: 4, twoAgentSidebarFocus: 'OpenCode main / Pi test1; launch→current; main/renderer/poll identities and generations verified; both panes visible', selectedMainABMain: 'passed', stagedModifiedUntracked: 'passed', historicalAgreeingLaunch: 'launch selection; historical notice; same generation', historicalDisagreementAndUnregistered: 'unavailable without main fallback', explicitMainLaunchWhileUnregistered: 'passed; old binding and unavailable file authority retained', agentRetirement: 'launch authority retained; observed evidence retired' }));
+    console.log(JSON.stringify({ realElectron: true, realGit: true, realPTY: true, locationSource: 'authenticated explicit fixture (not native provider cwd movement)', mainAndTwoWorktrees: 'passed', dirtyMatrices: 4, twoAgentSidebarFocus: 'OpenCode main / Pi test1; launch→current; main/renderer/poll identities and generations verified; both panes visible', selectedMainABMain: 'passed', isolatedLastKnownReacquisition: 'visible stale marker; disabled initialization/no mutations; new generation; real fresh status replaces stale', stagedModifiedUntracked: 'passed', historicalAgreeingLaunch: 'launch selection; historical notice; same generation', historicalDisagreementAndUnregistered: 'unavailable without main fallback', explicitMainLaunchWhileUnregistered: 'passed; old binding and unavailable file authority retained', agentRetirement: 'launch authority retained; observed evidence retired' }));
   } catch (error) {
     console.error(error.message);
     // Do not await renderer diagnostics here: a lost renderer must still reach teardown.

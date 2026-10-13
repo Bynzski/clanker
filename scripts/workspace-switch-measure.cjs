@@ -36,20 +36,24 @@ let app;
     const page = await app.firstWindow(); page.setDefaultTimeout(20000);
     await page.waitForFunction(() => Boolean(window.clankerSwitchDebug));
     await page.evaluate(() => window.clankerSwitchDebug.enable());
+    const initialRows = [];
     for (const name of ['A', 'B', 'C', 'D']) {
       await page.getByRole('button', { name: 'Open Workspace', exact: true }).first().click();
       await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(path.join(root, name));
       await page.getByRole('dialog').getByText('Where are we working today?').click();
+      const startedAt = await page.evaluate(() => { window.clankerSwitchDebug.clear(); return performance.now(); });
       await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
       await page.locator('.workspace-tab.active').filter({ hasText: name }).waitFor();
+      await page.waitForFunction(() => window.clankerSwitchDebug.snapshot().events.some(e => e.event === 'git_presentation' && e.data.freshness === 'current'));
       await pause(1000);
+      initialRows.push({ target: name, startedAt, after: await page.evaluate(() => window.clankerSwitchDebug.snapshot()) });
     }
     const backend = (resetPeak = false) => app.evaluate((_electron, { entry, resetPeak }) => process.getBuiltinModule('module').createRequire(entry)(entry).switchReadSnapshot(resetPeak), { entry: path.join(repo, 'dist/main/main/workspaceSwitchMetrics.js'), resetPeak });
     const rows = [];
     // A was evicted by B/C/D. Then both A and B are resident for warm A→B→A.
     for (const name of ['A', 'B', 'A', 'B', 'A']) {
       await page.evaluate(() => window.clankerSwitchDebug.clear());
-      const before = await page.evaluate(() => window.clankerSwitchDebug.snapshot().ipc);
+      const before = await page.evaluate(() => ({ ...window.clankerSwitchDebug.snapshot().ipc, startedAt: performance.now() }));
       const backendBefore = await backend(true);
       await page.locator('.workspace-tab').filter({ hasText: new RegExp(`^${name}`) }).click();
       await page.waitForFunction(() => window.clankerSwitchDebug.snapshot().events.some(e => e.event === 'first_usable_shell_frame'));
@@ -68,14 +72,15 @@ let app;
     const checkoutRows = [];
     for (const index of [0, 1, 0]) {
       await page.evaluate(() => window.clankerSwitchDebug.clear());
-      const before = await page.evaluate(() => window.clankerSwitchDebug.snapshot().ipc);
+      const before = await page.evaluate(() => ({ ...window.clankerSwitchDebug.snapshot().ipc, startedAt: performance.now() }));
       const backendBefore = await backend(true);
       await page.locator('.workspace-surface.active .terminal-pane .terminal-content').nth(index).click();
-      await page.waitForFunction(branch => document.querySelector('.status-branch')?.textContent === branch, index === 0 ? 'main' : 'isolated');
+      await page.waitForFunction(branch => document.querySelector('.status-branch')?.textContent === branch
+        && window.clankerSwitchDebug.snapshot().events.some(e => e.event === 'git_presentation' && e.data.freshness === 'current'), index === 0 ? 'main' : 'isolated');
       await pause(1000);
       checkoutRows.push({ target: index === 0 ? 'main' : 'isolated', before, backendBefore, backendAfter: await backend(), after: await page.evaluate(() => window.clankerSwitchDebug.snapshot()) });
     }
-    console.log(JSON.stringify({ fixture: '4 local Git repos, empty pane workspace switches; checkout switches have two shell PTYs; Explorer visible, tabs, headless Electron, dev StrictMode, 1s settle', rows, checkoutRows }, null, 2));
+    console.log(JSON.stringify({ fixture: '4 local Git repos, empty pane workspace switches; checkout switches have two shell PTYs; Explorer dock default collapsed, tabs, headless Electron, dev StrictMode, 1s settle', initialRows, rows, checkoutRows }, null, 2));
   } finally {
     try {
       const result = await cleanupSmokeFixture({ app, repo, owner, workspaceRoots: ['A', 'B', 'C', 'D', 'A-isolated'].map(name => path.join(root, name)), children: [vite] });
