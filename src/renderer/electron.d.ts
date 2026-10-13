@@ -155,7 +155,8 @@ export interface ElectronAPI {
   isAttentionDebugEnabled: () => Promise<boolean>;
   reportAgentAttentionReceipt?: (receipt: import('../shared/types/attentionReceipt').AttentionReceipt) => void;
   getAgentAttentionDiagnostics: (terminalId: string) => Promise<{ main: AttentionSignalDiagnostics | null; trace?: Array<{ at: number; semantic: string; nativeEvent?: string; verdict?: string; revision: number; status: string; session?: string; turn?: string }>; unattributedEnvelopes?: number; eventLoopDelay?: { maxMs: number; p99Ms: number; meanMs: number } | null; terminal: { harness: string | null; workspaceId: string | null; environmentId: string; attention: NativeAttentionCapability | null } | null } | null>;
-  getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
+  /** Only the subscribed app bridge requests receipt tracking; read-only queries do not. */
+  getAgentAttentionSnapshots: (forBridge?: boolean) => Promise<AgentAttentionSnapshot[]>;
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
   /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;

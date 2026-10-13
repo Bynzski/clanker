@@ -15,6 +15,7 @@ import { prepareHarnessAccountContext, type HarnessAccountService } from '../acc
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import { parseAttentionReceipt } from '../../shared/types/attentionReceipt';
 import { attentionTelemetry } from '../attentionTelemetry';
+import { isWindowAvailable } from '../windowManager';
 import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import * as fs from 'node:fs';
@@ -487,9 +488,15 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (receipt) attentionTelemetry()?.receipt(receipt);
   });
 
-  ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, () => {
+  ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, (event, forBridge: unknown) => {
     const snapshots = agentAttentionBroker?.snapshots() ?? [];
-    for (const snapshot of snapshots) attentionTelemetry()?.publish(snapshot.terminalId, snapshot.revision, snapshot.runtime.status, true);
+    const window = getMainWindow();
+    if (!appShuttingDown && !deps.getAppShuttingDown?.() && isWindowAvailable(window)
+      && event?.sender === window.webContents && event.senderFrame === window.webContents.mainFrame) {
+      // The app subscribes before hydration. Repeated queries are observations, not new pushes.
+      if (forBridge === true) attentionTelemetry()?.rendererReady();
+      for (const snapshot of snapshots) attentionTelemetry()?.hydrate(snapshot.terminalId, snapshot.revision, snapshot.runtime.status, forBridge === true);
+    }
     return snapshots;
   });
 

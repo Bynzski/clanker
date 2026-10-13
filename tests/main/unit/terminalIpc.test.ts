@@ -110,7 +110,7 @@ import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
-import { REPORT_AGENT_ATTENTION_RECEIPT, GET_AGENT_ATTENTION_DIAGNOSTICS, RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
+import { REPORT_AGENT_ATTENTION_RECEIPT, GET_AGENT_ATTENTION_SNAPSHOTS, GET_AGENT_ATTENTION_DIAGNOSTICS, RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
@@ -284,7 +284,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const telemetry = new AttentionTelemetry(new AttentionLogWriter('/unused-diagnostic-test'), () => []);
     const receiptSpy = vi.spyOn(telemetry, 'receipt').mockImplementation(() => undefined);
     setAttentionTelemetry(telemetry);
-    const value = { terminalId: 'term-a', receivedRevision: 3, storedRevision: 3, snapshotPresent: true, foreground: false, indicator: 'running', merge: 'applied' };
+    const value = { terminalId: 'term-a', receivedRevision: 3, storedRevision: 3, snapshotPresent: true, foreground: false, source: 'push', eligible: true, suppression: 'none', indicator: 'running', merge: 'applied' };
     try {
       handler({ sender: {} }, value);
       handler({ sender: mainWindow.webContents, senderFrame: {} }, value);
@@ -293,6 +293,40 @@ describe('terminalIpc — error-path: handler returns', () => {
       handler({ sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame }, value);
       expect(receiptSpy).toHaveBeenCalledExactlyOnceWith(value);
     } finally { setAttentionTelemetry(null); }
+  });
+
+  test('main-frame snapshot hydration is recorded separately from pushes and ignores foreign/old frames and shutdown', () => {
+    const { opts, mainWindow } = createMockDeps();
+    const broker = new AgentAttentionBroker(() => undefined, () => undefined);
+    broker.registerRemote('term-a', 'pi');
+    let shuttingDown = false;
+    registerTerminalIpc({ ...opts, agentAttentionBroker: broker, getAppShuttingDown: () => shuttingDown });
+    const writer = new AttentionLogWriter('/unused-hydration-test');
+    vi.spyOn(writer, 'append').mockImplementation(() => undefined);
+    const telemetry = new AttentionTelemetry(writer, () => []);
+    const hydrate = vi.spyOn(telemetry, 'hydrate');
+    const publish = vi.spyOn(telemetry, 'publish');
+    const ready = vi.spyOn(telemetry, 'rendererReady');
+    setAttentionTelemetry(telemetry);
+    const handler = mockHandle.mock.calls.find(call => call[0] === GET_AGENT_ATTENTION_SNAPSHOTS)![1];
+    const event = { sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame };
+    try {
+      handler({ sender: {}, senderFrame: mainWindow.webContents.mainFrame }, true);
+      handler({ sender: mainWindow.webContents, senderFrame: {} }, true);
+      expect(ready).not.toHaveBeenCalled();
+      expect(hydrate).not.toHaveBeenCalled();
+      expect(handler(event)).toEqual(broker.snapshots());
+      expect(hydrate).toHaveBeenCalledWith('term-a', broker.snapshot('term-a')!.revision, 'unverified', false);
+      expect(ready).not.toHaveBeenCalled();
+      handler(event, true);
+      handler(event, true);
+      expect(hydrate).toHaveBeenCalledTimes(3);
+      expect(hydrate).toHaveBeenCalledWith('term-a', broker.snapshot('term-a')!.revision, 'unverified', true);
+      expect(publish).not.toHaveBeenCalled();
+      shuttingDown = true;
+      handler(event, true);
+      expect(hydrate).toHaveBeenCalledTimes(3);
+    } finally { setAttentionTelemetry(null); broker.close(); }
   });
 
   test('attention diagnostics are always available and expose only safe broker/terminal metadata', async () => {

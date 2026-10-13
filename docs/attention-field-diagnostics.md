@@ -23,10 +23,34 @@ Only explicit content-free schemas enter the writer; it does not intercept conso
 
 - Startup app version/platform.
 - Broker registration, decisions, release, and transport rejection verdicts. Existing console diagnostics remain intact.
-- Main publication revision/status and renderer availability, including hydration snapshots.
-- Renderer receipt: received/stored revision, merge classification, snapshot presence, foreground state, and the shared indicator selector's result. Reports follow pushes/hydration and acknowledgement/focus/workspace/page changes. These describe the selector, not proof that pixels were painted. Duplicate receipts are suppressed in main.
+- Main publication revision/status, WebContents availability, and `deliveryExpected`. An available WebContents alone does not establish that the app bridge has subscribed.
+- Separate `hydration` records for snapshot queries, including whether a receipt is expected. Only the subscribed app bridge passes the diagnostic `forBridge: true` marker; default read-only queries neither establish readiness nor create deadlines. This marker changes diagnostics only, not the returned snapshots or authority.
+- `renderer-state` records delimit unavailable periods (main-document navigation/reload, renderer loss, window close, shutdown, or an unavailable publication). A main-owned `rendererEpoch` groups evidence; it is diagnostic metadata only.
+- Renderer receipt: source (`push`, `hydration`, or cached `presentation`), received/stored revision, merge classification, snapshot presence, foreground state, eligibility, suppression reason, and the existing shared presentation selector's result. Reports follow pushes/hydration and acknowledgement/focus/workspace/page changes. These describe the selector, not proof that pixels were painted. Duplicate receipts are suppressed in main.
 - Main-loop samples every approximately 30 seconds and on delayed diagnostic ticks. Histogram values are cumulative since monitor startup; tick delay can include scheduling or system suspend, not just expensive application work.
-- Automatic anomaly records containing the latest 24 broker entries plus event-loop summary: rejected attributed events, release while an accepted turn is active, renderer merge disagreement, or absence of an agreeing receipt after five seconds. Anomaly capture is limited to once per terminal per five seconds and tracks at most 64 terminals. The newest publication supersedes older pending receipt checks.
+- Automatic anomaly records containing the latest 24 broker entries plus event-loop summary: rejected attributed events, release while an accepted turn is active, renderer merge disagreement, unexpected eligible Running suppression, or an overdue expected receipt after five seconds. Anomaly capture is limited to once per terminal per five seconds and tracks at most 64 terminals. Detailed receipt/publication records remain available even when an anomaly is rate-limited.
+
+### Receipt deadlines and renderer boundaries
+
+A missing-receipt check starts only for an actual push to an available, subscribed app renderer or an instrumented bridge hydration. Unavailable publications are preserved with `deliveryExpected: false`, without a receipt deadline. Full main-document navigation (not in-page/subframe navigation), renderer loss, window close and admitted app shutdown cancel the old renderer's outstanding checks and clear old delivery acknowledgements. Native broker state is untouched. The recreated bridge subscribes, then requests tracked hydration; actual redelivery starts a fresh check in the new epoch. Shutdown cannot rearm it.
+
+For the same terminal/revision within one renderer epoch, repeated hydration and duplicate pushes preserve the **first outstanding deadline**, any receipt already recorded, and whether a missing-receipt anomaly was already reported. A newer main-owned revision supersedes the older check; stale hydration/receipts cannot regress it or satisfy it. A late current receipt remains evidence and stops further missing checks. A read-only snapshot query never starts or extends a deadline.
+
+A current push/hydration receipt proves receipt was reported even when merge failed: diagnose `renderer-merge-disagreement`, **not** a later `renderer-receipt-missing`. Cached presentation observations do not themselves prove receipt of a delivery. “Missing” means no current delivery receipt was recorded by the deadline; it does not prove IPC loss, failure of the native hook, or a permanently absent indicator.
+
+### Reading suppression evidence
+
+| Evidence | Diagnostic interpretation |
+| --- | --- |
+| Expected Running publication, no current receipt by deadline | `renderer-receipt-missing`: delivery receipt is overdue. |
+| Current receipt, stored revision/snapshot or merge disagrees | `outcome: merge-disagreement`, with a bounded anomaly; reception and merge failure are separate facts. |
+| Current receipt and matching stored snapshot, `indicator: none` | `outcome: stored-indicator-none`: inspect `eligible`, `suppression`, `foreground` and `publishedStatus`. |
+| `eligible: false`, `suppression: ineligible` | Intentionally gated (capability disabled or terminal absent), including a main Running snapshot; not a missing delivery or unexpected suppression alarm. |
+| `eligible: true`, `suppression: acknowledged` | The same selector shows a view without seen watermarks but none with them; explains an acknowledged finish/Stop. A prior acknowledgement may persist when no longer foreground. |
+| Eligible main Running snapshot, correct revision/presence, `indicator: none` | `renderer-running-indicator-none`: unexpected observational disagreement, even if foreground or claiming acknowledgement. Acknowledgement cannot hide Running in the shared selector. |
+| `suppression: selector-none` / `no-snapshot` | Existing selector produced no view even without acknowledgement, or no snapshot was stored. Do not infer completion. |
+
+Suppression description reuses `deriveAttention()` (including a counterfactual without seen watermarks only to identify acknowledgement). There is no second presentation selector and no new lifecycle state. In-memory `window.clankerAttention.explain()` uses the same description; its legacy `suppressed` strings remain available.
 
 A receipt is **not** user acknowledgement and **never** supplies lifecycle, location, handoff or checkout authority. IPC requires the app's main renderer frame and a strict metadata allowlist. Main accepts attribution only for its tracked publications. A renderer can be wrong or unresponsive; its receipt remains observational evidence, not ground truth. Diagnostic timers never change attention state or retry/replay events.
 
@@ -43,8 +67,11 @@ On release, the broker keeps at most 64 full SHA-256 credential digests with mai
 ## Remaining gaps / review boundary
 
 - This first layer does **not** persist hook-side callback/adapter/send outcomes before an envelope reaches main. A callback that never runs, a provider-interpreter failure before delivery, and an entirely lost send can still require provider-side instrumentation.
-- It does not independently certify upstream native event semantics or fix unsupported completion/session boundaries.
+- It does not independently certify upstream native event semantics or fix unsupported completion/session boundaries. The built-Electron smoke uses an explicit owned PTY lifecycle fixture, not actual Codex/Claude/Pi/OpenCode/OMP/Antigravity native hooks. No real SSH harness lifecycle or remote receipt timing was verified in this follow-up.
+- Frame/source/revision validation improves attribution but does not prove the renderer's report is truthful, nor that an indicator was painted. Missing receipts can also mean delayed/failed instrumentation. Suppression alarms are evidence of disagreement, not instructions to repair or rebind tracking.
 - It does not automatically submit diagnostics anywhere or poll conversations/PTY text.
 - Small bounded logs may rotate before an incident is reviewed. Copy the three files promptly; local review should correlate terminal IDs and incident times, and distinguish expected shutdown rejections from live failures.
 
-Regression coverage includes receipt schema and sender/frame validation, actual renderer push/hydration/stale/tombstone receipts, retired-credential expiry/transport isolation, writer rotation/overflow/private permissions/symlink refusal, receipt anomalies, and Chokidar's excluded directories.
+Regression coverage includes unavailable/startup/loading/closed/gone/shutdown boundaries, in-page/subframe navigation exclusions, original deadlines across repeated tracked/read-only hydration, delayed/stale/tombstone receipts, renderer recreation without inherited receipts, failed-merge versus missing-delivery classification, legitimate Running eligibility suppression, unexpected eligible Running suppression, and foreground acknowledgement. Receipt schema/sender/frame validation, retired-credential isolation, rotation/overflow/private permissions/symlink refusal, and actual Chokidar exclusions remain covered.
+
+The real built-Electron smoke additionally reloads a Running fixture, verifies fresh renderer hydration without altering native registration, repeats read-only snapshot queries, waits beyond the five-second grace period, and checks persisted logs across restart/shutdown for false missing-receipt anomalies and raw identity/path leakage. Current-main workspace loading/refresh code is preserved; this follow-up adds only observational diagnostic integration.

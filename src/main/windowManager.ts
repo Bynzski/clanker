@@ -31,6 +31,8 @@ export interface CreateMainWindowOptions {
   onWindowClose?: (event: Event) => void;
   onQuerySessionEnd?: (event: Event) => void;
   onRendererGone?: () => void;
+  /** Diagnostic boundary only; navigation must not retire native agent authority. */
+  onRendererUnavailable?: (reason: 'navigation' | 'gone' | 'closed') => void;
   backgroundColor?: string;
   /** Saved theme, passed to the page so its boot splash paints in the right colours before any script runs. */
   theme?: ThemeId;
@@ -153,6 +155,11 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
   });
 
+  // A new main document has not subscribed yet. In-page navigation leaves its listener intact.
+  mainWindow.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) deps.onRendererUnavailable?.('navigation');
+  });
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(getRendererUrl({ theme }));
@@ -161,6 +168,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   }
 
   const cleanup = () => {
+    deps.onRendererUnavailable?.('closed');
     gitService.stopPolling();
     fileWatcher.unwatchAll();
     deps.explorerWatcher?.close();
@@ -171,6 +179,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   if (deps.onQuerySessionEnd) mainWindow.on('query-session-end', deps.onQuerySessionEnd);
   mainWindow.on('closed', cleanup);
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    deps.onRendererUnavailable?.('gone');
     if (process.env.NODE_ENV === 'development') {
       console.error(
         `[diag] main renderer gone webContents=${mainWindow.webContents.id} reason=${details?.reason} exitCode=${details?.exitCode}`,

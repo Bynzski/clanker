@@ -5,6 +5,9 @@ export interface AttentionReceipt {
   storedRevision: number | null;
   snapshotPresent: boolean;
   foreground: boolean;
+  source: 'push' | 'hydration' | 'presentation';
+  eligible: boolean;
+  suppression: 'none' | 'ineligible' | 'acknowledged' | 'no-snapshot' | 'selector-none';
   indicator: 'running' | 'needs_input' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded' | 'failed' | 'none';
   merge: 'applied' | 'older' | 'equal' | 'tombstone';
 }
@@ -13,12 +16,14 @@ export interface AttentionReceipt {
 export function parseAttentionReceipt(value: unknown): AttentionReceipt | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const r = value as Record<string, unknown>;
-  const keys = ['terminalId', 'receivedRevision', 'storedRevision', 'snapshotPresent', 'foreground', 'indicator', 'merge'];
+  const keys = ['terminalId', 'receivedRevision', 'storedRevision', 'snapshotPresent', 'foreground', 'source', 'eligible', 'suppression', 'indicator', 'merge'];
   if (Object.keys(r).length !== keys.length || Object.keys(r).some(key => !keys.includes(key))
     || typeof r.terminalId !== 'string' || !/^[\w-]{1,128}$/.test(r.terminalId)
     || !Number.isSafeInteger(r.receivedRevision) || (r.receivedRevision as number) < 0
     || (r.storedRevision !== null && (!Number.isSafeInteger(r.storedRevision) || (r.storedRevision as number) < 0))
-    || typeof r.snapshotPresent !== 'boolean' || typeof r.foreground !== 'boolean'
+    || typeof r.snapshotPresent !== 'boolean' || typeof r.foreground !== 'boolean' || typeof r.eligible !== 'boolean'
+    || !['push', 'hydration', 'presentation'].includes(r.source as string)
+    || !['none', 'ineligible', 'acknowledged', 'no-snapshot', 'selector-none'].includes(r.suppression as string)
     || !['running', 'needs_input', 'turn_complete', 'signal_unavailable', 'signal_degraded', 'failed', 'none'].includes(r.indicator as string)
     || !['applied', 'older', 'equal', 'tombstone'].includes(r.merge as string)) return null;
   return r as unknown as AttentionReceipt;

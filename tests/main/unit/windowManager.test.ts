@@ -32,6 +32,26 @@ test('renderer loss stops file/git watchers and releases workspace resources wit
   process.env.NODE_ENV = nodeEnv;
 });
 
+test('diagnostic renderer boundaries distinguish full reload from in-page/subframe navigation', () => {
+  const contentsHandlers = new Map<string, (...args: unknown[]) => void>();
+  const windowHandlers = new Map<string, () => void>();
+  const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(), once: vi.fn(),
+    on: vi.fn((name: string, handler: () => void) => windowHandlers.set(name, handler)),
+    webContents: { on: vi.fn((name: string, handler: (...args: unknown[]) => void) => contentsHandlers.set(name, handler)), openDevTools: vi.fn() } };
+  vi.mocked(BrowserWindow).mockImplementation(function () { return window as never; });
+  const unavailable = vi.fn();
+  createMainWindow({ preloadPath: '/preload.js', gitService: { stopPolling: vi.fn() }, fileWatcher: { unwatchAll: vi.fn() }, onRendererUnavailable: unavailable });
+  contentsHandlers.get('did-start-navigation')!({}, 'private-url-not-logged', true, true);
+  contentsHandlers.get('did-start-navigation')!({}, 'private-url-not-logged', false, false);
+  expect(unavailable).not.toHaveBeenCalled();
+  contentsHandlers.get('did-start-navigation')!({}, 'private-url-not-logged', false, true);
+  expect(unavailable).toHaveBeenLastCalledWith('navigation');
+  contentsHandlers.get('render-process-gone')!({}, {});
+  expect(unavailable).toHaveBeenLastCalledWith('gone');
+  windowHandlers.get('closed')!();
+  expect(unavailable).toHaveBeenLastCalledWith('closed');
+});
+
 test('native close and session-end use the guard before closed teardown', async () => {
   const handlers = new Map<string, (event: { preventDefault(): void }) => void>();
   const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(),

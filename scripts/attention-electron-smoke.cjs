@@ -145,13 +145,17 @@ async function closeOwnedTerminals() {
     await pause(500);
     await closeOwnedTerminals();
     await app.close();
-    const diagnosticDirectory = path.join(root, 'profile', 'attention-diagnostics');
-    const diagnosticText = fs.readdirSync(diagnosticDirectory).filter(name => /^attention(?:\.[12])?\.jsonl$/.test(name))
-      .map(name => fs.readFileSync(path.join(diagnosticDirectory, name), 'utf8')).join('');
-    const diagnosticRows = diagnosticText.trim().split('\n').map(line => JSON.parse(line));
+    const readDiagnostics = () => {
+      const directory = path.join(root, 'profile', 'attention-diagnostics');
+      const text = fs.readdirSync(directory).filter(name => /^attention(?:\.[12])?\.jsonl$/.test(name))
+        .map(name => fs.readFileSync(path.join(directory, name), 'utf8')).join('');
+      return { text, rows: text.trim().split('\n').map(line => JSON.parse(line)) };
+    };
+    const { text: diagnosticText, rows: diagnosticRows } = readDiagnostics();
     assert.ok(diagnosticRows.some(row => row.kind === 'broker' && row.semantic === 'turn_started'), 'Automatic broker log missing');
     assert.ok(diagnosticRows.some(row => row.kind === 'renderer-receipt' && row.storedRevision === row.receivedRevision && row.indicator === 'running'), 'Automatic main-frame renderer receipt missing');
-    assert.ok(diagnosticRows.some(row => row.kind === 'renderer-receipt' && row.indicator === 'none'), 'Automatic suppression receipt missing');
+    assert.ok(diagnosticRows.some(row => row.kind === 'renderer-receipt' && row.indicator === 'none' && row.suppression === 'acknowledged'), 'Automatic acknowledgement suppression receipt missing');
+    assert.ok(!diagnosticRows.some(row => row.kind === 'anomaly' && row.reason === 'renderer-receipt-missing'), 'Shutdown or read-only hydration produced a misleading missing receipt');
     assert.ok(!diagnosticText.includes(root) && !/CLANKER_ATTENTION_TOKEN|sessionId|turnId/.test(diagnosticText), 'Automatic diagnostic log leaked launch paths or raw identity');
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, `--ozone-platform=${ozonePlatform}`], env });
     page = await app.firstWindow(); page.setDefaultTimeout(10000);
@@ -161,7 +165,24 @@ async function closeOwnedTerminals() {
     const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
     await send(restored, 'stop'); await state(restored, 'provisional');
     await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', automaticDiagnostics: 'broker, main-frame renderer receipts and suppression persisted without raw identity/paths', providerStop: 'Finished stays unread when unfocused, focused agent acknowledges it; same-turn activity restores Running', annotationAtStop: 'refused', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
+    // A real main-document reload invalidates old delivery expectations, not native tracking.
+    await send(restored, 'start'); await state(restored, 'running');
+    await page.reload();
+    await until(async () => page.evaluate(async id => {
+      const explanation = await window.clankerAttention?.explain(id);
+      return explanation?.main?.status === 'running' && explanation.renderer.comparison === 'current';
+    }, restored), 'Reload did not hydrate the live authoritative revision');
+    for (let i = 0; i < 3; i++) await page.evaluate(() => window.electronAPI.getAgentAttentionSnapshots());
+    await pause(5500); // Cross the receipt grace period: queries/reload must not create false alarms.
+    await closeOwnedTerminals();
+    await app.close(); app = null;
+    const finalDiagnostics = readDiagnostics();
+    assert.ok(finalDiagnostics.rows.some(row => row.kind === 'renderer-state' && row.reason === 'navigation'), 'Renderer reload boundary was not persisted');
+    assert.ok(finalDiagnostics.rows.some(row => row.kind === 'hydration' && row.deliveryExpected === false), 'Read-only hydration was not distinguished');
+    assert.ok(finalDiagnostics.rows.some(row => row.kind === 'renderer-receipt' && row.source === 'hydration'), 'Recreated renderer receipt missing');
+    assert.ok(!finalDiagnostics.rows.some(row => row.kind === 'anomaly' && row.reason === 'renderer-receipt-missing'), 'Reload/restart/read-only hydration produced a misleading missing receipt');
+    assert.ok(!finalDiagnostics.text.includes(root) && !/CLANKER_ATTENTION_TOKEN|sessionId|turnId/.test(finalDiagnostics.text), 'Reload diagnostic log leaked raw identity or launch paths');
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', automaticDiagnostics: 'broker, main-frame receipts and acknowledgement suppression persisted; reload/restart/read-only hydration crossed receipt deadline without false missing anomalies; privacy assertions passed', providerStop: 'Finished stays unread when unfocused, focused agent acknowledges it; same-turn activity restores Running', annotationAtStop: 'refused', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);

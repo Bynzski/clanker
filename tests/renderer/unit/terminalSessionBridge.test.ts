@@ -200,6 +200,33 @@ describe('terminal session bridge', () => {
       } finally { stop(); }
     });
 
+    it('reports eligibility suppression and foreground acknowledgement, but never hides eligible Running on acknowledgement', async () => {
+      const previous = useWorkspaceStore.getState();
+      const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const workspace = createWorkspaceFixture({ id: 'receipt-ws',
+        terminals: [{ id: 'a', pid: 1, workingDir: '/', harnessId: 'pi', attentionEnabled: true }],
+        panes: [{ id: 'pane-a', terminalId: 'a' }], activeTerminalId: 'a',
+        layoutRoot: { type: 'leaf', nodeId: 'leaf-a', paneId: 'pane-a' } });
+      useWorkspaceStore.setState({ workspaces: [workspace], activeWorkspaceId: workspace.id, activeTerminalId: 'a' });
+      const report = vi.fn();
+      const { api, listener } = attentionApi(async () => []);
+      api.reportAgentAttentionReceipt = report;
+      const stop = startTerminalSessionBridge();
+      try {
+        await flush();
+        const signal = { requested: true, attachment: 'prepared' as const, health: 'observed' as const };
+        listener.current?.(change(snapshot('a', 'running', 4, { signal: { ...signal, requested: false } })));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'push', storedRevision: 4,
+          snapshotPresent: true, foreground: true, eligible: false, indicator: 'none', suppression: 'ineligible' }));
+        listener.current?.(change(snapshot('a', 'completed', 5, { signal })));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ eligible: true, indicator: 'none', suppression: 'acknowledged' }));
+        listener.current?.(change(snapshot('a', 'running', 6, { signal })));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ eligible: true, foreground: true, indicator: 'running', suppression: 'none' }));
+        useAgentAttentionStore.getState().acknowledge('a');
+        expect(deriveAttention(useAgentAttentionStore.getState().byTerminalId.a, useAgentAttentionStore.getState().seenByTerminalId.a)?.display).toBe('running');
+      } finally { stop(); focus.mockRestore(); useWorkspaceStore.setState(previous); }
+    });
+
     it('subscribes before it hydrates, and hydration restores running and waiting agents', async () => {
       const { order } = attentionApi(async () => [snapshot('a', 'running', 4), snapshot('b', 'needs_input', 5)]);
       const stop = startTerminalSessionBridge();

@@ -609,6 +609,7 @@ app.whenReady().then(() => {
     onWindowClose: (event) => closeGuard?.beforeWindowClose(event),
     onQuerySessionEnd: (event) => closeGuard?.beforeSessionEnd(event),
     onRendererGone: cleanupWorkspaceResources,
+    onRendererUnavailable: reason => attentionTelemetry()?.rendererUnavailable(reason),
   }));
 
   // Pre-warm model cache in background after startup
@@ -628,6 +629,7 @@ app.whenReady().then(() => {
         onWindowClose: (event) => closeGuard?.beforeWindowClose(event),
         onQuerySessionEnd: (event) => closeGuard?.beforeSessionEnd(event),
         onRendererGone: cleanupWorkspaceResources,
+        onRendererUnavailable: reason => attentionTelemetry()?.rendererUnavailable(reason),
       }));
     }
   });
@@ -654,6 +656,7 @@ app.on('before-quit', (event) => {
   if (closeGuard && !closeGuard.beforeQuit(event)) return;
   event.preventDefault();
   if (quitCleanup) return;
+  attentionTelemetry()?.rendererUnavailable('shutdown');
   // A service that cannot be verified gone is logged here, and must not cut the rest of the quit cleanup short.
   const servicesStopped = workspaceServiceManager.shutdown().catch((error: unknown) => console.warn('[clanker-grid] dev service shutdown incomplete:', error));
   const previewsClosed = remotePreviewManager.close();

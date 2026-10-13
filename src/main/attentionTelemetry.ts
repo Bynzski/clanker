@@ -80,13 +80,20 @@ export class AttentionLogWriter {
   }
 }
 
-type PendingPublication = { revision: number; at: number; reported: boolean; acknowledged: boolean; snapshotPresent: boolean; lastReceipt?: string };
+type PendingPublication = {
+  revision: number; expectedAt: number | null; reported: boolean; received: boolean;
+  snapshotPresent: boolean; status: string; lastReceipt?: string;
+};
+type RendererUnavailableReason = 'navigation' | 'gone' | 'closed' | 'shutdown' | 'unavailable';
 
 /** Observation only. Receipts and diagnostic timers cannot mutate the broker or acknowledge UI. */
 export class AttentionTelemetry {
   private pending = new Map<string, PendingPublication>();
   private recent = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private rendererEligible = false;
+  private rendererEpoch = 0;
+  private stopped = false;
 
   constructor(private readonly writer: AttentionLogWriter,
     private readonly trace: (terminalId: string) => AttentionTraceEntry[],
@@ -117,30 +124,85 @@ export class AttentionTelemetry {
     if (entry.verdict?.startsWith('rejected-') || entry.semantic === 'release-without-settlement') this.anomaly(terminalId, entry.semantic);
   }
 
+  /** A bridge-marked main-frame snapshot request follows subscription. Loading a page or
+   * merely having a WebContents is not evidence that a listener is eligible to receive pushes. */
+  rendererReady(): void {
+    if (this.stopped || this.rendererEligible) return;
+    this.rendererEligible = true;
+    this.writer.append({ kind: 'renderer-state', at: this.now(), rendererEpoch: this.rendererEpoch, rendererAvailable: true });
+  }
+
+  rendererUnavailable(reason: RendererUnavailableReason): void {
+    this.rendererEligible = false;
+    this.rendererEpoch++;
+    this.writer.append({ kind: 'renderer-state', at: this.now(), rendererEpoch: this.rendererEpoch, rendererAvailable: false, reason });
+    for (const pending of this.pending.values()) {
+      // Preserve revisions, not old-renderer delivery expectations or receipts. A new renderer
+      // earns a fresh deadline only when main actually sends that revision again.
+      pending.expectedAt = null;
+      pending.received = false;
+      pending.reported = false;
+      pending.lastReceipt = undefined;
+    }
+  }
+
   publish(terminalId: string, revision: number, status: string, rendererAvailable: boolean): void {
-    this.writer.append({ kind: 'publication', at: this.now(), terminalId, revision, status, rendererAvailable });
+    if (!rendererAvailable && this.rendererEligible) this.rendererUnavailable('unavailable');
+    const deliveryExpected = !this.stopped && this.rendererEligible && rendererAvailable;
+    this.writer.append({ kind: 'publication', at: this.now(), terminalId, revision, status, rendererAvailable, deliveryExpected, rendererEpoch: this.rendererEpoch });
+    this.expectReceipt(terminalId, revision, status, deliveryExpected);
+  }
+
+  hydrate(terminalId: string, revision: number, status: string, receiptExpected = true): void {
+    const deliveryExpected = !this.stopped && this.rendererEligible && receiptExpected;
+    this.writer.append({ kind: 'hydration', at: this.now(), terminalId, revision, status, deliveryExpected, rendererEpoch: this.rendererEpoch });
+    this.expectReceipt(terminalId, revision, status, deliveryExpected);
+  }
+
+  private expectReceipt(terminalId: string, revision: number, status: string, deliveryExpected: boolean): void {
+    const prior = this.pending.get(terminalId);
+    if (prior && revision < prior.revision) return;
+    if (prior?.revision === revision) {
+      // Duplicate pushes/hydration cannot postpone a missed receipt, erase a receipt or cause
+      // another anomaly. First actual delivery after an unavailable period starts the deadline.
+      if (deliveryExpected && prior.expectedAt === null) prior.expectedAt = this.now();
+      return;
+    }
     this.pending.delete(terminalId);
-    this.pending.set(terminalId, { revision, at: this.now(), reported: false, acknowledged: false, snapshotPresent: status !== 'retired' });
+    this.pending.set(terminalId, { revision, expectedAt: deliveryExpected ? this.now() : null,
+      reported: false, received: false, snapshotPresent: status !== 'retired', status });
     this.bound(this.pending);
   }
 
   receipt(receipt: AttentionReceipt): void {
-    // Only main-published terminal IDs/revisions are attributable. Renderer data remains untrusted.
+    // Only the current app renderer's tracked publications are attributable. The IPC boundary
+    // rejects old frames; a renderer receipt remains an observation, never lifecycle authority.
+    if (this.stopped || !this.rendererEligible) return;
     const pending = this.pending.get(receipt.terminalId);
     if (!pending || receipt.receivedRevision > pending.revision) return;
     const signature = JSON.stringify(receipt);
     if (pending.lastReceipt === signature) return;
     pending.lastReceipt = signature;
-    this.writer.append({ kind: 'renderer-receipt', at: this.now(), ...receipt });
-    if (receipt.receivedRevision === pending.revision) {
-      if (receipt.storedRevision === pending.revision && receipt.snapshotPresent === pending.snapshotPresent && !['older', 'tombstone'].includes(receipt.merge)) pending.acknowledged = true;
-      else this.anomaly(receipt.terminalId, 'renderer-merge-disagreement');
+    const current = receipt.receivedRevision === pending.revision;
+    const merged = receipt.storedRevision === pending.revision && receipt.snapshotPresent === pending.snapshotPresent
+      && !['older', 'tombstone'].includes(receipt.merge);
+    const outcome = !current ? 'stale-receipt' : !merged ? 'merge-disagreement'
+      : receipt.indicator === 'none' ? 'stored-indicator-none' : 'stored-indicator-visible';
+    this.writer.append({ kind: 'renderer-receipt', at: this.now(), rendererEpoch: this.rendererEpoch, publishedStatus: pending.status, outcome, ...receipt });
+    if (!current) return;
+    // Cached presentation reports do not prove receipt of a push/hydration. Conversely, an
+    // actual receipt with a bad merge is NOT a missing receipt: diagnose that boundary instead.
+    if (receipt.source !== 'presentation') pending.received = true;
+    if (!merged) this.anomaly(receipt.terminalId, 'renderer-merge-disagreement');
+    else if (pending.status === 'running' && receipt.indicator === 'none' && receipt.eligible) {
+      this.anomaly(receipt.terminalId, 'renderer-running-indicator-none');
     }
   }
 
   checkReceipts(): void {
+    if (this.stopped || !this.rendererEligible) return;
     for (const [id, pending] of this.pending) {
-      if (!pending.acknowledged && !pending.reported && this.now() - pending.at >= RECEIPT_GRACE_MS) {
+      if (pending.expectedAt !== null && !pending.received && !pending.reported && this.now() - pending.expectedAt >= RECEIPT_GRACE_MS) {
         pending.reported = true;
         this.anomaly(id, 'renderer-receipt-missing');
       }
@@ -153,7 +215,8 @@ export class AttentionTelemetry {
     this.recent.delete(terminalId);
     this.recent.set(terminalId, this.now());
     this.bound(this.recent);
-    this.writer.append({ kind: 'anomaly', at: this.now(), terminalId, reason, eventLoopDelay: eventLoopDelay(), trace: this.trace(terminalId).slice(-24) });
+    this.writer.append({ kind: 'anomaly', at: this.now(), terminalId, reason, rendererEpoch: this.rendererEpoch,
+      revision: this.pending.get(terminalId)?.revision, eventLoopDelay: eventLoopDelay(), trace: this.trace(terminalId).slice(-24) });
   }
 
   private bound<T>(map: Map<string, T>): void {
@@ -161,6 +224,8 @@ export class AttentionTelemetry {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
+    this.rendererUnavailable('shutdown');
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     let timeout: ReturnType<typeof setTimeout> | undefined;

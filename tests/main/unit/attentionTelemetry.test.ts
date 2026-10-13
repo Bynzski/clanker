@@ -12,7 +12,7 @@ async function fixture(maxBytes?: number) {
   directories.push(directory);
   return { directory, writer: new AttentionLogWriter(path.join(directory, 'logs'), maxBytes) };
 }
-const receipt: AttentionReceipt = { terminalId: 'term-a', receivedRevision: 3, storedRevision: 3, snapshotPresent: true, foreground: false, indicator: 'running', merge: 'applied' };
+const receipt: AttentionReceipt = { terminalId: 'term-a', receivedRevision: 3, storedRevision: 3, snapshotPresent: true, foreground: false, source: 'push', eligible: true, suppression: 'none', indicator: 'running', merge: 'applied' };
 
 describe('attention diagnostic logging', () => {
   it('serializes concurrent writes, rotates bounded files, and uses private POSIX permissions', async () => {
@@ -56,6 +56,7 @@ describe('attention diagnostic logging', () => {
     let now = 100;
     const trace = vi.fn(() => [{ at: 1, semantic: 'turn_started', revision: 3, status: 'running' as const }]);
     const telemetry = new AttentionTelemetry(writer, trace, () => now);
+    telemetry.rendererReady();
     telemetry.publish('term-a', 3, 'running', true);
     now += 5001;
     telemetry.checkReceipts(); telemetry.checkReceipts();
@@ -75,6 +76,7 @@ describe('attention diagnostic logging', () => {
     let now = 0;
     const trace = vi.fn(() => []);
     const telemetry = new AttentionTelemetry(writer, trace, () => now);
+    telemetry.rendererReady();
     telemetry.publish('term-a', 4, 'running', true);
     telemetry.receipt(receipt);
     now = 5001;
@@ -88,6 +90,6 @@ describe('attention diagnostic logging', () => {
 
   it('rejects arbitrary content and invalid receipt fields', () => {
     expect(parseAttentionReceipt(receipt)).toEqual(receipt);
-    for (const invalid of [null, [], { ...receipt, prompt: 'secret' }, { ...receipt, terminalId: '/private/path' }, { ...receipt, storedRevision: NaN }, { ...receipt, receivedRevision: -1 }, { ...receipt, indicator: 'secret' }, { ...receipt, merge: {} }]) expect(parseAttentionReceipt(invalid)).toBeNull();
+    for (const invalid of [null, [], { ...receipt, prompt: 'secret' }, { ...receipt, terminalId: '/private/path' }, { ...receipt, storedRevision: NaN }, { ...receipt, receivedRevision: -1 }, { ...receipt, indicator: 'secret' }, { ...receipt, merge: {} }, { ...receipt, source: 'unknown' }, { ...receipt, eligible: null }, { ...receipt, suppression: 'secret' }]) expect(parseAttentionReceipt(invalid)).toBeNull();
   });
 });

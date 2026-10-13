@@ -1,5 +1,5 @@
 import { installAttentionDiagnostics } from './attentionDiagnostics';
-import { deriveAttention } from './agentAttentionPresentation';
+import { describeAttentionIndicator } from './agentAttentionPresentation';
 import type { AgentAttentionChange } from '../../shared/types/agentAttention';
 import type { AttentionReceipt } from '../../shared/types/attentionReceipt';
 import { writeCachedTerminalData, writeCachedTerminalExit } from './terminalRuntimeCache';
@@ -21,7 +21,7 @@ function presentedActiveTerminalId(): string | null {
 }
 
 /** Observe the shared presentation selector; never alter lifecycle or acknowledgement. */
-function reportAttentionReceipt(change: AgentAttentionChange, foreground: boolean, prior: number | undefined, priorSnapshot: boolean): void {
+function reportAttentionReceipt(change: AgentAttentionChange, foreground: boolean, prior: number | undefined, priorSnapshot: boolean, source: AttentionReceipt['source']): void {
   const report = window.electronAPI.reportAgentAttentionReceipt;
   if (!report) return;
   const store = useAgentAttentionStore.getState();
@@ -34,8 +34,8 @@ function reportAttentionReceipt(change: AgentAttentionChange, foreground: boolea
   try {
     report({ terminalId: change.terminalId, receivedRevision: change.revision,
       storedRevision: store.revisionByTerminalId[change.terminalId] ?? null,
-      snapshotPresent: Boolean(snapshot), foreground, merge,
-      indicator: eligible ? deriveAttention(snapshot, store.seenByTerminalId[change.terminalId], terminal?.attention)?.display ?? 'none' : 'none' });
+      snapshotPresent: Boolean(snapshot), foreground, merge, source,
+      ...describeAttentionIndicator(snapshot, store.seenByTerminalId[change.terminalId], terminal?.attention, eligible) });
   } catch { /* Diagnostic delivery must never interfere with terminal state. */ }
 }
 
@@ -71,19 +71,19 @@ export function startTerminalSessionBridge(): () => void {
       const priorSnapshot = Boolean(store.byTerminalId[change.terminalId]);
       const foreground = isForeground(change.terminalId);
       store.applyChange(change, foreground);
-      reportAttentionReceipt(change, foreground, prior, priorSnapshot);
+      reportAttentionReceipt(change, foreground, prior, priorSnapshot, 'push');
     }));
     if (typeof window.electronAPI.getAgentAttentionSnapshots === 'function') {
       let disposed = false;
       disposers.push(() => { disposed = true; });
       // Captured after subscribing and before the request: anything newer than this wins.
       const baseline = useAgentAttentionStore.getState().baseline();
-      void window.electronAPI.getAgentAttentionSnapshots()
+      void window.electronAPI.getAgentAttentionSnapshots(true)
         .then((snapshots) => {
           if (disposed || !Array.isArray(snapshots)) return;
           const prior = useAgentAttentionStore.getState();
           prior.hydrate(snapshots, isForeground, baseline);
-          for (const snapshot of snapshots) reportAttentionReceipt({ terminalId: snapshot.terminalId, revision: snapshot.revision, snapshot }, isForeground(snapshot.terminalId), prior.revisionByTerminalId[snapshot.terminalId], Boolean(prior.byTerminalId[snapshot.terminalId]));
+          for (const snapshot of snapshots) reportAttentionReceipt({ terminalId: snapshot.terminalId, revision: snapshot.revision, snapshot }, isForeground(snapshot.terminalId), prior.revisionByTerminalId[snapshot.terminalId], Boolean(prior.byTerminalId[snapshot.terminalId]), 'hydration');
         })
         .catch(() => undefined);
     }
@@ -95,7 +95,7 @@ export function startTerminalSessionBridge(): () => void {
     const revision = store.revisionByTerminalId[id];
     if (revision === undefined) return;
     const snapshot = store.byTerminalId[id];
-    reportAttentionReceipt({ terminalId: id, revision, snapshot: snapshot ?? null }, windowHasFocus() && presentedActiveTerminalId() === id, revision, Boolean(snapshot));
+    reportAttentionReceipt({ terminalId: id, revision, snapshot: snapshot ?? null }, windowHasFocus() && presentedActiveTerminalId() === id, revision, Boolean(snapshot), 'presentation');
   };
   // Also record presentation changes caused by acknowledgement/focus, not only broker pushes.
   disposers.push(useAgentAttentionStore.subscribe((state, previous) => {

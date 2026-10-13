@@ -2,7 +2,7 @@ import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { paneIsPresented } from '../store/workspacePages';
-import { deriveAttention } from './agentAttentionPresentation';
+import { describeAttentionIndicator } from './agentAttentionPresentation';
 import { currentCheckoutSelection } from './checkoutSelection';
 import { checkoutSelectionToken } from './checkoutSelectionRuntime';
 import { matchingCheckoutGit, checkoutGitAvailability, useCheckoutGitStore } from '../store/checkoutGitStore';
@@ -18,10 +18,10 @@ export async function explainTerminalAttention(terminalId: string) {
   const terminal = workspace?.terminals.find((entry) => entry.id === terminalId);
   const snapshot = store.byTerminalId[terminalId];
   const seen = store.seenByTerminalId[terminalId];
-  const view = deriveAttention(snapshot, seen, terminal?.attention);
   const pane = workspace?.panes.find((entry) => entry.terminalId === terminalId);
   const capability = snapshot?.signal ?? terminal?.attention;
   const eligible = Boolean(terminal?.harnessId && (capability?.requested ?? terminal.attentionEnabled));
+  const presentation = describeAttentionIndicator(snapshot, seen, terminal?.attention, eligible);
   const revision = store.revisionByTerminalId[terminalId] ?? null;
   const mainRevision = main.main?.revision ?? null;
   const selection = workspace ? currentCheckoutSelection(workspace) : null;
@@ -43,10 +43,10 @@ export async function explainTerminalAttention(terminalId: string) {
         selection, git: { availability: selection?.availability === 'available' ? checkoutGitAvailability(matchingGit) : 'not-selected', matchesSelection: Boolean(matchingGit),
           snapshotState: activeGit?.state ?? null, identity: activeGit?.identity ?? null, generation: activeGit?.generation ?? null },
       },
-      indicator: eligible ? view?.display ?? null : null,
-      suppressed: !eligible ? 'capability-disabled-or-terminal-absent' : view ? null
-        : (snapshot?.runtime.status === 'idle' || snapshot?.runtime.status === 'provisional') && (seen?.completion ?? 0) > 0 ? 'acknowledged-idle'
-        : snapshot ? 'no-displayable-lifecycle-fact' : 'no-snapshot',
+      indicator: presentation.indicator === 'none' ? null : presentation.indicator,
+      suppression: presentation.suppression,
+      suppressed: { none: null, ineligible: 'capability-disabled-or-terminal-absent', acknowledged: 'acknowledged-idle',
+        'selector-none': 'no-displayable-lifecycle-fact', 'no-snapshot': 'no-snapshot' }[presentation.suppression],
       workspaceMember: Boolean(workspace), residency: workspace?.runtimeState.residencyState ?? null,
       terminalPanePresented: Boolean(workspace && pane && workspace.id === state.activeWorkspaceId && !useAssistantNavStore.getState().activeAssistantId && paneIsPresented(workspace, pane.id)),
     },
