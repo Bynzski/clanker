@@ -1,19 +1,19 @@
 # Configuration
 
-## Settings Menu
+## Settings
 
-Access via the header toolbar gear icon.
+Open the toolbar **Settings** action to display the permanent Settings management interface. Use its navigation for **Appearance**, **Workspaces & Layout**, **Keyboard Shortcuts**, **Harnesses**, **Accounts**, **Assistants** (when Hermes is available), **Git Preferences**, **Authentication** and **SSH Targets**. Preferences are independent of the selected checkout unless a page explicitly names an environment.
 
-### Appearance
+### Appearance and Workspaces & Layout
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Theme | Dark, Light, or Slate, shown as a preview of each theme | Dark |
 | Workspaces | **Sidebar** lists workspaces in a collapsible left sidebar and docks the toolbar in the title bar; **Tabs** shows workspace tabs in the title bar and the toolbar on its own row | Sidebar on new installs; installs that predate the sidebar keep Tabs |
 
-Keyboard bindings are edited from **Keyboard shortcuts...** in the same menu; see [Keyboard Shortcuts](keyboard-shortcuts.md#customizing-shortcuts).
+Keyboard bindings are edited under **Settings → Keyboard Shortcuts**; see [Keyboard Shortcuts](keyboard-shortcuts.md#customizing-shortcuts).
 
-### AI Commit
+### Git Preferences (AI Commit)
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -21,9 +21,9 @@ Keyboard bindings are edited from **Keyboard shortcuts...** in the same menu; se
 | Provider | AI service (Codex, OpenCode, Pi, Oh My Pi, Antigravity) | Codex |
 | Model | Model variant per provider | Varies |
 
-### Harness Defaults
+### Harnesses
 
-Per-harness global preferences for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. Launch defaults apply when launching a terminal from that harness's header button; **Show in Usage** controls the Usage popover.
+Per-harness launch defaults are configured under **Settings → Harnesses**. They apply to future **New Agent** launches rather than changing an existing process. **Show in Usage** independently controls the status-bar Usage reading.
 
 Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has its own settings:
 
@@ -34,7 +34,7 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has it
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
 | Agent attention | Show supported harness turn and input status on new panes | Disabled |
-| Clanker bridge (MCP) | Local authenticated workspace context for Claude, Codex, OpenCode and Pi; eligible providers also offer checkout lifecycle tools with attention enabled | Disabled |
+| Clanker bridge (MCP) | Read-only authenticated local workspace context for Claude, Codex, OpenCode and Pi; checkout relocation tools were retired in #166 | Disabled |
 | Show in Usage | Include a supported harness in the Usage popover and its usage requests | Enabled |
 
 **Show in Usage** is available for Codex, Claude, Oh My Pi, Hermes, and Antigravity. It is independent of **Visible**: hiding a launch button does not hide its usage row. Disabling **Show in Usage** removes that provider from usage reads, polling, and manual refresh. See [Subscription usage](terminals.md#subscription-usage).
@@ -43,19 +43,18 @@ Hermes discovers provider-aware models from the local Hermes TUI gateway when it
 
 Antigravity discovers available models via `agy models`. The model list supports Gemini and Claude variants. Extra flags accept `--dangerously-skip-permissions`, `--effort <level>`, and `--mode <mode>`. Agent attention is supported via native plugin hooks, reporting running, needs input, and turn complete statuses. Antigravity can be selected as an AI commit provider in settings, generating commit messages via piped prompt execution.
 
-#### Managing Harness Defaults
+#### Managing harness defaults
 
-1. Open the settings dropdown from the gear icon
-2. Scroll to the **Harness Defaults** section
-3. Click a harness row to expand its settings
-4. Toggle visibility, agent attention, or **Show in Usage** where supported; edit extra flags text, set a default model, or manage favorites
+1. Open **Settings → Harnesses**
+2. Select the harness and inspect its preferences
+3. Toggle visibility, attention, bridge or **Show in Usage** where supported; edit flags, defaults and favorites
 
 All changes persist immediately to `electron-store`.
 
 #### Visibility Behavior
 
 - Harnesses are visible by default.
-- Hidden harnesses are removed from the Header harness list.
+- Hidden harnesses are removed from New Agent's launch choices.
 - Hiding a harness does not disable it. Previous chats can still be resumed when the harness command is installed and available.
 
 #### Flags Behavior
@@ -69,7 +68,7 @@ All changes persist immediately to `electron-store`.
 
 When spawning a terminal with a harness:
 
-1. **Explicit launch model** — used by an explicit runtime launch, such as a Recipe
+1. **Explicit launch model** — used only by a supported explicit runtime operation; saved Recipes are currently disabled
 2. **Harness default model** — used when no launch model was selected
 3. **Harness choice** — if neither is set, the CLI chooses its own model
 
@@ -77,17 +76,17 @@ Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 
-For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; Header launchers use the remote CLI's own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+For SSH workspaces, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; New Agent launches use the remote CLI's own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
 
-### Managed accounts and Hermes Assistants
+### Accounts and Hermes Assistants
 
-Codex and Claude can use manually selected managed accounts under **Harness Defaults**. Selection affects future local launches; resume/fork use the account owning the conversation, and there is no automatic fallback. The native/default account remains available without an app-managed home. Managed accounts are unavailable for SSH workspaces.
+Under **Settings → Accounts**, Codex and Claude can use manually selected managed accounts. Selection affects future local launches; resume/fork use the account owning the conversation, and there is no automatic fallback. The native/default account remains available without an app-managed home. Managed accounts are unavailable for SSH workspaces.
 
-**Hermes Assistants** is a separate optional setting, hidden when the Hermes CLI is missing. Enable it to connect named profiles to their persistent Bot Chat; **Start Hermes service when needed** permits Clanker to start and stop only its own backend. This does not change the ordinary Hermes launcher. See [Hermes Assistants](terminals.md#hermes-assistants).
+**Settings → Assistants** is optional and hidden when the Hermes CLI is missing. Enable it to connect named profiles to their persistent Bot Chat; **Start Hermes service when needed** permits Clanker to start and stop only its own backend. This does not change the ordinary Hermes launcher. See [Hermes Assistants](terminals.md#hermes-assistants).
 
-### VCS Credentials
+### Authentication and SSH Targets
 
-Manage authentication for remote VCS operations.
+Use **Settings → Authentication** to manage local SSH keys and encrypted provider API tokens. Use **Settings → SSH Targets** for saved OpenSSH connections and their default roots. These are separate from a remote host's own Git credentials.
 
 #### SSH Keys
 
