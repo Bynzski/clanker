@@ -9,10 +9,18 @@ import FileExplorer from '../../../src/renderer/components/FileExplorer';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { AGENT_NAMES } from '../../../src/renderer/lib/agentNames';
-import { installElectronApiMock } from '../../setup/electron';
+import { installElectronApiMock as installBaseElectronApiMock } from '../../setup/electron';
 import type { FileExplorerEntry, FileListDirectoryRequest, FileListDirectoryResult } from '../../../src/shared/types/fileExplorer';
 import type { ExplorerTreeChangedEvent } from '../../../src/shared/types/fileExplorer';
 import type { RemoteFilesChangedEvent } from '../../../src/shared/types/remoteFileWatch';
+
+// Static tree fixtures now reacquire on mount too; provide their declared listings.
+// Error/order/mutation tests still override this with explicit IPC responses.
+function installElectronApiMock(overrides: Parameters<typeof installBaseElectronApiMock>[0] = {}) {
+  return installBaseElectronApiMock({ fileListDirectory: vi.fn(async (request: FileListDirectoryRequest) => ({
+    success: true, entries: useWorkspaceStore.getState().getActiveWorkspace()?.explorerEntriesByPath[request.directoryPath] ?? [],
+  })), ...overrides });
+}
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -1068,10 +1076,7 @@ describe('S8: Inline create/rename UI', () => {
       explorerExpandedPaths: [],
     });
     const fileCreate = vi.fn().mockResolvedValue({ success: true });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-      fileCreate,
-    });
+    installElectronApiMock({ fileCreate });
 
     render(<FileExplorer />);
 
@@ -1150,10 +1155,7 @@ describe('S10: Delete + Rename coordination', () => {
       },
     });
     const fileDelete = vi.fn().mockResolvedValue({ success: true });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-      fileDelete,
-    });
+    installElectronApiMock({ fileDelete });
 
     render(<FileExplorer />);
 
@@ -1297,10 +1299,7 @@ describe('S10: Delete + Rename coordination', () => {
       },
     });
     const fileDelete = vi.fn().mockResolvedValue({ success: true });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-      fileDelete,
-    });
+    installElectronApiMock({ fileDelete });
 
     render(<FileExplorer />);
 
@@ -1456,20 +1455,8 @@ describe('S9: Keyboard navigation', () => {
         '/workspace/src': [createEntry('index.ts', '/workspace/src/index.ts', false)],
       },
     });
-    // Use mockImplementation to preserve pre-populated entries.
-    // When called for /workspace (on mount), return [] so root pre-populated entries are preserved.
-    // When called for /workspace/src (on lazy-load), return [] so children pre-populated entries are preserved.
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockImplementation(async (request: { directoryPath: string }) => {
-        if (request.directoryPath === '/workspace') {
-          return { success: true, entries: [] };
-        }
-        if (request.directoryPath === '/workspace/src') {
-          return { success: true, entries: [] };
-        }
-        return { success: true, entries: [] };
-      }),
-    });
+    // Return the fixture's actual listing: successful [] is authoritative empty.
+    installElectronApiMock();
 
     render(<FileExplorer />);
 
@@ -1608,9 +1595,7 @@ describe('Issue #3: explorer filter input', () => {
         ],
       },
     });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-    });
+    installElectronApiMock();
   }
 
   it('renders the filter input above the tree', () => {
@@ -1660,9 +1645,7 @@ describe('Issue #3: explorer filter input', () => {
         '/workspace/src': [createEntry('config.ts', '/workspace/src/config.ts', false)],
       },
     });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-    });
+    installElectronApiMock();
     render(<FileExplorer />);
 
     await screen.findByText('src');
@@ -1747,9 +1730,7 @@ describe('Issue #3: explorer filter input', () => {
         ],
       },
     });
-    installElectronApiMock({
-      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-    });
+    installElectronApiMock();
     render(<FileExplorer />);
 
     await screen.findByText('env.config.ts');

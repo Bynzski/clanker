@@ -154,6 +154,8 @@ export const createDefaultExplorerState = () => ({
   explorerEntriesByPath: {} as Record<string, FileExplorerEntry[] | undefined>,
   explorerLoadingPaths: [] as string[],
   explorerErrorsByPath: {} as Record<string, string | null | undefined>,
+  explorerVerifiedByPath: {} as Record<string, number | undefined>,
+  explorerRevisionByPath: {} as Record<string, number | undefined>,
   showHiddenFiles: true as boolean,
   gitChanges: [] as GitStatus[],
 });
@@ -268,6 +270,8 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     explorerEntriesByPath: { ...workspace.explorerEntriesByPath },
     explorerLoadingPaths: [...workspace.explorerLoadingPaths],
     explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
+    explorerVerifiedByPath: {}, // Ingestion is not a verified selection acquisition.
+    explorerRevisionByPath: { ...workspace.explorerRevisionByPath },
     browserOverlayCount: workspace.browserOverlayCount ?? 0,
     browserPane: sanitizeBrowserPane(workspace.browserPane, workspace.browserUrl),
     pages: workspace.pages?.map((page) => {
@@ -476,6 +480,8 @@ export function getActiveWorkspaceSnapshot(
     | 'explorerEntriesByPath'
     | 'explorerLoadingPaths'
     | 'explorerErrorsByPath'
+    | 'explorerVerifiedByPath'
+    | 'explorerRevisionByPath'
     | 'showHiddenFiles'
     | 'gitChanges'
     | 'gitCurrentBranch'
@@ -512,6 +518,8 @@ export function getActiveWorkspaceSnapshot(
     explorerEntriesByPath: workspace.explorerEntriesByPath,
     explorerLoadingPaths: workspace.explorerLoadingPaths,
     explorerErrorsByPath: workspace.explorerErrorsByPath,
+    explorerVerifiedByPath: workspace.explorerVerifiedByPath,
+    explorerRevisionByPath: workspace.explorerRevisionByPath,
     showHiddenFiles: workspace.showHiddenFiles ?? true,
     gitChanges: workspace.gitChanges ?? [],
     gitCurrentBranch: workspace.gitCurrentBranch ?? null,

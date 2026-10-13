@@ -78,6 +78,11 @@ export function activationReferences(previous: WorkspaceTab, selected: Workspace
     changed: activationReferenceFields.filter((key) => previous[key] !== selected[key]) });
 }
 
+/** Fixed Explorer scheduler counters only; no keys, paths, filenames or responses. */
+export function explorerDirectoryEvent(event: 'scheduled' | 'coalesced' | 'followup' | 'dispatched' | 'settled' | 'retired', active: number, queued: number): void {
+  log('explorer_directory_request', { event, active, queued });
+}
+
 /** Toolbar DOM commit, not compositor paint; fixed freshness labels, no status payload. */
 export function gitPresentation(workspaceId: string | undefined, generation: number | undefined, freshness: 'loading' | 'last-known' | 'unavailable' | 'current', cacheHit: boolean): void {
   log('git_presentation', { workspaceId, generation, freshness, cacheHit, switchId: _currentSwitchId });

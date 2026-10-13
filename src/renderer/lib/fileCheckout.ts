@@ -44,6 +44,8 @@ export function retiredFileCheckoutState(workspace: WorkspaceTab, contexts: Work
   return {
     explorerEntriesByPath: Object.fromEntries(Object.entries(workspace.explorerEntriesByPath).filter(([key]) => keep(key))),
     explorerErrorsByPath: Object.fromEntries(Object.entries(workspace.explorerErrorsByPath).filter(([key]) => keep(key))),
+    explorerVerifiedByPath: Object.fromEntries(Object.entries(workspace.explorerVerifiedByPath ?? {}).filter(([key]) => keep(key))),
+    explorerRevisionByPath: Object.fromEntries(Object.entries(workspace.explorerRevisionByPath ?? {}).filter(([key]) => keep(key))),
     explorerLoadingPaths: workspace.explorerLoadingPaths.filter(keep),
     explorerExpandedPaths: workspace.explorerExpandedPaths.filter(keep),
     explorerSelectedPath: workspace.explorerSelectedPath && keep(workspace.explorerSelectedPath) ? workspace.explorerSelectedPath : null,

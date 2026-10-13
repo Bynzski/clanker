@@ -201,6 +201,17 @@
   font-size: var(--font-size-md);
 }
 
+.directory-freshness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.directory-freshness.error,
 .tree-node-status.error,
 .file-explorer-status.error {
   color: var(--status-error);

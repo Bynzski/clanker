@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ChevronDown, ChevronUp, Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
-import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import { dirnamePath, joinPaths, normalizePath } from '../../lib/pathUtils';
 import { pathKey } from '../../../shared/pathKey';
@@ -14,6 +13,7 @@ import { focusedFileCheckout, fileCheckoutFromSelection, pathInFileCheckout } fr
 import { useAgentSnapshot } from '../../lib/useAgentLocation';
 import { selectCheckout } from '../../lib/checkoutSelection';
 import { checkoutSelectionToken } from '../../lib/checkoutSelectionRuntime';
+import { useExplorerDirectoryLoader } from '../../lib/useExplorerDirectoryLoader';
 import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../../store/checkoutGitStore';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -36,15 +36,9 @@ const EMPTY_ENTRIES: Record<string, FileExplorerEntry[] | undefined> = {};
 const EMPTY_PATHS: string[] = [];
 const EMPTY_ERRORS: Record<string, string | null | undefined> = {};
 
-function getDirectoryLoadErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return 'Unable to load directory';
+function useExpandedDirectoryPaths(paths: string[], root: string) {
+  return useMemo(() => paths.filter(path => pathInFileCheckout(root, path)), [paths, root]);
 }
-
-
 
 function resolveCreateParentPath(
   workspacePath: string,
@@ -102,8 +96,6 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     setExplorerSidebarWidth,
     setShowHiddenFiles,
     setExplorerDirectoryEntries,
-    setExplorerDirectoryLoading,
-    setExplorerDirectoryError,
     setExplorerExpandedPaths,
     clearExplorerDirectoryState,
     pushBrowserOverlay,
@@ -115,8 +107,6 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     setExplorerSidebarWidth: state.setExplorerSidebarWidth,
     setShowHiddenFiles: state.setShowHiddenFiles,
     setExplorerDirectoryEntries: state.setExplorerDirectoryEntries,
-    setExplorerDirectoryLoading: state.setExplorerDirectoryLoading,
-    setExplorerDirectoryError: state.setExplorerDirectoryError,
     setExplorerExpandedPaths: state.setExplorerExpandedPaths,
     clearExplorerDirectoryState: state.clearExplorerDirectoryState,
     pushBrowserOverlay: state.pushBrowserOverlay,
@@ -132,14 +122,18 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
   const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? EMPTY_ENTRIES;
-  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? EMPTY_PATHS;
   const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? EMPTY_ERRORS;
-  const explorerExpandedPaths = useMemo(() => (workspace?.explorerExpandedPaths ?? EMPTY_PATHS).filter((entry) => pathInFileCheckout(workspacePath, entry)), [workspace?.explorerExpandedPaths, workspacePath]);
+  const rawExpandedPaths = scopedWorkspace?.explorerExpandedPaths ?? EMPTY_PATHS;
+  const explorerExpandedPaths = useExpandedDirectoryPaths(rawExpandedPaths, workspacePath);
   const showHiddenFiles = workspace?.showHiddenFiles ?? true;
   const explorerSelectedPath = workspace?.explorerSelectedPath && pathInFileCheckout(workspacePath, workspace.explorerSelectedPath) ? workspace.explorerSelectedPath : null;
 
   const normalizedWorkspacePath = workspacePath ? normalizePath(workspacePath) : workspacePath;
-  const rootIdentity = `${checkoutContextId ?? ''}:${normalizedWorkspacePath}`;
+  const directoryLoader = useExplorerDirectoryLoader(resolvedWorkspaceId, workspace?.environmentId ?? 'local', normalizedWorkspacePath, checkoutContextId);
+  const loadDirectory = directoryLoader.load;
+  const loadRequestedDirectory = useCallback((path: string) => loadDirectory(path, { force: true }), [loadDirectory]);
+  const rootIdentity = JSON.stringify([resolvedWorkspaceId, workspace?.environmentId, checkoutContextId, normalizedWorkspacePath,
+    resolvedWorkspaceId ? checkoutSelectionToken(resolvedWorkspaceId) : -1, explorerVisible]);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
@@ -148,19 +142,20 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const [filterQuery, setFilterQuery] = useExplorerFilter(resolvedWorkspaceId, isSection);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const previousExplorerVisibleRef = useRef(explorerVisible);
-  const previousRootRef = useRef(rootIdentity);
-  const directoryRequests = useRef(new Map<string, number>());
-  const nextDirectoryRequest = useRef(0);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const previousRootRef = useRef('');
+  useEffect(() => () => { previousRootRef.current = ''; }, []);
 
-  useEffect(() => {
+  // Reset only checkout-bound transient controls before committing a new selection.
+  const modalScope = JSON.stringify([resolvedWorkspaceId, normalizedWorkspacePath, checkoutContextId,
+    resolvedWorkspaceId ? checkoutSelectionToken(resolvedWorkspaceId) : -1]);
+  const [previousModalScope, setPreviousModalScope] = useState(modalScope);
+  if (previousModalScope !== modalScope) {
+    setPreviousModalScope(modalScope);
     setContextMenu(null);
     setDeleteTarget(null);
     setCreating(null);
     setRenaming(null);
-  }, [normalizedWorkspacePath, checkoutContextId]);
+  }
 
   const handleResizeStart = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -188,101 +183,12 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     return () => popBrowserOverlay(resolvedWorkspaceId);
   }, [deleteTarget, resolvedWorkspaceId, pushBrowserOverlay, popBrowserOverlay]);
 
-  const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
-    const normalizedDirectoryPath = normalizePath(directoryPath);
-    const requestWorkspaceId = resolvedWorkspaceId;
-    if (!normalizedWorkspacePath || !requestWorkspaceId) {
-      return {
-        success: false,
-        entries: [],
-        errorCode: 'invalid-path',
-        error: 'Workspace path is unavailable',
-      };
-    }
-
-    const selectionToken = checkoutSelectionToken(requestWorkspaceId);
-    const request = ++nextDirectoryRequest.current;
-    directoryRequests.current.set(normalizedDirectoryPath, request);
-    const valid = () => mounted.current && checkoutSelectionToken(requestWorkspaceId) === selectionToken
-      && directoryRequests.current.get(normalizedDirectoryPath) === request;
-    setExplorerDirectoryLoading(normalizedDirectoryPath, true, requestWorkspaceId);
-    setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
-
-    try {
-      const result = await window.electronAPI.fileListDirectory({
-        workspacePath: normalizedWorkspacePath,
-        workspaceId: requestWorkspaceId,
-        ...(checkoutContextId ? { checkoutContextId } : {}),
-        directoryPath: normalizedDirectoryPath,
-      });
-
-      const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
-      if (!valid() || liveWorkspace == null || normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) !== normalizedWorkspacePath
-        || focusedFileCheckout(liveWorkspace).checkoutContextId !== checkoutContextId) {
-        return result;
-      }
-
-      if (result.success) {
-        // Normalize entry paths from main process to forward slashes.
-        // On Windows, path.join() in the main process produces backslash
-        // separators, but the renderer stores keys with forward slashes.
-        const normalizedEntries = result.entries.map((entry: FileExplorerEntry) => ({
-          ...entry,
-          path: normalizePath(entry.path),
-        }));
-        setExplorerDirectoryEntries(normalizedDirectoryPath, normalizedEntries, requestWorkspaceId);
-        setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
-      } else {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
-        setExplorerDirectoryError(normalizedDirectoryPath, result.error ?? 'Unable to load directory', requestWorkspaceId);
-        if (checkoutContextId) void requestCheckoutReconciliation(requestWorkspaceId);
-      }
-
-      return result;
-    } catch (error) {
-      const errorMessage = getDirectoryLoadErrorMessage(error);
-      console.error('Failed to load directory', {
-        workspacePath: normalizedWorkspacePath,
-        directoryPath: normalizedDirectoryPath,
-        error,
-      });
-
-      const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
-      if (valid() && liveWorkspace && normalizePath(focusedFileCheckout(liveWorkspace).workspacePath) === normalizedWorkspacePath
-        && focusedFileCheckout(liveWorkspace).checkoutContextId === checkoutContextId) {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
-        setExplorerDirectoryError(normalizedDirectoryPath, errorMessage, requestWorkspaceId);
-      }
-
-      return {
-        success: false,
-        entries: [],
-        errorCode: 'unknown',
-        error: errorMessage,
-      };
-    } finally {
-      if (directoryRequests.current.get(normalizedDirectoryPath) === request) {
-        directoryRequests.current.delete(normalizedDirectoryPath);
-        if (mounted.current && useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
-          setExplorerDirectoryLoading(normalizedDirectoryPath, false, requestWorkspaceId);
-        }
-      }
-    }
-  }, [
-    resolvedWorkspaceId,
-    normalizedWorkspacePath,
-    checkoutContextId,
-    setExplorerDirectoryEntries,
-    setExplorerDirectoryError,
-    setExplorerDirectoryLoading,
-  ]);
-
   const handleRefresh = useCallback(() => {
     const pathsToReload = [normalizedWorkspacePath, ...explorerExpandedPaths].filter(
       (value): value is string => typeof value === 'string' && value.length > 0
     );
     pathsToReload.forEach((dirPath) => {
-      void loadDirectory(dirPath);
+      void loadDirectory(dirPath, { force: true, background: dirPath !== normalizedWorkspacePath });
     });
   }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
 
@@ -309,7 +215,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     return () => window.removeEventListener('focus', onFocus);
   }, [isRemote, explorerVisible, resolvedWorkspaceId, handleRefresh]);
 
-  const scheduleDirectoryRefresh = useCallback(function scheduleDirectoryRefreshImpl(directoryPath: string) {
+  const scheduleDirectoryRefresh = useCallback((directoryPath: string) => {
     if (!normalizedWorkspacePath) {
       return;
     }
@@ -359,29 +265,11 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         return;
       }
 
-      if (latestWorkspace.explorerLoadingPaths.includes(normalizedDirectoryPath)) {
-        scheduleDirectoryRefreshImpl(normalizedDirectoryPath);
-        return;
-      }
-
-      void loadDirectory(normalizedDirectoryPath);
+      void loadDirectory(normalizedDirectoryPath, { force: true, background: true });
     }, EXPLORER_TREE_REFRESH_DEBOUNCE_MS);
 
     explorerTreeRefreshTimersRef.current.set(refreshKey, timer);
   }, [resolvedWorkspaceId, loadDirectory, normalizedWorkspacePath, isRemote]);
-
-  useEffect(() => {
-    const wasVisible = previousExplorerVisibleRef.current;
-    previousExplorerVisibleRef.current = explorerVisible;
-
-    if (!wasVisible && explorerVisible) {
-      for (const timer of explorerTreeRefreshTimersRef.current.values()) {
-        clearTimeout(timer);
-      }
-      explorerTreeRefreshTimersRef.current.clear();
-      handleRefresh();
-    }
-  }, [explorerVisible, handleRefresh]);
 
   useEffect(() => {
     const refreshTimers = explorerTreeRefreshTimersRef.current;
@@ -392,18 +280,6 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       refreshTimers.clear();
     };
   }, [resolvedWorkspaceId, normalizedWorkspacePath]);
-
-  useEffect(() => {
-    if (!explorerVisible || !normalizedWorkspacePath) {
-      return;
-    }
-
-    const hasRootEntries = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, normalizedWorkspacePath);
-    const isRootLoading = explorerLoadingPaths.includes(normalizedWorkspacePath);
-    if (!hasRootEntries && !isRootLoading) {
-      void loadDirectory(normalizedWorkspacePath);
-    }
-  }, [explorerEntriesByPath, explorerLoadingPaths, explorerVisible, loadDirectory, normalizedWorkspacePath]);
 
   /**
    * Subscribe to filesystem change events from the explorer watcher.
@@ -501,7 +377,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
 
   const commitCreating = useCallback(async (name: string) => {
     const c = creating;
-    if (!c) return;
+    if (!c || !directoryLoader.valid()) return;
 
     const targetPath = joinPaths(c.parentPath, name);
 
@@ -513,6 +389,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       type: c.type,
     });
 
+    if (!directoryLoader.valid()) return;
     if (!result.success) {
       const message = result.error ?? 'Failed to create entry';
       console.error('Failed to create entry:', message);
@@ -522,8 +399,8 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     }
 
     setCreating(null);
-    void loadDirectory(c.parentPath);
-  }, [creating, normalizedWorkspacePath, resolvedWorkspaceId, checkoutContextId, loadDirectory]);
+    void loadDirectory(c.parentPath, { force: true });
+  }, [creating, normalizedWorkspacePath, resolvedWorkspaceId, checkoutContextId, loadDirectory, directoryLoader]);
 
   const actionDeps = useMemo<ExplorerActionDeps>(() => ({
     resolvedWorkspaceId,
@@ -537,7 +414,8 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     setExplorerExpandedPaths,
     clearExplorerDirectoryState,
     toggleExplorerPath,
-    loadDirectory,
+    loadDirectory: path => loadDirectory(path, { force: true }),
+    isCurrent: directoryLoader.valid,
   }), [
     resolvedWorkspaceId,
     normalizedWorkspacePath,
@@ -551,6 +429,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     clearExplorerDirectoryState,
     toggleExplorerPath,
     loadDirectory,
+    directoryLoader.valid,
   ]);
 
   const commitRenaming = useCallback(async (newName: string) => {
@@ -761,7 +640,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           rootPath={normalizedWorkspacePath}
           workspacePath={normalizedWorkspacePath}
           rootError={explorerErrorsByPath[normalizedWorkspacePath]}
-          onLoadDirectory={loadDirectory}
+          onLoadDirectory={loadRequestedDirectory}
           gitChanges={gitChanges}
           onContextMenu={handleTreeContextMenu}
           creating={creating}

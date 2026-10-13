@@ -217,6 +217,10 @@ export interface WorkspaceTab {
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerLoadingPaths: string[];
   explorerErrorsByPath: Record<string, string | null | undefined>;
+  /** Listing proof is selection-local; retained entries are only descriptive. */
+  explorerVerifiedByPath?: Record<string, number | undefined>;
+  /** Mutation/subtree revisions; old directory reads cannot resurrect confirmed removals. */
+  explorerRevisionByPath?: Record<string, number | undefined>;
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
   gitCurrentBranch: string | null;

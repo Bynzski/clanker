@@ -74,6 +74,8 @@ export interface WorkspaceState {
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerLoadingPaths: string[];
   explorerErrorsByPath: Record<string, string | null | undefined>;
+  explorerVerifiedByPath?: Record<string, number | undefined>;
+  explorerRevisionByPath?: Record<string, number | undefined>;
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
   gitCurrentBranch: string | null;
@@ -175,7 +177,7 @@ export interface WorkspaceState {
   setExplorerExpandedPaths: (paths: string[], workspaceId?: string) => void;
   clearExplorerDirectoryState: (paths: string[], workspaceId?: string) => void;
   setExplorerSelectedPath: (path: string | null, workspaceId?: string) => void;
-  setExplorerDirectoryEntries: (directoryPath: string, entries: FileExplorerEntry[], workspaceId?: string) => void;
+  setExplorerDirectoryEntries: (directoryPath: string, entries: FileExplorerEntry[], workspaceId?: string, selectionGeneration?: number) => void;
   setExplorerDirectoryLoading: (directoryPath: string, loading: boolean, workspaceId?: string) => void;
   setExplorerDirectoryError: (directoryPath: string, error: string | null, workspaceId?: string) => void;
   resetExplorerState: () => void;
@@ -245,6 +247,8 @@ export type ActiveWorkspaceSnapshot = Pick<
   | 'explorerEntriesByPath'
   | 'explorerLoadingPaths'
   | 'explorerErrorsByPath'
+  | 'explorerVerifiedByPath'
+  | 'explorerRevisionByPath'
   | 'showHiddenFiles'
   | 'gitChanges'
   | 'gitCurrentBranch'
