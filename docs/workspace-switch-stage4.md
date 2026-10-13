@@ -164,6 +164,35 @@ These few headless dev StrictMode samples establish read suppression, **not a ge
 switching, CPU, allocation/GC, production or compositor-paint speedup**. All returning
 scopes still displayed descriptive history before fresh status.
 
+## P2 review follow-up: Overview provider freshness
+
+Overview now distinguishes freshly acquired provider fields from retained history.
+A controller-local `dataCurrent` flag records that data was returned by the current
+acquisition (including a partial response); invalidate, loading and thrown refresh
+failure clear that proof without discarding useful rows. This does not alter resource
+requests, polling, checkout authority or the Stage 3 cache.
+
+Historical repository/PR/CI/review fields explicitly say **Last known / unverified**;
+loading adds the relevant loading label. Retained absence never says “No pull request
+(confirmed)” or “No checks (confirmed)”. Historical PR links are hidden. Successful
+reacquisition restores confirmed labels and eligible links. Fresh partial results
+still confirm independent PR discovery (`found`/`none`) even when CI/review fails:
+the resource notice now describes partial information with independently confirmed
+current fields, instead of incorrectly calling all fields historical. A provider name
+inferred solely from remote configuration remains independent of authenticated PR
+lookup, and is not promoted into a confirmed repository/PR/CI result.
+
+New real-hook Overview tests cover ready absence, retained invalidation, pending
+reacquisition, thrown failure, recovery, freshly confirmed partial absence/found PR,
+and partial data becoming historical on a subsequent failed read. Assertions check
+each provider-derived field against the resource notice, plus link eligibility.
+Relevant Source Control/Changes/GitButton tests: **176 passed / 5 files**. The rebuilt
+real Source Control Electron smoke passed its real Git mutations, checkout isolation,
+Browser leases and bounded cleanup (two PTY exits verified, natural Electron exit).
+Evidence: `/tmp/176-stage4-p2-{tests,build,source,validate}.log`.
+Full follow-up `npm run validate` passed branding, lint, typecheck, Fallow (unchanged
+baselines), security audit, build and **7,781 tests / 397 files**. No merge or Stage 5 work.
+
 ## Verification and reproduction
 
 Regression coverage includes demand/revisit/manual refresh, slow history/fast branches,

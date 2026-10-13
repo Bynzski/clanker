@@ -17,9 +17,17 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
   const { currentBranchLabel, upstream, ahead, behind, changeCount, operationState, isLoadingOperation,
     isBusy, remoteAction, providerContext, pullRequest, vcsContextError, isLoadingContext,
     statusErrorMessage, remoteError, scope, statusKnown } = props;
-  // A CI/review failure does not invalidate independently confirmed PR discovery.
-  const foundPr = !isLoadingContext && pullRequest?.exists === true && (pullRequest.outcome === 'found' || !pullRequest.outcome && !vcsContextError);
-  const noPr = !isLoadingContext && (pullRequest?.outcome === 'none' || pullRequest?.exists === false && !pullRequest.outcome && !vcsContextError);
+  const resource = props.resources?.provider;
+  // Accepted partial data can confirm PR discovery independently of CI/review.
+  // A thrown refresh retains the same data, but cannot confirm anything current.
+  const providerCurrent = resource ? resource.phase === 'ready' || resource.phase === 'error' && resource.dataCurrent : !isLoadingContext;
+  const loadingProvider = resource ? resource.phase === 'loading' : isLoadingContext;
+  const retainedProvider = resource ? resource.data !== null : Boolean(providerContext || pullRequest);
+  const providerLabel = (label: string, loading: string) => providerCurrent ? label
+    : retainedProvider ? `${loadingProvider ? `${loading} · ` : ''}Last known / unverified: ${label.replace(/ \(confirmed\)/g, '')}`
+    : loadingProvider ? loading : 'Unknown / unavailable';
+  const foundPr = pullRequest?.exists === true && (pullRequest.outcome === 'found' || !pullRequest.outcome && !vcsContextError);
+  const noPr = pullRequest?.outcome === 'none' || pullRequest?.exists === false && !pullRequest.outcome && !vcsContextError;
   return <div className="source-control-overview">
     <div className="source-control-page-heading"><h2 tabIndex={-1} className="clanker-dialog-title">Overview</h2>
       <Button size="xs" disabled={isBusy} onClick={props.onRefresh}>Refresh</Button></div>
@@ -42,12 +50,15 @@ export function GitOverview(props: GitRepoMenuProps & { onReviewChanges: () => v
       <dt>Ahead / behind</dt><dd>{statusKnown && upstream ? `${ahead} ahead · ${behind} behind` : 'Unknown'}</dd>
       <dt>Changed files</dt><dd>{statusKnown ? `${changeCount} changed` : 'Unknown'}</dd>
       <dt>Operation</dt><dd>{isLoadingOperation ? 'Checking operation…' : operationState?.success ? operationState.inProgress ? operationState.message || `${operationState.mode} in progress` : 'No operation in progress' : 'Unknown'}</dd>
-      <dt>Provider repository</dt><dd>{providerContext ? `${getProviderLabel(providerContext.provider)} · ${providerContext.owner}/${providerContext.repo}` : props.provider === 'unknown' ? 'Unknown provider' : getProviderLabel(props.provider)}</dd>
-      <dt>Pull request</dt><dd>{isLoadingContext ? 'Loading provider context…' : noPr ? 'No pull request (confirmed)' : foundPr ? `#${pullRequest?.number} · ${pullRequest?.state ?? 'Unknown state'}` : `Unknown / unavailable${pullRequest?.problem ? ` (${pullRequest.problem.code})` : ''}`}</dd>
-      <dt>CI (checkout HEAD)</dt><dd>{isLoadingContext ? 'Loading CI…' : summaryLabel(props.ci, 'No checks (confirmed)')}</dd>
-      <dt>Review</dt><dd>{isLoadingContext ? 'Loading reviews…' : noPr ? 'Not applicable (no pull request)' : summaryLabel(props.review, 'No active review decisions or requests')}</dd>
+      <dt>Provider repository</dt><dd>{providerContext
+        ? providerLabel(`${getProviderLabel(providerContext.provider)} · ${providerContext.owner}/${providerContext.repo}`, 'Loading provider repository…')
+        // A remote-derived provider name is independent of authenticated PR discovery.
+        : props.provider === 'unknown' ? 'Unknown provider' : getProviderLabel(props.provider)}</dd>
+      <dt>Pull request</dt><dd>{providerLabel(noPr ? 'No pull request (confirmed)' : foundPr ? `#${pullRequest?.number} · ${pullRequest?.state ?? 'Unknown state'}` : `Unknown / unavailable${pullRequest?.problem ? ` (${pullRequest.problem.code})` : ''}`, 'Loading provider context…')}</dd>
+      <dt>CI (checkout HEAD)</dt><dd>{providerLabel(summaryLabel(props.ci, 'No checks (confirmed)'), 'Loading CI…')}</dd>
+      <dt>Review</dt><dd>{providerLabel(noPr ? 'Not applicable (no pull request)' : summaryLabel(props.review, 'No active review decisions or requests'), 'Loading reviews…')}</dd>
     </dl>
     {[statusErrorMessage, remoteError, !props.resources ? vcsContextError : null, operationState?.success === false ? operationState.error : null].filter(Boolean).map((error, index) => <FormMessage key={index} variant="error">{error}</FormMessage>)}
-    {foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
+    {providerCurrent && foundPr && pullRequest?.url && <Button onClick={() => void window.electronAPI.openExternal(pullRequest.url!)}>View pull request</Button>}
   </div>;
 }
