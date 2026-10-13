@@ -14,15 +14,15 @@ For local workspaces, the native directory picker can create a new directory bef
 
 ### Isolated agents and linked worktrees
 
-Use **New isolated agent** beside the Header harness pills to select a harness and working copy, then **Launch**. Choose a new branch, an existing local branch with no worktree, or an existing linked worktree. Selection alone runs nothing. Reusing a checkout lets multiple agents share it; creation and adoption attach a validated checkout context without widening the workspace root. Missing and locked checkouts offer **Repair…** rather than launch.
+Use **New Agent** in the workspace toolbar to choose Terminal or an installed AI harness and its checkout, then **Launch**. Each opening defaults to the project checkout rather than inheriting the focused agent's location. Explicit choices include an available branch, a new worktree/branch, or an existing validated linked worktree. Selection alone runs nothing, and multiple sessions can share one validated checkout. A locked or missing checkout is not launchable; manage it under **Source Control → Worktrees**.
 
-Agents show the branch of their native reported location when available, otherwise their launch checkout. Labels do not change launch authority. Git changes made outside Clanker are reconciled on focus, lifecycle events and worktree refresh; gone checkouts show `branch · removed`. Unused attached checkouts remain in the sidebar until explicitly removed or safely retired after Git no longer lists them.
+Agents show the branch of their native reported location when available, otherwise their launch checkout. Labels do not change launch authority. Git changes made outside Clanker are reconciled on focus, lifecycle events and worktree refresh; gone checkouts show `branch · removed`. The former sidebar checkout inventory was removed. Agent rows remain; Source Control uses Git's current inventory for worktree management.
 
-Manage linked worktrees through the [Git menu](git-integration.md#worktrees), with activity, cleanliness and removal protections. A linked worktree can also be opened directly as an empty standalone workspace by choosing its checkout folder. Generated `*-worktrees` containers are not workspace roots.
+Manage linked worktrees through [Source Control → Worktrees](git-integration.md#worktrees), with activity, cleanliness and removal protections. **Create worktree…** can prepare an isolated checkout without starting an agent. A linked worktree can also be opened directly as an empty standalone workspace by choosing its checkout folder. Generated `*-worktrees` containers are not workspace roots.
 
 Remote removal preserves checkout files under `<checkout-parent>/.clanker-worktree-recovery/removed-<id>/checkout` and records the original path and branch in `recovery.json` beside that folder. The preserved folder is a file recovery copy, not a registered Git worktree; its old `.git` pointer is no longer valid. The branch remains available, so you can create a new worktree for it and copy needed files from the recovery folder. Recovery and operation-journal folders must be owned by the SSH account with private permissions (`0700`). Existing unsafe folders are rejected before the checkout is moved; Clanker does not change their permissions. Recovery folders are not automatically purged. If SSH loses the removal result, paths stay reserved until **Refresh worktrees** verifies that operation's completion journal on the host. If verification cannot complete, Clanker shows the staging and recovery paths for manual host inspection. Do not reopen them while the operation may still be running.
 
-Closing a workspace stops its live terminals and closes its UI; it leaves the checkout and branch on disk. Remove linked worktrees through the Git menu after their terminals are closed. Local removal checks uncommitted, untracked and ignored files, confirms the path and branch, preserves checkout files through the protected removal flow and keeps the branch.
+Closing a workspace stops its live terminals and closes its UI; it leaves the checkout and branch on disk. Remove linked worktrees through Source Control → Worktrees after their terminals are closed. Local removal checks uncommitted, untracked and ignored files, confirms the path and branch, preserves checkout files through the protected removal flow and keeps the branch.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
 
@@ -34,7 +34,7 @@ Pending removal records are saved before dispatch and restored when Clanker rest
 
 Clanker continuously remembers the current open set, order and active workspace. Closing a workspace removes it from that set. Each restart registers every saved root again through main, independently. Valid roots become empty shells; failed identities are omitted, removed from persistence, and reported in a warning. If the active root fails, the first surviving workspace in saved order is selected.
 
-Runtime work is explicit: terminals, agents, resumed conversations, Browser views, editor tabs, Notes visibility and pane topology are not restored. Durable Notes content remains available when you open Notes. Recipes in the normal workspace toolbar can explicitly launch work and apply their captured layout.
+Runtime work is explicit: terminals, agents, resumed conversations, Browser views, editor tabs and Notes visibility do not automatically restart. Saved workspace page arrangements can be revalidated, but no missing runtime process is resurrected or rebound; Notes content remains available when opened. Launch Recipes are temporarily disabled, with their data retained. See [Workspace pages](workspace-pages.md) and [Recipes](recipes.md).
 
 ## Remote Workspaces (SSH)
 
@@ -136,7 +136,7 @@ Each workspace supports four independent forwards, with at most 16 across the ap
 Remote capabilities have the following limits in V1:
 
 1. **Submodule Worktree Removal**: Remote worktrees containing submodules cannot be removed through Clanker. Other clean remote checkouts can be removed with a preserved file recovery copy; discovery, creation, and inspection are available from open SSH repositories.
-2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
+2. **Launch Recipes**: Recipe controls and execution/mutation routes are temporarily disabled for all workspaces. Persisted recipe records remain unchanged; SSH recipe execution was already unsupported.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
 4. **File Refresh**: One batched SSH poll checks the active workspace's focused checkout about every three seconds. It monitors up to 128 editor files in that checkout and 128 visible/expanded Explorer directories, scanning only direct children (up to 2,000 entries per directory). Clean tabs reload; dirty buffers are preserved and flagged. Other-checkout tabs are parked until their checkout is focused. Polls do not overlap and back off after connection failures without inferring deletion. Manual Refresh and desktop-focus refresh remain available.
 5. **Remote Conversation Resume**: Host-native discovery and manual resume are supported for six harnesses, including attributable linked-worktree conversations. No durable launch/task record or original process is restored. Hermes history remains unsupported.
@@ -146,7 +146,7 @@ Remote capabilities have the following limits in V1:
 
 ## Managing Workspaces
 
-Clanker lists open workspaces in one of two navigation modes, chosen under **Settings → Appearance → Workspaces**. New installs use **Sidebar**; installs that predate it keep **Tabs** until you switch. The setting changes only how workspaces are listed; workspaces, terminals, and layouts are unaffected.
+Clanker lists open workspaces in one of two navigation modes, chosen under **Settings → Workspaces & Layout**. New installs use **Sidebar**; installs that predate it keep **Tabs** until you switch. The setting changes only how workspaces are listed; workspaces, terminals, and layouts are unaffected.
 
 ### Sidebar (default)
 
@@ -182,17 +182,18 @@ Each workspace retains:
 - Browser tabs and active URL (when enabled)
 - Editor tabs and active tab
 - File explorer state (expanded paths, selected path)
-- Selected harness and model
 - Notes pane visibility and content
 - Active terminal selection
 
 ### Harness and Model Selection
 
-Opening a workspace starts no harness and selects no model. Click a Header harness pill to launch that installed CLI into the current checkout; the Terminal pill launches a plain shell. **New isolated agent** chooses a harness and working copy without switching the main checkout.
+Opening a workspace starts no harness and selects no model. **New Agent** offers Terminal or a visible installed harness, defaults to the project checkout at every opening, and can explicitly select or create a Git worktree. Launching never changes the project checkout or relocates an existing conversation.
 
-Global harness defaults (model, favorites, flags, visibility, attention and bridge opt-in) are configured in Settings. Local launches use the harness default unless an explicit runtime launch, such as a recipe, provides a model. SSH Header launches use the host CLI's model configuration; saved flags and supported remote attention settings still apply. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, attention and bridge opt-in) are configured in Settings. Local launches use the harness default unless an eligible explicit runtime launch provides a model. Dormant recipes cannot currently launch. SSH Header launches use the host CLI's model configuration; saved flags and supported remote attention settings still apply. See [Configuration](configuration.md#harness-defaults).
 
 ## Layout Controls
+
+Each workspace can have up to nine pages, selected with the status-bar page strip (`1`, `2`, …, `+`). Switching pages preserves live PTYs and Browser state. Drag a pane onto a page or `+` to move it; minimize without ending its process, then restore from the agent row or applicable Tabs-mode control. Each Browser pane has independent tabs. This is not automatic session restoration; see [Workspace pages](workspace-pages.md).
 
 | Action | Description |
 |--------|-------------|
@@ -223,31 +224,13 @@ The Explorer never joins the pane layout tree: in Sidebar mode it is the FILES s
 
 ## Persistence
 
-The app remembers the open workspace identities, their order and active selection, then revalidates and reopens them as empty shells on restart. Closing a workspace removes it from that saved set. Invalid or unavailable roots are omitted with a warning.
+The app remembers open workspace identities, order and active selection, then revalidates and reopens them without reviving processes. Closing a workspace removes it from that saved set. Invalid or unavailable roots are omitted with a warning.
 
-Terminal processes, conversations, dev servers, Browser views, editor tabs, Explorer presentation, Notes visibility and pane topology are not restored. Notes content remains keyed by environment and canonical workspace path, with legacy local Notes migration retained. Old ordinary-workspace layout and Notes-visibility records are ignored. Recipes can still explicitly launch their steps and apply captured layouts.
+Workspace page order/selection and bounded semantic pane arrangements are persisted, but missing terminal/Browser identities are pruned rather than rebound to new processes. Terminal processes, conversations, dev servers, Browser views, editor tabs, Explorer presentation and Notes visibility are not automatically restored. Notes content remains keyed by environment and canonical workspace path, with legacy local Notes migration retained. Recipes are temporarily disabled. See [Workspace pages](workspace-pages.md) for the exact persistence boundary.
 
 ## Workspace Launch Recipes
 
-Launch recipes are available for local workspaces only in V1. SSH workspace recipes are rejected rather than executed locally.
-
-Workspace launch recipes allow saving repeatable development workspace configurations. A recipe captures:
-
-- **Workspace Path** — Canonical normalized directory path.
-- **Launch Steps** — Sequential list of shell commands and AI agent harnesses (with optional model selections).
-- **Browser Preview URL** — Optional local or remote web address to navigate on launch.
-- **Pane Layout** — Associated layout topology.
-
-### Storage & Security
-
-- Recipes are persisted in `electron-store` under `workspaceRecipes`.
-- **Explicit Trust Boundary**: Opening a workspace or selecting a recipe **never automatically executes commands**. Commands and harnesses are explicitly presented in an inspection preview before launch.
-- Execution requires an intentional user action ("Launch Recipe").
-- Recipe terminal commands run inside standard PTY shells using Clanker's existing terminal architecture and security boundaries.
-- Browser preview URLs are sanitized using trusted URL validation (`http:`, `https:`, local `file:`).
-- **Partial Failure Handling**: If a specific command or browser preview fails, successful terminals remain open and running. Failures are reported with structured per-step error diagnostics without destroying the workspace.
-- **Launch Safety**: Explicit recipe slots require an empty workspace. A populated target is left untouched and the launch returns a clear error. Legacy recipes without slots still fill missing plain terminals up to `terminalCount`.
-- **Startup and Preview Results**: Command steps report an immediate exit when observed through the existing PTY; long-running commands are marked started after a short observation window. Local preview ports are checked before command launch for a busy port and retried briefly after launch for readiness. Recipe browser navigation observes `loadURL()` failure.
+Launch Recipes are **temporarily disabled** for local and SSH workspaces during the workspace-pages transition. Their UI and execution/mutation routes are unavailable. Persisted records remain unchanged, are never executed on workspace open, and have no automatic page migration. The dormant schema and security rules are retained in [Recipes](recipes.md).
 
 ## Conversation History & Resume
 
