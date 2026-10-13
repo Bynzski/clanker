@@ -189,7 +189,7 @@ Each workspace retains:
 
 Opening a workspace starts no harness and selects no model. **New Agent** offers Terminal or a visible installed harness, defaults to the project checkout at every opening, and can explicitly select or create a Git worktree. Launching never changes the project checkout or relocates an existing conversation.
 
-Global harness defaults (model, favorites, flags, visibility, attention and bridge opt-in) are configured in Settings. Local launches use the harness default unless an eligible explicit runtime launch provides a model. Dormant recipes cannot currently launch. SSH Header launches use the host CLI's model configuration; saved flags and supported remote attention settings still apply. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, attention and bridge opt-in) are configured in Settings. Local launches use the harness default unless an eligible explicit runtime launch provides a model. Dormant recipes cannot currently launch. SSH New Agent launches use the host CLI's model configuration; saved flags and supported remote attention settings still apply. See [Configuration](configuration.md#harnesses).
 
 ## Layout Controls
 
