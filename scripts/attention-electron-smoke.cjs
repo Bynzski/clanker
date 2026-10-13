@@ -145,6 +145,14 @@ async function closeOwnedTerminals() {
     await pause(500);
     await closeOwnedTerminals();
     await app.close();
+    const diagnosticDirectory = path.join(root, 'profile', 'attention-diagnostics');
+    const diagnosticText = fs.readdirSync(diagnosticDirectory).filter(name => /^attention(?:\.[12])?\.jsonl$/.test(name))
+      .map(name => fs.readFileSync(path.join(diagnosticDirectory, name), 'utf8')).join('');
+    const diagnosticRows = diagnosticText.trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(diagnosticRows.some(row => row.kind === 'broker' && row.semantic === 'turn_started'), 'Automatic broker log missing');
+    assert.ok(diagnosticRows.some(row => row.kind === 'renderer-receipt' && row.storedRevision === row.receivedRevision && row.indicator === 'running'), 'Automatic main-frame renderer receipt missing');
+    assert.ok(diagnosticRows.some(row => row.kind === 'renderer-receipt' && row.indicator === 'none'), 'Automatic suppression receipt missing');
+    assert.ok(!diagnosticText.includes(root) && !/CLANKER_ATTENTION_TOKEN|sessionId|turnId/.test(diagnosticText), 'Automatic diagnostic log leaked launch paths or raw identity');
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, `--ozone-platform=${ozonePlatform}`], env });
     page = await app.firstWindow(); page.setDefaultTimeout(10000);
     await until(async () => (await page.locator('.workspace-tab').count()) === 4, 'Four workspaces not restored after restart');
@@ -153,7 +161,7 @@ async function closeOwnedTerminals() {
     const restored = await open('A'); await send(restored, 'start'); await state(restored, 'running');
     await send(restored, 'stop'); await state(restored, 'provisional');
     await send(restored, 'start'); await state(restored, 'running'); await send(restored, 'done'); await state(restored, 'idle');
-    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', providerStop: 'Finished stays unread when unfocused, focused agent acknowledges it; same-turn activity restores Running', annotationAtStop: 'refused', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
+    console.log(JSON.stringify({ realElectron: true, lifecycleSource: 'explicit PTY fixture', simultaneousWorkspaces: 2, coldWorkspaces: 4, activeSwitch: 'passed', backgroundCompletionAndNextTurn: 'passed', minimize: 'passed', hiddenPage: 'passed', restore: 'passed', terminalClose: 'passed', ptyExit: 'passed', rendererRevision: 'current', automaticDiagnostics: 'broker, main-frame renderer receipts and suppression persisted without raw identity/paths', providerStop: 'Finished stays unread when unfocused, focused agent acknowledges it; same-turn activity restores Running', annotationAtStop: 'refused', stopWithApproval: 'passed without actionable alert', restart: 'four restored workspaces, fresh attention registration and subsequent turns passed' }));
   } catch (error) {
     // Safe diagnostics only; never dump terminal output, environment or page contents.
     console.error(error.message);

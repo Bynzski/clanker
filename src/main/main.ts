@@ -97,6 +97,7 @@ import { releaseCheckoutContext } from './checkoutContextRelease';
 import { checkoutTerminalUsages, localCheckoutUsagePaths } from './checkoutOccupancy';
 import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { startEventLoopDelayMonitor } from './eventLoopDelay';
+import { AttentionLogWriter, AttentionTelemetry, attentionTelemetry, setAttentionTelemetry } from './attentionTelemetry';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
@@ -146,6 +147,7 @@ let mainWindow: BrowserWindow | null = null;
 // Reported agent locations resolve against the checkout contexts main registered for the
 // reporting terminal's workspace. Read lazily: events only arrive after both exist.
 const agentAttentionBroker = new AgentAttentionBroker((change) => {
+  attentionTelemetry()?.publish(change.terminalId, change.revision, change.snapshot?.runtime.status ?? 'retired', isWindowAvailable(mainWindow));
   if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-publish', JSON.stringify({
     terminalId: change.terminalId, revision: change.revision, status: change.snapshot?.runtime.status ?? 'retired',
     rendererAvailable: isWindowAvailable(mainWindow),
@@ -401,6 +403,11 @@ closeGuard = new AppCloseGuard({
 
 // App lifecycle
 app.whenReady().then(() => {
+  if (process.env.CLANKER_DEBUG_ATTENTION === '1') {
+    const telemetry = new AttentionTelemetry(new AttentionLogWriter(nodePath.join(app.getPath('userData'), 'attention-diagnostics')), id => agentAttentionBroker.trace(id));
+    setAttentionTelemetry(telemetry);
+    telemetry.start(app.getVersion());
+  }
   startEventLoopDelayMonitor();
   const preloadPath = getPreloadPath();
   // Drop the historical broken plugin and reclaim temp roots of crashed runs; failure must never block startup.
@@ -663,7 +670,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped]).then(() => undefined);
+  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped, attentionTelemetry()?.stop()]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

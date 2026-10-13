@@ -104,12 +104,13 @@ vi.mock('electron', () => ({
 }));
 
 import { ipcMain } from 'electron';
+import { AttentionLogWriter, AttentionTelemetry, setAttentionTelemetry } from '../../../src/main/attentionTelemetry';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
-import { GET_AGENT_ATTENTION_DIAGNOSTICS, RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
+import { REPORT_AGENT_ATTENTION_RECEIPT, GET_AGENT_ATTENTION_DIAGNOSTICS, RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY, RESIZE_TERMINAL, TERMINAL_DATA } from '../../../src/shared/ipcChannels';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
@@ -173,7 +174,7 @@ describe('registerTerminalIpc — registration', () => {
     expect(mockHandle.mock.calls.length).toBe(14);
   });
 
-  test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
+  test('registers terminal events and diagnostic receipt IPC', () => {
     const mockTerminals = new Map();
     const mockMainWindow = { webContents: { send: vi.fn() } };
     const mockStore = { get: vi.fn().mockReturnValue(false) };
@@ -186,7 +187,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockOn.mock.calls.length).toBe(3);
+    expect(mockOn.mock.calls.length).toBe(4);
     expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-data');
     expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-exit');
     expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-resized');
@@ -245,7 +246,7 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   const createMockDeps = () => {
     const terminals = new Map();
-    const mainWindow = { webContents: { send: vi.fn() } };
+    const mainWindow = { isDestroyed: () => false, webContents: { send: vi.fn(), mainFrame: {} } };
     const store = {
       get: vi.fn().mockImplementation((key: string) => {
         if (key === 'harnessDefaults') {
@@ -276,6 +277,24 @@ describe('terminalIpc — error-path: handler returns', () => {
     mockClipboardWriteText.mockClear();
     mockPtySpawn.mockClear();
   });
+  test('diagnostic receipts accept only the app main frame and strict metadata', () => {
+    const { opts, mainWindow } = createMockDeps();
+    registerTerminalIpc(opts);
+    const handler = mockOn.mock.calls.find(call => call[0] === REPORT_AGENT_ATTENTION_RECEIPT)![1];
+    const telemetry = new AttentionTelemetry(new AttentionLogWriter('/unused-diagnostic-test'), () => []);
+    const receiptSpy = vi.spyOn(telemetry, 'receipt').mockImplementation(() => undefined);
+    setAttentionTelemetry(telemetry);
+    const value = { terminalId: 'term-a', receivedRevision: 3, storedRevision: 3, snapshotPresent: true, foreground: false, indicator: 'running', merge: 'applied' };
+    try {
+      handler({ sender: {} }, value);
+      handler({ sender: mainWindow.webContents, senderFrame: {} }, value);
+      handler({ sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame }, { ...value, prompt: 'secret' });
+      expect(receiptSpy).not.toHaveBeenCalled();
+      handler({ sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame }, value);
+      expect(receiptSpy).toHaveBeenCalledExactlyOnceWith(value);
+    } finally { setAttentionTelemetry(null); }
+  });
+
   test('attention diagnostics are always available and expose only safe broker/terminal metadata', async () => {
     const { opts } = createMockDeps();
     const broker = new AgentAttentionBroker(() => undefined, () => undefined);

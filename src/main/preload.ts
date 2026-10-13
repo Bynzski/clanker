@@ -80,6 +80,7 @@ import {
   AGENT_ATTENTION_CHANGED,
   GET_AGENT_ATTENTION_SNAPSHOTS,
   GET_AGENT_ATTENTION_DIAGNOSTICS,
+  REPORT_AGENT_ATTENTION_RECEIPT,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
   HARNESS_ACCOUNTS_ADD_START,
@@ -316,6 +317,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
+  reportAgentAttentionReceipt: (receipt: import('../shared/types/attentionReceipt').AttentionReceipt) => ipcRenderer.send(REPORT_AGENT_ATTENTION_RECEIPT, receipt),
   isAttentionDebugEnabled: () => ipcRenderer.invoke(GET_AGENT_ATTENTION_DIAGNOSTICS, null),
   getAgentAttentionDiagnostics: (terminalId: string) => ipcRenderer.invoke(GET_AGENT_ATTENTION_DIAGNOSTICS, terminalId),
   getAgentAttentionSnapshots: () => ipcRenderer.invoke(GET_AGENT_ATTENTION_SNAPSHOTS),

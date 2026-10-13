@@ -2,6 +2,7 @@ import { HOOK_DIAGNOSTICS, type HookDiagnostic, type NativeAttentionCapability, 
 import { ATTENTION_ACK_PREFIX, type AttentionVerdict } from '../shared/attentionProtocol';
 import { createHash, randomBytes } from 'node:crypto';
 import * as net from 'node:net';
+import { attentionTelemetry } from './attentionTelemetry';
 import type {
   AgentAttentionChange, AgentAttentionEvidence, AgentAttentionSnapshot, AgentLocation, AgentPendingRequestKind, AgentRuntimeStatus,
 } from '../shared/types/agentAttention';
@@ -193,6 +194,8 @@ const traceId = (value: string | undefined): string | undefined => value
 export class AgentAttentionBroker {
   private readonly registrations = new Map<string, Registration>();
   private readonly tokensByTerminal = new Map<string, string>();
+  /** Diagnostic-only retired credentials: full digests, no authority, bounded to 64 / one minute. */
+  private readonly retiredCredentials = new Map<string, { terminalId: string; harness: string; transport: 'local' | 'remote'; at: number; revision: number }>();
   /** Highest revision ever issued per terminal, so a replaced registration never goes backwards. */
   private readonly revisionFloors = new Map<string, number>();
   /** Per-terminal trace, retained after release so a retirement can still be explained. */
@@ -292,7 +295,12 @@ export class AgentAttentionBroker {
     if (token) this.registrations.delete(token);
     this.tokensByTerminal.delete(terminalId);
     if (!registration) return;
+    if (isActive(registration)) this.record(registration, { semantic: 'release-without-settlement' });
     registration.revision = this.issueRevision(terminalId);
+    const digest = createHash('sha256').update(token!).digest('hex');
+    for (const [key, retired] of this.retiredCredentials) if (this.now() - retired.at >= 60_000) this.retiredCredentials.delete(key);
+    this.retiredCredentials.set(digest, { terminalId, harness: registration.harness, transport: registration.transport, at: this.now(), revision: registration.revision });
+    if (this.retiredCredentials.size > 64) this.retiredCredentials.delete(this.retiredCredentials.keys().next().value!);
     this.traceEntry(terminalId, { at: Date.now(), semantic: 'released', revision: registration.revision, status: 'retired' });
     this.onChange({ terminalId, revision: registration.revision, snapshot: null });
   }
@@ -311,6 +319,7 @@ export class AgentAttentionBroker {
     const list = this.traces.get(terminalId) ?? [];
     this.traces.delete(terminalId);
     this.traces.set(terminalId, [...list, clean].slice(-MAX_TRACE_ENTRIES));
+    attentionTelemetry()?.record(terminalId, clean);
     if (this.traces.size > MAX_TRACED_TERMINALS) {
       const oldest = this.traces.keys().next().value;
       if (oldest !== undefined) this.traces.delete(oldest);
@@ -325,6 +334,7 @@ export class AgentAttentionBroker {
   close(): void {
     this.registrations.clear();
     this.tokensByTerminal.clear();
+    this.retiredCredentials.clear();
     this.traces.clear();
     this.server?.close();
     this.server = null;
@@ -548,7 +558,16 @@ export class AgentAttentionBroker {
     const data = value as Record<string, unknown>;
     if (data.version !== 1 || typeof data.token !== 'string') return 'rejected-invalid';
     const registration = this.registrations.get(data.token);
-    if (!registration || data.harness !== registration.harness) return 'rejected-auth';
+    if (!registration || data.harness !== registration.harness) {
+      if (!registration && /^[a-f0-9]{64}$/.test(data.token)) {
+        const retired = this.retiredCredentials.get(createHash('sha256').update(data.token).digest('hex'));
+        if (retired && this.now() - retired.at < 60_000 && data.harness === retired.harness
+          && (remoteTerminalId === undefined ? retired.transport === 'local' : retired.transport === 'remote' && retired.terminalId === remoteTerminalId)) {
+          this.traceEntry(retired.terminalId, { at: this.now(), semantic: 'late-retired-delivery', verdict: 'rejected-auth', revision: retired.revision, status: 'retired' });
+        }
+      }
+      return 'rejected-auth';
+    }
     if (remoteTerminalId === undefined ? registration.transport !== 'local'
       : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return 'rejected-transport';
     if (Object.keys(data).some((key) => !EVENT_FIELDS.has(key))) return { registration, rejection: 'rejected-invalid' };
@@ -586,6 +605,7 @@ export class AgentAttentionBroker {
     const accepted = this.parse(raw, remoteTerminalId);
     if (typeof accepted === 'string') {
       this.unattributed = Math.min(Number.MAX_SAFE_INTEGER, this.unattributed + 1);
+      attentionTelemetry()?.transportRejection(accepted);
       if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted);
       return accepted;
     }

@@ -49,26 +49,15 @@ export function shouldUsePollingForWorkspace(
   return platform === 'win32' && (forcePolling || isUncPath(toPosixPath(workspacePath)));
 }
 
-/** Default patterns to ignore — these directories generate noise without useful events. */
-const DEFAULT_IGNORED = [
-  '**/node_modules/**',
-  '**/.git/**',
-  '**/dist/**',
-  '**/build/**',
-  '**/out/**',
-  '**/.cache/**',
-  '**/.turbo/**',
-  '**/__pycache__/**',
-  '**/*.pyc',
-  '.DS_Store',
-];
-
-/**
- * Default glob patterns for dotfiles that should be ignored.
- * Matches chokidar dot option: hidden files in root are ignored, but sub-dotdirs
- * like `.git/` are covered by explicit patterns above.
- */
-const DOTFILE_GLOB = /(^|[/\\])\../;
+/** Chokidar 4 does not interpret glob strings. Ignore directories *before* it stats/scans
+ * their children (including Electron ASAR files). The checkout root itself is never ignored. */
+const IGNORED_DIRECTORY_NAMES = new Set(['node_modules', 'dist', 'build', 'out', '__pycache__']);
+export function shouldIgnoreExplorerPath(workspacePath: string, candidatePath: string): boolean {
+  const relative = toPosixPath(path.relative(workspacePath, candidatePath));
+  if (!relative || relative === '..' || relative.startsWith('../')) return false;
+  const parts = relative.split('/');
+  return parts.some(part => part.startsWith('.') || IGNORED_DIRECTORY_NAMES.has(part)) || relative.endsWith('.pyc');
+}
 
 /**
  * Map a filesystem path (often a "real" resolved path) back into the workspace's
@@ -157,7 +146,7 @@ export class ExplorerWatcherService {
     }
 
     this.watcher = chokidar.watch(workspacePath, {
-      ignored: [...DEFAULT_IGNORED, DOTFILE_GLOB],
+      ignored: candidate => shouldIgnoreExplorerPath(workspacePath, candidate),
       ignoreInitial: true,
       persistent: true,
       usePolling: shouldUsePollingForWorkspace(workspacePath),

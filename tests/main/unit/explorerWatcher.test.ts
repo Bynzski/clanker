@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 // The module under test
-import { ExplorerWatcherService, shouldUsePollingForWorkspace } from '../../../src/main/explorerWatcher';
+import { ExplorerWatcherService, shouldUsePollingForWorkspace, shouldIgnoreExplorerPath } from '../../../src/main/explorerWatcher';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 
 describe('ExplorerWatcherService', () => {
@@ -308,6 +308,15 @@ describe('ExplorerWatcherService', () => {
   });
 
   describe('ignored paths', () => {
+    test('prunes ignored directories and their descendants, but never the checkout root', () => {
+      for (const name of ['node_modules', 'dist', 'build', 'out', '__pycache__', '.git', '.cache', '.hidden']) {
+        expect(shouldIgnoreExplorerPath(tempDir, path.join(tempDir, name))).toBe(true);
+        expect(shouldIgnoreExplorerPath(tempDir, path.join(tempDir, 'nested', name, 'file.txt'))).toBe(true);
+      }
+      expect(shouldIgnoreExplorerPath(tempDir, path.join(tempDir, 'module.pyc'))).toBe(true);
+      expect(shouldIgnoreExplorerPath(tempDir, path.join(tempDir, 'node_modules_extra', 'file.txt'))).toBe(false);
+      expect(shouldIgnoreExplorerPath(path.join(tempDir, '.hidden', 'dist'), path.join(tempDir, '.hidden', 'dist'))).toBe(false);
+    });
     test('does not emit events for files inside .git', async () => {
       const gitDir = path.join(tempDir, '.git');
       await fsPromises.mkdir(gitDir);
@@ -326,17 +335,17 @@ describe('ExplorerWatcherService', () => {
     });
 
     test('does not emit events for files inside node_modules when directory is pre-created before watch', async () => {
-      // Chokidar's ignored glob patterns are tested by verifying that files in allowed
-      // directories DO trigger events, while files in ignored directories do not.
-      // The **/node_modules/** pattern in DEFAULT_IGNORED prevents events for
-      // node_modules content. We test the positive case (allowed dir) to confirm
-      // the watcher is active, and acknowledge the negative test is environment-sensitive.
+      // Assert the negative case as well as a positive control: v4 no longer supports globs.
       const nodeModules = path.join(tempDir, 'node_modules');
       await fsPromises.mkdir(nodeModules);
 
       watcher.watchWorkspace(tempDir);
       await new Promise((r) => setTimeout(r, 400));
 
+
+      await fsPromises.writeFile(path.join(nodeModules, 'ignored.txt'), 'ignored');
+      await new Promise((r) => setTimeout(r, 500));
+      expect((mockMainWindow.webContents.send as ReturnType<typeof vi.fn>).mock.calls.filter(([ch]) => ch === 'explorer-tree-changed')).toHaveLength(0);
 
       // Also create a file in an allowed location to confirm the watcher is active
       const allowedFile = path.join(tempDir, 'allowed.txt');

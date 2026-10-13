@@ -182,6 +182,24 @@ describe('terminal session bridge', () => {
       } finally { stop(); useWorkspaceStore.setState(previous); }
     });
 
+    it('automatically reports hydration, newer push, stale push and equal-revision tombstones', async () => {
+      const report = vi.fn();
+      const { api, listener } = attentionApi(async () => [snapshot('a', 'running', 4)]);
+      api.reportAgentAttentionReceipt = report;
+      const stop = startTerminalSessionBridge();
+      try {
+        await flush();
+        expect(report).toHaveBeenCalledWith(expect.objectContaining({ terminalId: 'a', receivedRevision: 4, storedRevision: 4, merge: 'applied' }));
+        listener.current?.(change(snapshot('a', 'running', 5)));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ receivedRevision: 5, storedRevision: 5, merge: 'applied' }));
+        listener.current?.(change(snapshot('a', 'running', 4)));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ receivedRevision: 4, storedRevision: 5, merge: 'older' }));
+        useAgentAttentionStore.getState().retire('a');
+        listener.current?.(change(snapshot('a', 'running', 5)));
+        expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ receivedRevision: 5, storedRevision: 5, snapshotPresent: false, merge: 'tombstone' }));
+      } finally { stop(); }
+    });
+
     it('subscribes before it hydrates, and hydration restores running and waiting agents', async () => {
       const { order } = attentionApi(async () => [snapshot('a', 'running', 4), snapshot('b', 'needs_input', 5)]);
       const stop = startTerminalSessionBridge();
