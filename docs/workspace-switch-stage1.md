@@ -127,12 +127,12 @@ changing them in Stage 1.
   final full suite includes two additional rapid-selection/backend-gating cases.
 - `npm run validate`: passed — branding, lint, typecheck, both Fallow baselines,
   security audit (only the existing documented dev-only exception), build and
-  7,704 tests across 391 files.
+  7,710 tests across 392 files after the shutdown follow-up.
 - Real Electron checkout-presentation smoke: all assertions and result JSON passed
   (main/two worktrees, dirty matrices, two-agent focus, generations, historical and
-  unavailable observations, retirement). Runner then hung during app close; the
-  240-second command timed out. Only its disposable Electron/PTY fixture processes
-  were terminated. This is not reported as a clean smoke exit.
+  unavailable observations, retirement). The original Stage 1 run timed out at close;
+  the follow-up below establishes the pre-existing cause and corrects fixture teardown.
+  The corrected runner now completes with exit 0 and verified PTY/Electron exit.
 - Real workspace-page Browser renderer smoke: passed, exit 0 (24 transitions,
   native state/visibility, stale geometry, persistence, disposal).
 - Real workspace launch-race smoke: passed, exit 0 (PTY startup/cache, late-spawn
@@ -144,5 +144,77 @@ changing them in Stage 1.
   production timings, large/dirty editor workload, long-run percentiles or native
   harness cwd movement. Existing checkout smoke uses explicit authenticated fixtures.
 
-No Stage 2+ changes. Review the shell-frame proxy and representative live workloads
-before relying on these numbers for subsequent optimization decisions.
+## Shutdown verification follow-up
+
+**Cause confirmed, not inferred:** an observation wrapper around the original runner
+captured main's terminal table and a `before-quit` event after the production handler,
+then inspected the real close prompt. It waited 1.5 seconds with `app.close()` pending.
+Identical evidence was collected for Stage 1 HEAD and for a disposable `git archive`
+of its base, built against the same dependencies (no branch/worktree changes):
+
+| Runtime | Live PTYs before / after quit request | Quit prevented | Shutdown started | Prompt |
+|---|---:|---|---|---|
+| `423d134` | 4 / 4 | yes | no | Close Clanker? |
+| `74f54d1` (original Stage 1 base) | 4 / 4 | yes | no | Close Clanker? |
+
+The four were the OpenCode fixture PTY, two Pi fixture PTYs and the explicitly
+launched main shell. `send('exit')` exits the OpenCode **agent** and retires its
+attention observation; `harness-wrapper.sh` then execs the fallback interactive
+shell in the same PTY. Thus retired attention is not terminal exit evidence.
+`AppCloseGuard` correctly sees `terminals.size > 0` and requires consent. No test
+answers that prompt, and its timeout cancels rather than authorizing shutdown.
+Both probes recovered with exit 0 by cancelling the prompt, retiring only fixture
+terminals via normal IPC, and retrying ordinary close. This predates Stage 1.
+
+**Fix:** both runners now invoke shared `scripts/lib/smoke-fixture-cleanup.cjs`
+in `finally`, including early launch/assertion failures. Cleanup captures only local
+terminals whose launch cwd exactly matches the runner's allowed roots, retains
+references to their real `exited` promises, retires them through existing
+`killTerminal` IPC, waits for actual PTY exit and verifies the main table is empty
+before ordinary `app.close()`. No production guard, authority, terminal lifecycle
+or Git code was changed. The existing-checkout variant still performs its file,
+status, worktree-registration and zero-inference preservation checks after cleanup.
+Renderer failure diagnostics no longer delay reaching `finally`.
+
+Each launched process inherits a fresh UUID `CLANKER_SMOKE_RUN` tag. On Linux,
+bounded final cleanup checks that exact tag plus process start identity before
+individual SIGTERM/SIGKILL signals; it ignores unrelated processes and zombies.
+Vite is also stopped through its exact owned ChildProcess, and the native-Pi
+loopback server is closed. No process-name/group-wide kill, user checkout deletion,
+Git unregister/remove operation, close authorization or automatic confirmation.
+Every normal IPC/exit/close step has a five-second deadline; child and tagged-process
+termination waits are bounded to one-second TERM and two-second KILL phases.
+Failures remain failures even when emergency reaping succeeds; unresolved cleanup
+retains the disposable fixture instead of deleting it. Non-Linux emergency
+descendant verification is not claimed; unsupported/incomplete cleanup fails.
+
+The development runner also exposed a separate stdio-drain detail: Electron exited
+naturally with code 0 in 29 ms, while Playwright's close promise stayed pending until
+owned dependents were reaped (observed close at 5,097 ms in the diagnostic run).
+Cleanup now recognizes natural Electron exit, reaps tagged dependents, then awaits
+Playwright's close/stdio drain. A guard-blocked live Electron process cannot take
+that success path. This ordering has a dedicated regression test.
+
+**Final checks:**
+- `node scripts/checkout-presentation-smoke.cjs`: all existing assertions passed,
+  verified all remaining registered PTY exits (3–4 across runs), natural Electron
+  exit, exit **0**.
+- `node scripts/workspace-switch-measure.cjs`: valid JSON containing all 5
+  workspace transitions and 3 checkout transitions, verified 2 PTY exits and
+  natural Electron exit, exit **0**. Cleanup summaries go to stderr, not metric JSON.
+- Both commands with `--fail-after-launch`: expected exit **1** for the injected
+  assertion failure, verified 3/2 PTY exits respectively, natural Electron exit;
+  no timeout or lingering tagged processes. These are reproducible failure-path checks.
+- Targeted teardown, guard/prompt, terminal retirement and harness-wrapper suites:
+  **50 tests passed**. New cases cover scope refusal, missing exit evidence,
+  delayed stdio close, failed IPC, SIGKILL escalation and an unrelated live process
+  left untouched. `npm run validate`: **7,710 tests passed**, all other gates passed.
+- Native guard smoke: `env -u ELECTRON_RUN_AS_NODE node_modules/electron/dist/electron
+  --ozone-platform=wayland scripts/app-close-guard-smoke.cjs`: **passed, exit 0**
+  (idle/exited close, live cancellation, repeated requests, approved PTY drain).
+  Headless direct-script attempts hit an environment-specific Electron startup
+  SIGSEGV; the Wayland run completed all guard assertions.
+
+Stage 1's requested smoke verification now has clean exits. SSH and performance
+coverage limitations above are unchanged. No Stage 2+ changes. Review representative
+live workloads before relying on these numbers for subsequent optimization decisions.

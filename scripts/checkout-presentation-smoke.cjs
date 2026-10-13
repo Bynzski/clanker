@@ -3,6 +3,8 @@
 // Default: disposable HOME/profile/repository. Optional --native-pi --existing-workspace is guarded read-only;
 // no inherited credentials, inference, user configuration or SSH operations.
 const { _electron: electron } = require('playwright');
+const { createSmokeOwner, cleanupSmokeFixture } = require('./lib/smoke-fixture-cleanup.cjs');
+const owner = createSmokeOwner();
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,7 +19,7 @@ if (nativePi !== (existingIndex >= 0)) throw new Error('Use --native-pi and --ex
 const project = nativePi ? fs.realpathSync(process.argv[existingIndex + 1]) : path.join(root, 'worktree-tests');
 let a = path.join(root, 'test1'); const b = path.join(root, 'test2');
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
-Object.assign(env, { PATH: `${path.join(root, 'bin')}:${env.PATH}`, NODE_ENV: 'production', CLANKER_DEBUG_ATTENTION: '1', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' });
+Object.assign(env, { [owner.key]: owner.value, PATH: `${path.join(root, 'bin')}:${env.PATH}`, NODE_ENV: 'production', CLANKER_DEBUG_ATTENTION: '1', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' });
 const git = (cwd, ...args) => {
   if (nativePi && !['status', 'ls-files'].includes(args[0]) && !(args[0] === 'worktree' && args[1] === 'list')) throw new Error('Existing-workspace smoke forbids Git mutations');
   return execFileSync('git', args, { cwd, env, stdio: 'pipe' });
@@ -104,6 +106,7 @@ let app, server; let modelRequests = 0;
       await pause(700);
     }
     if (!nativePi) await until(() => page.evaluate(() => window.__ready.size === 3), 'Three fixture PTYs were not ready');
+    if (process.argv.includes('--fail-after-launch')) throw new Error('Intentional fixture failure after launching PTYs');
     await page.locator('.terminal-pane .terminal-content').first().click();
     const expandFiles = page.getByRole('button', { name: 'Expand Files', exact: true });
     if (await expandFiles.count()) await expandFiles.click();
@@ -206,12 +209,16 @@ let app, server; let modelRequests = 0;
     console.log(JSON.stringify({ realElectron: true, realGit: true, realPTY: true, locationSource: 'authenticated explicit fixture (not native provider cwd movement)', mainAndTwoWorktrees: 'passed', dirtyMatrices: 4, twoAgentSidebarFocus: 'OpenCode main / Pi test1; launch→current; main/renderer/poll identities and generations verified; both panes visible', selectedMainABMain: 'passed', stagedModifiedUntracked: 'passed', historicalAgreeingLaunch: 'launch selection; historical notice; same generation', historicalDisagreementAndUnregistered: 'unavailable without main fallback', explicitMainLaunchWhileUnregistered: 'passed; old binding and unavailable file authority retained', agentRetirement: 'launch authority retained; observed evidence retired' }));
   } catch (error) {
     console.error(error.message);
-    if (app) console.error(JSON.stringify(await (await app.firstWindow()).evaluate(() => ({ popover: document.querySelector('.new-session-popover') !== null, buttons: [...document.querySelectorAll('.new-session-popover button')].map(button => button.textContent), newSessionDisabled: document.querySelector('.new-session-trigger')?.disabled, readyPTYs: window.__ready?.size }))));
+    // Do not await renderer diagnostics here: a lost renderer must still reach teardown.
     process.exitCode = 1;
   }
   finally {
-    await app?.close();
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+    let cleaned = false;
+    try {
+      const result = await cleanupSmokeFixture({ app, repo, owner, workspaceRoots: [project, a, b], servers: server ? [server] : [] });
+      cleaned = true;
+      console.error(JSON.stringify({ fixtureCleanup: result }));
+    } catch (error) { console.error(`Fixture cleanup failed: ${error.message}`); process.exitCode = 1; }
     try {
       if (preserved) {
         assert.deepEqual(preservation(), preserved, 'Existing checkout files/status/worktree list changed');
@@ -220,6 +227,7 @@ let app, server; let modelRequests = 0;
       }
     }
     catch (error) { console.error(error.message); process.exitCode = 1; }
-    fs.rmSync(root, { recursive: true, force: true });
+    if (cleaned) fs.rmSync(root, { recursive: true, force: true });
+    else console.error(`Retained disposable fixture for inspection: ${root}`);
   }
 })();
