@@ -47,6 +47,7 @@ export interface ExplorerActionDeps {
   clearExplorerDirectoryState: (paths: string[], workspaceId?: string) => void;
   toggleExplorerPath: (path: string, workspaceId?: string) => void;
   loadDirectory: (directoryPath: string) => Promise<unknown>;
+  isCurrent?: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +187,7 @@ export async function dispatchContextAction(
     getWorkspacePath: (workspaceId: string) => string | undefined;
   },
 ): Promise<void> {
+  if (deps.isCurrent?.() === false) return;
   switch (action) {
     case 'open-editor':
       await handleOpenEditor(entry, deps, callbacks.openFileInEditor);
@@ -245,9 +247,9 @@ function updateExplorerAfterDelete(
   }
 
   if (entry.isDirectory) {
-    const staleDirectoryPaths = Object.keys(currentEntries).filter(
-      (cachedPath) => cachedPath === entry.path || isPathWithinBase(entry.path, cachedPath),
-    );
+    const staleDirectoryPaths = [entry.path, ...Object.keys(currentEntries).filter(
+      (cachedPath) => isPathWithinBase(entry.path, cachedPath),
+    )];
     if (staleDirectoryPaths.length > 0) {
       deps.clearExplorerDirectoryState(staleDirectoryPaths, deps.resolvedWorkspaceId ?? undefined);
     }
@@ -295,9 +297,9 @@ function updateExplorerAfterRename(
   }
 
   if (oldPath !== newPath) {
-    const staleDirectoryPaths = Object.keys(currentEntries).filter(
-      (cachedPath) => cachedPath === oldPath || isPathWithinBase(oldPath, cachedPath),
-    );
+    const staleDirectoryPaths = [oldPath, ...Object.keys(currentEntries).filter(
+      (cachedPath) => isPathWithinBase(oldPath, cachedPath),
+    )];
     if (staleDirectoryPaths.length > 0) {
       deps.clearExplorerDirectoryState(staleDirectoryPaths, deps.resolvedWorkspaceId ?? undefined);
     }
@@ -346,10 +348,15 @@ export async function executeDelete(
     explorerSelectedPath: string | null;
   },
 ): Promise<void> {
+  if (deps.isCurrent?.() === false) return;
   const tabsToClose = findEditorTabsForPath(entry.path, editorTabs);
 
   await Promise.all(tabsToClose.map((tab) => releaseEditorWatchForPath(normalizedWorkspacePath, tab.filePath)));
 
+  if (deps.isCurrent?.() === false) {
+    await Promise.all(tabsToClose.map(tab => rewatchEditorPath(normalizedWorkspacePath, tab.filePath, deps)));
+    return;
+  }
   const result = await window.electronAPI.fileDelete({
     workspacePath: normalizedWorkspacePath,
     workspaceId: deps.resolvedWorkspaceId ?? undefined,
@@ -365,6 +372,7 @@ export async function executeDelete(
     return;
   }
 
+  if (deps.isCurrent?.() === false) return;
   for (const tab of tabsToClose) {
     closeEditorTab(tab.id, deps.resolvedWorkspaceId ?? undefined);
   }
@@ -396,11 +404,16 @@ export async function executeRename(
     explorerSelectedPath: string | null;
   },
 ): Promise<void> {
+  if (deps.isCurrent?.() === false) return;
   const parentDir = dirnamePath(oldPath);
   const newPath = joinPaths(parentDir, newName);
 
   await releaseEditorWatchForPath(normalizedWorkspacePath, oldPath);
 
+  if (deps.isCurrent?.() === false) {
+    await rewatchEditorPath(normalizedWorkspacePath, oldPath, deps);
+    return;
+  }
   const result = await window.electronAPI.fileRename({
     workspacePath: normalizedWorkspacePath,
     workspaceId: deps.resolvedWorkspaceId ?? undefined,
@@ -417,6 +430,7 @@ export async function executeRename(
     return;
   }
 
+  if (deps.isCurrent?.() === false) return;
   const snapshot = getLatestSnapshot();
   updateExplorerAfterRename(
     oldPath,

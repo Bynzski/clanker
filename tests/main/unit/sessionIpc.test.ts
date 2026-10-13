@@ -43,6 +43,8 @@ vi.mock('../../../src/main/sessionHistory', () => ({
   discoverSessions: mockDiscoverSessions,
   discoverSessionsDetailed: mockDiscoverSessionsDetailed,
   buildSessionLaunch: mockBuildSessionLaunch,
+  sessionCacheGeneration: () => 0,
+  sessionDiscoveryConfiguration: () => 'test-configuration',
 }));
 
 vi.mock('../../../src/main/ipc/ptySpawn', () => ({
@@ -132,7 +134,7 @@ describe('registerSessionIpc', () => {
     const result = await handlers.get(SESSION_DISCOVER)!({}, 'local-ws', { detailed: true, forceRefresh: true });
     expect(result).toEqual({ sessions: [codexSession], issues: [{ harness: 'pi', message: 'Pi: its session storage format changed.' }] });
     expect(JSON.stringify(result)).not.toContain('secret');
-    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(toNativePath('/workspace', process.platform), { forceRefresh: true });
+    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(toNativePath('/workspace', process.platform), expect.objectContaining({ forceRefresh: true, coordinated: true, scopeKey: expect.any(String) }));
     log.mockRestore();
   });
 
@@ -383,7 +385,7 @@ describe('registerSessionIpc', () => {
     const result = await handlers.get(SESSION_DISCOVER)?.({}, 'local-ws');
 
     expect(result).toEqual([claudeSession]);
-    expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
+    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(nativeWorkspacePath, expect.objectContaining({ forceRefresh: false, coordinated: true }));
   });
 
   it('routes discovery by registered environment even for identical local and remote paths', async () => {
@@ -519,7 +521,7 @@ describe('registerSessionIpc', () => {
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
 
     expect(await handlers.get(SESSION_DISCOVER)?.({}, 'local-ws')).toEqual([codexSession]);
-    expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
+    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(nativeWorkspacePath, expect.objectContaining({ forceRefresh: false, coordinated: true }));
     expect(await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, false))
       .toEqual(expect.objectContaining({ id: 'term-1', harnessId: 'codex' }));
   });

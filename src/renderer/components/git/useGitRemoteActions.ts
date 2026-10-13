@@ -6,7 +6,7 @@ interface UseGitRemoteActionsParams {
   isCurrent?: () => boolean;
   currentBranch: string | null;
   loadRemotes: () => Promise<void>;
-  refreshAfterAction: () => Promise<void>;
+  refreshAfterAction: (kind?: Exclude<RemoteAction, null>) => Promise<void>;
   remotes: GitRemote[];
   workspacePath: string;
   workspaceId?: string;
@@ -59,7 +59,7 @@ export function useGitRemoteActions({
         return;
       }
       succeeded = true;
-      await refreshAfterAction();
+      await refreshAfterAction(action);
       if (!current()) return;
       if (action === 'publish') await loadRemotes();
     } catch (error: unknown) {

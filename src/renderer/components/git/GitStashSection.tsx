@@ -19,6 +19,7 @@ interface GitStashSectionProps {
   stashMessage: string;
   stashes: GitStash[];
   management?: boolean;
+  emptyMessage?: string;
 }
 
 export function GitStashSection({
@@ -36,6 +37,7 @@ export function GitStashSection({
   stashMessage,
   stashes,
   management = false,
+  emptyMessage = 'Nothing stashed yet',
 }: GitStashSectionProps) {
   return (
     <div className={`git-menu-section${management ? ' source-control-stashes' : ''}`}>
@@ -90,10 +92,10 @@ export function GitStashSection({
         </div>
       )}
 
-      {isLoadingStashes ? (
+      {isLoadingStashes && !stashes.length ? (
         <div className="git-menu-empty">Loading stashes…</div>
       ) : stashes.length === 0 ? (
-        <div className="git-menu-empty">Nothing stashed yet</div>
+        <div className="git-menu-empty">{emptyMessage}</div>
       ) : (
         <div className="git-stash-list">
           {stashes.map((stash) => (

@@ -1,5 +1,6 @@
 import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
+import { activationReferences, startSwitch } from '../lib/workspaceSwitchDebug';
 import { workspacePageActions } from './workspacePageActions';
 import { activePage, paneIsPresented, revealPane, revealTerminal, retainSelectedPage, selectPage, synchronizePages } from './workspacePages';
 import {
@@ -61,6 +62,7 @@ import {
   resolveWorkspaceByScope,
   resolveWorkspaceIdByScope,
   sanitizeWorkspace,
+  prepareWorkspaceActivation,
   setEditorOperationPending,
   syncActiveWorkspace,
   validateWorkspaceConsistency,
@@ -191,13 +193,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
-      ...createDefaultExplorerState(),
-      ...createDefaultEditorState(),
-      ...createDefaultNotesState(),
       id,
       lifecycle: 'active',
       ...workspace,
-      terminals: nameTerminals(workspace.terminals),
+      terminals: nameTerminals(workspace.terminals ?? []),
       name: defaultName,
     });
     const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
@@ -259,19 +258,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const next = sanitizeWorkspace({
-      ...workspace,
-      lifecycle: 'active',
-    });
+    if (import.meta.env.DEV && state.activeWorkspaceId !== id) {
+      startSwitch(state.activeWorkspaceId, id, workspace.runtimeState?.residencyState === 'warm');
+    }
+    const next = prepareWorkspaceActivation(workspace);
     const selected = terminalId && next.terminals.some((terminal) => terminal.id === terminalId)
       ? synchronizePages(next, revealTerminal(next, terminalId))
       : next;
+    if (import.meta.env.DEV) activationReferences(workspace, selected);
     const nextWorkspaces = assignWorkspaceLifecycles(
       state.workspaces.map((entry) => entry.id === id ? selected : entry),
       id,
     );
+    const active = findWorkspaceById(nextWorkspaces, id)!;
     const nextState = {
-      ...getActiveWorkspaceSnapshot(selected),
+      ...getActiveWorkspaceSnapshot(active),
       workspaces: nextWorkspaces,
       gridViewport: state.gridViewport,
       activeWorkspaceId: id,
@@ -1064,9 +1065,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const pathSet = new Set(paths);
     const explorerEntriesByPath = { ...workspace.explorerEntriesByPath };
     const explorerErrorsByPath = { ...workspace.explorerErrorsByPath };
+    const explorerVerifiedByPath = { ...workspace.explorerVerifiedByPath };
+    const explorerRevisionByPath = { ...workspace.explorerRevisionByPath };
     for (const path of pathSet) {
       delete explorerEntriesByPath[path];
       delete explorerErrorsByPath[path];
+      delete explorerVerifiedByPath[path];
+      explorerRevisionByPath[path] = (explorerRevisionByPath[path] ?? 0) + 1;
     }
 
     const explorerLoadingPaths = workspace.explorerLoadingPaths.filter((path) => !pathSet.has(path));
@@ -1076,6 +1081,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       explorerEntriesByPath,
       explorerErrorsByPath,
       explorerLoadingPaths,
+      explorerVerifiedByPath,
+      explorerRevisionByPath,
     }));
   }),
 
@@ -1091,7 +1098,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
   }),
 
-  setExplorerDirectoryEntries: (directoryPath, entries, workspaceId) => set((state) => {
+  setExplorerDirectoryEntries: (directoryPath, entries, workspaceId, selectionGeneration) => set((state) => {
     const workspace = resolveWorkspaceByScope(state, workspaceId);
     if (workspace == null) {
       return state;
@@ -1103,13 +1110,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     };
     const explorerErrorsByPath = {
       ...workspace.explorerErrorsByPath,
-      [directoryPath]: null,
+      [directoryPath]: selectionGeneration === undefined ? workspace.explorerErrorsByPath[directoryPath] : null,
     };
 
     return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
       ...currentWorkspace,
       explorerEntriesByPath,
       explorerErrorsByPath,
+      explorerLoadingPaths: selectionGeneration === undefined ? workspace.explorerLoadingPaths : workspace.explorerLoadingPaths.filter(path => path !== directoryPath),
+      explorerVerifiedByPath: { ...workspace.explorerVerifiedByPath, [directoryPath]: selectionGeneration ?? workspace.explorerVerifiedByPath?.[directoryPath] },
+      explorerRevisionByPath: { ...workspace.explorerRevisionByPath, [directoryPath]: (workspace.explorerRevisionByPath?.[directoryPath] ?? 0) + (selectionGeneration === undefined ? 1 : 0) },
     }));
   }),
 
@@ -1128,6 +1138,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
       ...currentWorkspace,
       explorerLoadingPaths,
+      ...(loading ? { explorerVerifiedByPath: { ...workspace.explorerVerifiedByPath, [directoryPath]: undefined } } : {}),
     }));
   }),
 

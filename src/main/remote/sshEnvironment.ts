@@ -1,4 +1,5 @@
 import { withGitRepositoryDiscovery } from '../gitRepositoryDiscovery';
+import { measureSwitchRead } from '../workspaceSwitchMetrics';
 import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import type { GitWorktreeRemovalOptions } from '../../shared/types/git';
 import { discoverSshWebServices, type RemoteWebEndpoint } from './sshPortDiscovery';
@@ -197,7 +198,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public snapshotFiles(workspacePath: string, targets: RemoteFileSnapshotTargets, signal?: AbortSignal) {
-    return snapshotSshFiles(this.executor, this.target, workspacePath, targets, signal);
+    return measureSwitchRead('ssh-snapshot', () => snapshotSshFiles(this.executor, this.target, workspacePath, targets, signal));
   }
 
   /** Read-only discovery before any workspace root has been registered. */
@@ -298,6 +299,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public async listDirectory(request: FileListDirectoryRequest): Promise<FileListDirectoryResult> {
+    return measureSwitchRead('ssh-list', () => this.listDirectoryMeasured(request));
+  }
+
+  private async listDirectoryMeasured(request: FileListDirectoryRequest): Promise<FileListDirectoryResult> {
     if (!isPathContained(request.workspacePath, request.directoryPath)) {
       return {
         success: false,
@@ -351,6 +356,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public async readFile(request: FileReadRequest): Promise<FileReadResult> {
+    return measureSwitchRead('ssh-read', () => this.readFileMeasured(request));
+  }
+
+  private async readFileMeasured(request: FileReadRequest): Promise<FileReadResult> {
     if (!isPathContained(request.workspacePath, request.filePath)) {
       return { success: false, errorCode: 'invalid-path', error: 'File path is outside workspace root' };
     }

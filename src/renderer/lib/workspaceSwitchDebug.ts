@@ -31,14 +31,104 @@
  *   - editor create/destroy: EditorView instance (may fire on workspace change)
  */
 
+import type { WorkspaceTab } from '../store/workspaceTypes';
+
 const PREFIX = '[workspace-residency]';
+const DEV = import.meta.env.DEV;
+function readDebugPreference(): boolean {
+  if (!DEV || typeof window === 'undefined') return false;
+  try { return window.localStorage?.getItem('clanker.switchDebug') === '1'; }
+  catch { return false; } // Storage can be disabled without disabling the workspace.
+}
+let enabled = readDebugPreference();
+const events: { event: string; at: number; data: Record<string, unknown> }[] = [];
+let startedAt = 0;
+let targetWorkspaceId: string | null = null;
+
+declare global {
+  interface Window {
+    clankerSwitchIpc?: { snapshot: (resetPeak?: boolean) => { counts: Record<string, number>; active: number; peak: number } };
+    clankerSwitchDebug?: {
+      enable: (value?: boolean) => void;
+      clear: () => void;
+      snapshot: () => { events: typeof events; ipc: ReturnType<NonNullable<Window['clankerSwitchIpc']>['snapshot']> | null };
+    };
+  }
+}
+if (DEV && typeof window !== 'undefined') window.clankerSwitchDebug = {
+  enable(value = true) {
+    enabled = value;
+    try { window.localStorage?.setItem('clanker.switchDebug', value ? '1' : '0'); }
+    catch { /* In-memory opt-in still works if preference storage is disabled. */ }
+  },
+  clear() { events.length = 0; window.clankerSwitchIpc?.snapshot(true); },
+  snapshot: () => ({ events: structuredClone(events), ipc: window.clankerSwitchIpc?.snapshot() ?? null }),
+};
+
+const activationReferenceFields = ['terminals', 'panes', 'editorTabs', 'explorerExpandedPaths',
+  'explorerEntriesByPath', 'explorerLoadingPaths', 'explorerErrorsByPath', 'browserPane', 'pages',
+  'layoutRoot', 'layoutUndoStack', 'checkoutContexts', 'runtimeState', 'gitChanges', 'minimizedPanes',
+  'pendingTerminalIds'] as const;
+
+/** Synchronous activation-only reference changes, before resource effects; no payloads/paths. */
+export function activationReferences(previous: WorkspaceTab, selected: WorkspaceTab): void {
+  if (!DEV || !enabled) return;
+  log('activation_references', { switchId: _currentSwitchId, workspaceId: selected.id,
+    checked: activationReferenceFields.length,
+    changed: activationReferenceFields.filter((key) => previous[key] !== selected[key]) });
+}
+
+/** Fixed Explorer scheduler counters only; no keys, paths, filenames or responses. */
+export function explorerDirectoryEvent(event: 'scheduled' | 'coalesced' | 'followup' | 'dispatched' | 'settled' | 'retired', active: number, queued: number): void {
+  log('explorer_directory_request', { event, active, queued });
+}
+
+/** Toolbar DOM commit, not compositor paint; fixed freshness labels, no status payload. */
+export function gitPresentation(workspaceId: string | undefined, generation: number | undefined, freshness: 'loading' | 'last-known' | 'unavailable' | 'current', cacheHit: boolean): void {
+  log('git_presentation', { workspaceId, generation, freshness, cacheHit, switchId: _currentSwitchId });
+}
+
+/** Profiler actualDuration is render CPU time, not paint or total switch latency. */
+export function switchCommit(id: string, phase: string, actualDuration: number, _baseDuration: number, _startTime: number, commitTime: number): void {
+  log('react_commit', { id, phase, actualDuration, commitTime, switchId: _currentSwitchId });
+}
+
+/** Two rAFs allow a paint opportunity; visible interactive shell proxy, not GPU presentation proof. */
+export function observeUsableWorkspaceFrame(workspaceId: string, surface: HTMLElement): () => void {
+  if (!DEV || !enabled) return () => {};
+  const switchId = _currentSwitchId;
+  const deadline = performance.now() + 5000;
+  let frame = 0;
+  let cancelled = false;
+  let readyOnPreviousFrame = false;
+  const check = () => {
+    if (cancelled || switchId !== _currentSwitchId || targetWorkspaceId !== workspaceId) return;
+    const layout = surface.querySelector('.dynamic-pane-layout');
+    const rect = surface.getBoundingClientRect();
+    const ready = document.visibilityState === 'visible' && surface.dataset.workspaceVisibility === 'active'
+      && !surface.hasAttribute('inert') && rect.width > 0 && rect.height > 0 && layout !== null;
+    if (ready && readyOnPreviousFrame) {
+      log('first_usable_shell_frame', { workspaceId, switchId, elapsedMs: performance.now() - startedAt });
+    } else if (performance.now() < deadline) {
+      readyOnPreviousFrame = ready;
+      frame = requestAnimationFrame(check);
+    } else log('usable_frame_timeout', { workspaceId, switchId });
+  };
+  frame = requestAnimationFrame(check);
+  return () => { cancelled = true; cancelAnimationFrame(frame); };
+}
 
 function log(event: string, data: Record<string, unknown> = {}): void {
   // Inline DEV guard — single branch, no function-call overhead in dev.
   if (typeof import.meta !== 'undefined' && import.meta.env && !import.meta.env.DEV) return;
   // Fallback for non-module environments (shouldn't occur in this codebase)
   if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') return;
-  console.debug(PREFIX, event, data);
+  if (!enabled) return;
+  const { activeFileName: _fileName, ...safeData } = data;
+  void _fileName;
+  events.push({ event, at: performance.now(), data: safeData });
+  if (events.length > 512) events.shift();
+  console.debug(PREFIX, event, safeData);
 }
 
 // ---------------------------------------------------------------------------
@@ -48,13 +138,21 @@ function log(event: string, data: Record<string, unknown> = {}): void {
 let _activeSwitchId = 0;
 let _currentSwitchId = 0;
 
-export function startSwitch(fromWorkspaceId: string | null, toWorkspaceId: string): string {
+/** Lets an already-active surface observe the final selection in a batched A→B→A. */
+export function currentSwitchGeneration(): number { return _currentSwitchId; }
+
+export function startSwitch(fromWorkspaceId: string | null, toWorkspaceId: string, warm = false): string {
+  if (!DEV || !enabled) return '';
   _currentSwitchId = ++_activeSwitchId;
+  startedAt = performance.now();
+  targetWorkspaceId = toWorkspaceId;
   log('switch_start', {
     switchId: _currentSwitchId,
     fromWorkspace: fromWorkspaceId,
     toWorkspace: toWorkspaceId,
     timestamp: Date.now(),
+    transition: warm ? 'warm' : 'cold',
+    ipc: window.clankerSwitchIpc?.snapshot() ?? null,
   });
   return `[${_currentSwitchId}]`;
 }

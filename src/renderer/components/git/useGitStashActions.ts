@@ -5,7 +5,7 @@ interface UseGitStashActionsParams {
   isCurrent?: () => boolean;
   activeAction?: string | null;
   onSetActiveAction: (action: string | null) => void;
-  refreshAfterAction: () => Promise<void>;
+  refreshAfterAction: (kind?: 'stash' | 'apply' | 'pop' | 'drop' | 'clear') => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
   checkoutContextId?: string;
@@ -42,7 +42,7 @@ export function useGitStashActions({
 
       if (result.success) {
         setStashMessage('');
-        await refreshAfterAction();
+        await refreshAfterAction('stash');
       } else {
         setStashError(result.error || 'Failed to stash changes');
       }
@@ -63,18 +63,16 @@ export function useGitStashActions({
     pending.current = true;
     onSetActiveAction(`apply:${stash.ref}`);
     setStashError(null);
+    let commandError: string | undefined;
 
     try {
       const result = await window.electronAPI.gitApplyStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
-
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to apply stash');
-      }
+      commandError = result.success ? undefined : result.error || 'Failed to apply stash';
+      await refreshAfterAction('apply');
+      if (commandError) setStashError(commandError);
     } catch (error: unknown) {
-      if (isCurrent()) setStashError(error instanceof Error ? error.message : 'Failed to apply stash');
+      if (isCurrent()) setStashError(`${commandError ? `${commandError}. ` : ''}${error instanceof Error ? error.message : 'Failed to apply stash'}`);
     } finally {
       pending.current = false;
       if (isCurrent()) onSetActiveAction(null);
@@ -90,18 +88,16 @@ export function useGitStashActions({
     pending.current = true;
     onSetActiveAction(`pop:${stash.ref}`);
     setStashError(null);
+    let commandError: string | undefined;
 
     try {
       const result = await window.electronAPI.gitPopStash(workspacePath, stash.ref, stash.hash.trim(), workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
-
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to pop stash');
-      }
+      commandError = result.success ? undefined : result.error || 'Failed to pop stash';
+      await refreshAfterAction('pop');
+      if (commandError) setStashError(commandError);
     } catch (error: unknown) {
-      if (isCurrent()) setStashError(error instanceof Error ? error.message : 'Failed to pop stash');
+      if (isCurrent()) setStashError(`${commandError ? `${commandError}. ` : ''}${error instanceof Error ? error.message : 'Failed to pop stash'}`);
     } finally {
       pending.current = false;
       if (isCurrent()) onSetActiveAction(null);
@@ -141,7 +137,7 @@ export function useGitStashActions({
 
       if (result.success) {
         setDropDialog(null);
-        await refreshAfterAction();
+        await refreshAfterAction('drop');
       } else {
         setStashError(result.error || 'Failed to drop stash');
       }
@@ -181,7 +177,7 @@ export function useGitStashActions({
 
       if (result.success) {
         setClearDialog(null);
-        await refreshAfterAction();
+        await refreshAfterAction('clear');
       } else {
         setStashError(result.error || 'Failed to clear stashes');
       }

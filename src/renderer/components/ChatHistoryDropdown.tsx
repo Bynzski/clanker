@@ -11,6 +11,8 @@ interface Props {
   sessions: HarnessSession[];
   isLoading: boolean;
   discoveryError?: string;
+  isRefreshing?: boolean;
+  isLastKnown?: boolean;
   workspacePath: string;
   workspaceId: string | null;
   onClose: () => void;
@@ -111,6 +113,8 @@ export default function ChatHistoryDropdown({
   sessions,
   isLoading,
   discoveryError,
+  isRefreshing,
+  isLastKnown,
   workspacePath,
   workspaceId,
   onClose,
@@ -190,6 +194,9 @@ export default function ChatHistoryDropdown({
           variant="primary" confirmLabel="Recreate and resume" busy={launching}
           onAnswer={(answer) => { if (answer) void resumeSession(offer.session, true); else setOffer(null); }} />
       )}
+      {(isLastKnown || isRefreshing && !isLoading) && <div className="chat-history-empty" role="status">
+        {isLastKnown ? 'Last known history · not freshly verified' : 'Refreshing history'}{isLastKnown && isRefreshing ? ' · Refreshing…' : ''}
+      </div>}
       {discoveryError && <div className="chat-history-empty" role="alert">{discoveryError}</div>}
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions…</div>

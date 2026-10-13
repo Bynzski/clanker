@@ -1,6 +1,8 @@
 /* global window, document */
 // Isolated local Git fixture, real built app and native Browser. No user profile or remote operations.
 const { _electron: electron } = require('playwright');
+const { createSmokeOwner, cleanupSmokeFixture } = require('./lib/smoke-fixture-cleanup.cjs');
+const owner = createSmokeOwner();
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,7 +15,7 @@ const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-source-contro
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
 const project = path.join(root, 'project');
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
-Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
+Object.assign(env, { [owner.key]: owner.value, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'pipe' });
 git('init', '-b', 'main'); git('config', 'user.name', 'Smoke'); git('config', 'user.email', 'smoke@example.invalid');
 fs.writeFileSync(path.join(project, 'README.md'), 'fixture\n'); git('add', '.'); git('commit', '-m', `fixture ${'long history subject '.repeat(8)}`);
@@ -32,6 +34,7 @@ fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ worksp
 const server = http.createServer((_request, response) => response.end('<title>Source Control fixture</title><h1>Native Browser</h1>'));
 let app;
 let createdInManagement = false;
+const measurements = [];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Native capture preserves the physical viewport at app zoom; Playwright's
 // CSS-sized capture otherwise crops the right/bottom of a zoomed Electron page.
@@ -44,6 +47,8 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    const snapshot = await require('./lib/source-control-meter.cjs')(app, repo);
+    const mark = async name => measurements.push({ name, ...(await snapshot()) });
     const page = await app.firstWindow(); page.setDefaultTimeout(12000);
     await page.getByRole('button', { name: 'Open Workspace', exact: true }).first().click();
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
@@ -55,6 +60,8 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     const views = () => app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; return win.contentView.children.filter(view => view.webContents && view.webContents !== win.webContents).map(view => ({ id: view.webContents.id, url: view.webContents.getURL(), visible: view.getVisible() })); });
     await until(async () => (await views()).some(view => view.visible && view.url === url), 'Browser fixture not visible');
     const browserId = (await views()).find(view => view.url === url).id;
+    const resourceProbe = await require('./lib/source-control-resource-probe.cjs')({ app, page, repo, project, git, snapshot, baseline: process.env.CLANKER_SOURCE_BASELINE === '1' });
+    if (process.env.CLANKER_SOURCE_PROBE_ONLY === '1') { console.log(JSON.stringify({ result: 'PASS', resourceProbe }, null, 2)); return; }
     for (const [width, height, zoom] of [[1100, 760, 1], [640, 480, 1], [640, 480, 1.25]]) {
       const shotWidth = zoom === 1 ? `${width}` : `${width}-zoom125`;
       await app.evaluate(({ BrowserWindow }, { size, zoom }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(...size); win.webContents.setZoomFactor(zoom); }, { size: [width, height], zoom });
@@ -64,7 +71,9 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         fs.writeFileSync(path.join(project, 'README.md'), 'fixture\nindexed change\n');
         git('add', 'README.md');
         fs.appendFileSync(path.join(project, 'README.md'), 'uncommitted agent change\n');
+        await mark('before-open');
         await page.getByRole('button', { name: 'Source Control', exact: true }).click();
+        await pause(250); await mark('opened-changes');
         const dialog = page.getByRole('dialog', { name: 'Source Control', exact: true });
         await dialog.getByRole('button', { name: 'Refresh changes', exact: true }).click();
         await dialog.getByText('main', { exact: true }).waitFor(); await dialog.getByText(/1 changed file/).waitFor();
@@ -91,16 +100,21 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         await dialog.getByRole('textbox', { name: 'Commit Message' }).fill('feat: reviewed agent changes');
         assert(await dialog.getByRole('button', { name: 'Commit Staged', exact: true }).isEnabled());
         assert(await dialog.getByRole('button', { name: 'Stage All & Commit', exact: true }).isEnabled());
+        await mark('before-stage-file');
         await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).click();
         await until(async () => (await dialog.getByRole('button', { name: 'View working diff for README.md' }).count()) === 0, 'Per-file Stage did not refresh');
+        await mark('staged-file');
         assert(git('diff', '--cached').toString().includes('uncommitted agent change'));
         await dialog.getByRole('button', { name: 'Unstage README.md', exact: true }).click();
         await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).waitFor();
+        await mark('unstaged-file');
         assert.equal(git('diff', '--cached').toString(), '');
         await dialog.getByRole('button', { name: 'Stage All', exact: true }).click();
         await dialog.getByRole('button', { name: 'Unstage README.md', exact: true }).waitFor();
+        await mark('staged-all');
         await dialog.getByRole('button', { name: 'Unstage All', exact: true }).click();
         await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).waitFor();
+        await mark('unstaged-all');
         assert(await dialog.getByRole('button', { name: 'Commit Staged', exact: true }).isDisabled());
         assert(await dialog.getByRole('button', { name: 'Stage All & Commit', exact: true }).isEnabled());
         assert.equal(await dialog.getByRole('textbox', { name: 'Commit Message' }).inputValue(), 'feat: reviewed agent changes');
@@ -158,7 +172,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
             await dialog.getByRole('button', { name: /^Merge / }).waitFor();
           }
           assert(await dialog.evaluate(element => { const content = element.querySelector('.management-content'); return content.scrollWidth <= content.clientWidth; }), `${section} horizontal overflow ${theme}/${width}`);
-          await pause(150); await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-${section.toLowerCase().replaceAll(' ', '-')}.png`) });
+          await pause(150); await mark(`visited-${section}`); await screenshot({ path: path.join(screenshots, `${theme.toLowerCase()}-${shotWidth}-${section.toLowerCase().replaceAll(' ', '-')}.png`) });
           if (section === 'Branches') {
             await dialog.getByRole('button', { name: 'Delete branch cancel-delete', exact: true }).click(); await page.getByRole('alertdialog').waitFor();
             assert((await views()).every(view => !view.visible), 'Branch confirmation exposed Browser');
@@ -211,16 +225,20 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     const changes = page.getByRole('dialog', { name: 'Source Control', exact: true });
     await changes.getByRole('button', { name: 'Refresh changes' }).click();
     await changes.getByRole('textbox', { name: 'Commit Message' }).fill('reviewed staged change');
+    await mark('before-commit');
     await changes.getByRole('button', { name: 'Commit Staged', exact: true }).click();
     await until(async () => await changes.getByRole('textbox', { name: 'Commit Message' }).inputValue() === '', 'Successful commit did not clear draft');
+    await mark('committed');
     assert.equal(await page.getByRole('dialog', { name: 'Create Commit' }).count(), 0);
     assert(!git('show', 'HEAD:README.md').toString().includes('uncommitted agent change'), 'Staged-only commit included working content');
     assert(git('diff').toString().includes('uncommitted agent change'), 'Staged-only commit changed working content');
     assert((await views()).every(view => !view.visible), 'Successful Commit exposed Browser');
     await until(() => changes.getByRole('textbox', { name: 'Commit Message' }).evaluate(element => document.activeElement === element), 'Successful Commit editor focus not restored');
     await changes.getByRole('textbox', { name: 'Commit Message' }).fill('explicitly commit all');
+    await mark('before-commit-all');
     await changes.getByRole('button', { name: 'Stage All & Commit', exact: true }).click();
     await until(async () => await changes.getByRole('textbox', { name: 'Commit Message' }).inputValue() === '', 'All-and-commit did not clear draft');
+    await mark('committed-all');
     assert(git('show', 'HEAD:README.md').toString().includes('uncommitted agent change'));
     assert.equal(git('status', '--porcelain').toString(), '');
     await changes.getByText('Working directory is clean').waitFor();
@@ -320,6 +338,9 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
     assert(git('worktree', 'list', '--porcelain').toString().includes('refs/heads/linked-task'), 'Cancel removed worktree');
     assert(git('stash', 'list').toString().includes('fixture-stash'), 'Cancel dropped stash');
     assert(git('remote', '-v').toString().includes('origin'), 'Cancel removed remote');
-    console.log(JSON.stringify({ result: 'PASS', screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; manual worktree creation without a session; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
-  } finally { if (app) await app.close(); server.close(); }
+    console.log(JSON.stringify({ result: 'PASS', resourceProbe, measurements, screenshots, profile: root, scope: 'local fixture; three themes/two sizes plus 125% zoom at 640×480, 34 added long filenames and keyboard Go to Commit focus, single History content scroll with exact summary focus, Changes-first/History/Overview/Branches/Worktrees/Stashes/Remotes/Merge; one inline commit composer; real file diffs, per-file/all staging, retained drafts and Overview Review Changes routing, real staged-only/explicit all commits; manual worktree creation without a session; linked worktree Source Control with isolated diff/staging/commit, context switching and shell dismissal; native Browser suppression/restoration and focus' }, null, 2));
+  } finally {
+    const result = await cleanupSmokeFixture({ app, repo, owner, workspaceRoots: [project, path.join(root, 'linked-task')], servers: [server] });
+    console.error(JSON.stringify({ fixtureCleanup: result }));
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });

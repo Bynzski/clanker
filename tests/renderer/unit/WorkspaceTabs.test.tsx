@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
+import { Profiler } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
@@ -77,6 +78,21 @@ describe('WorkspaceTabs', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it('ignores unrelated store fields, responds to rapid A→B→A, and targets the clicked workspace', () => {
+    useWorkspaceStore.setState({ workspaces: [createMockWorkspace({ id: 'A', name: 'Alpha' }), createMockWorkspace({ id: 'B', name: 'Beta' })], activeWorkspaceId: 'A' });
+    const commits = vi.fn();
+    render(<Profiler id="tabs" onRender={commits}><WorkspaceTabs /></Profiler>);
+    commits.mockClear();
+    act(() => useWorkspaceStore.setState({ gridViewport: { cols: 70, rows: 50 } }));
+    expect(commits).not.toHaveBeenCalled();
+    for (const id of ['B', 'A']) {
+      act(() => useWorkspaceStore.setState({ activeWorkspaceId: id }));
+      expect(screen.getByRole('tab', { name: new RegExp(id === 'A' ? 'Alpha' : 'Beta') })).toHaveAttribute('aria-selected', 'true');
+    }
+    fireEvent.click(screen.getByRole('tab', { name: /Beta/ }));
+    expect(useWorkspaceStore.getState().selectWorkspace).toHaveBeenCalledWith('B');
   });
 
   // =========================================================================

@@ -12,6 +12,8 @@ import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import { validateFilename } from '../../../shared/filenameValidation';
 import { pathKey } from '../../../shared/pathKey';
 import { computeFilterVisibility, type FilterState } from './filterVisibility';
+import { checkoutSelectionToken } from '../../lib/checkoutSelectionRuntime';
+import { DirectoryFreshness } from './DirectoryFreshness';
 
 interface FileTreeProps {
   workspaceId?: string;
@@ -104,6 +106,8 @@ function TreeNodeChildren({
   isExpanded,
   isLoading,
   error,
+  known,
+  current,
   childEntries,
   workspaceId,
   onLoadDirectory,
@@ -127,6 +131,8 @@ function TreeNodeChildren({
   isExpanded: boolean;
   isLoading: boolean;
   error?: string | null;
+  known: boolean;
+  current: boolean;
   childEntries: FileExplorerEntry[];
   workspaceId?: string;
   onLoadDirectory: (directoryPath: string) => Promise<FileListDirectoryResult>;
@@ -149,16 +155,12 @@ function TreeNodeChildren({
     return null;
   }
 
-  if (isLoading) {
-    return <div className="tree-node-status" style={{ paddingLeft: depth * 16 + 40 }}>Loading…</div>;
-  }
-
-  if (error) {
-    return <div className="tree-node-status error" style={{ paddingLeft: depth * 16 + 40 }}>{error}</div>;
-  }
-
   return (
     <>
+      <div style={{ paddingLeft: depth * 16 + 40 }}>
+        <DirectoryFreshness known={known} current={current} loading={isLoading} error={error} onRetry={() => void onLoadDirectory(entry.path)} />
+        {known && childEntries.length === 0 && !current && <span className="tree-node-status">No entries in previous listing</span>}
+      </div>
       {creating && creating.parentPath === entry.path ? (
         <CreateInput
           type={creating.type}
@@ -201,6 +203,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirec
     children: current?.explorerEntriesByPath[entry.path] ?? EMPTY_CHILDREN,
     hasCachedChildren: current != null && Object.prototype.hasOwnProperty.call(current.explorerEntriesByPath, entry.path),
     loading: current?.explorerLoadingPaths.includes(entry.path) ?? false,
+    current: current != null && current.explorerVerifiedByPath?.[entry.path] === checkoutSelectionToken(current.id),
     error: current?.explorerErrorsByPath[entry.path],
   }), workspaceId);
   const {
@@ -228,14 +231,8 @@ const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirec
     }
 
     const shouldExpand = !isExpanded;
-    if (shouldExpand && !nodeState.hasCachedChildren) {
-      const result = await onLoadDirectory(entry.path);
-      if (!result.success) {
-        return;
-      }
-    }
-
     toggleExplorerPath(entry.path, workspaceId);
+    if (shouldExpand && (!nodeState.hasCachedChildren || !nodeState.current)) void onLoadDirectory(entry.path);
   };
 
   const handleDoubleClick = () => {
@@ -326,6 +323,8 @@ const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirec
         isExpanded={isExpanded}
         isLoading={isLoading}
         error={error}
+        known={nodeState.hasCachedChildren}
+        current={nodeState.current}
         childEntries={childEntries}
         workspaceId={workspaceId}
         onLoadDirectory={onLoadDirectory}
@@ -431,6 +430,8 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
   const workspace = useScopedWorkspaceSelector((current) => current && ({
     explorerEntriesByPath: current.explorerEntriesByPath,
     explorerLoadingPaths: current.explorerLoadingPaths,
+    explorerVerifiedByPath: current.explorerVerifiedByPath,
+    selectionToken: checkoutSelectionToken(current.id),
     showHiddenFiles: current.showHiddenFiles,
   }), workspaceId);
   const {
@@ -479,6 +480,8 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
     .filter((e) => showHiddenFiles || !e.name.startsWith('.'))
     .filter((e) => !filterState.active || filterState.visiblePaths.has(e.path));
   const isRootLoading = explorerLoadingPaths.includes(rootPath);
+  const rootKnown = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, rootPath);
+  const rootCurrent = workspace?.explorerVerifiedByPath?.[rootPath] === workspace?.selectionToken && workspace != null;
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -522,12 +525,11 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
         }
       };
       const ensureLoadedThenToggle = (directoryPath: string) => {
-        void (async () => {
-          if (!Object.prototype.hasOwnProperty.call(liveEntries, directoryPath)) {
-            await onLoadDirectory(directoryPath);
-          }
-          toggleExplorerPath(directoryPath, workspaceId);
-        })();
+        toggleExplorerPath(directoryPath, workspaceId);
+        if (!Object.prototype.hasOwnProperty.call(liveEntries, directoryPath)
+          || liveWorkspace?.explorerVerifiedByPath?.[directoryPath] !== (liveWorkspace ? checkoutSelectionToken(liveWorkspace.id) : -1)) {
+          void onLoadDirectory(directoryPath);
+        }
       };
 
       if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -595,24 +597,14 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
 
   const isCreatingAtRoot = creating?.parentPath === rootPath;
 
-  if (isRootLoading && rootEntries.length === 0 && !isCreatingAtRoot) {
-    return <div className="file-explorer-status">Loading…</div>;
-  }
-
-  if (rootError) {
-    return <div className="file-explorer-status error">{rootError}</div>;
-  }
-
-  if (rootEntries.length === 0 && !isCreatingAtRoot) {
-    return <div className="file-explorer-status">{filterState.active ? 'No matches' : 'No files'}</div>;
-  }
-
   return (
     <div
       className="file-tree"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      <DirectoryFreshness known={rootKnown} current={rootCurrent} loading={isRootLoading} error={rootError} onRetry={() => void onLoadDirectory(rootPath)} />
+      {rootEntries.length === 0 && !isCreatingAtRoot && rootKnown && <div className="file-explorer-status">{filterState.active ? 'No matches' : rootCurrent ? 'No files' : 'No entries in previous listing'}</div>}
       {/* Inline create input at root level */}
       {isCreatingAtRoot ? (
         <CreateInput

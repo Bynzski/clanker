@@ -18,7 +18,8 @@ import {
   selectWarmWorkspaceIds,
 } from '../lib/workspaceWarmth';
 import {
-  startSwitch,
+  observeUsableWorkspaceFrame,
+  currentSwitchGeneration,
   surfaceMount,
   surfaceUnmount,
   surfaceReactMount,
@@ -70,6 +71,11 @@ function WorkspaceSurface({
 
     surface.setAttribute('inert', '');
   }, [isActive]);
+
+  const switchGeneration = import.meta.env.DEV ? currentSwitchGeneration() : 0;
+  useEffect(() => {
+    if (isActive && surfaceRef.current) return observeUsableWorkspaceFrame(workspaceId, surfaceRef.current);
+  }, [isActive, workspaceId, mountContents, switchGeneration]);
 
   // Instrument surface lifecycle transitions (park/unpark)
   useEffect(() => {
@@ -131,23 +137,12 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
     clearAllAssistants();
     clearAssistantSurfaceUi(); // main disposes the Assistant-owned native Browser views on the same transition
   }, [assistantsOff, clearAllAssistants, clearAssistantSurfaceUi]);
-  // Track prior active ID to detect switches
-  const prevActiveWorkspaceIdRef = useRef<string | null>(null);
   const recentWorkspaceIdsRef = useRef<string[]>([]);
 
   const workspaceIds = useMemo(
     () => workspaces.map((workspace) => workspace.id),
     [workspaces],
   );
-
-  useEffect(() => {
-    const prev = prevActiveWorkspaceIdRef.current;
-    const next = activeWorkspaceId ?? null;
-    if (prev !== next && next !== null) {
-      startSwitch(prev, next);
-    }
-    prevActiveWorkspaceIdRef.current = next;
-  }, [activeWorkspaceId]);
 
   const lifecycleActiveWorkspace = workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
   const resolvedActiveWorkspaceId = activeWorkspaceId ?? lifecycleActiveWorkspace?.id ?? workspaces[0]?.id ?? null;

@@ -90,7 +90,11 @@ describe('one observed-checkout interpretation across workspace surfaces', () =>
     const loading = () => {
       expect(document.querySelector('.status-git-availability')).toHaveTextContent('Git loading…');
       expect(screen.getByText('Loading Git status…')).toBeVisible();
-      expect(screen.getByRole('button', { name: 'Source Control' })).toHaveAttribute('title', 'Git loading…');
+      const git = useCheckoutGitStore.getState();
+      const cached = git.cache.find(entry => entry.key === git.active?.key);
+      expect(screen.getByRole('button', { name: 'Source Control' })).toHaveAttribute('title', cached
+        ? `${cached.currentBranch} · ${cached.changeCount} ${cached.changeCount === 1 ? 'change' : 'changes'} · Last known (not current). Refreshing Git…` : 'Git loading…');
+      expect(Boolean(document.querySelector('[data-git-last-known]'))).toBe(Boolean(cached));
       expect(document.querySelector('.git-badge')).toBeNull();
     };
     const complete = async (root: string, count: number, branch: string) => {

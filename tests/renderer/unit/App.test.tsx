@@ -25,9 +25,11 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
+const renderProbe = vi.hoisted(() => ({ header: 0 }));
+
 // Mock all child components to isolate App logic
 vi.mock('../../../src/renderer/components/Header', () => ({
-  default: () => <div data-testid="header">Header</div>,
+  default: () => { renderProbe.header++; return <div data-testid="header">Header</div>; },
 }));
 
 vi.mock('../../../src/renderer/components/TitleBar', () => ({
@@ -64,6 +66,21 @@ vi.mock('../../../src/renderer/components/OpenWorkspaceDialog', () => ({
 }));
 
 describe('App', () => {
+  it('does not rerender its children for unrelated store updates; commands read the current destination', async () => {
+    render(<App />);
+    await screen.findByTestId('workspace-host');
+    await act(async () => {});
+    const before = renderProbe.header;
+    act(() => useWorkspaceStore.setState({ gridViewport: { cols: 70, rows: 50 } }));
+    expect(renderProbe.header).toBe(before);
+    act(() => useWorkspaceStore.setState({ activeWorkspaceId: 'B' }));
+    fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+    expect(mockFitAllPanes).toHaveBeenCalledTimes(1);
+    expect(renderProbe.header).toBe(before);
+    act(() => useWorkspaceStore.setState({ activeWorkspaceId: null }));
+    fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+    expect(mockFitAllPanes).toHaveBeenCalledTimes(1);
+  });
   const mockSpawnTerminal = vi.fn();
   const mockOnFitAllPanes = vi.fn();
   const mockFitAllPanes = vi.fn();

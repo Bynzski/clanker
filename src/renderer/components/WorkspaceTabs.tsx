@@ -201,7 +201,12 @@ function WorkspaceTabItem({
 }
 
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
-  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace } = useWorkspaceStore();
+  // Workspace objects drive labels, agent menus and attention navigation; keep that subscription.
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const activeTerminalId = useWorkspaceStore((state) => state.activeTerminalId);
+  const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
+  const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
   const seenByTerminalId = useAgentAttentionStore((state) => state.seenByTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);

@@ -17,6 +17,8 @@ describe('session cache completion ownership', () => {
     const old = deferred(), fresh = deferred();
     discover.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
     const older = discoverSessions('/workspace');
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledOnce());
+    clearSessionCache(); // new generation may legitimately complete before old physical work
     const newer = discoverSessions('/workspace', { forceRefresh: true });
     fresh.finish([session('new')]); await newer;
     old.finish([session('old')]); await older;
@@ -26,6 +28,7 @@ describe('session cache completion ownership', () => {
   it.each(['all', 'workspace'])('in-flight scans cannot repopulate an invalidated %s cache', async (scope) => {
     const old = deferred(); discover.mockReturnValueOnce(old.promise).mockResolvedValueOnce([session('new')]);
     const pending = discoverSessions('/workspace');
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledOnce());
     if (scope === 'all') clearSessionCache(); else clearSessionCacheForWorkspace('/workspace');
     old.finish([session('old')]); await pending;
     expect(getSessionCacheSize()).toBe(0);

@@ -232,6 +232,8 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
         chatSessions={history.sessions}
         isLoadingSessions={history.isLoading}
         sessionDiscoveryError={history.error}
+        isRefreshingSessions={history.isRefreshing}
+        isLastKnownSessions={history.isLastKnown}
         workspacePath={workspacePath || '/'}
         workspaceId={focusedWorkspace?.id ?? null}
         onCloseChatHistory={() => handleChatHistoryOpenChange(false)}

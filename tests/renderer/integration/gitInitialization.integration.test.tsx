@@ -50,10 +50,10 @@ for (const environmentId of ['local', 'ssh-fixture']) describe(`${environmentId}
   it('enables only confirmed absence, retries init failures and immediately enables worktree choices after success', async () => {
     openWorkspace(environmentId); render(<Controls />);
     await overview();
-    expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     for (const errorCode of ['git-not-found', 'unknown', 'not-a-repo'] as const) {
       await emit(status(environmentId, { success: false, errorCode, error: 'Unavailable' }));
-      expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     }
     await emit(status(environmentId));
     expect(screen.getByText('No git repository found')).toBeInTheDocument();
@@ -79,12 +79,12 @@ for (const environmentId of ['local', 'ssh-fixture']) describe(`${environmentId}
     openWorkspace(environmentId); render(<Controls />); await overview();
     for (const mismatch of [{ workspaceId: 'foreign' }, { environmentId: 'foreign' }, { workspacePath: '/foreign' }, { checkoutContextId: 'foreign::main' }, { presentationGeneration: -1 }]) {
       await emit(status(environmentId, mismatch));
-      expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     }
     await emit(status(environmentId));
     expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeEnabled();
     await emit(status(environmentId, { success: false, error: 'Disconnected' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Initialize Repository' }));
+    expect(screen.queryByRole('button', { name: 'Initialize Repository' })).toBeNull();
     expect(api.gitInit).not.toHaveBeenCalled();
     await emit(status(environmentId));
     expect(screen.getByRole('button', { name: 'Initialize Repository' })).toBeEnabled();

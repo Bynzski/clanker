@@ -54,13 +54,11 @@ export default function EditorPane({ workspaceId, paneId }: { workspaceId?: stri
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const {
-    closeEditorPane,
-    reloadEditorTab,
-    clearEditorTabExternalFlag,
-    closeEditorTab,
-    saveEditorFile,
-  } = useWorkspaceStore();
+  const closeEditorPane = useWorkspaceStore((state) => state.closeEditorPane);
+  const reloadEditorTab = useWorkspaceStore((state) => state.reloadEditorTab);
+  const clearEditorTabExternalFlag = useWorkspaceStore((state) => state.clearEditorTabExternalFlag);
+  const closeEditorTab = useWorkspaceStore((state) => state.closeEditorTab);
+  const saveEditorFile = useWorkspaceStore((state) => state.saveEditorFile);
   const editorVisible = workspace?.editorVisible ?? false;
   const editorTabs = useMemo(() => workspace?.editorTabs ?? [], [workspace]);
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;

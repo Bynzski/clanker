@@ -17,6 +17,7 @@ export interface GitHistorySectionProps {
   selectedDiffMode: DiffMode;
   selectedDiffRef: string | null;
   management?: boolean;
+  emptyMessage?: string;
   diffError?: string | null;
   hasMoreHistory?: boolean;
   onLoadMoreHistory?: () => void;
@@ -25,7 +26,7 @@ export interface GitHistorySectionProps {
 export function GitHistorySection({
   diffResult, history, isBusy, isLoadingDiff, isLoadingHistory,
   onSelectCommitDiff, onSelectWorkingDiff, selectedCommit, selectedDiffMode,
-  selectedDiffRef, management = false, diffError, hasMoreHistory = false, onLoadMoreHistory,
+  selectedDiffRef, management = false, emptyMessage = 'No commits found', diffError, hasMoreHistory = false, onLoadMoreHistory,
 }: GitHistorySectionProps) {
   const summaryRef = useRef<HTMLHeadingElement>(null);
   const summaryTitle = selectedDiffMode === 'working'
@@ -58,9 +59,10 @@ export function GitHistorySection({
       <span className="git-commit-detail-item git-commit-hash-full" title={selectedDiffRef}>SHA: <code>{selectedDiffRef}</code></span>
     </div>}
     {diffError && <div className="git-diff-error" role="alert"><AlertCircle size={13} /><span>{diffError}</span></div>}
+    {diffResult?.success && (isLoadingDiff || diffError) && <p role="status">Last known summary (not current){isLoadingDiff ? ' · refreshing…' : ' · Refresh history to retry.'}</p>}
     <pre className="git-diff-output" aria-busy={isLoadingDiff}>
-      {isLoadingDiff ? 'Loading summary…' : diffError || (diffResult && !diffResult.success)
-        ? 'Summary unavailable' : diffResult?.success ? diffResult.output || emptyText : 'Select a summary to view'}
+      {diffResult?.success ? diffResult.output || emptyText : isLoadingDiff ? 'Loading summary…' : diffError || (diffResult && !diffResult.success)
+        ? 'Summary unavailable' : 'Select a summary to view'}
     </pre>
   </div>;
 
@@ -75,8 +77,8 @@ export function GitHistorySection({
     </div>
     {management && summary}
     <h3 className="git-menu-section-header">{management ? 'Commits' : 'History'} <span className="git-menu-count">{history.length}</span></h3>
-    {isLoadingHistory ? <div className="git-menu-empty" role="status">Loading history…</div>
-      : history.length === 0 ? <div className="git-menu-empty">No commits found</div>
+    {isLoadingHistory && !history.length ? <div className="git-menu-empty" role="status">Loading history…</div>
+      : history.length === 0 ? <div className="git-menu-empty">{emptyMessage}</div>
         : <div className="git-history-list">
           {history.map(entry => <button key={entry.hash} type="button"
             className={`git-history-item ${selectedDiffMode === 'commit' && selectedDiffRef === entry.hash ? 'active' : ''}`}

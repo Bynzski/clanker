@@ -63,6 +63,22 @@ describe('WorkspaceHost', () => {
     expect(screen.getByTestId('explorer-dock').nextElementSibling).toHaveAttribute('data-testid', 'dynamic-pane-layout');
   });
 
+  it('preserves final identity and warm residency through batched A→B→A selection', async () => {
+    const a = createWorkspaceFixture({ id: 'A', lifecycle: 'active' });
+    const b = createWorkspaceFixture({ id: 'B', lifecycle: 'parked' });
+    useWorkspaceStore.setState({ workspaces: [a, b], activeWorkspaceId: 'A' });
+    render(<WorkspaceHost />);
+    await screen.findAllByTestId('dynamic-pane-layout');
+    act(() => {
+      useWorkspaceStore.getState().selectWorkspace('B');
+      useWorkspaceStore.getState().selectWorkspace('A');
+    });
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('A');
+    expect(document.querySelector('[data-workspace-id="A"]')).toHaveAttribute('data-workspace-visibility', 'active');
+    expect(document.querySelector('[data-workspace-id="B"]')).toHaveAttribute('inert');
+    expect(document.querySelectorAll('[data-workspace-residency="warm"]')).toHaveLength(2);
+  });
+
   it('renders parked workspace surfaces in the shared container with proper CSS hiding', async () => {
     const first = createWorkspaceFixture({ id: 'ws-1', name: 'first', lifecycle: 'parked' });
     const second = createWorkspaceFixture({ id: 'ws-2', name: 'second', lifecycle: 'active' });

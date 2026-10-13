@@ -246,7 +246,7 @@ describe('resume and fork keep the account that owns the session', () => {
     registerSession();
     const discover = handlers.get(SESSION_DISCOVER)!;
     await discover({}, 'ws');
-    expect(mockDiscover).toHaveBeenLastCalledWith(WORKSPACE);
+    expect(mockDiscover).toHaveBeenLastCalledWith(WORKSPACE, expect.objectContaining({ forceRefresh: false, coordinated: true }));
     const account = await addAccount(h, 'codex', 'W');
     await discover({}, 'ws');
     const [, discoverOptions] = lastOf(mockDiscover.mock.calls);

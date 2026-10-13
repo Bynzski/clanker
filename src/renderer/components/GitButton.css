@@ -2,6 +2,19 @@
   position: relative;
 }
 
+.git-last-known {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.git-last-known-branch {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .git-menu-container {
   position: relative;
   display: flex;

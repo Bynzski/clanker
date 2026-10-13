@@ -30,6 +30,7 @@ export interface GitRemotesSectionProps {
   isScopeCurrent?: () => boolean;
   onBusyChange?: (busy: boolean) => void;
   management?: boolean;
+  emptyMessage?: string;
 }
 
 type RemoteMode = 'list' | 'add' | 'edit';
@@ -102,7 +103,9 @@ function RemoteList({
   onAdd,
   onEdit,
   onRemove,
+  emptyMessage,
 }: {
+  emptyMessage: string;
   remotes: GitRemoteEntry[];
   onAdd: () => void;
   onEdit: (remote: GitRemoteEntry) => void;
@@ -112,7 +115,7 @@ function RemoteList({
     <div className="git-remotes-list">
       {remotes.length === 0 ? (
         <div className="git-remotes-empty">
-          <p>No remotes configured</p>
+          <p>{emptyMessage}</p>
           <Button size="xs" type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
             <Plus size={12} />
             Add remote
@@ -159,6 +162,7 @@ export default function GitRemotesSection({
   isScopeCurrent = () => true,
   onBusyChange,
   management = false,
+  emptyMessage = 'No remotes configured',
 }: GitRemotesSectionProps) {
   const [mode, setMode] = useState<RemoteMode>('list');
   const [editingRemote, setEditingRemote] = useState<string | null>(null);
@@ -409,6 +413,7 @@ export default function GitRemotesSection({
       {mode === 'list' && (
         <RemoteList
           remotes={remotes}
+          emptyMessage={emptyMessage}
           onAdd={() => setMode('add')}
           onEdit={startEditing}
           onRemove={handleStartRemove}

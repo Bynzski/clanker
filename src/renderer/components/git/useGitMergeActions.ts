@@ -50,18 +50,18 @@ export function useGitMergeActions({
     pending.current = true;
     onSetActiveAction(`merge:${mergeTargetBranch}`);
     setMergeError(null);
+    let commandError: string | undefined;
 
     try {
       const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
 
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setMergeError(result.error || 'Failed to merge branch');
-      }
+      // A failed merge may have produced conflicts; refresh status/operation state independently.
+      commandError = result.success ? undefined : result.error || 'Failed to merge branch';
+      await refreshAfterAction();
+      if (commandError) setMergeError(commandError);
     } catch (error: unknown) {
-      if (isCurrent()) setMergeError(error instanceof Error ? error.message : 'Failed to merge branch');
+      if (isCurrent()) setMergeError(`${commandError ? `${commandError}. ` : ''}${error instanceof Error ? error.message : 'Failed to merge branch'}`);
     } finally {
       pending.current = false;
       if (isCurrent()) onSetActiveAction(null);

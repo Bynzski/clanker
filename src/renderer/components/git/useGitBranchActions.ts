@@ -6,7 +6,7 @@ interface UseGitBranchActionsParams {
   activeAction: string | null;
   currentBranch: string | null;
   onSetActiveAction: (action: string | null) => void;
-  refreshAfterAction: () => Promise<void>;
+  refreshAfterAction: (kind?: 'create' | 'switch' | 'delete') => Promise<void>;
   workspacePath: string;
   workspaceId?: string;
   checkoutContextId?: string;
@@ -51,7 +51,7 @@ export function useGitBranchActions({
       if (!isCurrent()) return;
       if (result.success) {
         setNewBranchName('');
-        await refreshAfterAction();
+        await refreshAfterAction('create');
       } else {
         setBranchError(result.error || 'Failed to create branch');
       }
@@ -73,7 +73,7 @@ export function useGitBranchActions({
       const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId, ...(checkoutContextId ? [checkoutContextId] : []));
       if (!isCurrent()) return;
       if (result.success) {
-        await refreshAfterAction();
+        await refreshAfterAction('switch');
       } else {
         setBranchError(result.error || 'Failed to switch branch');
       }
@@ -119,7 +119,7 @@ export function useGitBranchActions({
       if (!isCurrent()) return;
       if (result.success) {
         setDeleteDialog(null);
-        await refreshAfterAction();
+        await refreshAfterAction('delete');
         return;
       }
 

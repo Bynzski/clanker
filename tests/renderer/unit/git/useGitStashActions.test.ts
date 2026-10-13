@@ -113,7 +113,7 @@ describe('useGitStashActions', () => {
     });
 
     expect(result.current.stashError).toBe('Conflict applying stash');
-    expect(refreshAfterAction).not.toHaveBeenCalled();
+    expect(refreshAfterAction).toHaveBeenCalledWith('pop');
   });
 
   it('opens drop dialog without executing drop immediately', () => {

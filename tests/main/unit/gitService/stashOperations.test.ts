@@ -350,7 +350,7 @@ describe('listStashes - edge cases with real git', () => {
 // ============================================================================
 
 describe('listStashes - failure handling with real git', () => {
-  it('returns empty array for non-git directory', async () => {
+  it('rejects a failed read for non-git directory', async () => {
     const fs = await import('fs');
     const os = await import('os');
     const path = await import('path');
@@ -359,10 +359,7 @@ describe('listStashes - failure handling with real git', () => {
     try {
       fs.writeFileSync(path.join(nonGitDir, 'file.txt'), 'content');
       
-      const stashes = await service.listStashes(nonGitDir);
-      
-      // Should return empty array gracefully
-      expect(stashes).toEqual([]);
+      await expect(service.listStashes(nonGitDir)).rejects.toThrow();
     } finally {
       fs.rmSync(nonGitDir, { recursive: true, force: true });
     }
@@ -884,18 +881,14 @@ describe('stash regression tests for original bugs', () => {
     ).toBe(true);
   });
 
-  it('listStashes returns empty array gracefully for non-repo', async () => {
+  it('listStashes does not disguise non-repo failure as an empty list', async () => {
     const fs = await import('fs');
     const os = await import('os');
     const path = await import('path');
     const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-a-repo-'));
     
     try {
-      const stashes = await service.listStashes(nonGitDir);
-      
-      // Should not throw, should return empty array
-      expect(Array.isArray(stashes)).toBe(true);
-      expect(stashes).toEqual([]);
+      await expect(service.listStashes(nonGitDir)).rejects.toThrow();
     } finally {
       fs.rmSync(nonGitDir, { recursive: true, force: true });
     }

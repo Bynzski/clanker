@@ -20,6 +20,8 @@ export interface GitStatusResult {
   // Failures never authorize initialization.
   /** Renderer poll-owner epoch, descriptive ordering only; never execution authority. */
   presentationGeneration?: number;
+  /** Monotonic main-owned read-start order; not root or mutation authority. */
+  acquisitionSequence?: number;
   workspacePath?: string;
   workspaceId?: string;
   environmentId?: string;
@@ -34,6 +36,14 @@ export interface GitStatusResult {
   behind: number;
   errorCode?: GitErrorCode;
   error?: string;
+}
+
+/** The mutation outcome and its single main-owned status reacquisition are independent. */
+export interface GitChangeMutationResult {
+  success: boolean;
+  error?: string;
+  status?: GitStatusResult;
+  refreshError?: string;
 }
 
 export interface GitBranch {

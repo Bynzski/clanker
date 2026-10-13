@@ -20,10 +20,13 @@ vi.mock('node-pty', () => ({ spawn: mockPtySpawn }));
 // or wait on network in the empty HOME; its own listing contract has separate coverage.
 vi.mock('../../../src/main/harnesses/registry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/main/harnesses/registry')>();
+  // A fixed provider implementation, as in the production registry; a fresh function per lookup
+  // deliberately means a changed discovery configuration and cannot participate in a flight.
+  const emptyOpenCodeHistory = async () => [];
   return {
     ...actual,
     getHarnessProviders: () => actual.getHarnessProviders().map((provider) => provider.descriptor.id === 'opencode'
-      ? { ...provider, sessions: { ...provider.sessions!, discover: async () => [] } }
+      ? { ...provider, sessions: { ...provider.sessions!, discover: emptyOpenCodeHistory } }
       : provider),
   };
 });
