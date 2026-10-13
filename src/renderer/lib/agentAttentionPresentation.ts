@@ -2,6 +2,7 @@ import type { NativeAttentionCapability } from '../../shared/types/attentionSign
 import { CircleAlert, CircleCheck, CircleX, LoaderCircle } from 'lucide-react';
 import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { AttentionSeen } from '../store/agentAttentionStore';
+import type { AttentionReceipt } from '../../shared/types/attentionReceipt';
 
 /** What an agent's attention indicator shows; `null` view means nothing is shown. */
 export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete' | 'signal_unavailable' | 'signal_degraded';
@@ -54,6 +55,20 @@ export function deriveAttention(
   if (view) return warning ? { ...view, signalWarning: warning, description: `${view.description ?? getAttentionPresentation(view.display).label} · ${warning}` } : view;
   if (warning) return { display: signal?.attachment === 'unavailable' ? 'signal_unavailable' : 'signal_degraded', unseen: false, description: warning };
   return null;
+}
+
+/** Diagnostic description of the existing selector and eligibility gate, not a second selector.
+ * If only removing seen watermarks makes a view appear, acknowledgement explains suppression.
+ * In particular, foreground acknowledgement never hides an eligible Running snapshot. */
+export function describeAttentionIndicator(
+  snapshot: AgentAttentionSnapshot | undefined, seen: AttentionSeen | undefined,
+  capability: NativeAttentionCapability | undefined, eligible: boolean,
+): Pick<AttentionReceipt, 'indicator' | 'eligible' | 'suppression'> {
+  const view = deriveAttention(snapshot, seen, capability);
+  const indicator = eligible ? view?.display ?? 'none' : 'none';
+  const suppression: AttentionReceipt['suppression'] = !eligible ? 'ineligible' : view ? 'none'
+    : !snapshot ? 'no-snapshot' : deriveAttention(snapshot, undefined, capability) ? 'acknowledged' : 'selector-none';
+  return { indicator, eligible, suppression };
 }
 
 /** Shared label/icon semantics for a displayed attention state. */

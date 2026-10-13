@@ -640,8 +640,8 @@ describe('AgentAttentionBroker stop presentation and trace', () => {
     send('turn_completed', { sessionId: 'other', turnId: 'x' });
     broker.release('term-a');
     const trace = broker.trace('term-a');
-    expect(trace.map((entry) => entry.semantic)).toEqual(['registered', 'turn_started', 'turn_completed', 'released']);
-    expect(trace.map((entry) => entry.verdict)).toEqual([undefined, 'accepted-changed', 'rejected-mismatch', undefined]);
+    expect(trace.map((entry) => entry.semantic)).toEqual(['registered', 'turn_started', 'turn_completed', 'release-without-settlement', 'released']);
+    expect(trace.map((entry) => entry.verdict)).toEqual([undefined, 'accepted-changed', 'rejected-mismatch', undefined, undefined]);
     expect(JSON.stringify(trace)).not.toMatch(/SECRET/);
     for (let i = 0; i < 100; i++) send('turn_started', { sessionId: 'x', turnId: String(i) });
     expect(broker.trace('term-a').length).toBeLessThanOrEqual(64);

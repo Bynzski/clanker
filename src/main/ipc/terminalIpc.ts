@@ -13,6 +13,9 @@ import { prepareHarnessAccountContext, type HarnessAccountService } from '../acc
  */
 
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
+import { parseAttentionReceipt } from '../../shared/types/attentionReceipt';
+import { attentionTelemetry } from '../attentionTelemetry';
+import { isWindowAvailable } from '../windowManager';
 import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import * as fs from 'node:fs';
@@ -28,6 +31,7 @@ import {
   GET_AGENT_HANDOFF_STATUSES,
   GET_AGENT_ATTENTION_SNAPSHOTS,
   GET_AGENT_ATTENTION_DIAGNOSTICS,
+  REPORT_AGENT_ATTENTION_RECEIPT,
   SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
@@ -477,7 +481,24 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         environmentId: terminal.environmentId ?? 'local', attention: terminal.attention ?? null } : null };
   });
 
-  ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, () => agentAttentionBroker?.snapshots() ?? []);
+  ipcMain.on(REPORT_AGENT_ATTENTION_RECEIPT, (event, value: unknown) => {
+    const window = getMainWindow();
+    if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
+    const receipt = parseAttentionReceipt(value);
+    if (receipt) attentionTelemetry()?.receipt(receipt);
+  });
+
+  ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, (event, forBridge: unknown) => {
+    const snapshots = agentAttentionBroker?.snapshots() ?? [];
+    const window = getMainWindow();
+    if (!appShuttingDown && !deps.getAppShuttingDown?.() && isWindowAvailable(window)
+      && event?.sender === window.webContents && event.senderFrame === window.webContents.mainFrame) {
+      // The app subscribes before hydration. Repeated queries are observations, not new pushes.
+      if (forBridge === true) attentionTelemetry()?.rendererReady();
+      for (const snapshot of snapshots) attentionTelemetry()?.hydrate(snapshot.terminalId, snapshot.revision, snapshot.runtime.status, forBridge === true);
+    }
+    return snapshots;
+  });
 
   ipcMain.handle(SEND_ANNOTATION_TO_AGENT, (_, payload: unknown) => {
     if (!isRecord(payload)
