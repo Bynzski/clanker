@@ -1,139 +1,46 @@
 # Git Integration
 
-Built-in git tools for common operations without leaving the app.
+Clanker's **Git** toolbar action opens **Source Control**, a persistent management view scoped to the selected authorized checkout, rather than the retired compact Git menu. The eight pages are **Changes** (default), **History**, **Overview**, **Branches**, **Worktrees**, **Stashes**, **Remotes** and **Merge**. Switching agent/checkout closes the prior scoped view safely; reopen Source Control to inspect the new target. Git operations use the registered checkout, not an inferred terminal directory.
 
-## Git Menu
+## Changes and commits
 
-Click the **Git** button in the header to access:
-- Status summary (with change count)
-- Branch operations
-- Linked worktree management
-- Merge tools
-- Stash management
-- Commit history
-- Remote operations
+**Changes** shows the selected checkout's working and staged files, status and any in-progress merge/rebase. Review files in the diff viewer, stage/unstage individual files or whole sections, and compose a message in the same page. **Go to Commit** scrolls and focuses the existing composer; it does not stage or commit. The commit operation uses the explicit staged set, with a deliberate option to stage all when requested; no silent inclusion of unrelated changes. AI-generated messages can be enabled under **Settings → Git Preferences**, and are available only for local workspaces.
 
-## File Explorer Git Integration
-
-The file explorer shows git status indicators:
-- Modified files display with an indicator
-- Untracked files are visually distinguished
-- Local Git changes are reflected via local file watching. SSH Git status uses its existing polling; remote Explorer and open editor files additionally use bounded batched metadata polling for the active workspace.
-
-## Status
-
-Current status shows:
-- Current branch
-- Unstaged changes
-- Staged changes
-- Merge/rebase state
-- Ahead/behind upstream tracking
-
-## Branching
-
-From the Git menu → **Branches**:
-- View current branch
-- Switch branches
-- Create new branch
-- Delete branch
-
-## Worktrees
-
-Create or adopt a working copy through **New isolated agent** beside the harness launchers, not the Git menu. Selecting a harness and a new branch, available existing branch or linked worktree runs nothing until **Launch**. The main checkout is not switched.
-
-The Git menu's **Worktrees** section lists linked checkouts (not the main checkout) and reloads with the menu's refresh. Rows distinguish **In use**, **Managed** (attached to this workspace) and **Unmanaged**, with **Locked** or **Missing** where applicable.
-
-- **Remove…** is unavailable for the workspace's own checkout, active, locked or missing rows. Removal checks branch identity, dirty/untracked/ignored contents and workspace, terminal and dev-server usage. Managed removal first releases the unused checkout context; if later removal fails, files remain on disk as unmanaged. The branch is retained.
-- **Unlock…** confirms Git's recorded lock reason and unlocks that listed linked worktree only. Removal is a separate action.
-- **Prune missing worktrees…** confirms repository-wide cleanup of stale Git metadata. It deletes no branch or directory and refuses while conflicting usage or removal operations remain.
-- **Repair…** in the isolated-agent picker opens this same management flow. **Forget stale checkout…** rechecks reconciliation and only forgets an unused checkout that is still gone.
-
-Local removal preserves checkout files; SSH removal uses private host recovery folders and completion journals. See [Workspaces](workspaces.md#isolated-agents-and-linked-worktrees) for recovery and reservation behavior.
-
-## Stashing
-
-**Stashes** section provides:
-- List stashes with descriptions
-- Create stash
-- Apply, pop, or drop stashes
-- Clear all stashes
-
-## Merging
-
-**Merge** section:
-- Select target branch
-- Initiate merge
-- Abort in-progress merge
-- Status indicators for conflicts
-
-## Remote Operations
-
-Access via the Git menu header:
-- **Fetch** — Download refs from remote
-- **Pull** — Fetch and merge (supports rebase)
-- **Push** — Upload local commits to remote
-
-Remote operations use Git and configured remotes; they do not require provider API integration. Pull and Push require an upstream branch. If the current branch has no upstream, **Publish branch** is available when a remote exists.
-
-For an SSH workspace, Clanker runs Git on the workspace host over SSH in the registered remote repository. Git authentication and remotes for that repository use the remote host's configuration. The desktop never treats a same-path local checkout as the remote repository.
-
-## Remotes
-
-The **Remotes** section allows you to manage git remote connections:
-
-- **View remotes** — See all configured remotes with their URLs
-- **Add remote** — Connect to a new remote repository (SSH or HTTPS URLs)
-- **Rename remote** — Change the name of an existing remote
-- **Remove remote** — Disconnect a remote
-
-### Adding a Remote
-
-1. Open the Git menu
-2. Click the **+** button in the Remotes section
-3. Enter a name (e.g., `origin`, `upstream`)
-4. Enter the remote URL:
-   - SSH: `git@github.com:owner/repo.git`
-   - HTTPS: `https://github.com/owner/repo.git`
-5. Click **Add Remote**
-
-### Workflow Example: Connect to GitHub
-
-1. Create a new repository on GitHub (github.com)
-2. Copy the remote URL from GitHub
-3. In Clanker Grid, open the Git menu → Remotes
-4. Click **Add remote**, name it `origin`, paste the URL
-5. The selected repository is now connected to the GitHub remote; for an SSH workspace, that configuration is stored in the remote repository
-
-## Committing
-
-### Commit Dialog
-
-1. Open Git menu → **Commit**
-2. Stage files (individual or all)
-3. Enter commit message
-4. Click **Commit**
-
-### AI Commit Messages
-
-Optional AI-assisted commit messages:
-
-1. Enable in **Settings** → **AI Commit**
-2. Select provider (Codex, OpenCode, Pi, Oh My Pi, or Antigravity)
-3. Select model
-4. In commit dialog, click **Generate Message**
-
-The AI analyzes your changes and generates a commit message.
-
-AI commit message generation is unavailable for SSH workspaces in V1. Manual staging and commits run on the remote host.
+Explorer also shows changed and untracked files. Local changes follow file watching; SSH Explorer/editor refresh uses bounded active-checkout polling, and remote transport failure is never treated as a clean repository.
 
 ## History
 
-View commit history with:
-- Commit hash
-- Author
-- Date
-- Message
-- Diff summary for each commit
+**History** displays commits with full identity, author/date and a selected read-only summary, with bounded **Load More**. Working/Staged comparisons are explicitly labelled and are not staging actions. The History summary and selection belong to the single Source Control content scroller.
+
+## Overview
+
+**Overview** presents the Git status and any available provider PR/MR, CI and review context. Missing provider data, unavailable reads and unknown status are distinct from confirmed absence or success. Source Control fetches page-specific resources when needed, instead of blocking workspace activation on all Git reads.
+
+## Branches
+
+**Branches** lists the selected checkout's current branch and available alternatives. Create and switch actions operate in that checkout; Git may reject branches already checked out elsewhere. Branch identity is fetched from Git status, not from a stale descriptive checkout label. Delete actions are confirmation-guarded.
+
+## Worktrees
+
+Use **New Agent** to launch Terminal or a harness in the project checkout (the default), a new branch/worktree, an available existing branch or a validated linked worktree. A choice alone starts nothing, and launching does not move another process or transfer uncommitted files. Source Control → **Worktrees** can also **Create worktree…** without a session. The old sidebar checkout inventory and MCP-assisted agent relocation are removed.
+
+The **Worktrees** page displays Git-listed linked roots, including occupied, locked and missing entries. **Remove…** refuses unsafe or occupied targets and checks branch, checkout identity, staged/unstaged/untracked/ignored files, active terminals and dev servers. Removal retains the branch and preserves recovery files where applicable; over SSH, protected recovery/journal folders may require subsequent **Refresh worktrees** verification if transport drops. **Unlock…** confirms the Git lock reason. **Prune missing worktrees…** repairs Git's stale registrations, not checkout files or branches. Do not delete linked checkout folders manually while Clanker is using them.
+
+See [Workspaces](workspaces.md#isolated-agents-and-linked-worktrees) for local and SSH recovery boundaries and [Unified session launch](unified-session-launch.md) for current authorization rules.
+
+## Stashes
+
+**Stashes** lists saved work, supports creation, apply/pop/drop and guarded clearing. Mutations validate current Git identity and decline stale stash selections.
+
+## Remotes and sync
+
+**Remotes** lists, adds, renames and removes Git remote URLs. Examples include `git@github.com:owner/repo.git` and `https://github.com/owner/repo.git`. Sync actions **Fetch**, **Pull**, **Push** and **Publish branch** use actual Git configuration for the selected checkout. Pull/Push require the appropriate upstream; Publish is explicit when absent. A successful remote command followed by a failed UI refresh remains a successful remote operation with stale presentation, not an invitation to retry the push automatically.
+
+SSH Git runs on the configured host and uses its own keys, credential helpers and remotes. Clanker's desktop provider PATs do not configure remote Git authentication.
+
+## Merge
+
+**Merge** allows choosing a supported target branch, starting a merge and handling/aborting conflicts with confirmation and native Git status. In-progress operations and checkout identity are validated rather than inferred.
 
 ## VCS Provider Integration
 
@@ -149,7 +56,7 @@ Provider detection uses exact hosted origins or explicitly main-approved self-ma
 
 ### Provider Context
 
-When connected to a VCS provider, the Git menu displays:
+When connected to a VCS provider, the Source Control overview and provider controls can display:
 - **PR/MR Badge** — Shows current PR number, title, and state
 - **Status Indicators** — CI/CD status (pending, success, failure)
 - **Review State** — Approval status when available
@@ -171,18 +78,18 @@ Links open in your default browser.
 
 ## Credential Management
 
-Configure authentication for remote operations:
+Configure authentication for remote operations in **Settings → Authentication**:
 
 ### SSH Keys
 
-1. Open **Settings** → **Credentials**
+1. Open **Settings → Authentication**
 2. Click **Generate SSH Key**
 3. Copy the public key
-4. Add to your VCS provider (Settings → SSH Keys)
+4. Add the public key to your VCS provider
 
 ### Personal Access Tokens
 
-1. Open **Settings** → **Credentials** → **Access Tokens**
+1. Open **Settings → Authentication → Access Tokens**
 2. Select provider (GitHub, GitLab, Bitbucket)
 3. Enter your token
 4. Click **Save**
@@ -193,7 +100,7 @@ For Git commands in an SSH workspace, authentication happens on the remote host 
 
 ### Credential Status
 
-The Git menu shows credential status for your remote:
+Source Control can show credential context for your remote:
 - SSH key configured ✓
 - PAT stored ✓
 - Git credential helper status
