@@ -15,6 +15,8 @@ let closeGuard: AppCloseGuard | undefined = undefined;
 // Unpackaged runs and packaged versions marked -dev log attention decisions by default.
 // Explicit CLANKER_DEBUG_ATTENTION=0 disables logging; stable releases stay quiet.
 applyStartupAttentionDebug(process.env, app.isPackaged, app.getVersion());
+// Performance diagnostics are never available in packaged applications.
+if (app.isPackaged) delete process.env.CLANKER_SWITCH_DEBUG;
 
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 

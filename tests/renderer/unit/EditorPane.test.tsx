@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Profiler } from 'react';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -109,6 +110,19 @@ describe('EditorPane', () => {
     cleanup();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('ignores unrelated store updates but still updates its scoped editor tab', () => {
+    const ws = createWorkspaceFixture({ id: 'scoped', lifecycle: 'active', editorVisible: true, editorPane: { id: 'editor' } });
+    useWorkspaceStore.setState({ workspaces: [ws], activeWorkspaceId: ws.id });
+    const commits = vi.fn();
+    render(<Profiler id="editor" onRender={commits}><EditorPane workspaceId={ws.id} /></Profiler>);
+    commits.mockClear();
+    act(() => useWorkspaceStore.setState({ gridViewport: { cols: 70, rows: 50 } }));
+    expect(commits).not.toHaveBeenCalled();
+    act(() => useWorkspaceStore.setState({ workspaces: [{ ...ws, activeEditorTabId: 'new', editorTabs: [{ id: 'new', filePath: '/workspace/new.ts', fileName: 'new.ts', content: 'new content', originalContent: 'new content', isDirty: false }] }] }));
+    expect(commits).toHaveBeenCalled();
+    expect(screen.getByText('new.ts')).toBeInTheDocument();
   });
 
   describe('editing baseline', () => {

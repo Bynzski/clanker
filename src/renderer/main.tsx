@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { switchCommit } from './lib/workspaceSwitchDebug'
 import './styles/global.css'
 import { useThemeStore, applyThemeToDocument } from './theme/themeStore'
 import { startTerminalThemeSync } from './theme/themeRuntime'
@@ -39,7 +40,7 @@ export async function bootstrap(rootElement?: HTMLElement | null): Promise<void>
   try {
     ReactDOM.createRoot(root).render(
       <React.StrictMode>
-        <App />
+        {import.meta.env.DEV ? <React.Profiler id="app" onRender={switchCommit}><App /></React.Profiler> : <App />}
       </React.StrictMode>,
     );
   } catch (error) {

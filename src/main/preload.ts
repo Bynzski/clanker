@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
+import { contextBridge, ipcRenderer as nativeIpcRenderer, webFrame, webUtils } from 'electron';
+import { createSwitchReadMetrics } from '../shared/switchReadMetrics';
 import type { BrowserPresentation } from '../shared/types/browserPresentation';
 import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
@@ -229,6 +230,21 @@ import {
   GET_ENVIRONMENT_HARNESS_OPTIONS,
   GET_ENVIRONMENT_HARNESS_MODELS,
 } from '../shared/ipcChannels';
+
+// Opt-in development counters; never retain arguments or responses.
+const switchMetricsEnabled = process.env.NODE_ENV === 'development' && process.env.CLANKER_SWITCH_DEBUG === '1';
+const switchIpcMetrics = createSwitchReadMetrics();
+if (switchMetricsEnabled) contextBridge.exposeInMainWorld('clankerSwitchIpc', { snapshot: switchIpcMetrics.snapshot });
+const ipcRenderer = switchMetricsEnabled ? new Proxy(nativeIpcRenderer, {
+  get(target, key) {
+    if (key === 'invoke') return (channel: string, ...args: unknown[]) => {
+      const finish = switchIpcMetrics.begin(channel);
+      return target.invoke(channel, ...args).finally(finish);
+    };
+    const value = Reflect.get(target, key);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+}) : nativeIpcRenderer;
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Optional native-profile roster; settings do not contain native credentials.

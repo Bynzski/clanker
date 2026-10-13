@@ -1,5 +1,6 @@
 import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
+import { startSwitch } from '../lib/workspaceSwitchDebug';
 import { workspacePageActions } from './workspacePageActions';
 import { activePage, paneIsPresented, revealPane, revealTerminal, retainSelectedPage, selectPage, synchronizePages } from './workspacePages';
 import {
@@ -259,6 +260,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
+    if (import.meta.env.DEV && state.activeWorkspaceId !== id) {
+      startSwitch(state.activeWorkspaceId, id, workspace.runtimeState.residencyState === 'warm');
+    }
     const next = sanitizeWorkspace({
       ...workspace,
       lifecycle: 'active',

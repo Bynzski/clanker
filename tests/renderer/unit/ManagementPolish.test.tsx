@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { Profiler } from 'react';
 import userEvent from '@testing-library/user-event';
 import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -41,6 +42,16 @@ async function open() {
 }
 
 describe('management polish without new execution paths', () => {
+  it('does not commit or restart polling for unrelated workspace-store fields', async () => {
+    const commits = vi.fn();
+    render(<Profiler id="git" onRender={commits}><GitButton workspacePath={main.path} workspaceId="ws" /></Profiler>);
+    await act(async () => {});
+    commits.mockClear();
+    const polls = api.gitStartPolling.mock.calls.length;
+    act(() => useWorkspaceStore.setState({ gridViewport: { cols: 70, rows: 50 } }));
+    expect(commits).not.toHaveBeenCalled();
+    expect(api.gitStartPolling).toHaveBeenCalledTimes(polls);
+  });
   it('jumps past 34 long filenames to the sole inline composer using keyboard navigation', async () => {
     status.changes = Array.from({ length: 34 }, (_, i) => ({ path: `src/${'long-directory/'.repeat(8)}file-${i}.ts`, status: 'modified', staged: false }));
     const user = await open();

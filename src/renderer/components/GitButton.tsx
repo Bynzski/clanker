@@ -126,7 +126,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
-  const { activeWorkspaceId } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const focusedWorkspace = useWorkspaceStore((state) => state.workspaces.find((entry) => entry.id === workspaceId));
   const agentSnapshot = useAgentSnapshot(focusedWorkspace?.activeTerminalId);
   const checkoutContextId = focusedWorkspace ? selectedVcsCheckoutId(focusedWorkspace, agentSnapshot) : undefined;

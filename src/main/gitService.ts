@@ -1,5 +1,6 @@
 import { GitRepositoryAbsentError, hasLocalGitMetadata, withGitRepositoryDiscovery } from './gitRepositoryDiscovery';
 import { execFile } from 'child_process';
+import { measureSwitchRead } from './workspaceSwitchMetrics';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomBytes } from 'crypto';
 import { promisify } from 'util';
@@ -1525,6 +1526,10 @@ export class GitService {
   }
 
   async getStatus(workspacePath: string): Promise<GitStatusResult> {
+    return measureSwitchRead('git-status', () => this.getStatusMeasured(workspacePath));
+  }
+
+  private async getStatusMeasured(workspacePath: string): Promise<GitStatusResult> {
     try {
       const { stdout } = await this.execGit(workspacePath, ['status', '--porcelain=v2', '--branch']);
 

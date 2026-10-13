@@ -38,10 +38,8 @@ function App() {
   useEffect(() => initUsageListeners(), []);
   const [showOpenWorkspace, setShowOpenWorkspace] = useState(false);
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
-  const { 
-    fitAllPanes,
-    updateWorkspaceBrowserUrl,
-  } = useWorkspaceStore();
+  const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
+  const updateWorkspaceBrowserUrl = useWorkspaceStore((state) => state.updateWorkspaceBrowserUrl);
   // Worktree checkouts follow Git: agents and shells can finish a worktree without Clanker.
   useCheckoutReconciliation();
 

@@ -9,7 +9,9 @@ import './EditorTabBar.css';
 export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { setActiveEditorTab, closeEditorTab, saveEditorFile } = useWorkspaceStore();
+  const setActiveEditorTab = useWorkspaceStore((state) => state.setActiveEditorTab);
+  const closeEditorTab = useWorkspaceStore((state) => state.closeEditorTab);
+  const saveEditorFile = useWorkspaceStore((state) => state.saveEditorFile);
   const editorTabs = workspace?.editorTabs ?? [];
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
