@@ -2,7 +2,8 @@ import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
 } from './workspaceLayout';
-import { projectPageBrowser, retainSelectedPage, selectPage, synchronizePages, updateBrowserOwner } from './workspacePages';
+import { activePage, projectPageBrowser, retainSelectedPage, selectPage, synchronizePages, updateBrowserOwner } from './workspacePages';
+import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { GitStatus } from '../components/git/types';
 import { backfillCheckoutContexts, bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
@@ -228,6 +229,16 @@ export function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean 
 }
 
 export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
+  // Ingestion/legacy repair, including partial embedding snapshots. Never a live-switch fast path.
+  workspace = {
+    ...createDefaultExplorerState(), ...createDefaultEditorState(), ...createDefaultNotesState(),
+    ...workspace,
+    terminals: workspace.terminals ?? [], panes: workspace.panes ?? [], editorTabs: workspace.editorTabs ?? [],
+    explorerExpandedPaths: workspace.explorerExpandedPaths ?? [], explorerLoadingPaths: workspace.explorerLoadingPaths ?? [],
+    browserVisible: workspace.browserVisible ?? false, browserPane: workspace.browserPane ?? null,
+    browserUrl: workspace.browserUrl || DEFAULT_NEW_TAB_URL,
+    activeTerminalId: workspace.activeTerminalId ?? null, layoutRoot: workspace.layoutRoot ?? null,
+  };
   const explorerPane = workspace.explorerPane
     ? { ...workspace.explorerPane }
     : workspace.explorerVisible
@@ -279,6 +290,34 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     runtimeState: sanitizeRuntimeState(workspace),
   });
 };
+
+/**
+ * Normal ingestion and live mutation helpers establish these structural fields. Only
+ * legacy/partial setState embeddings (or a broken projection) need compatibility repair.
+ * This is not validation of arbitrary persisted bytes: add/hydrate always sanitize them.
+ * No normalization flag/cache, layout walk or resource reconstruction on the live path.
+ */
+export function prepareWorkspaceActivation(workspace: WorkspaceTab): WorkspaceTab {
+  const page = activePage(workspace);
+  const policy = workspace.runtimeState?.resourcePolicy;
+  const mainId = mainCheckoutContextId(workspace.id);
+  if (!page || !workspace.environmentId || !workspace.environmentLabel
+    || !workspace.runtimeState?.residencyState || !policy?.terminals || !policy.browser || !policy.explorer || !policy.editor
+    || !workspace.checkoutContexts?.some((context) => context.id === mainId)
+    || !Array.isArray(workspace.terminals) || workspace.terminals.some((terminal) => !terminal.checkoutContextId)
+    || !Array.isArray(workspace.panes) || !Array.isArray(workspace.editorTabs)
+    || !Array.isArray(workspace.explorerExpandedPaths) || !Array.isArray(workspace.explorerLoadingPaths)
+    || !workspace.explorerEntriesByPath || !workspace.explorerErrorsByPath || !Array.isArray(workspace.gitChanges)
+    || workspace.layoutRevision === undefined || !workspace.layoutUndoStack
+    || workspace.browserOverlayCount === undefined || workspace.notesVisible === undefined || workspace.showHiddenFiles === undefined
+    || page.layoutRoot !== workspace.layoutRoot || page.layoutRevision !== workspace.layoutRevision
+    || page.layoutUndoStack !== workspace.layoutUndoStack || page.activeTerminalId !== workspace.activeTerminalId
+    || (page.browser?.pane ?? null) !== workspace.browserPane
+    || (page.browser?.visible ?? false) !== workspace.browserVisible
+    || (page.browser?.url ?? DEFAULT_NEW_TAB_URL) !== workspace.browserUrl
+    || (page.browser?.placementHint ?? null) !== (workspace.browserPlacementHint ?? null)) return sanitizeWorkspace(workspace);
+  return workspace;
+}
 
 function withWorkspaceLifecycle(
   workspace: WorkspaceTab,
@@ -757,7 +796,9 @@ function validatePageInvariants(state: Partial<WorkspaceState>): string[] {
     if (!workspace.pages) continue;
     if (!workspace.pages.length || !workspace.pages.some((page) => page.id === workspace.activePageId)) warnings.push('P1 violated: invalid active page');
     const ids = new Set<string>();
-    const valid = new Set([...workspace.panes.map((pane) => pane.id), workspace.browserPane?.id, workspace.editorPane?.id, workspace.notesPane?.id]);
+    const valid = new Set([...workspace.panes.map((pane) => pane.id),
+      ...workspace.pages.flatMap((page) => page.browser?.pane ? [page.browser.pane.id] : []),
+      workspace.browserPane?.id, workspace.editorPane?.id, workspace.notesPane?.id]);
     const pageIds = new Set<string>();
     for (const page of workspace.pages) {
       if (pageIds.has(page.id)) warnings.push('P2 violated: duplicate page id');
@@ -775,6 +816,14 @@ function validatePageInvariants(state: Partial<WorkspaceState>): string[] {
     }
     const page = workspace.pages.find((entry) => entry.id === workspace.activePageId);
     if (page && page.layoutRoot !== workspace.layoutRoot) warnings.push('P6 violated: active page projection differs');
+    if (page && (page.activeTerminalId !== workspace.activeTerminalId
+      || page.layoutRevision !== workspace.layoutRevision || page.layoutUndoStack !== workspace.layoutUndoStack
+      || (page.browser?.pane ?? null) !== workspace.browserPane
+      || (page.browser?.visible ?? false) !== workspace.browserVisible
+      || (page.browser?.url ?? DEFAULT_NEW_TAB_URL) !== workspace.browserUrl
+      || (page.browser?.placementHint ?? null) !== (workspace.browserPlacementHint ?? null))) {
+      warnings.push('P8 violated: active page resource projection differs');
+    }
     if (workspace.panes.some((pane) => !ids.has(pane.id))) warnings.push('P7 violated: pane has no page membership');
   }
   return warnings;

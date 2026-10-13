@@ -1,6 +1,6 @@
 import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
-import { startSwitch } from '../lib/workspaceSwitchDebug';
+import { activationReferences, startSwitch } from '../lib/workspaceSwitchDebug';
 import { workspacePageActions } from './workspacePageActions';
 import { activePage, paneIsPresented, revealPane, revealTerminal, retainSelectedPage, selectPage, synchronizePages } from './workspacePages';
 import {
@@ -62,6 +62,7 @@ import {
   resolveWorkspaceByScope,
   resolveWorkspaceIdByScope,
   sanitizeWorkspace,
+  prepareWorkspaceActivation,
   setEditorOperationPending,
   syncActiveWorkspace,
   validateWorkspaceConsistency,
@@ -192,13 +193,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
-      ...createDefaultExplorerState(),
-      ...createDefaultEditorState(),
-      ...createDefaultNotesState(),
       id,
       lifecycle: 'active',
       ...workspace,
-      terminals: nameTerminals(workspace.terminals),
+      terminals: nameTerminals(workspace.terminals ?? []),
       name: defaultName,
     });
     const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
@@ -261,21 +259,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     if (import.meta.env.DEV && state.activeWorkspaceId !== id) {
-      startSwitch(state.activeWorkspaceId, id, workspace.runtimeState.residencyState === 'warm');
+      startSwitch(state.activeWorkspaceId, id, workspace.runtimeState?.residencyState === 'warm');
     }
-    const next = sanitizeWorkspace({
-      ...workspace,
-      lifecycle: 'active',
-    });
+    const next = prepareWorkspaceActivation(workspace);
     const selected = terminalId && next.terminals.some((terminal) => terminal.id === terminalId)
       ? synchronizePages(next, revealTerminal(next, terminalId))
       : next;
+    if (import.meta.env.DEV) activationReferences(workspace, selected);
     const nextWorkspaces = assignWorkspaceLifecycles(
       state.workspaces.map((entry) => entry.id === id ? selected : entry),
       id,
     );
+    const active = findWorkspaceById(nextWorkspaces, id)!;
     const nextState = {
-      ...getActiveWorkspaceSnapshot(selected),
+      ...getActiveWorkspaceSnapshot(active),
       workspaces: nextWorkspaces,
       gridViewport: state.gridViewport,
       activeWorkspaceId: id,

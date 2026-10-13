@@ -31,6 +31,8 @@
  *   - editor create/destroy: EditorView instance (may fire on workspace change)
  */
 
+import type { WorkspaceTab } from '../store/workspaceTypes';
+
 const PREFIX = '[workspace-residency]';
 const DEV = import.meta.env.DEV;
 function readDebugPreference(): boolean {
@@ -62,6 +64,19 @@ if (DEV && typeof window !== 'undefined') window.clankerSwitchDebug = {
   clear() { events.length = 0; window.clankerSwitchIpc?.snapshot(true); },
   snapshot: () => ({ events: structuredClone(events), ipc: window.clankerSwitchIpc?.snapshot() ?? null }),
 };
+
+const activationReferenceFields = ['terminals', 'panes', 'editorTabs', 'explorerExpandedPaths',
+  'explorerEntriesByPath', 'explorerLoadingPaths', 'explorerErrorsByPath', 'browserPane', 'pages',
+  'layoutRoot', 'layoutUndoStack', 'checkoutContexts', 'runtimeState', 'gitChanges', 'minimizedPanes',
+  'pendingTerminalIds'] as const;
+
+/** Synchronous activation-only reference changes, before resource effects; no payloads/paths. */
+export function activationReferences(previous: WorkspaceTab, selected: WorkspaceTab): void {
+  if (!DEV || !enabled) return;
+  log('activation_references', { switchId: _currentSwitchId, workspaceId: selected.id,
+    checked: activationReferenceFields.length,
+    changed: activationReferenceFields.filter((key) => previous[key] !== selected[key]) });
+}
 
 /** Profiler actualDuration is render CPU time, not paint or total switch latency. */
 export function switchCommit(id: string, phase: string, actualDuration: number, _baseDuration: number, _startTime: number, commitTime: number): void {
