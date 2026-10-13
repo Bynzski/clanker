@@ -18,6 +18,8 @@ interface HeaderRightControlsProps {
   chatSessions: HarnessSession[];
   isLoadingSessions: boolean;
   sessionDiscoveryError?: string;
+  isRefreshingSessions?: boolean;
+  isLastKnownSessions?: boolean;
   workspacePath: string;
   workspaceId: string | null;
   onCloseChatHistory: () => void;
@@ -25,7 +27,7 @@ interface HeaderRightControlsProps {
 
 export default function HeaderRightControls({ capabilities, panelToggles, fitAllPanes, undoLayout,
   canUndoLayout, onOpenRecipes, showChatHistory, onChatHistoryOpenChange, chatSessions,
-  isLoadingSessions, sessionDiscoveryError, workspacePath, workspaceId, onCloseChatHistory }: HeaderRightControlsProps) {
+  isLoadingSessions, sessionDiscoveryError, isRefreshingSessions, isLastKnownSessions, workspacePath, workspaceId, onCloseChatHistory }: HeaderRightControlsProps) {
   const settings = useApplicationSettings();
   return (
     <div className="header-right">
@@ -53,7 +55,7 @@ export default function HeaderRightControls({ capabilities, panelToggles, fitAll
               title="Chat history" aria-label="Chat history"><MessageSquare size={14} strokeWidth={2} /></IconButton>
           </PopoverTrigger>
           <PopoverContent align="end" className="header-chat-popover" aria-label="Chat history" workspaceId={workspaceId ?? undefined}>
-            <ChatHistoryDropdown sessions={chatSessions} isLoading={isLoadingSessions} discoveryError={sessionDiscoveryError}
+            <ChatHistoryDropdown sessions={chatSessions} isLoading={isLoadingSessions} discoveryError={sessionDiscoveryError} isRefreshing={isRefreshingSessions} isLastKnown={isLastKnownSessions}
               workspacePath={workspacePath || '/'} workspaceId={workspaceId} onClose={onCloseChatHistory} />
           </PopoverContent>
         </Popover>}

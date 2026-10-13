@@ -31,6 +31,7 @@
     "diagnose:gpu": "electron scripts/gpu-smoke.cjs",
     "diagnose:workspace-switch": "node scripts/workspace-switch-measure.cjs",
     "diagnose:explorer-refresh": "node scripts/explorer-refresh-smoke.cjs",
+    "diagnose:session-discovery": "node scripts/session-discovery-smoke.cjs",
     "precapture:features": "npm run build",
     "capture:features": "node scripts/screenshots/capture.cjs",
     "validate": "npm run branding:check && npm run lint && npm run typecheck && npm run fallow:check && npm run security-check && npm run build && npm run test",

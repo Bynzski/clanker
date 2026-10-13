@@ -9,6 +9,7 @@ export function createSwitchReadMetrics() {
       if (resetPeak) peak = active;
       return result;
     },
+    record(label: string) { counts[label] = (counts[label] ?? 0) + 1; },
     begin(label: string) {
       counts[label] = (counts[label] ?? 0) + 1;
       peak = Math.max(peak, ++active);

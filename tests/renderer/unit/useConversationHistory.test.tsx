@@ -4,14 +4,65 @@ import { useConversationHistory } from '../../../src/renderer/components/useConv
 import { WARMUP_DELAY_MS } from '../../../src/renderer/lib/idleWarmup';
 import { installElectronApiMock } from '../../setup/electron';
 import type { HarnessSession } from '../../../src/shared/types/session';
+import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 const session = (id: string, title = id): HarnessSession => ({ id, harness: 'codex', title, cwd: '/workspace', timestamp: 1 });
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
 beforeEach(() => { installElectronApiMock(); vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('useConversationHistory', () => {
+  it('opening during warmup uses forced discovery and ignores the older warm result', async () => {
+    let finishWarm!: (value: { sessions: HarnessSession[]; issues: [] }) => void;
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockReturnValueOnce(new Promise(resolve => { finishWarm = resolve; }))
+      .mockResolvedValueOnce({ sessions: [session('fresh')], issues: [] }).mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useConversationHistory('a'));
+    act(() => vi.advanceTimersByTime(WARMUP_DELAY_MS));
+    act(() => result.current.setOpen(true)); await flush();
+    await act(async () => finishWarm({ sessions: [session('older')], issues: [] }));
+    expect(result.current.sessions[0].id).toBe('fresh');
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true));
+    expect(result.current.sessions[0].id).toBe('fresh'); expect(result.current.isLastKnown).toBe(true);
+    expect(window.electronAPI.discoverSessionHistory).toHaveBeenNthCalledWith(2, 'a', true);
+  });
+  it('failed manual refresh keeps a marked remembered list and reopening permits recovery', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockResolvedValueOnce({ sessions: [session('remembered')], issues: [] })
+      .mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce({ sessions: [session('recovered')], issues: [] });
+    const { result } = renderHook(() => useConversationHistory('a', { warmup: false }));
+    act(() => result.current.setOpen(true)); await flush();
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true)); await flush();
+    expect(result.current.sessions[0].id).toBe('remembered'); expect(result.current.isLastKnown).toBe(true); expect(result.current.error).toBe('Unavailable');
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true)); await flush();
+    expect(result.current.sessions[0].id).toBe('recovered'); expect(result.current.isLastKnown).toBe(false); expect(result.current.error).toBe('');
+  });
+  it('batched A to B to A cannot publish a previous selection response', async () => {
+    const a = createWorkspaceFixture({ id: 'epoch-a', lifecycle: 'active' }), b = createWorkspaceFixture({ id: 'epoch-b', lifecycle: 'parked', workspacePath: '/other' });
+    act(() => useWorkspaceStore.setState({ workspaces: [a, b], activeWorkspaceId: a.id }));
+    let finish!: (value: { sessions: HarnessSession[]; issues: [] }) => void;
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockReturnValueOnce(new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce({ sessions: [session('current')], issues: [] });
+    const { result } = renderHook(() => useConversationHistory(a.id, { warmup: false }));
+    act(() => result.current.setOpen(true));
+    act(() => { useWorkspaceStore.getState().selectWorkspace(b.id); useWorkspaceStore.getState().selectWorkspace(a.id); });
+    await act(async () => finish({ sessions: [session('obsolete')], issues: [] }));
+    expect(result.current.sessions).toEqual([]);
+    expect(result.current.error).toMatch(/selection changed/);
+    expect(result.current.isLoading).toBe(false);
+    act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true)); await flush();
+    expect(result.current.sessions[0].id).toBe('current');
+  });
+  it('reusing a workspace id for another environment does not reuse remembered sessions', async () => {
+    const local = createWorkspaceFixture({ id: 'identity', lifecycle: 'active' });
+    act(() => useWorkspaceStore.setState({ workspaces: [local], activeWorkspaceId: local.id }));
+    vi.mocked(window.electronAPI.discoverSessionHistory).mockResolvedValueOnce({ sessions: [session('local')], issues: [] }).mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useConversationHistory(local.id, { warmup: false }));
+    act(() => result.current.setOpen(true)); await flush();
+    act(() => result.current.setOpen(false));
+    act(() => useWorkspaceStore.setState({ workspaces: [{ ...local, environmentId: 'ssh:other' }] }));
+    act(() => result.current.setOpen(true)); expect(result.current.sessions).toEqual([]); expect(result.current.isLoading).toBe(true);
+  });
   it('retains partial warnings alongside usable sessions and retries with a fresh scan on opening', async () => {
     const partial = { sessions: [session('good')], issues: [{ harness: 'pi' as const, message: 'Pi history could not be read.' }] };
     vi.mocked(window.electronAPI.discoverSessionHistory).mockResolvedValueOnce(partial).mockReturnValueOnce(new Promise(() => {}));
@@ -23,7 +74,7 @@ describe('useConversationHistory', () => {
     expect(window.electronAPI.discoverSessionHistory).toHaveBeenLastCalledWith('ws-1', true);
   });
 
-  it('displays partial refresh results with diagnostics without poisoning the last-good cache', async () => {
+  it('retains last-good refresh results as unverified with partial diagnostics' , async () => {
     vi.mocked(window.electronAPI.discoverSessionHistory)
       .mockResolvedValueOnce({ sessions: [session('complete')], issues: [] })
       .mockResolvedValueOnce({ sessions: [session('partial')], issues: [{ harness: 'pi', message: 'Pi unavailable.' }] })
@@ -31,7 +82,8 @@ describe('useConversationHistory', () => {
     const { result } = renderHook(() => useConversationHistory('ws', { warmup: false }));
     act(() => result.current.setOpen(true)); await flush();
     act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true)); await flush();
-    expect(result.current.sessions.map((entry) => entry.id)).toEqual(['partial']);
+    expect(result.current.sessions.map((entry) => entry.id)).toEqual(['complete']);
+    expect(result.current.isLastKnown).toBe(true);
     expect(result.current.error).toBe('Pi unavailable.');
     act(() => result.current.setOpen(false)); act(() => result.current.setOpen(true));
     expect(result.current.sessions.map((entry) => entry.id)).toEqual(['complete']);
