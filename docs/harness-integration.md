@@ -255,7 +255,7 @@ input and lifecycle. Invariants:
   native end, explicit `session_replaced` naming the bound root, or `session_continued` lineage
   permits changing it. Rejected reports do not prevent the bound root's next turn from tracking.
   Shared-session switching without those signals remains a documented limitation, not an automatic
-  recovery claim (see below and [final hardening findings](agent-attention-final-hardening.md)).
+  recovery claim (see remaining native-session selection limits below).
 - **Turn identity is mandatory.** Every start, input and completion event carries
   a `turnId`: the native turn ID where the harness has one (Codex `turn_id`,
   Claude `prompt_id`, Hermes `turn_id`), otherwise a provider-owned epoch the
