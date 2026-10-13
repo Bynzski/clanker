@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Workspace pages and presentation (#89, #151)** — use up to nine pages per workspace, move panes between them, minimize/restore live panes, and open independent Browser panes. Saved page preferences never recreate ended processes or Browser sessions.
+- **Unified New Agent launch (#166)** — choose Terminal or a supported harness, default to the project checkout, or explicitly select/create a validated linked worktree. Source Control can also create a worktree without launching a session.
+- **Settings and Source Control management (#154)** — dedicated Settings destinations for appearance, layout, shortcuts, harnesses, accounts, Assistants, Git preferences, authentication and SSH targets. Source Control exposes Changes, History, Overview, Branches, Worktrees, Stashes, Remotes and Merge, with checkout-aware diff review, staging and commits.
+- **Hermes Assistant profile details (#157)** — read-only capabilities, scheduled routines and recent runs, with roster visibility controls. Clanker does not schedule or operate Hermes jobs.
+- **Terminal image drops (#169)** — pass quoted paths for dropped local image files to ready local terminal/Assistant input without submitting the command; remote and unsupported drops are refused.
+- **Development attention diagnostics (#152, #164, #179)** — bounded, redacted field logs and renderer receipt/presentation evidence, default-on for development builds. This is observational telemetry, not a claim that missing attention updates or actual pixel presentation have been fixed.
+
+### Changed
+
+- **Agent and checkout workflow (#166)** — replace toolbar harness pills and the separate isolated-agent picker with New Agent; keep Git inventory authoritative and checkout contexts as scoped execution grants rather than worktree ownership.
+- **Usage (#149, #161)** — move access to the status bar, share eligible local cached readings with Assistants, and offer compact quota/reset display with account-email masking.
+- **Workspace switching and refresh (#176)** — narrow activation subscriptions, retain checkout-scoped snapshots, load Source Control resources on demand, coalesce equivalent session discovery and bound SSH refresh. Progressive startup restoration is only an assessment, not a shipped change.
+- **App-owned dialogs (#168, #171)** — replace browser-native prompts and confirmations with shared styled dialogs.
+- **Launch recipes (#89)** — temporarily disable their UI and execution/mutation routes while preserving saved recipe data unchanged.
+- **Git and VCS feedback (#145, #154, #167)** — improve checkout-scoped operations, removal/occupancy protections, and the distinction between confirmed provider results and missing or stale results.
+
+### Fixed
+
+- **Agent-attention state handling (#152, #162)** — harden acknowledgements, foreground/native-session correlation and provisional Stop handoffs. Native hook gaps and intermittent missing updates remain under investigation.
+- **Checkout and session safety (#147, #159, #166)** — protect in-use checkouts against unsafe cleanup, refuse unregistered observed directories as launch authority, and validate repository initialization and worktree adoption.
+- **VCS credentials and CI summaries (#145, #165, #173)** — fail closed on invalid decrypted credentials and do not represent unknown PR/review/CI results as success.
+- **Production dead-code gate (#175)** — require valid Fallow baseline identities and reject stale exemptions.
+
+### Removed
+
+- **Checkout relocation via MCP (#166)** — retire agent-requested checkout create/complete lifecycle tools and the automated session-relocation chain. The opt-in authenticated Clanker MCP bridge remains read-only workspace context; normal Git tools and native history/resume are unchanged.
+- **Obsolete checkout launch surfaces (#166)** — retire the sidebar worktree inventory, old isolated-agent picker and separate harness pills in favor of New Agent and Source Control.
+
+
 ## [0.12.0] - 2026-10-08
 
 ### Added
