@@ -19,11 +19,11 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **Harness usage** — check subscription usage and remaining quota for Codex, Claude, OMP, Hermes, and Antigravity in the active local or SSH workspace. The Usage popover refreshes while open; choose which providers appear in Harness Defaults.
 - **New Agent** — launch a terminal or agent in main, an existing Git worktree, or a new worktree inside one project. Worktrees persist independently; Source Control handles manual cleanup.
 - **Local dev servers** — run a detected `dev` script per checkout from the sidebar, preview it in Browser, and inspect/copy failure diagnostics without adding a terminal pane.
-- **Git, built in** — branches, stashes, merges, diffs, remotes, worktree management, and AI-assisted commits without leaving the app.
+- **Git, built in** — Source Control pages for Changes, History, Overview, Branches, Worktrees, Stashes, Remotes and Merge, with checkout-aware staging, commits and AI-assisted messages.
 - **VCS at a glance** — PR status, CI checks, and quick links from GitHub, GitLab, and Bitbucket.
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting, Markdown preview, and a familiar explorer.
-- **Multi-workspace** — every project gets its own workspace in a collapsible sidebar (or optional tabs); reorder them and switch context without losing it.
+- **Multi-workspace and pages** — navigate projects with Sidebar or Tabs, arrange live panes across workspace pages, minimize/restore them, and keep multiple independent Browsers.
 - **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer and the editor monitor its remote files. Manage remote worktrees, track agent attention, resume supported conversations, and preview workspace-owned web services in the embedded Browser with automatic discovery and desktop loopback forwarding. Manual forwarding remains available as a fallback.
 - **Credentials handled** — SSH key generation and encrypted PAT storage built in.
 
@@ -70,7 +70,7 @@ On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS
 
 ## Documentation
 
-The [documentation index](docs/README.md) separates current user guides, developer references, smoke tests, and deferred designs. Release notes are in [CHANGELOG.md](CHANGELOG.md); source-checkout features under **Unreleased** are not yet a published release.
+The [documentation index](docs/README.md) separates current user guides, developer references, smoke tests, and deferred designs. The guides describe current `main`; they are not limited to the last binary release. [CHANGELOG.md](CHANGELOG.md) groups post-release changes under **Unreleased** until the next release is cut.
 
 - [Getting Started](docs/getting-started.md) — installation and first launch
 - [Workspaces](docs/workspaces.md) — opening, switching, and managing workspaces (sidebar or tabs)

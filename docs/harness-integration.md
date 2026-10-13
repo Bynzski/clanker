@@ -255,7 +255,7 @@ input and lifecycle. Invariants:
   native end, explicit `session_replaced` naming the bound root, or `session_continued` lineage
   permits changing it. Rejected reports do not prevent the bound root's next turn from tracking.
   Shared-session switching without those signals remains a documented limitation, not an automatic
-  recovery claim (see below and [final hardening findings](agent-attention-final-hardening.md)).
+  recovery claim (see remaining native-session selection limits below).
 - **Turn identity is mandatory.** Every start, input and completion event carries
   a `turnId`: the native turn ID where the harness has one (Codex `turn_id`,
   Claude `prompt_id`, Hermes `turn_id`), otherwise a provider-owned epoch the
@@ -641,9 +641,7 @@ is no remote inference or general inference framework.
 
 The bridge is one small, authenticated agent → Clanker capability plane owned by the main process. It
 exists so a future Clanker-owned operation is implemented **once**, behind one authorization boundary,
-instead of once per harness. It ships three tools: the read-only `clanker_context`, and the two high-level checkout
-transactions `clanker_create_isolated_checkout` and `clanker_complete_isolated_checkout` (see "Isolated checkout
-lifecycle").
+instead of once per harness. It ships only the read-only `clanker_context`; checkout create/complete tools were retired in #166.
 
 ### Lifecycle versus MCP
 
@@ -657,9 +655,7 @@ lifecycle").
 
 MCP traffic is **never** lifecycle evidence: no tool call, listing or connection changes an agent's
 attention state, and there are deliberately no model-invoked *attention* tools (`clanker_i_am_done` and
-the like). A model can forget, be late, or be a subagent; a native event cannot. The checkout transactions
-below are a different thing: operations Clanker performs on resources it owns, never reports of what an
-agent is doing. The two credentials
+the like). A model can forget, be late, or be a subagent; a native event cannot. No checkout-mutating MCP tools are shipped. The two credentials
 are independent, minted by different code, validated by different code, and not interchangeable
 (a test asserts an attention token never resolves as a bridge credential).
 
@@ -733,16 +729,11 @@ MCP remains local-only; no SSH bridge was added.
 - **Bounds, fail closed.** 64 KiB request bodies (checked against `Content-Length` and while
   reading), 16-message batches, 32 concurrent requests, 8 KiB headers, 15 s to *receive* a request
   (HTTP-level only), 64 KiB tool results (refused, never truncated). Tool execution has its own bound: 10 s
-  by default, or the capability's declared `timeoutMs` (never more than 60 s; the checkout transactions
-  declare 30 s). Execution is cut off at its bound and its `AbortSignal` is aborted (also when the client
+  by default, or the capability's declared `timeoutMs` (never more than 60 s). Execution is cut off at its bound and its `AbortSignal` is aborted (also when the client
   disconnects or cancels). The signal is cooperative: a capability that ignores it gets its response cut off
-  but its work may continue, so a mutating capability must honor `signal` and be safe to abandon, and the
-  checkout transactions are written that way (see below). Malformed JSON, wrong content type, non-POST methods,
+  but its work may continue, so a mutating capability must honor `signal` and be safe to abandon. Malformed JSON, wrong content type, non-POST methods,
   unknown paths and unknown tools are refused; tool failures return a generic error, never internals.
-- **Scoping.** A credential is issued a set of capability names; `tools/list` shows only those and an
-  ungranted name behaves as unknown. A capability may `require` something of the launch
-  (`checkout-rehoming`): only launches whose harness can be re-homed, with agent attention on, are granted the
-  checkout transactions, so an unsupported agent never sees a tool that is guaranteed to fail.
+- **Scoping.** A credential is issued a set of capability names; `tools/list` shows only those and an ungranted name behaves as unknown. Current supported launch attachments grant only `clanker_context`.
 - **Output discipline.** `clanker_context` returns display-safe facts about the caller's own launch
   only: workspace folder name, `local`, checkout kind / isolated / branch, harness, launch directory
   *relative to the checkout root*, and granted capability names. No tokens, ids, absolute paths, other
@@ -812,9 +803,7 @@ A reproducible no-model SDK smoke check uses the installed Pi package and a real
 `npm run build`, then `node scripts/pi-bridge-smoke.cjs /path/to/@earendil-works/pi-coding-agent`.
 It checks discovery/call, permission hints, context-only grants, native conflicts and restrictions,
 revocation and cleanup in an isolated temporary agent directory.
-The bridge transmits MCP permission annotations: context is read-only and idempotent; checkout
-transactions mutate state, completion is potentially destructive, and neither transaction is
-idempotent. These hints never grant authority.
+The bridge transmits MCP permission annotations: current `clanker_context` is read-only and idempotent. These hints never grant authority.
 
 Intentionally **unsupported** (capability absent):
 
@@ -882,7 +871,7 @@ remain supported independently. See [unified-session-launch.md](unified-session-
 
 ### Known limitations
 
-- Local launches only; three harnesses (the checkout transactions: Claude and Codex).
+- Local launches only; Claude, Codex, OpenCode and Pi support read-only context. Other harnesses and SSH are not bridged.
 - A user who already defines an MCP server named `clanker-grid` in a place Clanker does not inspect
   (Claude's own configuration, OpenCode's merged configuration) may see the two collide for that launch;
   which one wins was not verified. Codex checks `config.toml` and the command line; Claude and OpenCode
@@ -1748,7 +1737,7 @@ resume that reaches the account/login step has already located and loaded the co
 | OpenCode 1.18.34 | Finds the session (an unknown id says "Session not found") but fails with an "Unexpected server error" while its directory is missing | `opencode run --session <id>` after importing a session and deleting its directory | recreate the worktree |
 | Antigravity (agy) | Not characterizable offline: its conversation store is opaque and needs an authenticated account; nothing was assumed | – | recreate the worktree |
 
-Recreation uses the same trusted route as `New isolated agent` (`createWorktreeForSession`: `gitCreateWorktree` with
+Recreation uses the main-owned validated worktree creation path (`createWorktreeForSession`: `gitCreateWorktree` with
 `attachCheckoutContext`, SSH recovery blocking and reservations included) for an *existing* branch. It reproduces
 the original directory only because Clanker's directory name is a deterministic function of the branch
 (`worktreeDirectoryName`), so it is offered only when the removed path is that generated path and the branch still

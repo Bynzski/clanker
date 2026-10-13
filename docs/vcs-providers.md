@@ -69,4 +69,4 @@ A temporary real local Git fixture verified upstream selection, isolated-worktre
 5. Lock/unlock the real OS secret store; preserve ciphertext and show unavailable access without token disclosure or anonymous fallback.
 6. Provider navigation, including slash/Unicode refs and Bitbucket manual branch selection.
 
-New unavailable/rate-limit/none-state presentation, richer CI/review UI, dashboards and instance management UI remain deliberately deferred. Issue #145 stays open; no issue-status change is implied by this backend work. See [Configuration](configuration.md), [Git integration](git-integration.md), and the [historical phase-one checkpoint](issue-145-progress.md).
+Source Control's Overview surfaces available provider/CI/review context and distinguishes confirmed results from unavailable or unknown evidence. Rich dashboards, PR write actions and instance-management UI are not implemented. The provider follow-up (#145) was closed with the documented owner deferral of the live authenticated-provider/SSH/keyring acceptance matrix; the checks above remain useful before release. See [Configuration](configuration.md) and [Git integration](git-integration.md).
