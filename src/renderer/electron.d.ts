@@ -103,6 +103,9 @@ export interface ElectronAPI {
   workspaceServiceGet: () => Promise<import('../shared/types/workspaceServices').WorkspaceServicesUpdate>;
   workspaceServiceProbePreview: (request: { workspaceId: string; serviceId: string }) => Promise<Pick<RecipePreviewProbeResult, 'status'>>;
   onWorkspaceServicesChanged: (callback: (update: import('../shared/types/workspaceServices').WorkspaceServicesUpdate) => void) => () => void;
+  getAssistantPresentation: (id: string) => Promise<import('../shared/types/assistantPresentation').AssistantPresentation>;
+  updateAssistantPresentation: (id: string, update: import('../shared/types/assistantPresentation').AssistantPresentationUpdate) => Promise<import('../shared/types/assistantPresentation').AssistantPresentationWriteResult>;
+  getAssistantAvatar: (id: string) => Promise<import('../shared/types/assistantPresentation').AssistantAvatar>;
   getDefaultHermesRoutines: () => Promise<import('../shared/types/assistantDetails').AssistantRead<import('../shared/types/assistantDetails').AssistantRoutine[]>>;
   getDefaultHermesRoutineRuns: (jobId: string) => Promise<import('../shared/types/assistantDetails').AssistantRead<import('../shared/types/assistantDetails').AssistantRun[]>>;
   getAssistantDetails: (id: string) => Promise<import('../shared/types/assistantDetails').AssistantDetails>;

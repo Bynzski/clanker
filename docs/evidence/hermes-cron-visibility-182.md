@@ -1,6 +1,19 @@
 # Issue #182 — Phase 3: scheduled-task visibility audit
 
-## Baseline and branch
+## Post-#183 integration receipt
+
+Owner visual acceptance was explicitly granted, and #183 is now merged at
+`991739bebcdabe41df8c1cac712a9e7093bc5427`. The existing #184 branch is
+updated by a non-rewriting merge of that main commit, preserving the combined
+fixes/tests from the verified local rehearsal `8ddf1c5`. Actual-base validation
+passed **411 suites / 7,995 tests** and the combined isolated Hermes/Electron
+smoke passed. Final-head revalidation, CI and conflict-resolution details are
+recorded in [hermes-integration-182.md](hermes-integration-182.md) and PR #184.
+The independent baseline below is historical, not the current PR base.
+#184 and parent Issue #182 remain open; SSH discovery and the native contract
+limitations below remain deferred. No scheduler control or release was added.
+
+## Historical baseline and branch
 
 Fetched `origin/main`: `a39bf849b5a2b3d87377f7634e440f702e175ec9`.
 PR #183 was **open/unmerged** at the start of this phase. This implementation is

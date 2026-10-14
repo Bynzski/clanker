@@ -6,3 +6,5 @@
 .assistant-capabilities-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); }
 .assistants-profile-controls { display: flex; align-items: end; gap: var(--space-sm); flex-wrap: wrap; margin-top: var(--space-md); }
 .assistants-profile-controls .clanker-field { flex: 1; min-width: 0; }
+.assistant-appearance-source { display: flex; align-items: center; gap: var(--space-sm); }
+.assistant-appearance-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }

@@ -1,5 +1,6 @@
 /* global window, document */
 // Real installed Hermes + built Electron, isolated homes; no prompts, schedules or job execution.
+// Also verifies native Bot Mode cosmetics, CAS rejection and normalized avatars (issue #182).
 // npm run build && node scripts/assistant-details-smoke.cjs
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
@@ -19,6 +20,11 @@ for (const name of ['alpha', 'beta']) {
   fs.mkdirSync(path.join(profile, 'skills/demo'), { recursive: true });
   fs.writeFileSync(path.join(profile, 'skills/demo/SKILL.md'), '---\nname: demo\ndescription: Smoke fixture\n---\nRead only fixture.\n');
   fs.writeFileSync(path.join(profile, 'config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\nplatform_toolsets:\n  cli: [terminal]\n');
+  fs.writeFileSync(path.join(profile, 'profile.yaml'), 'description: Operational fixture role\nui_meta:\n  hermes-bots:\n    hidden: false\n    groupId: smoke-group\n  unrelated:\n    intact: true\n');
+  if (name === 'alpha') {
+    fs.mkdirSync(path.join(profile, 'assets'));
+    fs.writeFileSync(path.join(profile, 'assets/avatar.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAYAAAB3AH1ZAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAALUlEQVRIiWNomrzl/0BihlEHNI1GweTRRLhlNBv+Hy2ImkaL4smjldGWAUsHAEBkkExS6IyWAAAAAElFTkSuQmCC', 'base64'));
+  }
   fs.writeFileSync(path.join(profile, 'cron/jobs.json'), JSON.stringify({ jobs: [{ id: `${name}_job`, name: `${name} paused routine`, enabled: false, state: 'paused', paused_at: '2026-01-01T00:00:00+00:00', schedule: { kind: 'interval', minutes: 60 }, schedule_display: 'Every hour (fixture)', repeat: { times: null, completed: 0 }, prompt: 'Never executed', next_run_at: null, last_run_at: null, last_status: null }] }));
 }
 fs.writeFileSync(path.join(root, 'hermes/config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\n');
@@ -54,6 +60,53 @@ let app;
     const runs = await page.evaluate(() => window.electronAPI.getAssistantRoutineRuns('hermes:alpha', 'alpha_job'));
     assert.equal(runs.state, 'ready'); assert.equal(runs.data.length, 0);
     assert.notEqual((await page.evaluate(() => window.electronAPI.getAssistantRoutineRuns('hermes:beta', 'alpha_job'))).state, 'ready');
+    // Native presentation before opening any chat: selected profile + visible roster only.
+    const avatar = await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:alpha'));
+    assert.equal(avatar.state, 'ready'); assert.equal(avatar.data.width, 32); assert.equal(avatar.data.height, 16);
+    assert(avatar.data.dataUrl.startsWith('data:image/png;base64,'));
+    assert.deepEqual(await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:beta')), { state: 'ready', data: null });
+    // Real JPEG decode also stays main-owned and is normalized to PNG; original bytes never cross IPC.
+    const betaAvatar = path.join(root, 'hermes/profiles/beta/assets/avatar.jpg');
+    fs.mkdirSync(path.dirname(betaAvatar), { recursive: true });
+    await app.evaluate(({ nativeImage }, files) => process.getBuiltinModule('fs').writeFileSync(files.dest, nativeImage.createFromPath(files.source).toJPEG(90)), { source: path.join(root, 'hermes/profiles/alpha/assets/avatar.png'), dest: betaAvatar });
+    await page.evaluate(() => window.electronAPI.refreshAssistants());
+    const jpeg = await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:beta'));
+    assert.equal(jpeg.state, 'ready'); assert(jpeg.data.dataUrl.startsWith('data:image/png;base64,'));
+    fs.unlinkSync(betaAvatar); await page.evaluate(() => window.electronAPI.refreshAssistants());
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const appearanceDialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+    await appearanceDialog.getByRole('button', { name: 'Assistants', exact: true }).click();
+    await appearanceDialog.getByRole('combobox', { name: 'Profile' }).selectOption('hermes:alpha');
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('Alpha Cosmetic');
+    await appearanceDialog.getByLabel('Bot tagline', { exact: true }).fill('Cosmetic fixture tagline');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText('Saved in Hermes.', { exact: true }).waitFor();
+    await appearanceDialog.locator('.assistant-avatar-large img').waitFor();
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).scrollIntoViewIfNeeded();
+    await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-182-assistant-appearance.png');
+    const alphaMetaPath = path.join(root, 'hermes/profiles/alpha/profile.yaml');
+    const written = fs.readFileSync(alphaMetaPath, 'utf8');
+    assert.match(written, /description: Operational fixture role/); assert.match(written, /groupId: smoke-group/);
+    assert.match(written, /hidden: false/); assert.match(written, /intact: true/);
+    assert.equal((await page.evaluate(() => window.electronAPI.getAssistants())).assistants[0].id, 'hermes:alpha');
+    // Simulate another native client/file writer after the editor baseline was loaded.
+    fs.writeFileSync(alphaMetaPath, 'description: Operational fixture role\nui_meta:\n  hermes-bots:\n    title: Other client title\n    description: Other client tagline\n    hidden: false\n    groupId: smoke-group\n  unrelated:\n    intact: true\n_ui_meta_revisions:\n  hermes-bots: 2\n');
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('Stale local draft');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText(/changed concurrently/).waitFor();
+    assert.equal(await appearanceDialog.getByLabel('Bot title', { exact: true }).inputValue(), 'Other client title');
+    // Restore the fixture's ordinary Alpha presentation for the existing details/roster checks.
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('');
+    await appearanceDialog.getByLabel('Bot tagline', { exact: true }).fill('');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText('Saved in Hermes.', { exact: true }).waitFor();
+    // Combined sections must recover together without the appearance effect cancelling the cron read.
+    await appearanceDialog.getByRole('button', { name: 'Refresh details', exact: true }).click();
+    await appearanceDialog.getByText('alpha paused routine', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('input[id$="-title"]')?.value === '');
+    await appearanceDialog.getByRole('button', { name: 'Reload values', exact: true }).click();
+    await appearanceDialog.getByText('alpha paused routine', { exact: true }).waitFor();
+    await appearanceDialog.getByRole('button', { name: 'Close Settings', exact: true }).click();
     const defaultTasks = await page.evaluate(() => window.electronAPI.getDefaultHermesRoutines());
     assert.equal(defaultTasks.state, 'ready'); assert.equal(defaultTasks.data.length, 1);
     assert.equal(defaultTasks.data[0].name, 'default shared task'); assert.equal(defaultTasks.data[0].lastResult, 'Failed');
@@ -103,7 +156,24 @@ let app;
     await dialog.getByRole('button', { name: 'Close Settings' }).click();
     await page.waitForFunction(() => document.activeElement?.textContent === 'Manage Assistant');
     assert(await page.getByRole('button', { name: 'Manage Assistant', exact: true }).evaluate(element => document.activeElement === element));
-    console.log('Real Hermes / Electron cron visibility smoke passed: default/named overlapping ids, native ambiguous output withholding, unchanged paused jobs, one-shot/recurring metadata, default Settings view and refresh, profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, hide/unhide while retaining the surface, discover newly added profile on refresh, focus return. Screenshot: /tmp/clanker-182-cron-visibility.png');
+    // Real service loss/recovery, using only the isolated Clanker-owned fixture backend.
+    const oldPresentation = await page.evaluate(() => window.electronAPI.getAssistantPresentation('hermes:alpha'));
+    await page.evaluate(() => window.electronAPI.configureAssistants({ enabled: false, autoStart: false }));
+    assert.equal((await page.evaluate(() => window.electronAPI.getDefaultHermesRoutines())).state, 'offline');
+    assert.equal((await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:alpha'))).state, 'unavailable');
+    await page.evaluate(() => window.electronAPI.configureAssistants({ enabled: true, autoStart: true }));
+    await page.evaluate(() => window.electronAPI.refreshAssistants());
+    await page.waitForFunction(async () => (await window.electronAPI.getAssistants()).service.state === 'connected' && (await window.electronAPI.getDefaultHermesRoutines()).state === 'ready');
+    const oldWrite = await page.evaluate(view => window.electronAPI.updateAssistantPresentation('hermes:alpha', { ...view.cosmetics.data, title: 'Forbidden stale reconnect draft' }), oldPresentation);
+    if (oldWrite.state !== 'conflict') console.log('Reconnect refusal state:', oldWrite.state, await page.evaluate(async () => { const snapshot = await window.electronAPI.getAssistants(); return { service: snapshot.service, ids: snapshot.assistants.map(row => row.id) }; }));
+    assert(['conflict', 'unavailable'].includes(oldWrite.state), 'Previous connection must not authorize a write');
+    await page.waitForFunction(async () => (await window.electronAPI.getAssistants()).service.state === 'connected' && (await window.electronAPI.getDefaultHermesRoutines()).state === 'ready');
+    const recovered = await page.evaluate(async () => Promise.all([window.electronAPI.getAssistantDetails('hermes:alpha'), window.electronAPI.getDefaultHermesRoutines(), window.electronAPI.getAssistantAvatar('hermes:alpha')]));
+    assert.equal(recovered[0].routines.state, 'ready'); assert.equal(recovered[1].state, 'ready'); assert.equal(recovered[2].state, 'ready');
+    assert(!JSON.stringify(recovered).includes('PRIVATE_PROMPT_FIXTURE')); assert(!JSON.stringify(recovered).includes('PRIVATE_OUTPUT_FIXTURE'));
+    assert(!JSON.stringify(recovered).includes(root));
+    for (const [file, value] of Object.entries(originalJobs)) assert.equal(fs.readFileSync(file, 'utf8'), value);
+    console.log('Combined real Hermes / Electron smoke passed: native JPEG normalization, coordinated detail/appearance refresh, disable/reconnect and stale-token refusal, privacy,  native cosmetic save/CAS conflict and namespace preservation, normalized/missing avatars, stable identity, default/named overlapping cron ids, ambiguous output withheld, unchanged paused jobs, one-shot/recurring metadata, Settings refresh, profile switch, hiding, zero-workspace chat, focus return. Screenshots: /tmp/clanker-182-assistant-appearance.png and /tmp/clanker-182-cron-visibility.png');
   } finally {
     if (app) {
       try {

@@ -6,42 +6,44 @@ export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 /** Display text only. Strip control sequences, URLs, common credential assignments and home paths. */
-export function displayText(value: unknown, limit = 160): string | undefined {
+export function displayText(value: unknown, limit = 160, redactions: readonly string[] = []): string | undefined {
   if (typeof value !== 'string') return undefined;
-  return value.slice(0, 8192).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x1f\x7f]/g, ' ')
+  let text = value.slice(0, 8192);
+  for (const secret of redactions) if (secret) text = text.split(secret).join('[redacted]');
+  return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x1f\x7f]/g, ' ')
     .replace(/https?:\/\/\S+|(?:\/home\/|\/Users\/|[A-Z]:\\Users\\)\S+/gi, '[redacted]')
     .replace(/\b(api[_-]?key|token|password|secret|authorization)\s*[:=]\s*\S+/gi, '$1=[redacted]').trim().slice(0, limit) || undefined;
 }
 function epoch(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1e11 ? value : undefined;
 }
-export function parseActivity(value: unknown): AssistantActivity {
+export function parseActivity(value: unknown, redactions: readonly string[] = []): AssistantActivity {
   const row = record(value); const last = record(row.last_session);
-  return { model: displayText(row.model), provider: displayText(row.provider),
+  return { model: displayText(row.model, 160, redactions), provider: displayText(row.provider, 160, redactions),
     skillCount: Number.isInteger(row.skill_count) && (row.skill_count as number) >= 0 ? Math.min(row.skill_count as number, 100000) : undefined,
-    ...(row.last_session ? { lastSession: { title: displayText(last.title), lastActive: epoch(last.last_active) } } : {}),
+    ...(row.last_session ? { lastSession: { title: displayText(last.title, 160, redactions), lastActive: epoch(last.last_active) } } : {}),
     workerLastActive: epoch(record(row.worker_session).last_active) };
 }
-function capabilities(value: unknown): AssistantCapability[] | undefined {
+function capabilities(value: unknown, redactions: readonly string[]): AssistantCapability[] | undefined {
   if (!Array.isArray(value)) return undefined;
   if (value.length > 512) throw new Error('Too many capabilities');
-  return value.flatMap((raw) => { const row = record(raw); const name = displayText(row.name, 80);
+  return value.flatMap((raw) => { const row = record(raw); const name = displayText(row.name, 80, redactions);
     return name ? [{ name, enabled: typeof row.enabled === 'boolean' ? row.enabled : undefined }] : []; });
 }
-export function parseProfile(value: unknown, slug: string): AssistantProfileDetails {
+export function parseProfile(value: unknown, slug: string, redactions: readonly string[] = []): AssistantProfileDetails {
   const row = record(value);
   if (row.name !== slug) throw new Error('Unexpected profile');
   const model = record(row.model);
-  return { model: displayText(model.default), provider: displayText(model.provider), skills: capabilities(row.skills),
-    toolsets: capabilities(row.toolsets), mcpServers: capabilities(row.mcp_servers) };
+  return { model: displayText(model.default, 160, redactions), provider: displayText(model.provider, 160, redactions), skills: capabilities(row.skills, redactions),
+    toolsets: capabilities(row.toolsets, redactions), mcpServers: capabilities(row.mcp_servers, redactions) };
 }
-export function parseHistory(value: unknown): { title?: string; lastActive?: number }[] {
+export function parseHistory(value: unknown, redactions: readonly string[] = []): { title?: string; lastActive?: number }[] {
   const rows = record(value).sessions;
   if (!Array.isArray(rows) || rows.length > 20) throw new Error('Unexpected history');
   return rows.flatMap((raw) => { const row = record(raw);
     // Worker sources and hidden/canonical chats are not ordinary history. Unknown sources fail closed.
     if (row.hidden === true || row.title === 'Bot Chat' || row.root_title === 'Bot Chat' || !['cli', 'tui', 'desktop', 'web', 'api'].includes(String(row.source))) return [];
-    return [{ title: displayText(row.title), lastActive: epoch(row.last_active) }]; });
+    return [{ title: displayText(row.title, 160, redactions), lastActive: epoch(row.last_active) }]; });
 }
 export const JOB_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export function parseRoutines(value: unknown, slug: string): AssistantRoutine[] {

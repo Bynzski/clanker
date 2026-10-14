@@ -1,8 +1,11 @@
 import { StringDecoder } from 'node:string_decoder';
+import { AssistantPresentationService, type PresentationBinding } from './assistantPresentation';
+import type { AvatarDecoder } from './assistantAvatar';
+import type { AssistantAvatar, AssistantPresentation, AssistantPresentationWriteResult } from '../../shared/types/assistantPresentation';
 import { AssistantCronReader, type CronBinding, type CronTarget } from './assistantCron';
 import { discoverHermesBackend, readHermesRendezvous } from './hermesDiscovery';
 import type { AssistantDetails, AssistantRead, AssistantRoutine, AssistantRun } from '../../shared/types/assistantDetails';
-import { parseActivity, parseHistory, parseProfile, readHermesRest, readSection } from './assistantDetails';
+import { displayText, record, parseActivity, parseHistory, parseProfile, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
   isValidAssistantId,
@@ -43,6 +46,7 @@ export interface HermesAssistantServiceDeps {
   stopGraceMs?: number;
   /** A connected backend must survive this long before a later crash counts as a new failure episode. */
   stableAfterMs?: number;
+  decodeAvatar?: AvatarDecoder;
 }
 
 const MAX_ASSISTANTS = 64;
@@ -57,7 +61,7 @@ export const CANONICAL_CHAT_TITLE = 'Bot Chat';
 const CANONICAL_LIST_LIMIT = 200;
 
 /** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
-interface RosterEntry { public: HermesAssistant; slug: string; sessionId?: string; hadCanonical: boolean }
+interface RosterEntry { public: HermesAssistant; slug: string; home?: string; sessionId?: string; hadCanonical: boolean }
 
 interface PtySession {
   assistantId: string;
@@ -84,6 +88,8 @@ export class HermesAssistantService {
   private readonly spawnServe: SpawnServe;
   private readonly now: () => number;
   private readonly available: boolean;
+  private readonly presentation: AssistantPresentationService;
+  private rosterReadEpoch = 0;
   private settings: AssistantSettings = { ...DEFAULT_ASSISTANT_SETTINGS };
   private state: HermesAssistantServiceState = 'disabled';
   private ownership: 'external' | 'clanker' | null = null;
@@ -105,6 +111,7 @@ export class HermesAssistantService {
   private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
   private readonly cron: AssistantCronReader;
   private detailRevision = 0;
+  private cronCatalogIdentity = '';
   private readonly detailReads = new Map<string, Promise<AssistantDetails>>();
   private readonly detailControllers = new Set<AbortController>();
 
@@ -117,6 +124,7 @@ export class HermesAssistantService {
     let available = false;
     try { available = deps.isHermesAvailable(); } catch { /* treated as not installed */ }
     this.available = available;
+    this.presentation = new AssistantPresentationService((id) => this.presentationBinding(id), deps.decodeAvatar, this.now);
     this.cron = new AssistantCronReader((target) => this.cronBinding(target));
   }
 
@@ -129,6 +137,7 @@ export class HermesAssistantService {
   get(): AssistantSnapshot {
     return {
       available: this.available,
+      presentationRevision: this.presentation.revision,
       settings: { ...this.settings, ...(this.settings.hiddenAssistantIds ? { hiddenAssistantIds: [...this.settings.hiddenAssistantIds] } : {}) },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
       assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
@@ -386,6 +395,7 @@ export class HermesAssistantService {
   private dropRpc(): void {
     const rpc = this.rpc;
     this.rpc = undefined;
+    this.presentation.reset();
     this.invalidateDetails();
     rpc?.close();
   }
@@ -402,6 +412,7 @@ export class HermesAssistantService {
   private onRpcClosed(rpc: HermesRpcClient): void {
     if (this.rpc !== rpc) return;
     this.rpc = undefined;
+    this.presentation.reset();
     this.invalidateDetails();
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
     this.markSessionsDisconnected();
@@ -413,12 +424,39 @@ export class HermesAssistantService {
     this.publish();
   }
 
-  private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
+  private async loadRoster(generation: number, rpc: HermesRpcClient, explicitRefresh = true): Promise<boolean> {
+    const epoch = ++this.rosterReadEpoch;
     const result = await rpc.call('profiles.list', {});
-    if (!this.current(generation) || this.rpc !== rpc) return;
-    this.roster = parseAssistantRoster(result, true);
-    this.invalidateDetails();
+    if (!this.current(generation) || this.rpc !== rpc || epoch !== this.rosterReadEpoch || !this.endpoint) return false;
+    const token = this.endpoint.token;
+    this.roster = parseAssistantRoster(result, true, [token]);
+    const profiles = record(result).profiles;
+    const ids = new Set(this.roster.map((entry) => entry.slug)); ids.add('default');
+    const catalogIdentity = JSON.stringify(Array.isArray(profiles) ? profiles.flatMap((raw) => {
+      const row = record(raw); return typeof row.name === 'string' && ids.has(row.name) ? [[row.name, row.path]] : [];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : []);
+    // A CAS preflight/postflight is not a user cron refresh. Keep valid reads if namespace identity agrees.
+    if (explicitRefresh || catalogIdentity !== this.cronCatalogIdentity) this.invalidateDetails();
+    this.cronCatalogIdentity = catalogIdentity;
+    this.presentation.acceptRoster(result, this.roster.map((entry) => entry.public), token);
+    if (this.state === 'connected') this.publish();
+    return true;
   }
+
+  private presentationBinding(id: unknown): PresentationBinding | undefined {
+    if (!isValidAssistantId(id) || !this.settings.enabled || !this.available || this.state !== 'connected') return undefined;
+    const entry = this.entry(id); const rpc = this.rpc; const generation = this.generation;
+    if (!entry || !rpc || rpc.isClosed || !this.endpoint) return undefined;
+    return { slug: entry.slug, rpc,
+      live: () => this.current(generation) && this.state === 'connected' && this.rpc === rpc && !rpc.isClosed && this.entry(id)?.slug === entry.slug && this.entry(id)?.home === entry.home,
+      reload: async () => {
+        if (!await this.loadRoster(generation, rpc, false)) throw new Error('Roster read no longer current');
+      } };
+  }
+
+  readPresentation(id: unknown): AssistantPresentation { return this.presentation.read(id); }
+  updatePresentation(id: unknown, value: unknown): Promise<AssistantPresentationWriteResult> { return this.presentation.update(id, value); }
+  readAvatar(id: unknown): Promise<AssistantAvatar> { return this.presentation.avatar(id); }
 
   private invalidateDetails(): void {
     this.detailRevision++;
@@ -466,10 +504,11 @@ export class HermesAssistantService {
     const controller = new AbortController(); this.detailControllers.add(controller);
     const timer = setTimeout(() => controller.abort(), 10_000);
     const live = () => this.current(generation) && this.detailRevision === revision && this.rpc === rpc && this.endpoint === endpoint && this.entry(assistantId)?.slug === entry.slug && !controller.signal.aborted;
+    const redactions = [endpoint.token, entry.home ?? ''];
     const operation = (async () => {
       const [profile, history, routines] = await Promise.all([
-        readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug)),
-        readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }))),
+        readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug, redactions)),
+        readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }), redactions)),
         this.cron.routines({ kind: 'assistant', assistantId }),
       ]);
       const result: AssistantDetails = { assistantId, profile, history, routines };
@@ -680,7 +719,7 @@ export class HermesAssistantService {
  * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
  * uses the raw slug; display is Assistant title, then profile display name, then the prettified slug.
  */
-export function parseAssistantRoster(result: unknown, includeHidden = false): RosterEntry[] {
+export function parseAssistantRoster(result: unknown, includeHidden = false, redactions: readonly string[] = []): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
   if (!Array.isArray(profiles)) throw new Error('Hermes returned an unexpected profile list');
   const assistants: RosterEntry[] = [];
@@ -699,17 +738,19 @@ export function parseAssistantRoster(result: unknown, includeHidden = false): Ro
     const profileDisplay = typeof row.display_name === 'string' ? row.display_name.trim() : '';
     const description = typeof meta.description === 'string' && meta.description.trim() ? meta.description.trim()
       : typeof row.description === 'string' && row.description.trim() ? row.description.trim() : undefined;
+    const privateValues = typeof row.path === 'string' ? [...redactions, row.path] : redactions;
+    const safeDescription = displayText(description, 200, privateValues);
     const canonical = row.canonical_session && typeof row.canonical_session === 'object' ? row.canonical_session as Record<string, unknown> : null;
     const resolved = canonical && typeof canonical.resolved_id === 'string' && SESSION_ID.test(canonical.resolved_id) ? canonical.resolved_id
       : canonical && typeof canonical.id === 'string' && SESSION_ID.test(canonical.id) ? canonical.id : undefined;
     assistants.push({
-      slug, sessionId: resolved, hadCanonical: !!resolved,
+      slug, home: typeof row.path === 'string' ? row.path : undefined, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`,
         ...(meta.hidden === true ? { hiddenInHermes: true } : {}),
-        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row) } : {}),
-        displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
-        ...(description ? { description: description.slice(0, 200) } : {}),
+        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row, privateValues) } : {}),
+        displayName: displayText(title || profileDisplay || prettifySlug(slug), 80, privateValues) ?? 'Hermes Assistant',
+        ...(safeDescription ? { description: safeDescription } : {}),
       },
     });
     if (assistants.length >= MAX_ASSISTANTS) break;

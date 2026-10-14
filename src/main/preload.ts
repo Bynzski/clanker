@@ -18,10 +18,14 @@ import type { AgentAttentionChange } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
+import type { AssistantPresentationUpdate } from '../shared/types/assistantPresentation';
 import type { AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
 import type { DevServiceTarget, DevServiceStartRequest, DevServiceSettingsRequest, WorkspaceServicesUpdate } from '../shared/types/workspaceServices';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
+  ASSISTANTS_PRESENTATION,
+  ASSISTANTS_UPDATE_PRESENTATION,
+  ASSISTANTS_AVATAR,
   ASSISTANTS_DEFAULT_ROUTINES,
   ASSISTANTS_DEFAULT_ROUTINE_RUNS,
   ASSISTANTS_DETAILS,
@@ -251,6 +255,9 @@ const ipcRenderer = switchMetricsEnabled ? new Proxy(nativeIpcRenderer, {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Optional native-profile roster; settings do not contain native credentials.
+  getAssistantPresentation: (id: string) => ipcRenderer.invoke(ASSISTANTS_PRESENTATION, id),
+  updateAssistantPresentation: (id: string, update: AssistantPresentationUpdate) => ipcRenderer.invoke(ASSISTANTS_UPDATE_PRESENTATION, id, update),
+  getAssistantAvatar: (id: string) => ipcRenderer.invoke(ASSISTANTS_AVATAR, id),
   getDefaultHermesRoutines: () => ipcRenderer.invoke(ASSISTANTS_DEFAULT_ROUTINES),
   getDefaultHermesRoutineRuns: (jobId: string) => ipcRenderer.invoke(ASSISTANTS_DEFAULT_ROUTINE_RUNS, jobId),
   getAssistantDetails: (id: string) => ipcRenderer.invoke(ASSISTANTS_DETAILS, id),

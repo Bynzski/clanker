@@ -1,7 +1,9 @@
 import { ipcMain } from 'electron';
 import type { HermesAssistantService } from '../assistants/hermesAssistantService';
 import {
-  ASSISTANTS_DEFAULT_ROUTINES, ASSISTANTS_DEFAULT_ROUTINE_RUNS, ASSISTANTS_DETAILS, ASSISTANTS_ROUTINE_RUNS, ASSISTANTS_GET, ASSISTANTS_CONFIGURE, ASSISTANTS_REFRESH, ASSISTANTS_OPEN,
+  ASSISTANTS_PRESENTATION, ASSISTANTS_UPDATE_PRESENTATION, ASSISTANTS_AVATAR,
+  ASSISTANTS_DEFAULT_ROUTINES, ASSISTANTS_DEFAULT_ROUTINE_RUNS,
+  ASSISTANTS_DETAILS, ASSISTANTS_ROUTINE_RUNS, ASSISTANTS_GET, ASSISTANTS_CONFIGURE, ASSISTANTS_REFRESH, ASSISTANTS_OPEN,
   ASSISTANTS_PTY_WRITE, ASSISTANTS_PTY_RESIZE, ASSISTANTS_CHANGED, ASSISTANTS_PTY_DATA,
 } from '../../shared/ipcChannels';
 
@@ -10,6 +12,9 @@ import {
  * the renderer names a Assistant by its opaque id and main resolves profile, session and credentials.
  */
 export function registerAssistantIpc(deps: { getService(): HermesAssistantService }): void {
+  ipcMain.handle(ASSISTANTS_PRESENTATION, (_event, id: unknown) => deps.getService().readPresentation(id));
+  ipcMain.handle(ASSISTANTS_UPDATE_PRESENTATION, (_event, id: unknown, value: unknown) => deps.getService().updatePresentation(id, value));
+  ipcMain.handle(ASSISTANTS_AVATAR, (_event, id: unknown) => deps.getService().readAvatar(id));
   ipcMain.handle(ASSISTANTS_DEFAULT_ROUTINES, () => deps.getService().readDefaultRoutines());
   ipcMain.handle(ASSISTANTS_DEFAULT_ROUTINE_RUNS, (_event, jobId: unknown) => deps.getService().readDefaultRoutineRuns(jobId));
   ipcMain.handle(ASSISTANTS_DETAILS, (_event, id: unknown) => deps.getService().readDetails(id));
