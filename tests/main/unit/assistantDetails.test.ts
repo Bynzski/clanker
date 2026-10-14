@@ -30,8 +30,10 @@ describe('display-safe read projections', () => {
     expect(() => parseRoutines([job, job], 'fred')).toThrow();
     expect(() => parseRoutines(new Array(129).fill(job), 'fred')).toThrow();
   });
-  it('keeps script-only output, with unknown results and redacted preview; refuses foreign runs', () => {
-    expect(parseRuns({ runs: [{ id: 'cron_output:job_1:date', source: 'cron_output', title: 'Output', started_at: 100, ended_at: 100, preview: 'token=SECRET https://example.test /home/private/file' }] }, 'fred', 'job_1')).toEqual([{ title: 'Output', source: 'cron_output', startedAt: 100, endedAt: 100, preview: 'token=[redacted] [redacted] [redacted]' }]);
+  it('requires explicit profile ownership and never projects output or native titles', () => {
+    const row = { id: 'cron_output:job_1:date', source: 'cron_output', title: 'secret title', started_at: 100, ended_at: 100, preview: 'unlabelled secret' };
+    expect(() => parseRuns({ runs: [row] }, 'fred', 'job_1')).toThrow();
+    expect(parseRuns({ runs: [{ ...row, profile: 'fred' }] }, 'fred', 'job_1')).toEqual([{ source: 'cron_output', startedAt: 100, endedAt: 100 }]);
     expect(() => parseRuns({ runs: [{ id: 'cron_job_1_date', source: 'cron', profile: 'reviewer' }] }, 'fred', 'job_1')).toThrow();
     expect(() => parseRuns({ runs: [{ id: 'cron_job_2_date', source: 'cron' }] }, 'fred', 'job_1')).toThrow();
   });
@@ -65,7 +67,7 @@ describe('lazy, independent Assistant reads', () => {
     await service.shutdown();
   });
   it('resolves only known profile ids, validates job ownership before and after runs', async () => {
-    const { service, hermes, fetcher } = setup(async (url) => new URL(url).pathname.endsWith('/runs') ? { runs: [{ id: 'cron_output:job_1:date', source: 'cron_output', started_at: 100 }] } : [job]);
+    const { service, hermes, fetcher } = setup(async (url) => new URL(url).pathname.endsWith('/runs') ? { runs: [{ id: 'cron_output:job_1:date', source: 'cron_output', profile: 'fred', started_at: 100 }] } : [job]);
     await service.refresh();
     expect(await service.readRoutineRuns('hermes:fred', 'job_1')).toMatchObject({ state: 'ready', data: [{ source: 'cron_output' }] });
     expect(await service.readRoutineRuns('hermes:reviewer', 'job_1')).toEqual({ state: 'error' });
@@ -87,7 +89,7 @@ describe('lazy, independent Assistant reads', () => {
   it('refuses results if the job disappeared during the run read', async () => {
     let lists = 0;
     const { service } = setup(async (url) => new URL(url).pathname.endsWith('/runs')
-      ? { runs: [{ id: 'cron_output:job_1:date', source: 'cron_output' }] } : ++lists === 1 ? [job] : []);
+      ? { runs: [{ id: 'cron_output:job_1:date', source: 'cron_output', profile: 'fred' }] } : ++lists === 1 ? [job] : []);
     await service.refresh();
     expect(await service.readRoutineRuns('hermes:fred', 'job_1')).toEqual({ state: 'error' });
     expect(lists).toBe(2);

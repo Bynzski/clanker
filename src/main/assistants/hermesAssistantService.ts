@@ -2,9 +2,10 @@ import { StringDecoder } from 'node:string_decoder';
 import { AssistantPresentationService, type PresentationBinding } from './assistantPresentation';
 import type { AvatarDecoder } from './assistantAvatar';
 import type { AssistantAvatar, AssistantPresentation, AssistantPresentationWriteResult } from '../../shared/types/assistantPresentation';
+import { AssistantCronReader, type CronBinding, type CronTarget } from './assistantCron';
 import { discoverHermesBackend, readHermesRendezvous } from './hermesDiscovery';
-import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared/types/assistantDetails';
-import { displayText, JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
+import type { AssistantDetails, AssistantRead, AssistantRoutine, AssistantRun } from '../../shared/types/assistantDetails';
+import { displayText, record, parseActivity, parseHistory, parseProfile, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
   isValidAssistantId,
@@ -60,7 +61,7 @@ export const CANONICAL_CHAT_TITLE = 'Bot Chat';
 const CANONICAL_LIST_LIMIT = 200;
 
 /** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
-interface RosterEntry { public: HermesAssistant; slug: string; sessionId?: string; hadCanonical: boolean }
+interface RosterEntry { public: HermesAssistant; slug: string; home?: string; sessionId?: string; hadCanonical: boolean }
 
 interface PtySession {
   assistantId: string;
@@ -108,7 +109,10 @@ export class HermesAssistantService {
   private episodeRestarts = 0;
   private readonly sessions = new Map<string, PtySession>();
   private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
-  private readonly detailReads = new Map<string, Promise<AssistantDetails | AssistantRead<AssistantRun[]>>>();
+  private readonly cron: AssistantCronReader;
+  private detailRevision = 0;
+  private cronCatalogIdentity = '';
+  private readonly detailReads = new Map<string, Promise<AssistantDetails>>();
   private readonly detailControllers = new Set<AbortController>();
 
   constructor(private readonly deps: HermesAssistantServiceDeps) {
@@ -121,6 +125,7 @@ export class HermesAssistantService {
     try { available = deps.isHermesAvailable(); } catch { /* treated as not installed */ }
     this.available = available;
     this.presentation = new AssistantPresentationService((id) => this.presentationBinding(id), deps.decodeAvatar, this.now);
+    this.cron = new AssistantCronReader((target) => this.cronBinding(target));
   }
 
   private loadSettings(): AssistantSettings {
@@ -391,8 +396,7 @@ export class HermesAssistantService {
     const rpc = this.rpc;
     this.rpc = undefined;
     this.presentation.reset();
-    for (const controller of this.detailControllers) controller.abort();
-    this.detailReads.clear();
+    this.invalidateDetails();
     rpc?.close();
   }
 
@@ -409,8 +413,7 @@ export class HermesAssistantService {
     if (this.rpc !== rpc) return;
     this.rpc = undefined;
     this.presentation.reset();
-    for (const controller of this.detailControllers) controller.abort();
-    this.detailReads.clear();
+    this.invalidateDetails();
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
     this.markSessionsDisconnected();
     this.roster = [];
@@ -421,14 +424,23 @@ export class HermesAssistantService {
     this.publish();
   }
 
-  private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
+  private async loadRoster(generation: number, rpc: HermesRpcClient, explicitRefresh = true): Promise<boolean> {
     const epoch = ++this.rosterReadEpoch;
     const result = await rpc.call('profiles.list', {});
-    if (!this.current(generation) || this.rpc !== rpc || epoch !== this.rosterReadEpoch || !this.endpoint) return;
+    if (!this.current(generation) || this.rpc !== rpc || epoch !== this.rosterReadEpoch || !this.endpoint) return false;
     const token = this.endpoint.token;
     this.roster = parseAssistantRoster(result, true, [token]);
+    const profiles = record(result).profiles;
+    const ids = new Set(this.roster.map((entry) => entry.slug)); ids.add('default');
+    const catalogIdentity = JSON.stringify(Array.isArray(profiles) ? profiles.flatMap((raw) => {
+      const row = record(raw); return typeof row.name === 'string' && ids.has(row.name) ? [[row.name, row.path]] : [];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : []);
+    // A CAS preflight/postflight is not a user cron refresh. Keep valid reads if namespace identity agrees.
+    if (explicitRefresh || catalogIdentity !== this.cronCatalogIdentity) this.invalidateDetails();
+    this.cronCatalogIdentity = catalogIdentity;
     this.presentation.acceptRoster(result, this.roster.map((entry) => entry.public), token);
     if (this.state === 'connected') this.publish();
+    return true;
   }
 
   private presentationBinding(id: unknown): PresentationBinding | undefined {
@@ -436,59 +448,70 @@ export class HermesAssistantService {
     const entry = this.entry(id); const rpc = this.rpc; const generation = this.generation;
     if (!entry || !rpc || rpc.isClosed || !this.endpoint) return undefined;
     return { slug: entry.slug, rpc,
-      live: () => this.current(generation) && this.state === 'connected' && this.rpc === rpc && !rpc.isClosed && this.entry(id)?.slug === entry.slug,
-      reload: () => this.loadRoster(generation, rpc) };
+      live: () => this.current(generation) && this.state === 'connected' && this.rpc === rpc && !rpc.isClosed && this.entry(id)?.slug === entry.slug && this.entry(id)?.home === entry.home,
+      reload: async () => {
+        if (!await this.loadRoster(generation, rpc, false)) throw new Error('Roster read no longer current');
+      } };
   }
 
   readPresentation(id: unknown): AssistantPresentation { return this.presentation.read(id); }
   updatePresentation(id: unknown, value: unknown): Promise<AssistantPresentationWriteResult> { return this.presentation.update(id, value); }
   readAvatar(id: unknown): Promise<AssistantAvatar> { return this.presentation.avatar(id); }
 
+  private invalidateDetails(): void {
+    this.detailRevision++;
+    for (const controller of this.detailControllers) controller.abort();
+    this.detailReads.clear();
+    this.cron.invalidate();
+  }
+
+  private cronBinding(target: CronTarget): CronBinding | undefined {
+    const rpc = this.rpc; const endpoint = this.endpoint; const generation = this.generation; const revision = this.detailRevision;
+    if (!this.available || !this.current(generation) || this.state !== 'connected' || !rpc || rpc.isClosed || !endpoint) return undefined;
+    const entry = target.kind === 'assistant' && isValidAssistantId(target.assistantId) ? this.entry(target.assistantId) : undefined;
+    if (target.kind === 'assistant' && !entry) return undefined;
+    return { profile: entry?.slug ?? 'default', token: endpoint.token,
+      live: () => this.current(generation) && this.detailRevision === revision && this.state === 'connected' && this.rpc === rpc && !rpc.isClosed && this.endpoint === endpoint
+        && (target.kind === 'default' || isValidAssistantId(target.assistantId) && this.entry(target.assistantId)?.slug === entry?.slug),
+      read: (path, signal) => readHermesRest(this.fetcher, endpoint, path, signal) };
+  }
+
+  readDefaultRoutines(): Promise<AssistantRead<AssistantRoutine[]>> { return this.cron.routines({ kind: 'default' }); }
+  readDefaultRoutineRuns(jobId: unknown): Promise<AssistantRead<AssistantRun[]>> { return this.cron.runs({ kind: 'default' }, jobId); }
+
   /** Lazy read-only details; independent section failures never affect the control connection or chat. */
   readDetails(assistantId: unknown): Promise<AssistantDetails> {
-    return this.readAssistant(assistantId, undefined) as Promise<AssistantDetails>;
+    return this.readAssistant(assistantId);
   }
 
   readRoutineRuns(assistantId: unknown, jobId: unknown): Promise<AssistantRead<AssistantRun[]>> {
-    if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return Promise.resolve({ state: 'unavailable' });
-    return this.readAssistant(assistantId, jobId) as Promise<AssistantRead<AssistantRun[]>>;
+    if (!isValidAssistantId(assistantId)) return Promise.resolve({ state: 'unavailable' });
+    if (this.state !== 'connected') return Promise.resolve({ state: 'offline' });
+    if (!this.entry(assistantId)) return Promise.resolve({ state: 'unavailable' });
+    return this.cron.runs({ kind: 'assistant', assistantId }, jobId);
   }
 
-  private readAssistant(assistantId: unknown, jobId: string | undefined): Promise<AssistantDetails | AssistantRead<AssistantRun[]>> {
-    const unavailable = (state: 'offline' | 'unavailable'): AssistantDetails | AssistantRead<AssistantRun[]> => jobId ? { state }
-      : { assistantId: isValidAssistantId(assistantId) ? assistantId : '', profile: { state }, history: { state }, routines: { state } };
+  private readAssistant(assistantId: unknown): Promise<AssistantDetails> {
+    const unavailable = (state: 'offline' | 'unavailable'): AssistantDetails =>
+      ({ assistantId: isValidAssistantId(assistantId) ? assistantId : '', profile: { state }, history: { state }, routines: { state } });
     if (!isValidAssistantId(assistantId)) return Promise.resolve(unavailable('unavailable'));
     const entry = this.entry(assistantId); const rpc = this.rpc; const endpoint = this.endpoint;
     if (!entry || !rpc || rpc.isClosed || !endpoint || this.state !== 'connected') return Promise.resolve(unavailable(this.state === 'connected' ? 'unavailable' : 'offline'));
-    const key = `${assistantId}/${jobId ?? ''}`;
+    const key = assistantId;
     const previous = this.detailReads.get(key); if (previous) return previous;
     if (this.detailReads.size >= 8) return Promise.resolve(unavailable('unavailable'));
-    const generation = this.generation;
+    const generation = this.generation; const revision = this.detailRevision;
     const controller = new AbortController(); this.detailControllers.add(controller);
     const timer = setTimeout(() => controller.abort(), 10_000);
-    const rest = (path: string) => readHermesRest(this.fetcher, endpoint, path, controller.signal);
-    const jobsPath = `/api/cron/jobs?profile=${encodeURIComponent(entry.slug)}`;
-    const live = () => this.current(generation) && this.rpc === rpc && this.endpoint === endpoint && this.entry(assistantId)?.slug === entry.slug && !controller.signal.aborted;
+    const live = () => this.current(generation) && this.detailRevision === revision && this.rpc === rpc && this.endpoint === endpoint && this.entry(assistantId)?.slug === entry.slug && !controller.signal.aborted;
+    const redactions = [endpoint.token, entry.home ?? ''];
     const operation = (async () => {
-      let result: AssistantDetails | AssistantRead<AssistantRun[]>;
-      if (jobId) {
-        result = await readSection(async () => {
-          // Hermes may fall back to another profile for an absent job. Confirm this profile owns the
-          // exact id both before and after the run query; reject any explicit foreign-profile rows.
-          const owns = async () => parseRoutines(await rest(jobsPath), entry.slug).some((job) => job.id === jobId);
-          if (!await owns()) throw new Error('Job no longer owned');
-          const runs = parseRuns(await rest(`/api/cron/jobs/${encodeURIComponent(jobId)}/runs?profile=${encodeURIComponent(entry.slug)}&limit=20`), entry.slug, jobId);
-          if (!await owns()) throw new Error('Job no longer owned');
-          return runs;
-        });
-      } else {
-        const [profile, history, routines] = await Promise.all([
-          readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug)),
-          readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }))),
-          readSection(async () => parseRoutines(await rest(jobsPath), entry.slug)),
-        ]);
-        result = { assistantId, profile, history, routines };
-      }
+      const [profile, history, routines] = await Promise.all([
+        readSection(async () => parseProfile(await rpc.call('profiles.describe', { name: entry.slug }), entry.slug, redactions)),
+        readSection(async () => parseHistory(await rpc.call('session.list', { profile: entry.slug, limit: 20, include_hidden: false }), redactions)),
+        this.cron.routines({ kind: 'assistant', assistantId }),
+      ]);
+      const result: AssistantDetails = { assistantId, profile, history, routines };
       // Even a backend title/preview containing its own credential must not expose that token.
       const safeResult = JSON.parse(JSON.stringify(result, (_key, value: unknown) => typeof value === 'string' ? value.split(endpoint.token).join('[redacted]') : value)) as typeof result;
       return live() ? safeResult : unavailable('unavailable');
@@ -721,7 +744,7 @@ export function parseAssistantRoster(result: unknown, includeHidden = false, red
     const resolved = canonical && typeof canonical.resolved_id === 'string' && SESSION_ID.test(canonical.resolved_id) ? canonical.resolved_id
       : canonical && typeof canonical.id === 'string' && SESSION_ID.test(canonical.id) ? canonical.id : undefined;
     assistants.push({
-      slug, sessionId: resolved, hadCanonical: !!resolved,
+      slug, home: typeof row.path === 'string' ? row.path : undefined, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`,
         ...(meta.hidden === true ? { hiddenInHermes: true } : {}),

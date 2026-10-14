@@ -17,6 +17,8 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     getAssistantPresentation: createAsyncMock({ assistantId: '', cosmetics: { state: 'unsupported' } }),
     updateAssistantPresentation: createAsyncMock({ state: 'unsupported' }),
     getAssistantAvatar: createAsyncMock({ state: 'ready', data: null }),
+    getDefaultHermesRoutines: createAsyncMock({ state: 'unsupported' }),
+    getDefaultHermesRoutineRuns: createAsyncMock({ state: 'unsupported' }),
     getAssistantDetails: createAsyncMock({ assistantId: '', profile: { state: 'unsupported' }, history: { state: 'unsupported' }, routines: { state: 'unsupported' } }),
     getAssistantRoutineRuns: createAsyncMock({ state: 'unsupported' }),
     getAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }),

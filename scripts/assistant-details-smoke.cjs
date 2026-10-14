@@ -28,6 +28,21 @@ for (const name of ['alpha', 'beta']) {
   fs.writeFileSync(path.join(profile, 'cron/jobs.json'), JSON.stringify({ jobs: [{ id: `${name}_job`, name: `${name} paused routine`, enabled: false, state: 'paused', paused_at: '2026-01-01T00:00:00+00:00', schedule: { kind: 'interval', minutes: 60 }, schedule_display: 'Every hour (fixture)', repeat: { times: null, completed: 0 }, prompt: 'Never executed', next_run_at: null, last_run_at: null, last_status: null }] }));
 }
 fs.writeFileSync(path.join(root, 'hermes/config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\n');
+// Non-executing default/named fixtures with overlapping ids; output docs are seeded, never run.
+const paused = (name, kind) => ({ id: 'shared', name: `${name} shared task`, enabled: false, state: 'paused', paused_at: '2026-01-01T00:00:00+00:00', schedule: { kind, minutes: 60, run_at: '2099-01-01T00:00:00+00:00' }, schedule_display: kind === 'once' ? '2099-01-01 (fixture)' : 'Every hour (fixture)', repeat: { times: kind === 'once' ? 1 : null, completed: name === 'default' ? 1 : 0 }, prompt: 'PRIVATE_PROMPT_FIXTURE', next_run_at: null, last_run_at: name === 'default' ? '2026-01-01T01:00:00+00:00' : null, last_status: name === 'default' ? 'error' : null });
+for (const name of ['default', 'alpha', 'beta']) {
+  const home = name === 'default' ? path.join(root, 'hermes') : path.join(root, 'hermes/profiles', name);
+  fs.mkdirSync(path.join(home, 'cron/output/shared'), { recursive: true });
+  const file = path.join(home, 'cron/jobs.json');
+  const jobs = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)).jobs : [];
+  jobs.push(paused(name, name === 'default' ? 'once' : 'interval'));
+  fs.writeFileSync(file, JSON.stringify({ jobs }));
+  fs.writeFileSync(path.join(home, 'cron/output/shared/2026-01-01_01-00-00.md'), 'PRIVATE_OUTPUT_FIXTURE with unlabelled secrets');
+}
+const originalJobs = Object.fromEntries(['default', 'alpha', 'beta'].map((name) => {
+  const file = path.join(root, 'hermes', name === 'default' ? '' : `profiles/${name}`, 'cron/jobs.json');
+  return [file, fs.readFileSync(file, 'utf8')];
+}));
 fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ assistantSettings: { enabled: true, autoStart: true }, workspaceNavigationMode: 'sidebar' }));
 let app;
 (async () => {
@@ -40,7 +55,7 @@ let app;
     assert.equal(snapshot.service.ownership, 'clanker', 'Smoke must never adopt a user backend');
     const details = await page.evaluate(() => window.electronAPI.getAssistantDetails('hermes:alpha'));
     assert.equal(details.profile.state, 'ready'); assert.equal(details.profile.data.model, 'fixture-model');
-    assert.equal(details.routines.state, 'ready'); assert.equal(details.routines.data.length, 1);
+    assert.equal(details.routines.state, 'ready'); assert.equal(details.routines.data.length, 2);
     assert.equal(details.routines.data[0].id, 'alpha_job');
     const runs = await page.evaluate(() => window.electronAPI.getAssistantRoutineRuns('hermes:alpha', 'alpha_job'));
     assert.equal(runs.state, 'ready'); assert.equal(runs.data.length, 0);
@@ -50,6 +65,14 @@ let app;
     assert.equal(avatar.state, 'ready'); assert.equal(avatar.data.width, 32); assert.equal(avatar.data.height, 16);
     assert(avatar.data.dataUrl.startsWith('data:image/png;base64,'));
     assert.deepEqual(await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:beta')), { state: 'ready', data: null });
+    // Real JPEG decode also stays main-owned and is normalized to PNG; original bytes never cross IPC.
+    const betaAvatar = path.join(root, 'hermes/profiles/beta/assets/avatar.jpg');
+    fs.mkdirSync(path.dirname(betaAvatar), { recursive: true });
+    await app.evaluate(({ nativeImage }, files) => process.getBuiltinModule('fs').writeFileSync(files.dest, nativeImage.createFromPath(files.source).toJPEG(90)), { source: path.join(root, 'hermes/profiles/alpha/assets/avatar.png'), dest: betaAvatar });
+    await page.evaluate(() => window.electronAPI.refreshAssistants());
+    const jpeg = await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:beta'));
+    assert.equal(jpeg.state, 'ready'); assert(jpeg.data.dataUrl.startsWith('data:image/png;base64,'));
+    fs.unlinkSync(betaAvatar); await page.evaluate(() => window.electronAPI.refreshAssistants());
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const appearanceDialog = page.getByRole('dialog', { name: 'Settings', exact: true });
     await appearanceDialog.getByRole('button', { name: 'Assistants', exact: true }).click();
@@ -77,7 +100,23 @@ let app;
     await appearanceDialog.getByLabel('Bot tagline', { exact: true }).fill('');
     await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
     await appearanceDialog.getByText('Saved in Hermes.', { exact: true }).waitFor();
+    // Combined sections must recover together without the appearance effect cancelling the cron read.
+    await appearanceDialog.getByRole('button', { name: 'Refresh details', exact: true }).click();
+    await appearanceDialog.getByText('alpha paused routine', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('input[id$="-title"]')?.value === '');
+    await appearanceDialog.getByRole('button', { name: 'Reload values', exact: true }).click();
+    await appearanceDialog.getByText('alpha paused routine', { exact: true }).waitFor();
     await appearanceDialog.getByRole('button', { name: 'Close Settings', exact: true }).click();
+    const defaultTasks = await page.evaluate(() => window.electronAPI.getDefaultHermesRoutines());
+    assert.equal(defaultTasks.state, 'ready'); assert.equal(defaultTasks.data.length, 1);
+    assert.equal(defaultTasks.data[0].name, 'default shared task'); assert.equal(defaultTasks.data[0].lastResult, 'Failed');
+    assert.equal(defaultTasks.data[0].scheduleKind, 'once');
+    assert(!snapshot.assistants.some(row => row.id === 'hermes:default'));
+    for (const owner of ['default', 'alpha', 'beta']) {
+      const history = await page.evaluate(owner => owner === 'default' ? window.electronAPI.getDefaultHermesRoutineRuns('shared') : window.electronAPI.getAssistantRoutineRuns(`hermes:${owner}`, 'shared'), owner);
+      assert.equal(history.state, 'unavailable', 'Native output rows omit the owning profile and must be withheld');
+      assert(!JSON.stringify(history).includes('PRIVATE_OUTPUT_FIXTURE'));
+    }
     // Zero-workspace canonical surface, then contextual navigation. No model turn is submitted.
     await page.getByRole('button', { name: 'Alpha', exact: true }).click();
     await page.getByRole('button', { name: 'Manage Assistant', exact: true }).click();
@@ -99,16 +138,42 @@ let app;
     await dialog.getByRole('button', { name: 'Refresh profiles', exact: true }).click();
     await dialog.getByRole('option', { name: 'Gamma', exact: true }).waitFor({ state: 'attached' });
     await dialog.getByText('alpha paused routine', { exact: true }).waitFor();
-    await dialog.getByRole('button', { name: 'Inspect recent runs' }).click();
-    await dialog.getByText('No recent runs reported.', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Inspect recent runs' }).first().click();
+    await dialog.getByText('No recent execution records available. This does not prove the task never ran.', { exact: true }).waitFor();
     await dialog.getByRole('combobox').selectOption('hermes:beta');
     await dialog.getByText('beta paused routine', { exact: true }).waitFor();
     assert.equal(await dialog.getByText('alpha paused routine', { exact: true }).count(), 0);
-    await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-157-assistant-details.png');
+    await dialog.getByText('Default Hermes · Scheduled tasks', { exact: true }).click();
+    await dialog.getByText('default shared task', { exact: true }).waitFor();
+    await dialog.getByText('Failed', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Refresh default tasks', exact: true }).click();
+    await dialog.getByText('default shared task', { exact: true }).waitFor();
+    assert(!await dialog.getByText('PRIVATE_PROMPT_FIXTURE', { exact: true }).count());
+    assert(!await dialog.getByText('PRIVATE_OUTPUT_FIXTURE', { exact: true }).count());
+    for (const [file, value] of Object.entries(originalJobs)) assert.equal(fs.readFileSync(file, 'utf8'), value, 'Healthy fixture jobs must not change on reads');
+    await dialog.getByText('default shared task', { exact: true }).scrollIntoViewIfNeeded();
+    await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-182-cron-visibility.png');
     await dialog.getByRole('button', { name: 'Close Settings' }).click();
     await page.waitForFunction(() => document.activeElement?.textContent === 'Manage Assistant');
     assert(await page.getByRole('button', { name: 'Manage Assistant', exact: true }).evaluate(element => document.activeElement === element));
-    console.log('Real Hermes / Electron Assistant details smoke passed: native cosmetic save, namespace preservation, concurrent edit rejection, normalized/missing avatar reads, stable Assistant identity, profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, hide/unhide while retaining the surface, discover newly added profile on refresh, focus return. Screenshots: /tmp/clanker-182-assistant-appearance.png and /tmp/clanker-157-assistant-details.png');
+    // Real service loss/recovery, using only the isolated Clanker-owned fixture backend.
+    const oldPresentation = await page.evaluate(() => window.electronAPI.getAssistantPresentation('hermes:alpha'));
+    await page.evaluate(() => window.electronAPI.configureAssistants({ enabled: false, autoStart: false }));
+    assert.equal((await page.evaluate(() => window.electronAPI.getDefaultHermesRoutines())).state, 'offline');
+    assert.equal((await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:alpha'))).state, 'unavailable');
+    await page.evaluate(() => window.electronAPI.configureAssistants({ enabled: true, autoStart: true }));
+    await page.evaluate(() => window.electronAPI.refreshAssistants());
+    await page.waitForFunction(async () => (await window.electronAPI.getAssistants()).service.state === 'connected' && (await window.electronAPI.getDefaultHermesRoutines()).state === 'ready');
+    const oldWrite = await page.evaluate(view => window.electronAPI.updateAssistantPresentation('hermes:alpha', { ...view.cosmetics.data, title: 'Forbidden stale reconnect draft' }), oldPresentation);
+    if (oldWrite.state !== 'conflict') console.log('Reconnect refusal state:', oldWrite.state, await page.evaluate(async () => { const snapshot = await window.electronAPI.getAssistants(); return { service: snapshot.service, ids: snapshot.assistants.map(row => row.id) }; }));
+    assert(['conflict', 'unavailable'].includes(oldWrite.state), 'Previous connection must not authorize a write');
+    await page.waitForFunction(async () => (await window.electronAPI.getAssistants()).service.state === 'connected' && (await window.electronAPI.getDefaultHermesRoutines()).state === 'ready');
+    const recovered = await page.evaluate(async () => Promise.all([window.electronAPI.getAssistantDetails('hermes:alpha'), window.electronAPI.getDefaultHermesRoutines(), window.electronAPI.getAssistantAvatar('hermes:alpha')]));
+    assert.equal(recovered[0].routines.state, 'ready'); assert.equal(recovered[1].state, 'ready'); assert.equal(recovered[2].state, 'ready');
+    assert(!JSON.stringify(recovered).includes('PRIVATE_PROMPT_FIXTURE')); assert(!JSON.stringify(recovered).includes('PRIVATE_OUTPUT_FIXTURE'));
+    assert(!JSON.stringify(recovered).includes(root));
+    for (const [file, value] of Object.entries(originalJobs)) assert.equal(fs.readFileSync(file, 'utf8'), value);
+    console.log('Combined real Hermes / Electron smoke passed: native JPEG normalization, coordinated detail/appearance refresh, disable/reconnect and stale-token refusal, privacy,  native cosmetic save/CAS conflict and namespace preservation, normalized/missing avatars, stable identity, default/named overlapping cron ids, ambiguous output withheld, unchanged paused jobs, one-shot/recurring metadata, Settings refresh, profile switch, hiding, zero-workspace chat, focus return. Screenshots: /tmp/clanker-182-assistant-appearance.png and /tmp/clanker-182-cron-visibility.png');
   } finally {
     if (app) {
       try {

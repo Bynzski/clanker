@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Unified New Agent launch (#166)** — choose Terminal or a supported harness, default to the project checkout, or explicitly select/create a validated linked worktree. Source Control can also create a worktree without launching a session.
 - **Settings and Source Control management (#154)** — dedicated Settings destinations for appearance, layout, shortcuts, harnesses, accounts, Assistants, Git preferences, authentication and SSH targets. Source Control exposes Changes, History, Overview, Branches, Worktrees, Stashes, Remotes and Merge, with checkout-aware diff review, staging and commits.
 - **Hermes Assistant profile details (#157)** — read-only capabilities, scheduled routines and recent runs, with roster visibility controls. Clanker does not schedule or operate Hermes jobs.
+- **Native Hermes Assistant appearance (#182, #183)** — display existing PNG/JPEG avatars and edit Bot title/tagline with native revision checks while preserving profile identity and other metadata. Avatar replacement and SSH discovery remain deferred.
+- **Hermes scheduled-task visibility (#182, #184)** — inspect named-profile and default-profile tasks separately, including paused tasks and recorded results. Unverified execution ownership is withheld; scheduler health remains Unknown and no scheduling controls are added.
 - **Terminal image drops (#169)** — pass quoted paths for dropped local image files to ready local terminal/Assistant input without submitting the command; remote and unsupported drops are refused.
 - **Development attention diagnostics (#152, #164, #179)** — bounded, redacted field logs and renderer receipt/presentation evidence, default-on for development builds. This is observational telemetry, not a claim that missing attention updates or actual pixel presentation have been fixed.
 
@@ -26,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Hermes appearance and task refresh (#182, #184)** — coordinate explicit refresh, preserve valid concurrent task reads during cosmetic saves, reject stale profile/connection results and redact known credentials/private profile homes before truncating display metadata.
 - **Agent-attention state handling (#152, #162)** — harden acknowledgements, foreground/native-session correlation and provisional Stop handoffs. Native hook gaps and intermittent missing updates remain under investigation.
 - **Checkout and session safety (#147, #159, #166)** — protect in-use checkouts against unsafe cleanup, refuse unregistered observed directories as launch authority, and validate repository initialization and worktree adoption.
 - **VCS credentials and CI summaries (#145, #165, #173)** — fail closed on invalid decrypted credentials and do not represent unknown PR/review/CI results as success.

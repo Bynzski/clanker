@@ -246,6 +246,8 @@ export const HARNESS_USAGE_GET = 'harness-usage:get';
 export const ASSISTANTS_PRESENTATION = 'assistants:presentation';
 export const ASSISTANTS_UPDATE_PRESENTATION = 'assistants:update-presentation';
 export const ASSISTANTS_AVATAR = 'assistants:avatar';
+export const ASSISTANTS_DEFAULT_ROUTINES = 'assistants:default-routines';
+export const ASSISTANTS_DEFAULT_ROUTINE_RUNS = 'assistants:default-routine-runs';
 export const ASSISTANTS_DETAILS = 'assistants:details';
 export const ASSISTANTS_ROUTINE_RUNS = 'assistants:routine-runs';
 export const ASSISTANTS_GET = 'assistants:get';
@@ -512,6 +514,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ASSISTANTS_PRESENTATION,
   ASSISTANTS_UPDATE_PRESENTATION,
   ASSISTANTS_AVATAR,
+  ASSISTANTS_DEFAULT_ROUTINES,
+  ASSISTANTS_DEFAULT_ROUTINE_RUNS,
   ASSISTANTS_DETAILS,
   ASSISTANTS_ROUTINE_RUNS,
   ASSISTANTS_GET,

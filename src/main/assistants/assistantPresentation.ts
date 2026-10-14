@@ -73,7 +73,7 @@ export class AssistantPresentationService {
         const title = safe(bot.title, ASSISTANT_TITLE_LIMIT); const tagline = safe(bot.description, ASSISTANT_TAGLINE_LIMIT);
         const cleanText = (value: unknown, text: string) => value === undefined || typeof value === 'string' && value.trim() === text;
         next.set(assistant.id, { bot: bounded ? bot : {}, revision: supportsCas ? revision as number : null,
-          fingerprint: createHash('sha256').update(`${supportsCas ? String(revision) : 'unsupported'}:${serialized}`).digest('hex'), title, tagline,
+          fingerprint: createHash('sha256').update(`${supportsCas ? String(revision) : 'unsupported'}:${serialized}:${JSON.stringify(row.path)}`).digest('hex'), title, tagline,
           editable: bounded && safeNumbers && (row.ui_meta === undefined || row.ui_meta !== null && typeof row.ui_meta === 'object' && !Array.isArray(row.ui_meta)) && (rawBot === undefined || rawBot !== null && typeof rawBot === 'object' && !Array.isArray(rawBot)) &&
             cleanText(bot.title, title) && cleanText(bot.description, tagline),
           hasAvatar: typeof row.has_avatar === 'boolean' ? row.has_avatar : undefined });

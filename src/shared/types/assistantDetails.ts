@@ -25,14 +25,17 @@ export interface AssistantRoutine {
   nextRun?: string;
   lastRun?: string;
   lastResult?: string;
+  scheduleKind?: 'once' | 'interval' | 'cron';
+  nextRunAbsent?: boolean;
+  lastRunAbsent?: boolean;
+  recordedRuns?: number;
+  latestAttempt?: { status: 'claimed' | 'running' | 'completed' | 'failed' | 'unknown'; claimedAt?: string; finishedAt?: string };
 }
+/** Metadata only. Native run titles/previews may contain prompts or arbitrary secret output. */
 export interface AssistantRun {
-  title?: string;
   startedAt?: number;
   endedAt?: number;
-  source?: 'cron' | 'cron_output';
-  /** Backend preview only; bounded and redacted. Never interpreted as a success or lifecycle signal. */
-  preview?: string;
+  source: 'cron' | 'cron_output';
 }
 export interface AssistantDetails {
   assistantId: string;

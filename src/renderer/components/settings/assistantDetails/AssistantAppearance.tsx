@@ -18,7 +18,7 @@ const WRITE_MESSAGE = {
 };
 
 /** Narrow Bot Mode cosmetics, never the operational role description. An edit token pins the user's baseline. */
-export function AssistantAppearance({ assistantId, connected, revision }: { assistantId: string; connected: boolean; revision: number }) {
+export function AssistantAppearance({ assistantId, connected, revision, onRefresh }: { assistantId: string; connected: boolean; revision: number; onRefresh?: () => Promise<void> }) {
   const prefix = useId(); const epoch = useRef(0);
   const [baseline, setBaseline] = useState<(AssistantCosmetics & { assistantId: string })>();
   const [title, setTitle] = useState(''); const [tagline, setTagline] = useState('');
@@ -32,12 +32,8 @@ export function AssistantAppearance({ assistantId, connected, revision }: { assi
     const current = ++epoch.current; let cancelled = false;
     setBaseline(undefined); setMessage(''); setBusy(connected);
     if (!connected) return () => { cancelled = true; epoch.current = current + 1; };
-    const read = async () => {
-      // Refresh details is explicit too: refresh the native roster before resetting the cosmetic baseline.
-      if (revision > 0) await useAssistantsStore.getState().refresh();
-      return window.electronAPI.getAssistantPresentation(assistantId);
-    };
-    void read().then((value) => {
+    // The detail parent sequences explicit native refresh before changing revision.
+    void window.electronAPI.getAssistantPresentation(assistantId).then((value) => {
       if (!cancelled && current === epoch.current) apply(value);
     }, () => { if (!cancelled && current === epoch.current) setBaseline(undefined); }).finally(() => {
       if (!cancelled && current === epoch.current) setBusy(false);
@@ -48,8 +44,9 @@ export function AssistantAppearance({ assistantId, connected, revision }: { assi
 
   const reload = async () => {
     const current = epoch.current; setBusy(true); setMessage('');
-    await useAssistantsStore.getState().refresh();
     try {
+      if (onRefresh) { await onRefresh(); return; }
+      await useAssistantsStore.getState().refresh();
       const value = await window.electronAPI.getAssistantPresentation(assistantId);
       if (current === epoch.current) apply(value);
     } catch { if (current === epoch.current) setBaseline(undefined); }
