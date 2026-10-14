@@ -11,5 +11,6 @@ Regenerate feature stills and short clips with `npm run capture:features`; see t
 - [2026-10-03: Sidebar vs Tabs navigation, multi-pane workspaces, and the collapsed rail in Dark, Light, and Slate](2026-10-03/README.md)
 
 - [2026-10-08: feature screenshots and short clips, with an offline selection gallery](2026-10-08-features/README.md) · [Gallery](2026-10-08-features/index.html)
+- [2026-10-14: feature screenshots and short clips, with an offline selection gallery](2026-10-14-features/README.md) · [Gallery](2026-10-14-features/index.html)
 
 All sets are dated historical captures, not acceptance evidence for the upcoming release. The 2026-10-03 set documents Sidebar and Tabs at the 0.10.0 preflight snapshot; later startup, checkout, dev-server and UI changes are not shown. The earlier sets also predate Sidebar navigation and the docked toolbar. Keep the images as historical assets; do not present removed startup-gate controls as current behavior.
