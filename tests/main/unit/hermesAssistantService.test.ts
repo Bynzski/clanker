@@ -536,6 +536,57 @@ describe('roster', () => {
   });
 });
 
+/** Issue #182 blocker path: this service remains local-only, not an SSH inventory adapter. */
+describe('local Assistant discovery boundary', () => {
+  it('refresh only lists profiles; discovery does not create chats, read cron or attach a PTY', async () => {
+    const { service, hermes, spawnServe } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    await service.refresh();
+    expect(hermes.calls.map(({ method }) => method)).toEqual(['profiles.list', 'profiles.list']);
+    expect(hermes.fetched.every((url) => ['127.0.0.1', '[::1]'].includes(new URL(url).hostname))).toBe(true);
+    expect(hermes.fetched.some((url) => new URL(url).pathname.includes('/cron'))).toBe(false);
+    expect(hermes.ptySockets()).toEqual([]);
+    expect(spawnServe).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+
+  it.each(['hermes:ssh-one:fred', 'hermes:ssh-two:fred'])('never routes a source-qualified remote handle %s to the local fred profile', async (id) => {
+    const { service, hermes } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    expect(service.hasAssistant('hermes:fred')).toBe(true);
+    const calls = hermes.calls.length;
+    expect(service.hasAssistant(id)).toBe(false);
+    await expect(service.openSurface(id)).rejects.toThrow('Invalid assistant');
+    expect(await service.readDetails(id)).toMatchObject({ profile: { state: 'unavailable' }, history: { state: 'unavailable' }, routines: { state: 'unavailable' } });
+    expect(await service.readRoutineRuns(id, 'job-one')).toEqual({ state: 'unavailable' });
+    service.writePty(id, 'must not reach local Hermes');
+    service.resizePty(id, 80, 24);
+    expect(hermes.calls).toHaveLength(calls);
+    expect(hermes.ptySockets()).toEqual([]);
+    expect(service.get().surfaces).toEqual([]);
+    await service.shutdown();
+  });
+
+  it('rejects human-table or malformed inventory rather than retaining a falsely connected catalog, and recovers on retry', async () => {
+    const { service, hermes } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    const valid = hermes.profiles;
+    for (const invalid of ['Profile Model Gateway Alias Distribution\\nfred model stopped — —', { profiles: ['fred'] }, null]) {
+      // Deliberately violate the upstream wire shape; no human-output parser is supported.
+      hermes.profiles = invalid as never;
+      const failed = await service.refresh();
+      expect(failed.service.state).toBe('offline');
+      expect(failed.assistants).toEqual([]);
+      expect(failed.profiles).toEqual([]);
+      hermes.profiles = valid;
+      expect((await service.refresh()).service.state).toBe('connected');
+      expect(service.get().assistants.some(({ id }) => id === 'hermes:fred')).toBe(true);
+    }
+    expect(hermes.ptySockets()).toEqual([]);
+    await service.shutdown();
+  });
+});
+
 describe('canonical Bot Chat resolution', () => {
   const open = async () => {
     const ctx = setup({ enabled: true, autoStart: false });
