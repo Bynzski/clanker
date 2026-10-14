@@ -49,29 +49,56 @@ export function parseRoutines(value: unknown, slug: string): AssistantRoutine[] 
   const seen = new Set<string>();
   return value.map((raw) => {
     const row = record(raw);
-    if (row.profile !== slug || typeof row.id !== 'string' || !JOB_ID.test(row.id) || seen.has(row.id)) throw new Error('Unconfirmed job ownership');
+    if (row.profile !== slug || typeof row.id !== 'string' || row.id === 'unknown' || !JOB_ID.test(row.id) || seen.has(row.id)) throw new Error('Unconfirmed job ownership');
     seen.add(row.id);
-    return { id: row.id, name: displayText(row.name) ?? 'Scheduled task', enabled: typeof row.enabled === 'boolean' ? row.enabled : undefined,
-      state: displayText(row.state), schedule: displayText(row.schedule_display), timezone: displayText(row.timezone),
-      nextRun: displayText(row.next_run_at), lastRun: displayText(row.last_run_at), lastResult: displayText(row.last_status) };
+    // Hermes synthesizes unnamed job labels from prompts/scripts. Do not expose those excerpts.
+    const derivedName = [row.prompt, row.script, row.skill, Array.isArray(row.skills) ? row.skills[0] : undefined].some((value) => typeof value === 'string' && row.name === value.slice(0, 50).trim());
+    const safe = (value: unknown) => {
+      let text = typeof value === 'string' ? value : '';
+      for (const path of [row.hermes_home, row.workdir, row.script]) if (typeof path === 'string' && path) text = text.split(path).join('[redacted]');
+      return displayText(text);
+    };
+    const kind = record(row.schedule).kind;
+    const attempts = record(row.repeat).completed;
+    const latest = record(row.latest_execution);
+    const latestStatus = latest.status;
+    if (row.latest_execution != null && latest.job_id !== row.id) throw new Error('Unconfirmed attempt ownership');
+    const results: Record<string, string> = { ok: 'Succeeded', error: 'Failed', interrupted: 'Interrupted', delivery_failed: 'Delivery failed', blocked_config: 'Configuration blocked', skipped: 'Skipped' };
+    return { id: row.id, name: derivedName ? 'Scheduled task' : safe(row.name) ?? 'Scheduled task', enabled: typeof row.enabled === 'boolean' ? row.enabled : undefined,
+      state: ['scheduled', 'paused', 'completed', 'error'].includes(String(row.state)) ? String(row.state) : 'Unknown', schedule: safe(row.schedule_display), timezone: safe(row.timezone),
+      scheduleKind: kind === 'once' || kind === 'interval' || kind === 'cron' ? kind : undefined,
+      nextRun: safe(row.next_run_at), lastRun: safe(row.last_run_at), nextRunAbsent: row.next_run_at === null, lastRunAbsent: row.last_run_at === null,
+      recordedRuns: typeof attempts === 'number' && Number.isSafeInteger(attempts) && attempts >= 0 ? attempts : undefined,
+      lastResult: row.last_status === null ? 'No result recorded' : Object.prototype.hasOwnProperty.call(results, String(row.last_status)) ? results[String(row.last_status)] : 'Unknown',
+      ...(latest.job_id === row.id && ['claimed', 'running', 'completed', 'failed', 'unknown'].includes(String(latestStatus)) ? {
+        latestAttempt: { status: latestStatus as NonNullable<AssistantRoutine['latestAttempt']>['status'], claimedAt: safe(latest.claimed_at), finishedAt: safe(latest.finished_at) },
+      } : {}),
+    };
   });
 }
 export function parseRuns(value: unknown, slug: string, jobId: string): AssistantRun[] {
+  if (!JOB_ID.test(jobId)) throw new Error('Invalid job id');
+  const seen = new Set<string>();
   const rows = record(value).runs;
   if (!Array.isArray(rows) || rows.length > 20) throw new Error('Unexpected runs');
   return rows.map((raw) => {
     const row = record(raw);
-    if ((row.profile !== undefined && row.profile !== slug) || typeof row.id !== 'string' ||
-      !(row.source === 'cron_output' && row.id.startsWith(`cron_output:${jobId}:`) || row.source === 'cron' && row.id.startsWith(`cron_${jobId}_`))) throw new Error('Unexpected run ownership');
-    return { title: displayText(row.title), startedAt: epoch(row.started_at), endedAt: epoch(row.ended_at),
-      source: row.source as 'cron' | 'cron_output', preview: displayText(row.preview, 1000) };
+    // Before/after job-list checks cannot close the native wrong-profile fallback race.
+    // Unscoped output records are therefore unavailable, even if their id has the right prefix.
+    if (row.profile !== slug) throw new UnconfirmedRunOwnership();
+    if (typeof row.id !== 'string' ||
+      !(row.source === 'cron_output' && row.id.startsWith(`cron_output:${jobId}:`) || row.source === 'cron' && new RegExp(`^cron_${jobId}_[0-9]{8}_[0-9]{6}$`).test(row.id))) throw new Error('Unexpected run ownership');
+    if (seen.has(row.id)) throw new Error('Duplicate run');
+    seen.add(row.id);
+    return { startedAt: epoch(row.started_at), endedAt: epoch(row.ended_at), source: row.source as 'cron' | 'cron_output' };
   });
 }
 export async function readSection<T>(read: () => Promise<T>): Promise<AssistantRead<T>> {
   try { return { state: 'ready', data: await read() }; }
-  catch (error) { return { state: error instanceof RpcError && error.code === -32601 || error instanceof UnsupportedRead ? 'unsupported' : 'error' }; }
+  catch (error) { if (error instanceof UnconfirmedRunOwnership) return { state: 'unavailable' }; return { state: error instanceof RpcError && error.code === -32601 || error instanceof UnsupportedRead ? 'unsupported' : 'error' }; }
 }
 class UnsupportedRead extends Error {}
+class UnconfirmedRunOwnership extends Error {}
 /** Fixed loopback REST routes only. No redirects, bounded streamed body, hard timeout, token stays in main. */
 export async function readHermesRest(fetcher: FetchLike, endpoint: { port: number; token: string; host?: '127.0.0.1' | '[::1]' }, path: string, signal: AbortSignal): Promise<unknown> {
   const response = await fetcher(`http://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}${path}`, {

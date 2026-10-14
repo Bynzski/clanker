@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DefaultHermesRoutines } from './assistantDetails/DefaultHermesRoutines';
 import AssistantProfileDetail from './AssistantProfileDetail';
 import { AssistantProfileSelector } from './assistantDetails/AssistantProfileSelector';
 import { Info } from 'lucide-react';
@@ -62,6 +63,7 @@ export default function AssistantsSettings({ initialAssistantId }: { initialAssi
           if (hidden) hiddenAssistantIds.push(id);
           void configure({ ...settings, hiddenAssistantIds });
         }} />
+      <DefaultHermesRoutines key={`default:${profilesRevision}:${connected}`} connected={connected} />
       {connected && profiles.filter((assistant) => assistant.id === selectedId).map((assistant) => <AssistantProfileDetail key={`${assistant.id}:${profilesRevision}`} assistant={assistant} connected={connected} />)}
     </div>
   );

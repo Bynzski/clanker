@@ -4,6 +4,5 @@
 .assistant-detail-cards { display: grid; gap: var(--space-sm); margin: var(--space-md) 0; padding: 0; list-style: none; }
 .assistant-capabilities-list { display: grid; gap: var(--space-xs); padding: 0; list-style: none; }
 .assistant-capabilities-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); }
-.assistant-output-preview { white-space: pre-wrap; max-height: 160px; overflow: auto; padding: var(--space-sm); }
 .assistants-profile-controls { display: flex; align-items: end; gap: var(--space-sm); flex-wrap: wrap; margin-top: var(--space-md); }
 .assistants-profile-controls .clanker-field { flex: 1; min-width: 0; }

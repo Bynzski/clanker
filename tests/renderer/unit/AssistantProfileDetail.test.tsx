@@ -44,15 +44,16 @@ it('rejects out-of-order profile results after changing selection', async () => 
 });
 it('shows unsupported/error separately from empty, and never manufactures run success', async () => {
   vi.mocked(window.electronAPI.getAssistantDetails).mockResolvedValue({ ...details(fred.id), profile: { state: 'unsupported' }, history: { state: 'error' } });
-  vi.mocked(window.electronAPI.getAssistantRoutineRuns).mockResolvedValue({ state: 'ready', data: [{ title: 'Output only', source: 'cron_output', startedAt: 100, endedAt: 100, preview: 'Bounded preview' }] });
+  vi.mocked(window.electronAPI.getAssistantRoutineRuns).mockResolvedValue({ state: 'ready', data: [{ source: 'cron_output', startedAt: 100, endedAt: 100 }] });
   render(<AssistantProfileDetail assistant={fred} connected />);
   expect(await screen.findByText('Not supported by this Hermes version.')).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('Could not read from Hermes');
   expect(screen.getByText(/Disabled \/ paused/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Inspect recent runs' }));
-  expect(await screen.findByText('Output only')).toBeInTheDocument();
+  expect(await screen.findByText('Script execution record')).toBeInTheDocument();
   expect(screen.getByText(/ended session does not prove success/)).toBeInTheDocument();
-  expect(screen.getByText('Bounded preview')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Hermes output preview')).toBeNull();
+  expect(screen.getByText(/runtime health: Unknown/)).toBeInTheDocument();
   expect(window.electronAPI.getAssistantRoutineRuns).toHaveBeenCalledWith(fred.id, 'job_1');
 });
 it('shows routine failures, offline and empty states truthfully', async () => {
