@@ -1,5 +1,6 @@
 /* global window, document */
 // Real installed Hermes + built Electron, isolated homes; no prompts, schedules or job execution.
+// Also verifies native Bot Mode cosmetics, CAS rejection and normalized avatars (issue #182).
 // npm run build && node scripts/assistant-details-smoke.cjs
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
@@ -19,6 +20,11 @@ for (const name of ['alpha', 'beta']) {
   fs.mkdirSync(path.join(profile, 'skills/demo'), { recursive: true });
   fs.writeFileSync(path.join(profile, 'skills/demo/SKILL.md'), '---\nname: demo\ndescription: Smoke fixture\n---\nRead only fixture.\n');
   fs.writeFileSync(path.join(profile, 'config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\nplatform_toolsets:\n  cli: [terminal]\n');
+  fs.writeFileSync(path.join(profile, 'profile.yaml'), 'description: Operational fixture role\nui_meta:\n  hermes-bots:\n    hidden: false\n    groupId: smoke-group\n  unrelated:\n    intact: true\n');
+  if (name === 'alpha') {
+    fs.mkdirSync(path.join(profile, 'assets'));
+    fs.writeFileSync(path.join(profile, 'assets/avatar.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAYAAAB3AH1ZAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAALUlEQVRIiWNomrzl/0BihlEHNI1GweTRRLhlNBv+Hy2ImkaL4smjldGWAUsHAEBkkExS6IyWAAAAAElFTkSuQmCC', 'base64'));
+  }
   fs.writeFileSync(path.join(profile, 'cron/jobs.json'), JSON.stringify({ jobs: [{ id: `${name}_job`, name: `${name} paused routine`, enabled: false, state: 'paused', paused_at: '2026-01-01T00:00:00+00:00', schedule: { kind: 'interval', minutes: 60 }, schedule_display: 'Every hour (fixture)', repeat: { times: null, completed: 0 }, prompt: 'Never executed', next_run_at: null, last_run_at: null, last_status: null }] }));
 }
 fs.writeFileSync(path.join(root, 'hermes/config.yaml'), 'model:\n  default: fixture-model\n  provider: openrouter\n');
@@ -39,6 +45,39 @@ let app;
     const runs = await page.evaluate(() => window.electronAPI.getAssistantRoutineRuns('hermes:alpha', 'alpha_job'));
     assert.equal(runs.state, 'ready'); assert.equal(runs.data.length, 0);
     assert.notEqual((await page.evaluate(() => window.electronAPI.getAssistantRoutineRuns('hermes:beta', 'alpha_job'))).state, 'ready');
+    // Native presentation before opening any chat: selected profile + visible roster only.
+    const avatar = await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:alpha'));
+    assert.equal(avatar.state, 'ready'); assert.equal(avatar.data.width, 32); assert.equal(avatar.data.height, 16);
+    assert(avatar.data.dataUrl.startsWith('data:image/png;base64,'));
+    assert.deepEqual(await page.evaluate(() => window.electronAPI.getAssistantAvatar('hermes:beta')), { state: 'ready', data: null });
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const appearanceDialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+    await appearanceDialog.getByRole('button', { name: 'Assistants', exact: true }).click();
+    await appearanceDialog.getByRole('combobox', { name: 'Profile' }).selectOption('hermes:alpha');
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('Alpha Cosmetic');
+    await appearanceDialog.getByLabel('Bot tagline', { exact: true }).fill('Cosmetic fixture tagline');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText('Saved in Hermes.', { exact: true }).waitFor();
+    await appearanceDialog.locator('.assistant-avatar-large img').waitFor();
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).scrollIntoViewIfNeeded();
+    await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-182-assistant-appearance.png');
+    const alphaMetaPath = path.join(root, 'hermes/profiles/alpha/profile.yaml');
+    const written = fs.readFileSync(alphaMetaPath, 'utf8');
+    assert.match(written, /description: Operational fixture role/); assert.match(written, /groupId: smoke-group/);
+    assert.match(written, /hidden: false/); assert.match(written, /intact: true/);
+    assert.equal((await page.evaluate(() => window.electronAPI.getAssistants())).assistants[0].id, 'hermes:alpha');
+    // Simulate another native client/file writer after the editor baseline was loaded.
+    fs.writeFileSync(alphaMetaPath, 'description: Operational fixture role\nui_meta:\n  hermes-bots:\n    title: Other client title\n    description: Other client tagline\n    hidden: false\n    groupId: smoke-group\n  unrelated:\n    intact: true\n_ui_meta_revisions:\n  hermes-bots: 2\n');
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('Stale local draft');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText(/changed concurrently/).waitFor();
+    assert.equal(await appearanceDialog.getByLabel('Bot title', { exact: true }).inputValue(), 'Other client title');
+    // Restore the fixture's ordinary Alpha presentation for the existing details/roster checks.
+    await appearanceDialog.getByLabel('Bot title', { exact: true }).fill('');
+    await appearanceDialog.getByLabel('Bot tagline', { exact: true }).fill('');
+    await appearanceDialog.getByRole('button', { name: 'Save appearance', exact: true }).click();
+    await appearanceDialog.getByText('Saved in Hermes.', { exact: true }).waitFor();
+    await appearanceDialog.getByRole('button', { name: 'Close Settings', exact: true }).click();
     // Zero-workspace canonical surface, then contextual navigation. No model turn is submitted.
     await page.getByRole('button', { name: 'Alpha', exact: true }).click();
     await page.getByRole('button', { name: 'Manage Assistant', exact: true }).click();
@@ -67,8 +106,9 @@ let app;
     assert.equal(await dialog.getByText('alpha paused routine', { exact: true }).count(), 0);
     await app.evaluate(async ({ BrowserWindow }, file) => process.getBuiltinModule('fs').writeFileSync(file, (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG()), '/tmp/clanker-157-assistant-details.png');
     await dialog.getByRole('button', { name: 'Close Settings' }).click();
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Manage Assistant');
     assert(await page.getByRole('button', { name: 'Manage Assistant', exact: true }).evaluate(element => document.activeElement === element));
-    console.log('Real Hermes / Electron Assistant details smoke passed: profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, hide/unhide while retaining the surface, discover newly added profile on refresh, focus return. Screenshot: /tmp/clanker-157-assistant-details.png');
+    console.log('Real Hermes / Electron Assistant details smoke passed: native cosmetic save, namespace preservation, concurrent edit rejection, normalized/missing avatar reads, stable Assistant identity, profile, capabilities, scoped paused routine/run reads, foreign-job refusal, zero-workspace surface, Settings deep-link, profile switch, hide/unhide while retaining the surface, discover newly added profile on refresh, focus return. Screenshots: /tmp/clanker-182-assistant-appearance.png and /tmp/clanker-157-assistant-details.png');
   } finally {
     if (app) {
       try {

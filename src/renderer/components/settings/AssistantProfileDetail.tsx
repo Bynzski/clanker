@@ -3,6 +3,7 @@ import type { AssistantDetails } from '../../../shared/types/assistantDetails';
 import type { HermesAssistant } from '../../../shared/types/assistants';
 import { Button } from '../ui/Button';
 import { FormMessage } from '../ui/Field';
+import { AssistantAppearance } from './assistantDetails/AssistantAppearance';
 import { AssistantOverview } from './assistantDetails/AssistantOverview';
 import { AssistantCapabilities } from './assistantDetails/AssistantCapabilities';
 import { AssistantHistory } from './assistantDetails/AssistantHistory';
@@ -25,6 +26,7 @@ export default function AssistantProfileDetail({ assistant, connected }: { assis
     <div className="assistant-profile-heading"><h3>{assistant.displayName}</h3><Button variant="ghost" size="sm" disabled={!connected} onClick={() => { setDetails(undefined); setRevision((value) => value + 1); }}>Refresh details</Button></div>
     {assistant.description && <FormMessage>{assistant.description}</FormMessage>}
     {!connected ? <FormMessage role="status">Offline — profile metadata and scheduled tasks unavailable.</FormMessage> : <>
+      <AssistantAppearance assistantId={assistant.id} connected={connected} revision={revision} />
       <AssistantOverview assistant={assistant} profile={details?.profile} />
       <AssistantCapabilities profile={details?.profile} />
       <AssistantHistory history={details?.history} />

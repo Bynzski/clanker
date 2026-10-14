@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getHarnessOption } from '../../lib/harnessOptions';
+import AssistantAvatar from './AssistantAvatar';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { useAssistantNavStore } from '../../store/assistantNavStore';
 import type { HermesAssistantServiceState, HermesAssistant } from '../../../shared/types/assistants';
@@ -52,7 +52,6 @@ export function AssistantNotice({ tone, message, onRetry, busy = false }: { tone
 export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon'; disabled?: boolean }) {
   const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
   const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
-  const HermesIcon = getHarnessOption('hermes').Icon;
   const label = `${assistant.displayName} · Hermes Assistant`;
   const title = assistant.description ? `${label}\n${assistant.description}` : label;
   return (
@@ -67,7 +66,7 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
     >
       {variant === 'row'
         ? <>
-          <span className="assistant-avatar" aria-hidden="true"><HermesIcon size={14} strokeWidth={2} /></span>
+          <AssistantAvatar assistantId={assistant.id} connected={live} />
           <span className="assistant-text">
             <span className="assistant-name">{assistant.displayName}</span>
             <span className="assistant-sub">{assistant.description || 'Hermes Assistant'}</span>
@@ -75,7 +74,7 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
           {/* Listed means available, so only the exception is shown. */}
           {!live && <span className="assistant-offline">offline</span>}
         </>
-        : <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />}
+        : <AssistantAvatar assistantId={assistant.id} connected={live} />}
     </button>
   );
 }

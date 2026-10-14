@@ -1,7 +1,10 @@
 import { StringDecoder } from 'node:string_decoder';
+import { AssistantPresentationService, type PresentationBinding } from './assistantPresentation';
+import type { AvatarDecoder } from './assistantAvatar';
+import type { AssistantAvatar, AssistantPresentation, AssistantPresentationWriteResult } from '../../shared/types/assistantPresentation';
 import { discoverHermesBackend, readHermesRendezvous } from './hermesDiscovery';
 import type { AssistantDetails, AssistantRead, AssistantRun } from '../../shared/types/assistantDetails';
-import { JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
+import { displayText, JOB_ID, parseActivity, parseHistory, parseProfile, parseRoutines, parseRuns, readHermesRest, readSection } from './assistantDetails';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
   isValidAssistantId,
@@ -42,6 +45,7 @@ export interface HermesAssistantServiceDeps {
   stopGraceMs?: number;
   /** A connected backend must survive this long before a later crash counts as a new failure episode. */
   stableAfterMs?: number;
+  decodeAvatar?: AvatarDecoder;
 }
 
 const MAX_ASSISTANTS = 64;
@@ -83,6 +87,8 @@ export class HermesAssistantService {
   private readonly spawnServe: SpawnServe;
   private readonly now: () => number;
   private readonly available: boolean;
+  private readonly presentation: AssistantPresentationService;
+  private rosterReadEpoch = 0;
   private settings: AssistantSettings = { ...DEFAULT_ASSISTANT_SETTINGS };
   private state: HermesAssistantServiceState = 'disabled';
   private ownership: 'external' | 'clanker' | null = null;
@@ -114,6 +120,7 @@ export class HermesAssistantService {
     let available = false;
     try { available = deps.isHermesAvailable(); } catch { /* treated as not installed */ }
     this.available = available;
+    this.presentation = new AssistantPresentationService((id) => this.presentationBinding(id), deps.decodeAvatar, this.now);
   }
 
   private loadSettings(): AssistantSettings {
@@ -125,6 +132,7 @@ export class HermesAssistantService {
   get(): AssistantSnapshot {
     return {
       available: this.available,
+      presentationRevision: this.presentation.revision,
       settings: { ...this.settings, ...(this.settings.hiddenAssistantIds ? { hiddenAssistantIds: [...this.settings.hiddenAssistantIds] } : {}) },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
       assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
@@ -382,6 +390,7 @@ export class HermesAssistantService {
   private dropRpc(): void {
     const rpc = this.rpc;
     this.rpc = undefined;
+    this.presentation.reset();
     for (const controller of this.detailControllers) controller.abort();
     this.detailReads.clear();
     rpc?.close();
@@ -399,6 +408,7 @@ export class HermesAssistantService {
   private onRpcClosed(rpc: HermesRpcClient): void {
     if (this.rpc !== rpc) return;
     this.rpc = undefined;
+    this.presentation.reset();
     for (const controller of this.detailControllers) controller.abort();
     this.detailReads.clear();
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
@@ -412,10 +422,27 @@ export class HermesAssistantService {
   }
 
   private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
+    const epoch = ++this.rosterReadEpoch;
     const result = await rpc.call('profiles.list', {});
-    if (!this.current(generation)) return;
-    this.roster = parseAssistantRoster(result, true);
+    if (!this.current(generation) || this.rpc !== rpc || epoch !== this.rosterReadEpoch || !this.endpoint) return;
+    const token = this.endpoint.token;
+    this.roster = parseAssistantRoster(result, true, [token]);
+    this.presentation.acceptRoster(result, this.roster.map((entry) => entry.public), token);
+    if (this.state === 'connected') this.publish();
   }
+
+  private presentationBinding(id: unknown): PresentationBinding | undefined {
+    if (!isValidAssistantId(id) || !this.settings.enabled || !this.available || this.state !== 'connected') return undefined;
+    const entry = this.entry(id); const rpc = this.rpc; const generation = this.generation;
+    if (!entry || !rpc || rpc.isClosed || !this.endpoint) return undefined;
+    return { slug: entry.slug, rpc,
+      live: () => this.current(generation) && this.state === 'connected' && this.rpc === rpc && !rpc.isClosed && this.entry(id)?.slug === entry.slug,
+      reload: () => this.loadRoster(generation, rpc) };
+  }
+
+  readPresentation(id: unknown): AssistantPresentation { return this.presentation.read(id); }
+  updatePresentation(id: unknown, value: unknown): Promise<AssistantPresentationWriteResult> { return this.presentation.update(id, value); }
+  readAvatar(id: unknown): Promise<AssistantAvatar> { return this.presentation.avatar(id); }
 
   /** Lazy read-only details; independent section failures never affect the control connection or chat. */
   readDetails(assistantId: unknown): Promise<AssistantDetails> {
@@ -669,7 +696,7 @@ export class HermesAssistantService {
  * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
  * uses the raw slug; display is Assistant title, then profile display name, then the prettified slug.
  */
-export function parseAssistantRoster(result: unknown, includeHidden = false): RosterEntry[] {
+export function parseAssistantRoster(result: unknown, includeHidden = false, redactions: readonly string[] = []): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
   if (!Array.isArray(profiles)) throw new Error('Hermes returned an unexpected profile list');
   const assistants: RosterEntry[] = [];
@@ -688,6 +715,8 @@ export function parseAssistantRoster(result: unknown, includeHidden = false): Ro
     const profileDisplay = typeof row.display_name === 'string' ? row.display_name.trim() : '';
     const description = typeof meta.description === 'string' && meta.description.trim() ? meta.description.trim()
       : typeof row.description === 'string' && row.description.trim() ? row.description.trim() : undefined;
+    const privateValues = typeof row.path === 'string' ? [...redactions, row.path] : redactions;
+    const safeDescription = displayText(description, 200, privateValues);
     const canonical = row.canonical_session && typeof row.canonical_session === 'object' ? row.canonical_session as Record<string, unknown> : null;
     const resolved = canonical && typeof canonical.resolved_id === 'string' && SESSION_ID.test(canonical.resolved_id) ? canonical.resolved_id
       : canonical && typeof canonical.id === 'string' && SESSION_ID.test(canonical.id) ? canonical.id : undefined;
@@ -696,9 +725,9 @@ export function parseAssistantRoster(result: unknown, includeHidden = false): Ro
       public: {
         id: `hermes:${slug}`,
         ...(meta.hidden === true ? { hiddenInHermes: true } : {}),
-        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row) } : {}),
-        displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
-        ...(description ? { description: description.slice(0, 200) } : {}),
+        ...(row.model !== undefined || row.provider !== undefined || row.skill_count !== undefined || row.last_session || row.worker_session ? { activity: parseActivity(row, privateValues) } : {}),
+        displayName: displayText(title || profileDisplay || prettifySlug(slug), 80, privateValues) ?? 'Hermes Assistant',
+        ...(safeDescription ? { description: safeDescription } : {}),
       },
     });
     if (assistants.length >= MAX_ASSISTANTS) break;

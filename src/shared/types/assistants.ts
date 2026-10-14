@@ -47,6 +47,8 @@ export interface AssistantSurfaceStatus {
 export interface AssistantSnapshot {
   /** The local Hermes CLI is installed (canonical harness availability). False means the feature is dormant and hidden. */
   available: boolean;
+  /** Ephemeral presentation generation; explicit roster refresh invalidates avatar thumbnails. */
+  presentationRevision?: number;
   settings: AssistantSettings;
   service: {
     state: HermesAssistantServiceState;
