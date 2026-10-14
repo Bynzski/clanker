@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { getHarnessOption } from '../../../src/renderer/lib/harnessOptions';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -247,14 +246,6 @@ it('uses "Assistants" (not "Bots") wording for an empty roster', async () => {
   expect(await screen.findByText('No Hermes Assistants found')).toBeInTheDocument();
 });
 
-function hermesIconMarkup(): string {
-  const HermesIcon = getHarnessOption('hermes').Icon;
-  const { container, unmount } = render(<HermesIcon size={14} strokeWidth={2} aria-hidden="true" />);
-  const markup = container.innerHTML;
-  unmount();
-  return markup;
-}
-
 // ── Settings presentation ────────────────────────────────────────────────────
 
 it('Settings, connected: shows service ownership and toggles without a Retry action', async () => {
@@ -356,23 +347,24 @@ it('ASSISTANTS sits directly after WORKSPACES in one upper stack, with FILES aft
   expect(screen.getAllByRole('button', { name: 'Fred' })).toHaveLength(1);
 });
 
-it('every Assistant entry uses the canonical Hermes harness icon, never the generic Assistant glyph', async () => {
+it('an Assistant without native art uses a neutral profile fallback', async () => {
   mockMain(snap());
   useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 280 });
   render(<AssistantsRoster />);
   const row = await screen.findByRole('button', { name: 'Fred' });
-  expect(row.querySelector('svg, img')!.outerHTML).toBe(hermesIconMarkup());
+  expect(row.querySelector('.lucide-user-round')).not.toBeNull();
+  expect(row.querySelector('img')).toBeNull();
   expect(row.innerHTML).not.toMatch(/lucide-assistant/);
 });
 
-it('the collapsed rail and tabs strip show Hermes-icon Assistants labelled "<name> · Hermes Assistant"', async () => {
+it('the collapsed rail and tabs strip retain Assistants labelled "<name> · Hermes Assistant"', async () => {
   mockMain(snap());
   useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 44 });
   render(<WorkspaceSidebar />);
   const fredIcon = await screen.findByRole('button', { name: 'Fred · Hermes Assistant' });
   expect(screen.getByRole('button', { name: 'Reviewer · Hermes Assistant' })).toBeInTheDocument();
   expect(fredIcon.innerHTML).not.toMatch(/lucide-assistant/);
-  expect(fredIcon.querySelector('svg, img')!.outerHTML).toBe(hermesIconMarkup());
+  expect(fredIcon.querySelector('.lucide-user-round')).not.toBeNull();
   fireEvent.click(fredIcon);
   expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:fred');
 });

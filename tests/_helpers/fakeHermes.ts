@@ -29,7 +29,7 @@ export function fakeChild(): ServeChild & EventEmitter & { stdout: PassThrough; 
   return child;
 }
 
-export interface AssistantFixture { name: string; ui_meta?: object; display_name?: string; description?: string; canonical_session?: { id: string; resolved_id?: string } | null; is_default?: boolean }
+export interface AssistantFixture { name: string; ui_meta?: object; ui_meta_revisions?: object; has_avatar?: boolean; display_name?: string; description?: string; canonical_session?: { id: string; resolved_id?: string } | null; is_default?: boolean }
 
 export const defaultProfiles = (): AssistantFixture[] => [
   { name: 'default', is_default: true, canonical_session: { id: 'sess-default' } },
@@ -61,8 +61,12 @@ export class FakeHermes {
   titleRace: string | null = null;
   titleFails = false;
   private created = 0;
+  respond?: (method: string, params: Record<string, unknown>) => { result?: unknown; error?: { code: number; message: string } } | undefined;
+  holds = new Map<string, Promise<void>>();
 
   private handle(method: string, params: Record<string, unknown>): { result?: unknown; error?: { code: number; message: string } } {
+    const custom = this.respond?.(method, params);
+    if (custom) return custom;
     if (method === 'profiles.list') return { result: { profiles: this.profiles, bot_mode_protocol: true } };
     if (method === 'session.list') {
       if (this.listFails) return { error: { code: 5006, message: 'database is locked' } };
@@ -114,7 +118,8 @@ export class FakeHermes {
           const outcome = this.handle(frame.method, frame.params ?? {});
           socket.emit('message', { data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, ...outcome }) });
         };
-        if (frame.method === 'profiles.list' && this.holdRoster) void this.holdRoster.then(reply); else queueMicrotask(reply);
+        const hold = this.holds.get(frame.method) ?? (frame.method === 'profiles.list' ? this.holdRoster : null);
+        if (hold) void hold.then(reply); else queueMicrotask(reply);
       };
     }
     return socket;
