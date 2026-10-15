@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import * as path from 'node:path';
 import type { AttentionReceipt } from '../shared/types/attentionReceipt';
 import type { AttentionVerdict } from '../shared/attentionProtocol';
-import type { AttentionTraceEntry } from './agentAttentionBroker';
+import type { AttentionTraceEntry, AuthRejectionAttribution } from './agentAttentionBroker';
 import { eventLoopDelay } from './eventLoopDelay';
 
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -115,8 +115,8 @@ export class AttentionTelemetry {
     this.timer.unref();
   }
 
-  transportRejection(verdict: AttentionVerdict): void {
-    this.writer.append({ kind: 'transport-rejection', at: this.now(), verdict, eventLoopDelay: eventLoopDelay() });
+  transportRejection(verdict: AttentionVerdict, attribution?: AuthRejectionAttribution): void {
+    this.writer.append({ kind: 'transport-rejection', at: this.now(), verdict, ...attribution, eventLoopDelay: eventLoopDelay() });
   }
 
   record(terminalId: string, entry: AttentionTraceEntry): void {

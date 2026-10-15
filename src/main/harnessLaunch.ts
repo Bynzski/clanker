@@ -152,7 +152,10 @@ set -e
 
 # Retire the agent (agent_exited, not a native session boundary) before this PTY becomes a shell. If the lifecycle signal
 # cannot run, close the terminal instead of leaving a shell marked as an agent.
-if [ -n "\${CLANKER_ATTENTION_COMMAND:-}" ]; then
+# Only the wrapper Clanker itself spawned may retire the agent: an agent's own tools (a test suite,
+# a nested dev build) can run this script with the agent's inherited credentials, and must not
+# retire the live agent that is running them.
+if [ -n "\${CLANKER_ATTENTION_COMMAND:-}" ] && [ "\${CLANKER_ATTENTION_LAUNCHER_PID:-}" = "$PPID" ]; then
   if ! command -v node >/dev/null 2>&1; then
     exit "$exit_code"
   fi
@@ -163,7 +166,8 @@ fi
 
 # Preserve the existing product behavior: after the harness exits,
 # replace the wrapper with an interactive shell so the terminal stays usable.
-unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND
+unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND \\
+  CLANKER_ATTENTION_INTERPRETER CLANKER_ATTENTION_SESSION_ID CLANKER_ATTENTION_LAUNCHER_PID
 exec "$fallback_shell" -i
 `;
 }

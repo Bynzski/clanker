@@ -206,11 +206,45 @@ test('wrapper does not enter its fallback shell when the agent end signal fails'
         ...process.env,
         HOME: tempHome,
         CLANKER_ATTENTION_COMMAND: path.join(tempHome, 'missing-command.mjs'),
+        CLANKER_ATTENTION_LAUNCHER_PID: String(process.pid),
         CLANKER_GRID_FALLBACK_SHELL: fallbackShellPath,
       },
     });
     assert.equal(result.status, 0);
     assert.equal(fs.existsSync(markerPath), false);
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+// Field evidence (0.12.0-dev.f7602b0): a Pi agent ran this repository's test suite, a test ran the
+// wrapper with the agent's inherited credentials, and the real `--ended` retired the live agent.
+test('wrapper never retires an agent it was not launched for', () => {
+  if (process.platform === 'win32') return;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-harness-inherited-'));
+  const wrapperPath = path.join(tempHome, 'wrapper.sh');
+  const commandPath = path.join(tempHome, 'command.mjs');
+  const signalPath = path.join(tempHome, 'signalled');
+  const fallbackShellPath = path.join(tempHome, 'fallback-shell');
+  const markerPath = path.join(tempHome, 'fallback-entered');
+  try {
+    fs.writeFileSync(wrapperPath, buildHarnessWrapperScript(), { mode: 0o700 });
+    fs.writeFileSync(commandPath, `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(signalPath)}, process.argv.slice(2).join(' '));\n`);
+    fs.writeFileSync(fallbackShellPath, `#!/usr/bin/env sh\nenv > "${markerPath}"\n`, { mode: 0o700 });
+    const run = (launcherPid: string) => spawnSync(wrapperPath, ['/bin/true'], {
+      env: {
+        ...process.env, HOME: tempHome, CLANKER_ATTENTION_COMMAND: commandPath, CLANKER_ATTENTION_TOKEN: 'inherited',
+        CLANKER_ATTENTION_LAUNCHER_PID: launcherPid, CLANKER_GRID_FALLBACK_SHELL: fallbackShellPath,
+      },
+    });
+    // An outer Clanker main process is not this wrapper's parent.
+    assert.equal(run(String(process.pid + 1)).status, 0);
+    assert.equal(fs.existsSync(signalPath), false);
+    assert.equal(fs.existsSync(markerPath), true);
+    assert.doesNotMatch(fs.readFileSync(markerPath, 'utf8'), /CLANKER_ATTENTION_/);
+    // The process that launched the wrapper does retire it.
+    assert.equal(run(String(process.pid)).status, 0);
+    assert.equal(fs.readFileSync(signalPath, 'utf8'), '--ended');
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }

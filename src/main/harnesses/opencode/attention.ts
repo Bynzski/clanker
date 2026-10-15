@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
+import { openCodeMajorVersion } from './version';
 
 /** The plugin proves each session's parentage from native metadata (or the trusted
  * resumed ID) before reporting it. Child sessions are reported as child scope, and a
@@ -108,18 +109,146 @@ export const ClankerAttention = async ({ client, directory }) => {
 `;
 
 
-export const local = localAttention(({ args, env, files: adapterFiles, rootSessionId }) => {
-    if (env.OPENCODE_CONFIG_DIR || args.includes('--pure')) return null;
-    return { args, env: {
-      OPENCODE_CONFIG_DIR: path.join(adapterFiles.resourceRoot ?? path.dirname(adapterFiles.command), 'opencode'),
-      ...(rootSessionId ? { CLANKER_ATTENTION_SESSION_ID: rootSessionId } : {}),
-    } };
+/**
+ * OpenCode 2.x plugin (measured against 2.0.26). A plugin is a module whose default export is
+ * `{ id, setup(ctx) }`; lifecycle comes from `ctx.event.subscribe()` as `{ type, data }`:
+ * `session.execution.started|succeeded|failed|interrupted` (interrupt `reason`: user, shutdown,
+ * superseded, inactivity), `permission.asked` (`id`) / `permission.replied` (`requestID`),
+ * `form.created` (`form.id`, `form.sessionID`) / `form.replied` / `form.cancelled` (`id`),
+ * `session.created` (`parentID`, `location.directory`), `session.moved` and `session.deleted`.
+ * Parentage is proven exactly as for 1.x: from `session.created`, the trusted resumed ID, or a bounded
+ * `ctx.session.get`; a session of unknown parentage is never reported. Execution events already scope
+ * one foreground run, so each root session owns one epoch per execution. A superseded execution is
+ * continued by the next one and settles nothing; a shutdown is the process ending, which the launch
+ * wrapper reports.
+ */
+export const SOURCE_V2 = `import { emit } from '../observer.mjs';
+const trusted = process.env.CLANKER_ATTENTION_SESSION_ID || null;
+const instance = Math.random().toString(36).slice(2, 10);
+const turnOf = (n) => instance + '.' + n;
+const MAX_SESSIONS = 256;
+const bounded = (map, key, value) => {
+  if (!map.has(key) && map.size >= MAX_SESSIONS) map.delete(map.keys().next().value);
+  map.set(key, value);
+};
+export default {
+  id: 'clanker-attention',
+  setup(ctx) {
+    const parentage = new Map();
+    const directories = new Map();
+    const turns = new Map();
+    const remember = (id, parentID, directory) => {
+      if (typeof id !== 'string' || !id) return;
+      bounded(parentage, id, !parentID);
+      if (typeof directory === 'string' && directory) bounded(directories, id, directory);
+    };
+    const fallbackDirectory = typeof ctx.location?.directory === 'string' && ctx.location.directory ? ctx.location.directory : undefined;
+    const located = (id) => directories.get(id) ?? fallbackDirectory;
+    const isRoot = async (id) => {
+      if (trusted && id === trusted) return true;
+      if (!parentage.has(id)) {
+        // Bounded: every later event waits behind this lookup, so a hung request must not stall them all.
+        let timer;
+        try {
+          const result = await Promise.race([
+            ctx.session.get({ sessionID: id }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 2000); }),
+          ]);
+          const info = result?.data ?? result;
+          if (info && (info.id === undefined || info.id === id)) remember(id, info.parentID, info.location?.directory);
+        } catch { /* unknown parentage fails closed */ } finally { clearTimeout(timer); }
+      }
+      return parentage.get(id);
+    };
+    const classify = (type, data) => {
+      if (type === 'session.execution.started') return ['turn_started', data.sessionID];
+      if (type === 'session.execution.succeeded') return ['turn_completed', data.sessionID];
+      if (type === 'session.execution.failed') return ['turn_failed', data.sessionID];
+      if (type === 'session.execution.interrupted' && (data.reason === 'user' || data.reason === 'inactivity')) return ['turn_interrupted', data.sessionID];
+      if (type === 'permission.asked') return ['input_requested', data.sessionID, data.id, 'approval'];
+      if (type === 'form.created') return ['input_requested', data.form?.sessionID, data.form?.id, 'input'];
+      if (type === 'permission.replied') return ['input_resolved', data.sessionID, data.requestID];
+      if (type === 'form.replied' || type === 'form.cancelled') return ['input_resolved', data.sessionID, data.id];
+      if (type === 'session.deleted') return ['session_ended', data.sessionID];
+      return null;
+    };
+    const handle = async (event) => {
+      const type = event?.type;
+      const data = event?.data || {};
+      if (type === 'session.created') { remember(data.sessionID, data.parentID, data.location?.directory); return; }
+      if (type === 'session.moved') {
+        const id = data.sessionID;
+        const directory = data.location?.directory ?? data.directory;
+        if (typeof id !== 'string' || typeof directory !== 'string' || !directory || directories.get(id) === directory) return;
+        bounded(directories, id, directory);
+        if (await isRoot(id) === true) await emit('location_changed', { scope: 'root', sessionId: id, nativeEvent: type, cwd: directory });
+        return;
+      }
+      let [kind, sessionId, inputId, requestKind] = classify(type, data) ?? [];
+      if (!kind || typeof sessionId !== 'string') return;
+      const root = await isRoot(sessionId);
+      if (root === undefined) return;
+      const fields = { scope: root ? 'root' : 'child', sessionId, nativeEvent: type };
+      if (!root) return emit(kind, fields);
+      if (kind === 'session_ended') { turns.delete(sessionId); directories.delete(sessionId); return emit(kind, fields); }
+      const turn = turns.get(sessionId) ?? { epoch: 0, open: false };
+      bounded(turns, sessionId, turn);
+      if (kind === 'turn_started') {
+        if (!turn.open) { turn.epoch += 1; turn.open = true; }
+      } else if (!turn.open) return;
+      if (kind === 'turn_completed' || kind === 'turn_failed' || kind === 'turn_interrupted') turn.open = false;
+      const cwd = kind === 'turn_started' || kind === 'turn_completed' ? located(sessionId) : undefined;
+      await emit(kind, { ...fields, turnId: turnOf(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
+    };
+    const controller = new AbortController();
+    let queue = Promise.resolve();
+    (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        queue = queue.then(() => handle(event)).catch(() => undefined);
+      }
+    })().catch(() => undefined);
+    return () => controller.abort();
+  },
+};
+`;
 
+const V2_CONFIG = 'opencode-v2.json';
+const V2_PLUGIN_DIRECTORY = 'v2-plugin';
+
+function resourceDirectory(files: AttentionAdapterFiles): string {
+  return path.join(files.resourceRoot ?? path.dirname(files.command), 'opencode');
+}
+
+function choosesServer(args: string[]): boolean {
+  return args.some((arg) => arg === '--server' || arg.startsWith('--server='));
+}
+
+export const local = localAttention(({ args, env, files: adapterFiles, rootSessionId, platform }) => {
+    const directory = resourceDirectory(adapterFiles);
+    const session: Record<string, string> = rootSessionId ? { CLANKER_ATTENTION_SESSION_ID: rootSessionId } : {};
+    if ((openCodeMajorVersion(env, platform) ?? 1) >= 2) {
+      // The shared background service runs plugins with another process's environment, so this launch
+      // gets its own private server. A user-chosen server, or a config file of their own, is left alone.
+      if (env.OPENCODE_CONFIG || choosesServer(args)) return null;
+      return {
+        args: args.includes('--standalone') ? args : ['--standalone', ...args],
+        // Additive: OpenCode merges this file over the user's global and project config.
+        env: { OPENCODE_CONFIG: path.join(directory, V2_CONFIG), ...session },
+      };
+    }
+    if (env.OPENCODE_CONFIG_DIR || args.includes('--pure')) return null;
+    return { args, env: { OPENCODE_CONFIG_DIR: directory, ...session } };
 });
 
 export function prepareResources(files: AttentionAdapterFiles, observer: string): void {
-  const directory = path.join(files.resourceRoot ?? path.dirname(files.command), 'opencode');
+  const directory = resourceDirectory(files);
+  const v2Plugin = path.join(directory, V2_PLUGIN_DIRECTORY);
   fs.mkdirSync(path.join(directory, 'plugins'), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(v2Plugin, { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(directory, 'observer.mjs'), observer, { mode: 0o600 });
   fs.writeFileSync(path.join(directory, 'plugins', 'clanker-attention.js'), SOURCE, { mode: 0o600 });
+  // OpenCode 2.x loads plugin directories named in config (a single file entry is rejected upstream).
+  fs.writeFileSync(path.join(v2Plugin, 'package.json'), `${JSON.stringify({ name: 'clanker-attention', private: true, type: 'module', main: 'index.js' })}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(v2Plugin, 'index.js'), SOURCE_V2, { mode: 0o600 });
+  fs.writeFileSync(path.join(directory, V2_CONFIG), `${JSON.stringify({ plugins: [v2Plugin] })}\n`, { mode: 0o600 });
 }

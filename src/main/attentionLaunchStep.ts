@@ -49,7 +49,8 @@ export function attentionLaunchStep(input: AttentionLaunchStepInput): LaunchAtta
           : { requested: true, attachment: 'unavailable', reason: findHarnessProvider(harness)?.attention?.local ? 'configuration-conflict' : 'unsupported' } });
         return {
           ...(prepared ? { args: prepared.args } : {}),
-          env: { ...brokerEnv, ...prepared?.env, CLANKER_ATTENTION_COMMAND: files.command },
+          // The wrapper retires the agent on exit only when its parent is this process (see harnessLaunch.ts).
+          env: { ...brokerEnv, ...prepared?.env, CLANKER_ATTENTION_COMMAND: files.command, CLANKER_ATTENTION_LAUNCHER_PID: String(process.pid) },
           ...(prepared ? { provides: [NATIVE_ATTENTION_ATTACHED] } : {}),
           dispose() {
             disposeAttentionSafely(prepared);
