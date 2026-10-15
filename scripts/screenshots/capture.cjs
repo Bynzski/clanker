@@ -34,10 +34,16 @@ async function openWorkspace(name) {
   await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(projects[name]);
   await page.getByRole('dialog').getByText('Where are we working today?').click();
   await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
-  await button('Terminal').waitFor();
+  await button('New Agent').waitFor();
   await pause(1000);
 }
-async function launch(name) { await click(name); await page.locator('.xterm-screen:visible').last().waitFor(); await pause(1800); }
+async function launch(name) {
+  await click('New Agent');
+  await page.getByRole('radio', { name, exact: true }).click();
+  await click(`Launch ${name}`);
+  await page.locator('.xterm-screen:visible').last().waitFor();
+  await pause(1800);
+}
 async function pixels(requireBrowser = false) {
   const base = await page.screenshot();
   const views = await app.evaluate(async ({ BrowserWindow }) => {
@@ -144,6 +150,7 @@ function index(error) {
       await page.getByRole('dialog').getByText('Where are we working today?').click();
       await shot(theme, 'open-workspace', 'Local workspace chooser; SSH location entry point');
       await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
+      await button('New Agent').waitFor();
       await pause(1200); await launch('Terminal');
       // Run genuine deterministic tests and Git commands in the actual shell.
       await page.locator('.xterm:visible .xterm-helper-textarea').last().focus();
@@ -198,9 +205,15 @@ function index(error) {
         for (const name of ['acme-api', 'docs-site', 'northstar-app']) { await click(name); await pause(1500); }
       });
       await click('Collapse sidebar'); await shot(theme, 'collapsed-rail', 'Collapsed workspace rail with per-project harness icons'); await click('Expand sidebar');
-      await click('Settings'); await page.getByRole('radio', { name: 'Tabs', exact: true }).click(); await page.keyboard.press('Escape');
+      await click('Settings');
+      await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).click();
+      await page.getByRole('radio', { name: 'Tabs', exact: true }).click();
+      await page.keyboard.press('Escape');
       await shot(theme, 'tabs-navigation', 'Optional workspace Tabs navigation with multiple agent panes');
-      await click('Settings'); await page.getByRole('radio', { name: 'Sidebar', exact: true }).click(); await page.keyboard.press('Escape');
+      await click('Settings');
+      await page.getByRole('button', { name: 'Workspaces & Layout', exact: true }).click();
+      await page.getByRole('radio', { name: 'Sidebar', exact: true }).click();
+      await page.keyboard.press('Escape');
       }
       // Use a simple separate workspace for a readable Browser/dev-service composition.
       projects['preview-studio'] ||= createProject(root, 'preview-studio', html);
