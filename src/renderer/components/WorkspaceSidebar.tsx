@@ -8,7 +8,6 @@ import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
 import AssistantsRoster from './assistants/AssistantsRoster';
 import { useAssistantNavStore } from '../store/assistantNavStore';
-import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
 import './assistants/AssistantsRoster.css';
 
@@ -61,11 +60,11 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
   };
 
   return (
+    <div className="workspace-sidebar-shell" style={{ width }}>
     <aside
       className={`workspace-sidebar${collapsed ? ' collapsed' : ''}`}
       data-testid="workspace-sidebar"
       data-collapsed={collapsed ? 'true' : 'false'}
-      style={{ width }}
       aria-label="Explorer"
     >
       {collapsed && <WorkspaceRail onOpenWorkspace={onOpenWorkspace} onExpand={expandSidebar} />}
@@ -83,11 +82,17 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
           </Suspense>
         )}
       </div>
-      <div
-        className="edge-resize-handle explorer-resize-handle"
-        onMouseDown={handleResizeStart}
-        title={collapsed ? 'Drag to expand sidebar' : 'Drag to resize; drag narrow to collapse'}
-      />
     </aside>
+    {/* Sibling of the aside, in the host gap: never overlaps sidebar controls or the terminal. */}
+    <div
+      className="workspace-sidebar-resize-handle"
+      data-testid="workspace-sidebar-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      onMouseDown={handleResizeStart}
+      title={collapsed ? 'Drag to expand sidebar' : 'Drag to resize; drag narrow to collapse'}
+    />
+    </div>
   );
 }

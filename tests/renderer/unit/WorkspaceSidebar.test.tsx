@@ -32,34 +32,33 @@ describe('WorkspaceSidebar global width', () => {
   it('uses the application-global width and ignores per-workspace explorer widths', async () => {
     render(<WorkspaceSidebar />);
     const sidebar = screen.getByTestId('workspace-sidebar');
-    expect(sidebar.style.width).toBe('300px');
+    expect(sidebar.parentElement!.style.width).toBe('300px');
     act(() => { useWorkspaceStore.getState().selectWorkspace('b'); });
-    expect(sidebar.style.width).toBe('300px');
+    expect(sidebar.parentElement!.style.width).toBe('300px');
     expect(await screen.findByTestId('files')).toHaveAttribute('data-ws', 'b');
     // Per-workspace widths (tabs mode) are untouched.
     expect(useWorkspaceStore.getState().workspaces.map((w) => w.explorerSidebarWidth)).toEqual([200, 480]);
   });
 
-  it('uses the shared edge resize handle and never depends on the lazy FileExplorer stylesheet', () => {
+  it('renders the resize handle as a separator sibling in the host gap, not inside the aside', () => {
     const { container } = render(<WorkspaceSidebar />);
-    const handle = container.querySelector('.workspace-sidebar > .explorer-resize-handle')!;
-    expect(handle).toHaveClass('edge-resize-handle');
+    const handle = screen.getByTestId('workspace-sidebar-resize-handle');
+    expect(handle).toHaveAttribute('role', 'separator');
+    expect(handle.parentElement).toHaveClass('workspace-sidebar-shell');
+    expect(screen.getByTestId('workspace-sidebar').contains(handle)).toBe(false);
+    expect(container.querySelector('.workspace-sidebar .edge-resize-handle')).toBeNull();
 
     const read = (path: string) => readFileSync(resolve(process.cwd(), 'src/renderer/components', path), 'utf8');
-    expect(read('WorkspaceSidebar.tsx')).toContain("import './EdgeResizeHandle.css'");
-    expect(read('FileExplorer/index.tsx')).toContain("import '../EdgeResizeHandle.css'");
-    // The handle's visuals live only in the shared sheet.
-    expect(read('FileExplorer/FileExplorer.css')).not.toContain('resize-handle');
-    expect(read('WorkspaceSidebar.css')).not.toContain('resize-handle');
-    // The whole hit target and grip stay inside the clipping parent (no negative offsets).
-    const sheet = read('EdgeResizeHandle.css');
-    expect(sheet).toContain('.edge-resize-handle::before');
-    expect(sheet).not.toMatch(/right:\s*-/);
+    const sheet = read('WorkspaceSidebar.css');
+    // Target sits wholly right of the sidebar edge and is exactly the gap wide.
+    expect(sheet).toMatch(/\.workspace-sidebar-resize-handle \{[^}]*left: 100%[^}]*width: var\(--space-sm\)/);
+    expect(sheet).not.toMatch(/\.workspace-sidebar-resize-handle \{[^}]*(right|left):\s*-/);
+    expect(read('WorkspaceSidebar.tsx')).not.toContain('EdgeResizeHandle');
   });
 
   it('dragging the single handle updates and persists the global width, clamped', () => {
     const { container } = render(<WorkspaceSidebar />);
-    const handles = container.querySelectorAll('.explorer-resize-handle');
+    const handles = container.querySelectorAll('[role="separator"]');
     expect(handles).toHaveLength(1);
     fireEvent.mouseDown(handles[0], { clientX: 300 });
     fireEvent.mouseMove(document, { clientX: 360 });
@@ -79,14 +78,14 @@ describe('WorkspaceSidebar global width', () => {
     expect(await screen.findByTestId('files')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-    expect(sidebar.style.width).toBe(`${WORKSPACE_SIDEBAR_RAIL_WIDTH}px`);
+    expect(sidebar.parentElement!.style.width).toBe(`${WORKSPACE_SIDEBAR_RAIL_WIDTH}px`);
     expect(screen.queryByTestId('files')).toBeNull();
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toBeTruthy();
     expect(window.electronAPI.setWorkspaceSidebarWidth).toHaveBeenLastCalledWith(WORKSPACE_SIDEBAR_RAIL_WIDTH);
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
     expect(sidebar).toHaveAttribute('data-collapsed', 'false');
-    expect(sidebar.style.width).toBe('300px');
+    expect(sidebar.parentElement!.style.width).toBe('300px');
     expect(window.electronAPI.setWorkspaceSidebarWidth).toHaveBeenLastCalledWith(300);
   });
 
@@ -100,8 +99,8 @@ describe('WorkspaceSidebar global width', () => {
   });
 
   it('dragging narrow snaps to the rail, remembering the width the drag started from', () => {
-    const { container } = render(<WorkspaceSidebar />);
-    const handle = () => container.querySelector('.workspace-sidebar > .explorer-resize-handle')!;
+    render(<WorkspaceSidebar />);
+    const handle = () => screen.getByTestId('workspace-sidebar-resize-handle');
     fireEvent.mouseDown(handle(), { clientX: 300 });
     fireEvent.mouseMove(document, { clientX: 60 });
     expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(WORKSPACE_SIDEBAR_RAIL_WIDTH);
