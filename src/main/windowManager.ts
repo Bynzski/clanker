@@ -5,7 +5,7 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { app, BrowserWindow, Menu, type Event } from 'electron';
+import { app, BrowserWindow, dialog, Menu, type Event } from 'electron';
 import * as path from 'path';
 
 import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata, type ThemeId } from '../shared/types/theme';
@@ -155,9 +155,17 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
   });
 
+  let recoveryPending = false;
+  let recoveryGeneration = 0;
+  // A close request or manual reload supersedes an outstanding recovery prompt.
+  mainWindow.on('close', () => { recoveryGeneration++; });
+
   // A new main document has not subscribed yet. In-page navigation leaves its listener intact.
   mainWindow.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) deps.onRendererUnavailable?.('navigation');
+    if (isMainFrame && !isInPlace) {
+      recoveryGeneration++;
+      deps.onRendererUnavailable?.('navigation');
+    }
   });
 
   // Load the app
@@ -180,15 +188,39 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   mainWindow.on('closed', cleanup);
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     deps.onRendererUnavailable?.('gone');
-    if (process.env.NODE_ENV === 'development') {
-      console.error(
-        `[diag] main renderer gone webContents=${mainWindow.webContents.id} reason=${details?.reason} exitCode=${details?.exitCode}`,
-      );
-    }
+    console.error(
+      `[clanker-grid] main renderer gone webContents=${mainWindow.webContents.id} reason=${details?.reason} exitCode=${details?.exitCode}`,
+    );
     gitService.stopPolling();
     fileWatcher.unwatchAll();
     deps.explorerWatcher?.close();
     deps.onRendererGone?.();
+
+    // Native UI remains usable without a renderer. Require consent rather than
+    // entering an automatic crash/reload loop. Existing teardown stops terminals;
+    // recovery uses the normal startup path, not live-process reattachment.
+    if (!details?.reason || details.reason === 'clean-exit' || recoveryPending || mainWindow.isDestroyed()) return;
+    recoveryPending = true;
+    const generation = recoveryGeneration;
+    // The renderer is gone: its dialog handshake cannot present recovery UI.
+    // eslint-disable-next-line no-restricted-syntax
+    void dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Clanker Grid renderer stopped',
+      message: 'The application window stopped unexpectedly.',
+      detail: `Reason: ${details.reason} (exit code ${details.exitCode}).\n\nReload to reopen your saved workspace. Terminal processes have been stopped; unsaved changes may be lost.`,
+      buttons: ['Reload window', 'Not now'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    }).then(({ response }) => {
+      if (response === 0 && generation === recoveryGeneration
+        && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.reload();
+      }
+    }).catch((error: unknown) => {
+      console.error('[clanker-grid] renderer recovery failed:', error);
+    }).finally(() => { recoveryPending = false; });
   });
 
   return {

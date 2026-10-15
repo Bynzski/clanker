@@ -39,6 +39,21 @@ describe('annotationIpc', () => {
     vi.clearAllMocks();
   });
 
+  it.each(['crashed', 'destroyed', 'disposed-frame'])('disposes safely with a %s renderer', async (reason) => {
+    const send = vi.fn(() => {
+      if (reason === 'disposed-frame') throw new Error('Render frame was disposed');
+    });
+    const controller = registerAnnotationIpc({
+      getBrowserViews: () => new Map(),
+      getActiveBrowserWorkspaceId: () => null,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: {
+        isDestroyed: () => reason === 'destroyed', isCrashed: () => reason === 'crashed', send,
+      } } as never),
+    });
+    await expect(controller.dispose()).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(reason === 'disposed-frame' ? 1 : 0);
+  });
+
   it('removes workspace listeners when enablement fails', async () => {
     const executeJavaScript = vi.fn(async (code: string) => {
       if (code.includes('window.__clankerAnnotationEnable__')) {
