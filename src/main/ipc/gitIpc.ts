@@ -223,6 +223,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
         throw new Error('Invalid workspace identity');
       }
       const ws = getWorkspaceRegistry?.().getWorkspace(workspaceId);
+      if (!ws && channel === GIT_STOP_POLLING) {
+        // Closing a workspace unregisters it (stopping its poller) before the renderer's own cleanup
+        // asks to stop; that late request has nothing left to do and is not an error.
+        if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId === workspaceId) gitService.stopPolling();
+        return undefined;
+      }
       if (!ws) throw new Error('Workspace identity is no longer registered');
 
       const isRepoWide = repositoryWideChannels.has(channel);

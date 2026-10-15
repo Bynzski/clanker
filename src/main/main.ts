@@ -9,8 +9,12 @@ import { app, BrowserWindow, shell, type Rectangle } from 'electron';
 import { AppCloseGuard } from './appCloseGuard';
 import { AppClosePrompt } from './appClosePrompt';
 import { applyStartupAttentionDebug, shouldEnableChildProcessCrashLogging } from './attentionDebug';
+import { dropInheritedLaunchCredentials } from './environment/attentionEnvironment';
 
 let closeGuard: AppCloseGuard | undefined = undefined;
+
+// A Clanker started from an agent terminal must not act as that agent.
+dropInheritedLaunchCredentials(process.env);
 
 // Unpackaged runs and packaged versions marked -dev log attention decisions by default.
 // Explicit CLANKER_DEBUG_ATTENTION=0 disables logging; stable releases stay quiet.

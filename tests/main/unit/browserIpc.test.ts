@@ -12,6 +12,7 @@ let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number
 let attachedZoomChangedHandler: ((event: unknown, direction: string) => void) | null = null;
 let attachedDidFailLoadHandler: ((event: unknown, code: number, description: string, url: string, isMainFrame: boolean) => void) | null = null;
 let attachedDidNavigateHandler: ((event: unknown, url: string) => void) | null = null;
+let attachedDestroyedHandler: (() => void) | null = null;
 
 // Mock electron module
 vi.mock('electron', () => ({
@@ -68,6 +69,9 @@ vi.mock('electron', () => ({
       reload: vi.fn(),
       stop: vi.fn(),
       setWindowOpenHandler: vi.fn(),
+      once: vi.fn((eventName: string, handler: () => void) => {
+        if (eventName === 'destroyed') attachedDestroyedHandler = handler;
+      }),
       on: vi.fn((eventName: string, handler: typeof attachedBeforeInputEventHandler) => {
         if (eventName === 'before-input-event') {
           attachedBeforeInputEventHandler = handler;
@@ -1128,7 +1132,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
         send: vi.fn(),
         getZoomLevel: vi.fn(() => 0),
       },
-      contentView: { addChildView: vi.fn() },
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
     };
     return {
       mockMainWindow,
@@ -1304,6 +1308,29 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     expect(deps.getBrowserViews().get('ws-1')?.get('tab-b')?.view.setVisible).toHaveBeenLastCalledWith(true);
     expect(deps.getBrowserViews().get('ws-1')?.get('tab-c')?.view.setVisible).toHaveBeenLastCalledWith(false);
     expect(await move(null, 'ws-1', 'missing', 'tab-c', 'tab-b')).toBe(false);
+  });
+
+  // Field evidence (0.12.0-dev.f7602b0): 381 can-go-back and 381 can-go-forward exceptions in 195 s,
+  // `Cannot read properties of undefined (reading 'navigationHistory')`.
+  test('a tab whose WebContents was destroyed is forgotten and recreated on activation', async () => {
+    const { deps, mockMainWindow } = createMockDeps();
+    registerBrowserIpc(deps);
+    const activate = findHandler('browser-activate');
+    await activate(null, 'ws-1', 'tab-a');
+    const dead = deps.getBrowserViews().get('ws-1')?.get('tab-a');
+    expect(dead).toBeDefined();
+    (dead!.view as unknown as { webContents: unknown }).webContents = undefined;
+    attachedDestroyedHandler?.();
+
+    for (const name of ['can-go-back', 'can-go-forward']) expect(await findHandler(name)(null, 'ws-1')).toBe(false);
+    for (const name of ['browser-back', 'browser-forward', 'browser-refresh', 'browser-stop']) expect(() => findHandler(name)(null, 'ws-1')).not.toThrow();
+    expect(deps.getBrowserViews().get('ws-1')?.get('tab-a')).toBeUndefined();
+    expect(mockMainWindow.contentView.removeChildView).toHaveBeenCalledWith(dead!.view);
+
+    await activate(null, 'ws-1', 'tab-a');
+    const recreated = deps.getBrowserViews().get('ws-1')?.get('tab-a');
+    expect(recreated).toBeDefined();
+    expect(recreated).not.toBe(dead);
   });
 
   test('a stale bounds update cannot replace a newly selected tab', async () => {

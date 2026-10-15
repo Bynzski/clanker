@@ -465,6 +465,24 @@ the root session; turn = the turn identity; child = how child scope is proven).
 | Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | fully-idle `Stop`: explicit error/exhaustion → failed; success/unknown outcome → canonical provisional settlement (other hooks can continue) | `Stop` with `fullyIdle` false/absent, other conversations | none native |
 | Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `on_session_end` of a known root turn: interrupted > failed > completed flags; otherwise no outcome | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
 
+OpenCode 2.x attention (checked against 2.0.26). 2.x replaced the plugin contract and, by default, runs
+plugins inside one shared background service (`opencode serve --service`) that every TUI connects to; that
+service never sees a launch's environment, so the 1.x plugin, loaded through `OPENCODE_CONFIG_DIR`, never ran
+(field evidence: every 2.0.26 launch registered and never reported). Clanker probes the major version of the
+`opencode` it will launch (`opencode --version`, cached by real path and mtime; POSIX only, Windows keeps the
+1.x path). On 2.x a local launch gets `--standalone` (a private server that inherits the launch environment)
+and `OPENCODE_CONFIG` naming a launch-owned file `{ "plugins": ["<dir>"] }`, which OpenCode merges over the
+user's global and project config (`OPENCODE_CONFIG_DIR` would replace the global directory on 2.x). A
+user-chosen `--server`, or the user's own `OPENCODE_CONFIG`, declines attention instead. The 2.x plugin is a
+`{ id, setup(ctx) }` default export that consumes `ctx.event.subscribe()` (`{ type, data }`):
+`session.execution.started` / `succeeded` / `failed` / `interrupted` (`reason` user or inactivity →
+interrupted; `superseded` is continued by the next execution; `shutdown` is left to the launch wrapper),
+`permission.asked` (`id`) / `permission.replied` (`requestID`), `form.created` (`form.id`) / `form.replied` /
+`form.cancelled` (`id`), `session.created` (`parentID`, `location.directory`), `session.moved` (location) and
+`session.deleted`. Parentage proof and the per-root epoch are the 1.x rules. Verified end to end against the
+real 2.0.26 binary with a local OpenAI-compatible stub (repeated turns and a failed turn reach the broker);
+permission/form events are verified by schema and fixture only. SSH launches still use the 1.x contract.
+
 Pi attention (checked against 1.1.0). The shared local/SSH observer uses authenticated extension events,
 not the new unauthenticated OSC 7501 program-status reports. `ui_prompt_start` / `ui_prompt_end`
 (available since 0.84.4) bracket the outermost blocking extension `ctx.ui` call. Requests are correlated

@@ -13,7 +13,7 @@ import { createRemoteAttentionFilter } from '../../../src/main/remote/remoteAtte
 import { HERMES_REMOTE_ATTENTION_PLUGIN } from '../../../src/main/harnesses/hermes/remoteAttention';
 import { SOURCE as PI } from '../../../src/main/harnesses/pi/attention';
 import { SOURCE as OMP } from '../../../src/main/harnesses/omp/attention';
-import { SOURCE as OPENCODE } from '../../../src/main/harnesses/opencode/attention';
+import { SOURCE as OPENCODE, SOURCE_V2 as OPENCODE_V2 } from '../../../src/main/harnesses/opencode/attention';
 import { attentionRecorder } from '../../_helpers/attentionChanges';
 
 /** Provider-native lifecycle fixtures run through the real provider interpreter or plugin source
@@ -1452,5 +1452,79 @@ describe('native tool activity after candidate Stop', () => {
     expect(broker.snapshot('term')!.runtime.turnId).toBe(turn);
     expect(broker.canHandoff('term')).toBe(false); // Stop is presentation, not input readiness.
     expect(broker.snapshot('term')!.lastCompletion).toBeNull();
+  });
+});
+
+describe('OpenCode 2.x lifecycle', () => {
+  // Measured against 2.0.26: `ctx.event.subscribe()` yields `{ type, data }`; execution events scope one
+  // foreground run; `session.created` carries `parentID`; requests are `permission.*` and `form.*`.
+  const sessions: Record<string, { id: string; parentID?: string; location?: { directory: string } }> = {
+    root: { id: 'root', location: { directory: '/repo' } }, child: { id: 'child', parentID: 'root' },
+  };
+  async function plugin(lookup: (id: string) => Promise<unknown> = async (id) => sessions[id]) {
+    const module = await importSource(OPENCODE_V2, 'v2-plugin/index.js');
+    const queue: unknown[] = [];
+    let wake: (() => void) | undefined;
+    let aborted = false;
+    const ctx = {
+      location: { directory: '/repo' },
+      session: { get: ({ sessionID }: { sessionID: string }) => lookup(sessionID) },
+      event: { subscribe: ({ signal }: { signal: AbortSignal }) => ({ async *[Symbol.asyncIterator]() {
+        signal.addEventListener('abort', () => { aborted = true; wake?.(); });
+        while (!aborted) {
+          if (queue.length) { yield queue.shift(); continue; }
+          await new Promise<void>((resolve) => { wake = resolve; });
+        }
+      } }) },
+    };
+    expect(module.default.id).toBe('clanker-attention');
+    const dispose = module.default.setup(ctx) as () => void;
+    const send = async (type: string, data: Record<string, unknown>) => {
+      queue.push({ type, data }); wake?.();
+      for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    return { send, dispose };
+  }
+
+  it('tracks repeated root executions, failures, interrupts and requests', async () => {
+    const { send, dispose } = await plugin(); const { feed, broker } = rig('opencode'); drain();
+    const step = async (type: string, data: Record<string, unknown>) => { await send(type, data); drain().forEach(feed); };
+    await step('session.created', { sessionID: 'root', location: { directory: '/repo' } });
+    await step('session.execution.started', { sessionID: 'root' });
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'running' } });
+    await step('permission.asked', { id: 'per_1', sessionID: 'root', action: 'bash' });
+    expect(broker.handoffState('term')).not.toBe('running');
+    await step('permission.replied', { sessionID: 'root', requestID: 'per_1', reply: 'once' });
+    await step('session.execution.succeeded', { sessionID: 'root' });
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('completed');
+    const first = broker.snapshot('term')?.lastCompletion?.turnId;
+    await step('session.execution.started', { sessionID: 'root' });
+    await step('form.created', { form: { id: 'frm_1', sessionID: 'root' } });
+    await step('form.cancelled', { id: 'frm_1', sessionID: 'root' });
+    // A superseded execution is continued by the next one: nothing settles in between.
+    await step('session.execution.interrupted', { sessionID: 'root', reason: 'superseded' });
+    expect(broker.snapshot('term')?.runtime.status).toBe('running');
+    await step('session.execution.started', { sessionID: 'root' });
+    await step('session.execution.failed', { sessionID: 'root', error: { message: 'PRIVATE' } });
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('failed');
+    await step('session.execution.started', { sessionID: 'root' });
+    await step('session.execution.interrupted', { sessionID: 'root', reason: 'user' });
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('interrupted');
+    expect(epochOf(first)).toBe('1');
+    expect(JSON.stringify(broker.trace('term'))).not.toMatch(/PRIVATE/);
+    dispose();
+  });
+
+  it('reports children as child scope and never reports a session of unknown parentage', async () => {
+    const { send, dispose } = await plugin(async (id) => { if (id === 'mystery') throw new Error('unavailable'); return sessions[id]; });
+    const { feed, broker } = rig('opencode'); drain();
+    const step = async (type: string, data: Record<string, unknown>) => { await send(type, data); return drain().map((wire) => { feed(wire); return wire; }); };
+    await step('session.execution.started', { sessionID: 'root' });
+    expect(await step('session.execution.started', { sessionID: 'child' })).toEqual([expect.objectContaining({ scope: 'child' })]);
+    expect(await step('session.execution.succeeded', { sessionID: 'mystery' })).toEqual([]);
+    expect(broker.snapshot('term')?.runtime.status).toBe('running');
+    await step('session.execution.succeeded', { sessionID: 'root' });
+    expect(broker.snapshot('term')?.lastOutcome?.kind).toBe('completed');
+    dispose();
   });
 });

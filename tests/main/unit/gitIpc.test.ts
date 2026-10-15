@@ -1212,6 +1212,16 @@ describe('Git IPC workspace identity routing', () => {
     await expect(handle('git-list-worktrees')(null, workspacePath, 'unregistered')).rejects.toThrow('no longer registered');
   });
 
+  // Field evidence (0.12.0-dev.f7602b0): closing a workspace logged `git-stop-polling` errors because
+  // unregistering it (which stops its poller) raced the renderer's own stop request.
+  test('stopping polling for an already unregistered workspace is a quiet no-op', async () => {
+    const { handle } = setup();
+    await handle('register-open-workspace')(null, 'closing-tab', workspacePath, 'ssh');
+    await handle('unregister-open-workspace')(null, 'closing-tab');
+    await expect(handle('git-stop-polling')(null, 'closing-tab')).resolves.toBeUndefined();
+    await expect(handle('git-refresh')(null, 'closing-tab')).rejects.toThrow('no longer registered');
+  });
+
   describe('worktree prune and unlock on SSH', () => {
     const MAIN = 'worktree /srv/repo\0branch refs/heads/main\0\0';
     const STALE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gitdir file points to non-existent location\0\0';

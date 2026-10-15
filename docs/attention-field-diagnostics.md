@@ -56,7 +56,17 @@ A receipt is **not** user acknowledgement and **never** supplies lifecycle, loca
 
 ## Late credentials
 
-On release, the broker keeps at most 64 full SHA-256 credential digests with main-owned terminal/harness/transport metadata. For 60 seconds an exact matching late delivery can produce `late-retired-delivery` in the old terminal's diagnostic trace. Raw retired tokens are not retained, digests are not written to logs, and these deliveries **still return `rejected-auth`**. Wrong harness/transport/remote terminal, unknown tokens and expired matches remain unattributed. Expired entries are ignored on intake and pruned on subsequent releases; the bounded table is cleared at shutdown. Replacement registrations do not acquire authority from old credentials.
+On release, the broker keeps at most 256 full SHA-256 credential digests with main-owned terminal/harness/transport metadata. Raw retired tokens are not retained, digests are not written to logs, and every delivery with a retired credential **still returns `rejected-auth`**. Replacement registrations do not acquire authority from old credentials.
+
+Every `rejected-auth` `transport-rejection` record carries an `attribution`:
+
+| `attribution` | Meaning | Extra fields |
+| --- | --- | --- |
+| `retired-credential` | A credential Clanker issued and already retired: the agent's process, or a child of it, outlived its registration. | `terminalId`, `harness` (registered), `retiredForMs` |
+| `harness-mismatch` | A live credential reported as a different harness: typically a nested harness launched from an agent's tools inherited its credentials. | `terminalId`, `harness` (registered) |
+| `unknown-credential` | No credential issued by this process (another Clanker instance, a stale build, or garbage). | none |
+
+All three may add the envelope's own `reportedHarness` (only if it is a plain harness name), wire `event` (only a known event) and `nativeEvent` (only the bounded native-name pattern). Session/turn IDs, paths and content are never recorded. Within 60 seconds of release an exact same-harness/transport late delivery additionally produces `late-retired-delivery` in the old terminal's own trace. `broker` records with `semantic: registered` carry the registered `harness`.
 
 `release-without-settlement` means a registration was released while its accepted runtime was active. It can result from termination, replacement or cleanup; it is not proof of a lost completion callback or provider failure.
 

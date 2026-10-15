@@ -1,4 +1,8 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+
+// The OpenCode launch contract depends on the installed major version; never on this machine's.
+const openCodeVersion = vi.hoisted(() => ({ major: 1 as number | null }));
+vi.mock('../../../src/main/harnesses/opencode/version', () => ({ openCodeMajorVersion: () => openCodeVersion.major }));
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -83,10 +87,34 @@ describe('agent attention launch adapters', () => {
   });
 
   it('leaves custom OpenCode plugin directories and pure mode alone', () => {
+    openCodeVersion.major = 1;
     expect(attentionLaunchOptions('opencode', [], { OPENCODE_CONFIG_DIR: '/custom' }, files)).toBeNull();
     expect(attentionLaunchOptions('opencode', ['--pure'], {}, files)).toBeNull();
     expect(attentionLaunchOptions('opencode', ['--model', 'x'], {}, files)?.env.OPENCODE_CONFIG_DIR)
       .toBe(path.join(ensureProviderAttentionResources('opencode', files).resourceRoot!, 'opencode'));
+  });
+
+  // Field evidence (0.12.0-dev.f7602b0): every OpenCode 2.0.26 launch registered but never reported,
+  // because its plugins ran in the shared background service with another environment.
+  it('runs OpenCode 2.x on a private server with an additive plugin config', () => {
+    openCodeVersion.major = 2;
+    try {
+      const resources = ensureProviderAttentionResources('opencode', files);
+      const directory = path.join(resources.resourceRoot!, 'opencode');
+      const options = attentionLaunchOptions('opencode', ['--session', 'ses_1'], { OPENCODE_CONFIG_DIR: '/user-dir' }, files);
+      expect(options?.args).toEqual(['--standalone', '--session', 'ses_1']);
+      expect(options?.env).toEqual({ OPENCODE_CONFIG: path.join(directory, 'opencode-v2.json') });
+      expect(attentionLaunchOptions('opencode', ['--standalone'], {}, files)?.args).toEqual(['--standalone']);
+      // A server the user chose, or their own config file, is never overridden.
+      expect(attentionLaunchOptions('opencode', ['--server', 'http://127.0.0.1:4096'], {}, files)).toBeNull();
+      expect(attentionLaunchOptions('opencode', ['--server=http://127.0.0.1:4096'], {}, files)).toBeNull();
+      expect(attentionLaunchOptions('opencode', [], { OPENCODE_CONFIG: '/mine.json' }, files)).toBeNull();
+      const config = JSON.parse(fs.readFileSync(path.join(directory, 'opencode-v2.json'), 'utf8'));
+      expect(config).toEqual({ plugins: [path.join(directory, 'v2-plugin')] });
+      expect(JSON.parse(fs.readFileSync(path.join(directory, 'v2-plugin', 'package.json'), 'utf8')).main).toBe('index.js');
+    } finally {
+      openCodeVersion.major = 1;
+    }
   });
 
   it('does not inherit attention credentials from an earlier launch', () => {

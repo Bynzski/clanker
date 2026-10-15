@@ -28,6 +28,22 @@ const EVENT_FIELDS = new Set([
   'cwd', 'diagnostic', 'previousSessionId',
 ]);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
+const HARNESS_NAME = /^[a-z0-9-]{1,32}$/;
+const MAX_RETIRED_CREDENTIALS = 256;
+
+/** Who an unauthenticated envelope can be traced to, without any credential or content. */
+export interface AuthRejectionAttribution {
+  /** `retired-credential`: a terminal Clanker already retired (its process, or a child, outlived it).
+   * `harness-mismatch`: a live credential reported as another harness (a nested harness inherited it).
+   * `unknown-credential`: no credential this process issued. */
+  attribution: 'retired-credential' | 'harness-mismatch' | 'unknown-credential';
+  terminalId?: string;
+  harness?: string;
+  reportedHarness?: string;
+  event?: string;
+  nativeEvent?: string;
+  retiredForMs?: number;
+}
 const DIAGNOSTIC_ID_LENGTH = 64;
 /** Always-on bounded trace: enough to classify a field report without a debug build. */
 const MAX_TRACE_ENTRIES = 64;
@@ -71,6 +87,8 @@ export interface AttentionRegistrationOptions {
 export interface AttentionTraceEntry {
   at: number;
   semantic: string;
+  /** Recorded on registration so later records can be read per harness. */
+  harness?: string;
   nativeEvent?: string;
   verdict?: string;
   revision: number;
@@ -194,8 +212,10 @@ const traceId = (value: string | undefined): string | undefined => value
 export class AgentAttentionBroker {
   private readonly registrations = new Map<string, Registration>();
   private readonly tokensByTerminal = new Map<string, string>();
-  /** Diagnostic-only retired credentials: full digests, no authority, bounded to 64 / one minute. */
+  /** Diagnostic-only retired credentials: full digests, no authority, bounded by count. */
   private readonly retiredCredentials = new Map<string, { terminalId: string; harness: string; transport: 'local' | 'remote'; at: number; revision: number }>();
+  /** Safe metadata about the most recent credential rejection; set and consumed within one intake. */
+  private lastAuthRejection: AuthRejectionAttribution | undefined;
   /** Highest revision ever issued per terminal, so a replaced registration never goes backwards. */
   private readonly revisionFloors = new Map<string, number>();
   /** Per-terminal trace, retained after release so a retirement can still be explained. */
@@ -279,7 +299,7 @@ export class AgentAttentionBroker {
       ...(options.rootSessionId ? { rootSessionId: options.rootSessionId, seedUnconfirmed: true } : {}),
     });
     this.tokensByTerminal.set(terminalId, token);
-    this.record(this.registrations.get(token)!, { semantic: 'registered' });
+    this.record(this.registrations.get(token)!, { semantic: 'registered', harness });
     return token;
   }
 
@@ -298,9 +318,10 @@ export class AgentAttentionBroker {
     if (isActive(registration)) this.record(registration, { semantic: 'release-without-settlement' });
     registration.revision = this.issueRevision(terminalId);
     const digest = createHash('sha256').update(token!).digest('hex');
-    for (const [key, retired] of this.retiredCredentials) if (this.now() - retired.at >= 60_000) this.retiredCredentials.delete(key);
+    // Digests only, bounded by count rather than age: a long-lived process can keep reporting with a
+    // credential retired hours ago, and diagnostics must still be able to name its terminal.
     this.retiredCredentials.set(digest, { terminalId, harness: registration.harness, transport: registration.transport, at: this.now(), revision: registration.revision });
-    if (this.retiredCredentials.size > 64) this.retiredCredentials.delete(this.retiredCredentials.keys().next().value!);
+    if (this.retiredCredentials.size > MAX_RETIRED_CREDENTIALS) this.retiredCredentials.delete(this.retiredCredentials.keys().next().value!);
     this.traceEntry(terminalId, { at: Date.now(), semantic: 'released', revision: registration.revision, status: 'retired' });
     this.onChange({ terminalId, revision: registration.revision, snapshot: null });
   }
@@ -310,7 +331,7 @@ export class AgentAttentionBroker {
     return (this.traces.get(terminalId) ?? []).map((item) => ({ ...item }));
   }
 
-  private record(registration: Registration, entry: Pick<AttentionTraceEntry, 'semantic' | 'nativeEvent' | 'verdict' | 'session' | 'turn'>): void {
+  private record(registration: Registration, entry: Pick<AttentionTraceEntry, 'semantic' | 'harness' | 'nativeEvent' | 'verdict' | 'session' | 'turn'>): void {
     this.traceEntry(registration.terminalId, { at: Date.now(), revision: registration.revision, status: registration.status, ...entry });
   }
 
@@ -559,12 +580,24 @@ export class AgentAttentionBroker {
     if (data.version !== 1 || typeof data.token !== 'string') return 'rejected-invalid';
     const registration = this.registrations.get(data.token);
     if (!registration || data.harness !== registration.harness) {
-      if (!registration && /^[a-f0-9]{64}$/.test(data.token)) {
-        const retired = this.retiredCredentials.get(createHash('sha256').update(data.token).digest('hex'));
-        if (retired && this.now() - retired.at < 60_000 && data.harness === retired.harness
-          && (remoteTerminalId === undefined ? retired.transport === 'local' : retired.transport === 'remote' && retired.terminalId === remoteTerminalId)) {
-          this.traceEntry(retired.terminalId, { at: this.now(), semantic: 'late-retired-delivery', verdict: 'rejected-auth', revision: retired.revision, status: 'retired' });
-        }
+      const reported = {
+        ...(typeof data.harness === 'string' && HARNESS_NAME.test(data.harness) ? { reportedHarness: data.harness } : {}),
+        ...(typeof data.event === 'string' && EVENTS.has(data.event as WireEvent) ? { event: data.event } : {}),
+        ...(typeof data.nativeEvent === 'string' && NATIVE_EVENT.test(data.nativeEvent) ? { nativeEvent: data.nativeEvent } : {}),
+      };
+      if (registration) {
+        this.lastAuthRejection = { attribution: 'harness-mismatch', terminalId: registration.terminalId, harness: registration.harness, ...reported };
+        return 'rejected-auth';
+      }
+      const retired = /^[a-f0-9]{64}$/.test(data.token) ? this.retiredCredentials.get(createHash('sha256').update(data.token).digest('hex')) : undefined;
+      if (!retired) {
+        this.lastAuthRejection = { attribution: 'unknown-credential', ...reported };
+        return 'rejected-auth';
+      }
+      this.lastAuthRejection = { attribution: 'retired-credential', terminalId: retired.terminalId, harness: retired.harness, retiredForMs: this.now() - retired.at, ...reported };
+      if (this.now() - retired.at < 60_000 && data.harness === retired.harness
+        && (remoteTerminalId === undefined ? retired.transport === 'local' : retired.transport === 'remote' && retired.terminalId === remoteTerminalId)) {
+        this.traceEntry(retired.terminalId, { at: this.now(), semantic: 'late-retired-delivery', verdict: 'rejected-auth', revision: retired.revision, status: 'retired' });
       }
       return 'rejected-auth';
     }
@@ -602,11 +635,13 @@ export class AgentAttentionBroker {
   }
 
   private receiveEvent(raw: string, remoteTerminalId?: string): AttentionVerdict {
+    this.lastAuthRejection = undefined;
     const accepted = this.parse(raw, remoteTerminalId);
     if (typeof accepted === 'string') {
+      const attribution = accepted === 'rejected-auth' ? this.lastAuthRejection : undefined;
       this.unattributed = Math.min(Number.MAX_SAFE_INTEGER, this.unattributed + 1);
-      attentionTelemetry()?.transportRejection(accepted);
-      if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted);
+      attentionTelemetry()?.transportRejection(accepted, attribution);
+      if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-delivery', accepted, ...(attribution ? [JSON.stringify(attribution)] : []));
       return accepted;
     }
     // Only a bounded, authenticated envelope on the correct transport can be attributed to a terminal.

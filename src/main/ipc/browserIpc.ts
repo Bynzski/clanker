@@ -163,6 +163,12 @@ function setActiveTabId(workspaceId: string, tabId: string | null, deps?: Regist
 
 
 
+/** A tab's WebContents, unless it was destroyed out from under its view. */
+function liveWebContents(entry: BrowserViewEntry | null | undefined): Electron.WebContents | null {
+  const contents = entry?.view.webContents;
+  return contents && !contents.isDestroyed?.() ? contents : null;
+}
+
 function getActiveViewEntry(workspaceId: string, deps: RegisterBrowserIpcDeps): BrowserViewEntry | null {
   const activeTabId = getActiveTabId(workspaceId);
   if (!activeTabId) return null;
@@ -385,6 +391,21 @@ function createBrowserViewForTab(
   });
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
   view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));
+
+  // A WebContents can be destroyed while its tab stays selected (field evidence: 762 navigation
+  // queries against one dead tab in 195 s). Forget only that view, so the next activation recreates
+  // the tab instead of every operation dereferencing a destroyed WebContents.
+  view.webContents.once('destroyed', () => {
+    const views = getExistingWorkspaceTabViews(workspaceId, deps);
+    if (views?.get(tabId) !== entry) return;
+    views.delete(tabId);
+    if (views.size === 0) deps.getBrowserViews().delete(workspaceId);
+    try {
+      mainWindow.contentView.removeChildView(view);
+    } catch {
+      // The owning BrowserWindow may already be tearing down.
+    }
+  });
 
   void view.webContents.loadURL(DEFAULT_BROWSER_URL);
   return entry;
@@ -647,28 +668,28 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
   ipcMain.handle(BROWSER_BACK, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    const entry = getActiveBrowserEntryForOperation(workspaceId, deps, presentation);
-    if (entry?.view.webContents.navigationHistory.canGoBack()) {
-      entry.view.webContents.navigationHistory.goBack();
+    const contents = liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation));
+    if (contents?.navigationHistory.canGoBack()) {
+      contents.navigationHistory.goBack();
     }
   });
 
   ipcMain.handle(BROWSER_FORWARD, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    const entry = getActiveBrowserEntryForOperation(workspaceId, deps, presentation);
-    if (entry?.view.webContents.navigationHistory.canGoForward()) {
-      entry.view.webContents.navigationHistory.goForward();
+    const contents = liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation));
+    if (contents?.navigationHistory.canGoForward()) {
+      contents.navigationHistory.goForward();
     }
   });
 
   ipcMain.handle(BROWSER_REFRESH, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.reload();
+    liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation))?.reload();
   });
 
   ipcMain.handle(BROWSER_STOP, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return;
-    getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.stop();
+    liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation))?.stop();
   });
 
   ipcMain.handle(BROWSER_DISPOSE_WORKSPACE, (_, workspaceId: string) => {
@@ -685,12 +706,12 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
   ipcMain.handle(CAN_GO_BACK, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return false;
-    return getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.navigationHistory.canGoBack() ?? false;
+    return liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation))?.navigationHistory.canGoBack() ?? false;
   });
 
   ipcMain.handle(CAN_GO_FORWARD, (_, workspaceId: string, presentation?: BrowserPresentation) => {
     if (!workspaceId) return false;
-    return getActiveBrowserEntryForOperation(workspaceId, deps, presentation)?.view.webContents.navigationHistory.canGoForward() ?? false;
+    return liveWebContents(getActiveBrowserEntryForOperation(workspaceId, deps, presentation))?.navigationHistory.canGoForward() ?? false;
   });
 
   ipcMain.handle(BROWSER_GET_URL, (_, workspaceId: string, presentation?: BrowserPresentation) => {
