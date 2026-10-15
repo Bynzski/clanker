@@ -19,6 +19,7 @@ import {
   ANNOTATION_PREPARE_SEND,
 } from '../../shared/ipcChannels';
 import { generateDisableCode } from './annotationRuntime';
+import { isWindowAvailable } from '../windowManager';
 import {
   createAnnotationController,
   formatAnnotationMarkdown,
@@ -103,8 +104,12 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
 
   function emitStateChanged(): void {
     const mainWindow = deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed?.()) return;
-    mainWindow.webContents.send(ANNOTATION_STATE_CHANGED, controller.getState());
+    if (!isWindowAvailable(mainWindow)) return;
+    try {
+      mainWindow.webContents.send(ANNOTATION_STATE_CHANGED, controller.getState());
+    } catch {
+      // A frame can be disposed between the availability check and send.
+    }
   }
 
   async function disableAnnotationForWorkspace(workspaceId: string): Promise<{ success: boolean }> {
