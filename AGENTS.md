@@ -12,7 +12,7 @@
 
 - All `npm run lint`, `npm run typecheck`, and `npm run build` must pass before considering tasks completed.
 - NEVER run bare `npm test`. Always use `npm run test` (runs Vitest).
-- Run `npm run validate` as the final check — it runs branding check → lint → typecheck → Fallow dead-code regression check → security-check → build → test. `security-check` (`scripts/security-audit.cjs`) fails on any high/critical `npm audit` finding except the single documented dev-only electron-builder chain (`GHSA-ch52-4w7c-c8xp`); see `RELEASING.md`.
+- Run `npm run validate` as the final check — it runs branding check → lint → typecheck → Fallow dead-code regression check → security-check → build → test. `security-check` (`npm audit --audit-level=high`) fails on any high/critical finding, with no advisory exceptions; see `RELEASING.md`.
 
 ## Project Snapshot
 
@@ -222,7 +222,7 @@ npm run lint       # ESLint
 npm run typecheck  # TypeScript
 npm run build      # Vite + tsc
 npm run test       # Vitest
-npm run security-check # scripts/security-audit.cjs (npm audit, high threshold, one documented exception)
+npm run security-check # npm audit --audit-level=high (no advisory exceptions)
 npm run validate   # branding check, lint, typecheck, Fallow, security-check, build, test
 ```
 

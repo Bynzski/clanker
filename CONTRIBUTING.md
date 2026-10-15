@@ -150,4 +150,4 @@ Before submitting, run:
 npm run validate
 ```
 
-This executes: branding check → lint → typecheck → Fallow dead-code regression check → security check (`node scripts/security-audit.cjs`: `npm audit` at the high threshold, plus one documented dev-only exception) → build → test.
+This executes: branding check → lint → typecheck → Fallow dead-code regression check → security check (`npm audit --audit-level=high`, with no advisory exceptions) → build → test.
