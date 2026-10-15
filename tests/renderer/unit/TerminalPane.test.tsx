@@ -1079,6 +1079,7 @@ describe('TerminalPane', () => {
 
       const preventDefault = vi.fn();
       const handled = attachedKeyHandler?.({
+        type: 'keydown',
         key: 'c',
         ctrlKey: true,
         metaKey: false,

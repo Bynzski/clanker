@@ -10,12 +10,28 @@ import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspa
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useAssistantsStore } from '../../../src/renderer/store/assistantsStore';
 
-const xterms: Array<{ write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; emitData: (data: string) => void; paste: ReturnType<typeof vi.fn>; cols: number; rows: number }> = [];
+const xterms: Array<{
+  write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; emitData: (data: string) => void;
+  paste: ReturnType<typeof vi.fn>; cols: number; rows: number; selection: string;
+  emitSelection: () => void; emitKey: (event: KeyboardEvent) => boolean;
+  selectionDispose: ReturnType<typeof vi.fn>; loadAddon: ReturnType<typeof vi.fn>;
+}> = [];
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80; rows = 24;
     write = vi.fn(); dispose = vi.fn(); focus = vi.fn(); loadAddon = vi.fn();
     private handler: (data: string) => void = () => undefined;
+    private selectionHandler = () => undefined as void;
+    private keyHandler: (event: KeyboardEvent) => boolean = () => true;
+    selection = '';
+    selectionDispose = vi.fn();
+    hasSelection = () => this.selection.length > 0;
+    getSelection = () => this.selection;
+    clearSelection = () => { this.selection = ''; };
+    onSelectionChange = (handler: () => void) => { this.selectionHandler = handler; return { dispose: this.selectionDispose }; };
+    attachCustomKeyEventHandler = (handler: (event: KeyboardEvent) => boolean) => { this.keyHandler = handler; };
+    emitSelection = () => this.selectionHandler();
+    emitKey = (event: KeyboardEvent) => this.keyHandler(event);
     open = vi.fn((container: HTMLElement) => container.appendChild(document.createElement('div')));
     onData = vi.fn((handler: (data: string) => void) => { this.handler = handler; return { dispose: vi.fn() }; });
     emitData = (data: string) => this.handler(data);
@@ -25,6 +41,7 @@ vi.mock('@xterm/xterm', () => ({
   },
 }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
+vi.mock('@xterm/addon-clipboard', () => ({ ClipboardAddon: class { readonly clipboard = true; } }));
 vi.mock('../../../src/renderer/components/FileExplorer', () => ({ default: () => <div data-testid="files-section" /> }));
 vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({ default: ({ workspaceId }: { workspaceId: string }) => <div data-testid={`layout-${workspaceId}`} /> }));
 
@@ -168,7 +185,7 @@ it('an opened Assistant stays reachable (marked offline) when the service disapp
 });
 
 it('the surface forwards xterm input and Assistant output over the narrow Assistant IPC and never exposes a token', async () => {
-  mockMain(snap());
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'open' }] }));
   vi.mocked(window.electronAPI.openAssistant).mockResolvedValue({ state: 'open', replay: 'earlier output' });
   render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
   await waitFor(() => expect(xterms).toHaveLength(1));
@@ -181,6 +198,84 @@ it('the surface forwards xterm input and Assistant output over the narrow Assist
   expect(xterms[0].write).not.toHaveBeenCalledWith('other');
   expect(window.electronAPI.openAssistant).toHaveBeenCalledWith('hermes:fred');
   expect(JSON.stringify(vi.mocked(window.electronAPI.openAssistant).mock.calls)).not.toMatch(/token|ws:\/\//i);
+});
+
+it('does not install a late resize observer after a pending Assistant open is unmounted', async () => {
+  mockMain(snap());
+  let finishOpen!: (value: { state: 'open'; replay: string }) => void;
+  vi.mocked(window.electronAPI.openAssistant).mockReturnValue(new Promise((resolve) => { finishOpen = resolve; }));
+  const observe = vi.fn();
+  const previousObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class { observe = observe; unobserve = vi.fn(); disconnect = vi.fn(); };
+  try {
+    const { unmount } = render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+    await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledWith('hermes:fred'));
+    const term = xterms[0];
+    unmount();
+    observe.mockClear(); // Ignore the surface shell's own observers before teardown.
+    await act(async () => { finishOpen({ state: 'open', replay: 'late replay' }); });
+    expect(observe).not.toHaveBeenCalled();
+    expect(term.write).not.toHaveBeenCalledWith('late replay');
+    expect(term.selectionDispose).toHaveBeenCalledOnce();
+    expect(term.dispose).toHaveBeenCalledOnce();
+  } finally { globalThis.ResizeObserver = previousObserver; }
+});
+
+it('copies Assistant selections and consumes Ctrl+Shift+C without replacing Ctrl+C interrupt', async () => {
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'open' }] }));
+  const { unmount } = render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(xterms).toHaveLength(1));
+  await waitFor(() => expect(useAssistantsStore.getState().snapshot?.surfaces[0]?.state).toBe('open'));
+  const term = xterms[0];
+  expect(term.loadAddon).toHaveBeenCalledWith(expect.objectContaining({ clipboard: true }));
+  term.selection = 'answer to copy';
+  term.emitSelection();
+  expect(window.electronAPI.writeClipboard).toHaveBeenCalledWith('answer to copy');
+  vi.mocked(window.electronAPI.writeClipboard).mockClear();
+  const copy = new KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true, cancelable: true });
+  expect(term.emitKey(copy)).toBe(false);
+  expect(copy.defaultPrevented).toBe(true);
+  expect(window.electronAPI.writeClipboard).toHaveBeenCalledExactlyOnceWith('answer to copy');
+  expect(term.selection).toBe('');
+  term.emitKey(new KeyboardEvent('keyup', { key: 'C', ctrlKey: true, shiftKey: true }));
+  expect(window.electronAPI.writeClipboard).toHaveBeenCalledTimes(1);
+  expect(term.emitKey(copy)).toBe(false); // Empty selection still consumes the shortcut.
+  expect(window.electronAPI.writeAssistantPty).not.toHaveBeenCalled();
+  expect(term.emitKey(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))).toBe(true);
+  term.emitData('\x03');
+  expect(window.electronAPI.writeAssistantPty).toHaveBeenCalledWith('hermes:fred', '\x03');
+  unmount();
+  expect(term.selectionDispose).toHaveBeenCalledOnce();
+  expect(term.dispose).toHaveBeenCalledOnce();
+});
+
+it('gates clipboard and keyboard handling when parked or disconnected without blocking terminal query replies', async () => {
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'open' }] }));
+  const { rerender } = render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(xterms).toHaveLength(1));
+  await waitFor(() => expect(useAssistantsStore.getState().snapshot?.surfaces[0]?.state).toBe('open'));
+  const term = xterms[0];
+  const select = () => { term.selection = 'selected'; term.emitSelection(); };
+  select();
+  expect(window.electronAPI.writeClipboard).toHaveBeenCalledTimes(1);
+  vi.mocked(window.electronAPI.writeClipboard).mockClear();
+  rerender(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive={false} />);
+  select();
+  expect(term.emitKey(new KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true }))).toBe(false);
+  expect(window.electronAPI.writeClipboard).not.toHaveBeenCalled();
+  expect(window.electronAPI.writeAssistantPty).not.toHaveBeenCalled();
+  rerender(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  act(() => pushSnapshot(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'disconnected' }] })));
+  select();
+  expect(window.electronAPI.writeClipboard).not.toHaveBeenCalled();
+  expect(window.electronAPI.writeAssistantPty).not.toHaveBeenCalled();
+  act(() => pushSnapshot(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'open' }] })));
+  select();
+  expect(window.electronAPI.writeClipboard).toHaveBeenCalledWith('selected');
+  rerender(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive={false} />);
+  term.emitData('\x1b[?1;2c');
+  expect(window.electronAPI.writeAssistantPty).toHaveBeenCalledWith('hermes:fred', '\x1b[?1;2c');
+  expect(xterms).toHaveLength(1);
 });
 
 it('pastes local image drops through the Assistant PTY with xterm paste framing', async () => {

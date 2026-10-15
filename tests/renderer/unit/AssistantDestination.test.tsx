@@ -18,6 +18,8 @@ vi.mock('@xterm/xterm', () => ({
     write = vi.fn(); dispose = vi.fn(); focus = vi.fn(); loadAddon = vi.fn();
     open = vi.fn((container: HTMLElement) => container.appendChild(document.createElement('div')));
     onData = vi.fn(() => ({ dispose: vi.fn() }));
+    onSelectionChange = vi.fn(() => ({ dispose: vi.fn() }));
+    attachCustomKeyEventHandler = vi.fn();
     options = {};
     constructor() { xterms.push(this as never); }
   },
