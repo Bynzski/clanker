@@ -398,6 +398,7 @@ function createBrowserViewForTab(
   view.webContents.once('destroyed', () => {
     const views = getExistingWorkspaceTabViews(workspaceId, deps);
     if (views?.get(tabId) !== entry) return;
+    console.warn(`[clanker-grid] browser tab web contents destroyed while open workspace=${workspaceId} tab=${tabId}`);
     views.delete(tabId);
     if (views.size === 0) deps.getBrowserViews().delete(workspaceId);
     try {
