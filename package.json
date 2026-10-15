@@ -36,7 +36,7 @@
     "precapture:features": "npm run build",
     "capture:features": "node scripts/screenshots/capture.cjs",
     "validate": "npm run branding:check && npm run lint && npm run typecheck && npm run fallow:check && npm run security-check && npm run build && npm run test",
-    "security-check": "node scripts/security-audit.cjs",
+    "security-check": "npm audit --audit-level=high",
     "build:dist": "npm run build && electron-builder --publish never",
     "build:dist:dev": "npm run build && node scripts/build-dist-dev.cjs",
     "start": "electron .",

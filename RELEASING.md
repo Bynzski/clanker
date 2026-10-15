@@ -97,13 +97,11 @@ Mention in the release notes that no Windows build was produced for this tag.
 
 ## Security gate
 
-`npm run security-check` runs `scripts/security-audit.cjs`, which runs `npm audit --json` and fails on any high or critical finding, or if `npm audit` cannot produce a report. Development and packaging dependencies are included: build tooling produces the release artifacts. CI uploads a raw `npm audit` report as an informational artifact; the gate itself runs locally through `npm run validate`.
+`npm run security-check` runs `npm audit --audit-level=high` and fails on any high or critical finding, or if the audit cannot complete. There are no advisory exceptions. Development and packaging dependencies are included: build tooling produces the release artifacts. CI uploads a raw `npm audit` report as an informational artifact; the gate itself runs locally through `npm run validate`.
 
-**Temporary exception.** `GHSA-ch52-4w7c-c8xp` (`http-cache-semantics` <= 4.2.0, max-stale cache handling) has no patched release. Every current `electron-builder` v26 release (checked through 26.17.0) reaches it through `app-builder-lib` → `@electron/get@3` → `got@11` → `cacheable-request`, and npm's only suggested fix is a downgrade to `electron-builder@26.5.0`. The script permits exactly this advisory in exactly this chain, and only while every affected package is a dev-only entry in `package-lock.json` and `electron-builder` is a devDependency. Any other advisory, or the same advisory in a runtime dependency, fails the check. Clanker does not ship these packages; they run on the release host, where `@electron/get` downloads toolchain and Electron binaries without enabling an HTTP cache.
+**Resolved exception.** The lockfile now uses `http-cache-semantics` 4.3.0, outside the affected range for `GHSA-ch52-4w7c-c8xp` (<= 4.2.0). The temporary dev-only electron-builder-chain exception and its custom audit script have been removed.
 
-**Do not downgrade to clear the audit.** The script always requires `app-builder-lib` and `electron-builder` >= 26.15.0 (fixes `GHSA-7g7r-gx96-252g`, an AppImage vulnerability; Clanker ships an AppImage) and `builder-util-runtime` >= 9.7.0 (fixes `GHSA-p2f4-r6v6-j797`).
-
-**Removal.** When an `electron-builder` release stops depending on a vulnerable `http-cache-semantics` chain (for example by moving to `@electron/get` >= 4 without `got`), upgrade, then replace the script with `npm audit --audit-level=high` in `package.json`'s `security-check` and delete the script and its test. The script prints a notice when the exception is no longer needed.
+**Do not downgrade to clear the audit.** Keep `app-builder-lib` and `electron-builder` >= 26.15.0 (fixes `GHSA-7g7r-gx96-252g`, an AppImage vulnerability; Clanker ships an AppImage) and `builder-util-runtime` >= 9.7.0 (fixes `GHSA-p2f4-r6v6-j797`). The remaining moderate `sprintf-js` advisory is in development-only build tooling and has no patched release; track upstream rather than accepting npm's suggested builder downgrade.
 
 ## Platform targets
 
