@@ -2,6 +2,7 @@ import { IconButton } from './ui/IconButton';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
+import { registerTerminalClipboard } from '../lib/terminalClipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useThemeStore } from '../theme/themeStore';
 import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../theme/terminalTheme';
@@ -287,7 +288,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
 
     const xterm = xtermRef.current;
     let disposeResized: (() => void) | null = null;
-    let selectionDisposable: { dispose: () => void } | null = null;
 
     // onData is runtime-owned: native query replies remain connected when this pane unmounts.
 
@@ -305,13 +305,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
 
     disposeResized = window.electronAPI.onTerminalResized(resizedHandler);
 
-    // Copy selected text to clipboard when selection changes (mouse selection)
-    selectionDisposable = xterm.onSelectionChange(() => {
-      if (isInteractive && xterm.hasSelection()) {
-        const selection = xterm.getSelection();
-        window.electronAPI.writeClipboard(selection).catch(console.error);
-      }
-    });
+    const clipboard = registerTerminalClipboard(xterm, () => isInteractive);
 
     const applyTerminalZoom = (action: 'in' | 'out' | 'reset') => {
       const current = xterm.options.fontSize ?? TERMINAL_DEFAULT_FONT_SIZE;
@@ -342,17 +336,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
 
     xterm.attachCustomKeyEventHandler((event) => {
       if (!isInteractive) return false;
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
-        if (xterm.hasSelection()) {
-          const selection = xterm.getSelection();
-          if (selection) {
-            window.electronAPI.writeClipboard(selection).catch(console.error);
-          }
-          xterm.clearSelection();
-        }
-        event.preventDefault();
-        return false;
-      }
+      if (clipboard.handleKeyEvent(event)) return false;
 
       // Terminal-context commands (currently zoom) are owned here: terminal zoom
       // changes only this xterm's cell metrics. A matched command is always
@@ -374,7 +358,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false, bac
 
     return () => {
       disposeResized?.();
-      selectionDisposable?.dispose();
+      clipboard.dispose();
       // Cached instances must not retain input handlers from a previously active page.
       xterm.attachCustomKeyEventHandler(() => false);
       xterm.attachCustomWheelEventHandler(() => false);

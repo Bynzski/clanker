@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { registerTerminalClipboard } from '../../lib/terminalClipboard';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { useThemeStore } from '../../theme/themeStore';
 import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../../theme/terminalTheme';
@@ -37,6 +38,8 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
   const surface = snapshot?.surfaces.find((entry) => entry.assistantId === assistantId);
   const serviceConnected = snapshot?.service.state === 'connected';
   const surfaceState = surface?.state;
+  const interactiveRef = useRef(false);
+  interactiveRef.current = isActive && serviceConnected && surfaceState === 'open';
   const { onDragOver, onDrop, dropError } = useTerminalImageDrop(
     xtermRef, isActive && serviceConnected && surfaceState === 'open',
   );
@@ -52,8 +55,9 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
   useEffect(() => {
     let cancelled = false;
     let disposeData: (() => void) | undefined;
+    let disposeClipboard: (() => void) | undefined;
     let observer: ResizeObserver | undefined;
-    void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(async ([xtermModule, fitModule]) => {
+    void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/addon-clipboard')]).then(async ([xtermModule, fitModule, clipboardModule]) => {
       if (cancelled || !hostRef.current) return;
       const xterm = new xtermModule.Terminal({
         theme: getTerminalTheme(useThemeStore.getState().theme),
@@ -62,21 +66,28 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
       });
       const fit = new fitModule.FitAddon();
       xterm.loadAddon(fit);
+      xterm.loadAddon(new clipboardModule.ClipboardAddon());
       xterm.open(hostRef.current);
       xtermRef.current = xterm; fitRef.current = fit;
       registerThemedTerminal(xterm, useThemeStore.getState().theme);
+      const clipboard = registerTerminalClipboard(xterm, () => interactiveRef.current);
+      disposeClipboard = clipboard.dispose;
+      xterm.attachCustomKeyEventHandler((event) => interactiveRef.current && !clipboard.handleKeyEvent(event));
+      // Keep native terminal query replies flowing, including during startup and while parked.
       xterm.onData((data) => { void window.electronAPI.writeAssistantPty(assistantId, data); });
       disposeData = window.electronAPI.onAssistantPtyData((payload) => { if (payload.assistantId === assistantId) xterm.write(payload.data); });
       try {
         const opened = await window.electronAPI.openAssistant(assistantId);
         if (!cancelled && opened.replay) xterm.write(opened.replay);
       } catch { /* the overlay reflects the service state */ }
+      if (cancelled || !hostRef.current) return;
       if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(fitAndResize); observer.observe(hostRef.current); }
       fitAndResize();
     }).catch(() => undefined);
     return () => {
       cancelled = true;
       disposeData?.();
+      disposeClipboard?.();
       observer?.disconnect();
       const xterm = xtermRef.current;
       if (xterm) { unregisterThemedTerminal(xterm); xterm.dispose(); }
@@ -108,7 +119,7 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
 
   return (
     <div className="assistant-terminal" onDragOver={onDragOver} onDrop={onDrop}>
-      <div className="assistant-surface-terminal" ref={hostRef} />
+      <div className="assistant-surface-terminal" ref={hostRef} title="Select text to copy, or press Ctrl+Shift+C. Hold Shift while dragging if Hermes captures the mouse." />
       {dropError && <div role="status">{dropError}</div>}
       {overlay && (
         <div className="assistant-surface-overlay" role="status">

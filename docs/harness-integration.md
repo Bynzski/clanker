@@ -1854,6 +1854,8 @@ No prompt or model turn is ever sent to create the chat. Clanker never passes a 
 
 `/api/pty?profile=<slug>&resume=<id>&attach=<key>` with the loopback token (main-only). The stable attach key `clanker-assistant-<slug>` lets a reconnect or restart re-attach to the lingering Hermes TUI instead of stacking another. Hermes allows one live viewer per attach key: a newer viewer (for example a second Clanker process) supersedes the old one (close code `4409`). Clanker never auto-loops on a PTY disconnect; the surface offers an explicit Reconnect, and re-attaches once only when the control service itself recovers. Resize uses Hermes' `ESC[RESIZE:<cols>;<rows>]` framing. Hermes keeps a detached chat process for a while after a viewer closes.
 
+Assistant terminals share normal terminal copy-on-selection and `Ctrl+Shift+C` behavior through `lib/terminalClipboard.ts`; plain `Ctrl+C` still interrupts the TUI. Hold **Shift while dragging** if Hermes captures mouse input. Clipboard and keyboard handling are gated to an active, connected, open Assistant surface; native terminal query replies continue flowing even while parked. Selection subscriptions are disposed on unmount, and a pending open cannot install a resize observer after teardown. See the [Hermes reliability review](evidence/hermes-reliability-review.md) for verification and remaining native lifecycle checks.
+
 ### Destinations, surfaces and Browser
 
 Workspace and Assistant are peer app destinations with different capabilities (`lib/activeDestination.ts`). An Assistant is not a WorkspaceTab, CheckoutContext, filesystem scope or Git scope, and toolbar controls follow the active destination's capabilities (Browser and Settings only for an Assistant) instead of acting on a parked workspace. The surface shell has a primary slot (today the Hermes TUI, replaceable later by a native Assistant UI without changing service/session ownership) and an optional sidecar (today only Browser). The Assistant Browser reuses the shared Browser mechanics under its own owner `assistant-browser:<assistantId>`, which main validates against the service roster (local persistent partition; never an SSH workspace's), with its UI state in a renderer-only store. Annotation handoff and SSH remote preview are workspace-only features. Disabling Assistants disposes the Assistant-owned views and clears their UI state.
@@ -1862,4 +1864,6 @@ Workspace and Assistant are peer app destinations with different capabilities (`
 
 ### Known V1 limitations
 
-No SSH Assistants; no profile creation/editing; a second Clanker process can supersede the first's viewer; no live Windows validation.
+No SSH Assistants; no profile creation or operational profile editing (native Bot title/tagline edits are supported); a second Clanker process can supersede the first's viewer; no live Windows validation.
+
+Issue #182's local presentation and cron phases shipped in merged PRs #183 and #184: native avatar reads with fallback, revision-checked Bot cosmetics preserving other metadata, and a read-only default-profile scheduled-task destination. Scheduler health remains **Unknown**, not inferred from job configuration or timestamps. The remaining remote inventory prerequisite is documented in the [SSH discovery investigation](evidence/hermes-ssh-discovery-182.md); it is not a shipped SSH catalog or remote chat connection.
