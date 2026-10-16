@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 import { openCodeMajorVersion } from './version';
+import { openCodePrivateServerArgs } from './privateServer';
 
 /** The plugin proves each session's parentage from native metadata (or the trusted
  * resumed ID) before reporting it. Child sessions are reported as child scope, and a
@@ -219,19 +220,16 @@ function resourceDirectory(files: AttentionAdapterFiles): string {
   return path.join(files.resourceRoot ?? path.dirname(files.command), 'opencode');
 }
 
-function choosesServer(args: string[]): boolean {
-  return args.some((arg) => arg === '--server' || arg.startsWith('--server='));
-}
-
 export const local = localAttention(({ args, env, files: adapterFiles, rootSessionId, platform }) => {
     const directory = resourceDirectory(adapterFiles);
     const session: Record<string, string> = rootSessionId ? { CLANKER_ATTENTION_SESSION_ID: rootSessionId } : {};
     if ((openCodeMajorVersion(env, platform) ?? 1) >= 2) {
       // The shared background service runs plugins with another process's environment, so this launch
       // gets its own private server. A user-chosen server, or a config file of their own, is left alone.
-      if (env.OPENCODE_CONFIG || choosesServer(args)) return null;
+      const privateArgs = openCodePrivateServerArgs(args);
+      if (env.OPENCODE_CONFIG || !privateArgs) return null;
       return {
-        args: args.includes('--standalone') ? args : ['--standalone', ...args],
+        args: privateArgs,
         // Additive: OpenCode merges this file over the user's global and project config.
         env: { OPENCODE_CONFIG: path.join(directory, V2_CONFIG), ...session },
       };

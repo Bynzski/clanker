@@ -803,7 +803,7 @@ relying on remembered flags; each attachment was exercised against a real bridge
 | --- | --- | --- | --- |
 | Claude | extra `--mcp-config <scratch>/claude-mcp.json` placed last (it is variadic); no `--strict-mcp-config` | merged with user/project/local servers; skipped when the user passed `--strict-mcp-config` | header `Bearer ${CLANKER_MCP_TOKEN}` expanded from the environment |
 | Codex | `-c mcp_servers.clanker-grid.url=…` and `….bearer_token_env_var="CLANKER_MCP_TOKEN"`, before a `resume`/`fork` subcommand | overrides merge per key; `codex mcp list` shows the user's own servers beside ours; skipped if the name is already defined on the command line or in `config.toml` | `bearer_token_env_var` |
-| OpenCode | `OPENCODE_CONFIG_CONTENT` with an `mcp` entry | deep-merged over every other config source; skipped if the user already sets the variable | `Bearer {env:CLANKER_MCP_TOKEN}` |
+| OpenCode | `OPENCODE_CONFIG_CONTENT` with an `mcp` entry; detected 2.x also uses `--standalone` | deep-merged over every other config source; skipped if the user already sets the variable; 2.x explicit server choices are left alone | `Bearer {env:CLANKER_MCP_TOKEN}` |
 | Pi | private launch-owned `--extension` using `pi.registerMcpServer` with direct exposure | session-only, no agent-directory relocation; Pi preserves configured-server precedence and user tool restrictions | header `Bearer ${CLANKER_MCP_TOKEN}` expanded by Pi |
 
 Pi's extension checks the public registration API and `/mcp` command's `sourceInfo.path`
@@ -838,6 +838,36 @@ forcing `--remote` doesn't forward the hook/MCP configuration. The existing atta
 verified compatibility fallback and its warning remains visible. See
 [the #107 investigation](codex-shared-server-compatibility.md) for supported alternatives,
 release-source evidence, local/SSH behavior and requirements for a future migration.
+
+### OpenCode 2.x private server
+
+OpenCode 2.x defaults to a shared background service. That service cannot receive
+another launch's `OPENCODE_CONFIG_CONTENT` or `CLANKER_MCP_TOKEN`. The bridge
+therefore independently adds `--standalone` for detected 2.x launches, even with
+attention disabled. Attention and bridge share the private-server argv planner;
+when both attach, exactly one flag is added. Explicit `--server` / `--server=…`
+and alternate `--standalone=…` spellings decline attachment without changing argv
+or retaining a credential. Existing inline user configuration also still declines.
+No project/global configuration is written. The existing bounded, cached local
+version probe is reused; unknown versions and Windows (not probed by this POSIX
+probe) retain legacy behavior, not a claim of verified 2.x compatibility there.
+
+After building, `npm run smoke:bridge:opencode` starts the installed 2.x **real TUI**
+with an isolated HOME/XDG tree, no attention attachment, a temporary registered-identity
+fixture and the real Clanker MCP endpoint. It waits for authenticated native tool
+discovery without submitting a prompt, verifies the user fixture config is unchanged,
+and checks credential revocation on disposal. OpenCode 2.0.26 passed this no-model
+startup check. It does not test native turns, permission prompts, session replacement,
+SSH, or model inference.
+
+The private-server behavior is verified against the
+[2.0.26 server connection](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/services/server-connection.ts)
+and [standalone process](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/services/standalone.ts).
+Its [command declarations](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/commands/commands.ts)
+and installed help expose `-m` / `--fork` on `run` (not the default TUI), and no
+`run --pure`. Clanker's legacy model-selection, TUI fork and AI-commit invocations
+still require separate compatibility work; this MCP fix does not claim to resolve
+those #189 follow-ups or 2.x SSH attention.
 
 ### Opt-in
 
