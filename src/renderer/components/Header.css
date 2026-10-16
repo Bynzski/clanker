@@ -174,7 +174,13 @@
   font-weight: 500;
 }
 
-.header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
+.header-chat-popover {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  width: max-content;
+  max-width: min(calc(100vw - 16px), var(--radix-popover-content-available-width, 100vw));
+}
 
 /* Canonical Settings → Accounts: compact account lines, no accordion or cards. */
 .harness-accounts { gap: 2px; }

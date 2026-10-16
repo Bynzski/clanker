@@ -138,6 +138,40 @@ describe('ChatHistoryDropdown', () => {
     expect(taskChannels).not.toHaveBeenCalled();
   });
 
+  it('keeps cached rows expanded across refresh, success, and failure with compact accessible status', () => {
+    installElectronApiMock();
+    const props = { sessions: [sampleSession], isLoading: false, workspacePath: '/projects/repo', workspaceId: 'local-ws', onClose: vi.fn() };
+    const { rerender } = render(<ChatHistoryDropdown {...props} isLastKnown />);
+    expect(screen.getByRole('status')).toHaveAccessibleName(/cached history, not freshly verified/i);
+    expect(screen.getByText('Cached')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
+    const row = screen.getByRole('button', { name: /Auth conversation/i });
+
+    rerender(<ChatHistoryDropdown {...props} isLastKnown isRefreshing />);
+    expect(screen.getByRole('status')).toHaveAccessibleName(/cached history.*Refreshing conversation history/i);
+    expect(screen.getByText('Refreshing…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Auth conversation/i })).toBe(row);
+    expect(row).toBeEnabled();
+
+    rerender(<ChatHistoryDropdown {...props} />);
+    expect(screen.getByRole('status')).toHaveAccessibleName('Conversation history loaded');
+    expect(screen.queryByText('Refreshing…')).toBeNull();
+    expect(screen.getByRole('button', { name: /Auth conversation/i })).toBe(row);
+
+    rerender(<ChatHistoryDropdown {...props} isLastKnown discoveryError="SSH connection failed" />);
+    expect(screen.getByRole('status')).toHaveAccessibleName(/cached history.*refresh failed/i);
+    expect(screen.getByRole('alert')).toHaveTextContent('SSH connection failed');
+    expect(screen.getByRole('button', { name: /Auth conversation/i })).toBe(row);
+    expect(row).toBeEnabled();
+  });
+
+  it('distinguishes initial loading from cached refreshing', () => {
+    installElectronApiMock();
+    render(<ChatHistoryDropdown sessions={[]} isLoading isRefreshing workspacePath="/projects/repo" workspaceId="local-ws" onClose={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveAccessibleName('Loading conversation history');
+    expect(screen.queryByText('Cached')).toBeNull();
+  });
+
   it('surfaces discovery failures instead of implying that the remote history is empty', () => {
     installElectronApiMock();
     render(<ChatHistoryDropdown sessions={[]} isLoading={false} discoveryError="SSH authentication failed" workspacePath="/projects/repo" workspaceId="remote-ws" onClose={vi.fn()} />);

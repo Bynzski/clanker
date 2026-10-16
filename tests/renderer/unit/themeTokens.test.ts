@@ -39,7 +39,10 @@ const runtimeDimensions = new Map([
     '--radix-popover-content-available-height',
   ])],
   [resolve(rendererRoot, 'components/ChatHistoryDropdown.css'), new Set([
-    '--radix-popover-content-available-height',
+    '--radix-popover-content-available-height', '--radix-popover-content-available-width',
+  ])],
+  [resolve(rendererRoot, 'components/Header.css'), new Set([
+    '--radix-popover-content-available-width',
   ])],
   [resolve(rendererRoot, 'components/UsageDropdown.css'), new Set([
     '--radix-popover-content-available-height',

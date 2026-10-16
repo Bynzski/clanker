@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react';
 import { PromptDialog } from './ui/PromptDialog';
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -184,20 +185,29 @@ export default function ChatHistoryDropdown({
     setExpanded((prev) => ({ ...prev, [harnessId]: !prev[harnessId] }));
   };
 
+  const freshnessText = isLoading ? 'Loading conversation history'
+    : isRefreshing ? `${isLastKnown ? 'Showing cached history, not freshly verified. ' : ''}Refreshing conversation history`
+    : discoveryError ? `${isLastKnown ? 'Showing cached history, not freshly verified. ' : ''}Conversation history refresh failed`
+    : isLastKnown ? 'Showing cached history, not freshly verified'
+    : 'Conversation history loaded';
+
   return (
     <div className="chat-history-dropdown">
+      <div className="chat-history-heading">
+        <span>Conversations</span>
+        <span className="chat-history-freshness" role="status" aria-label={freshnessText} title={freshnessText}>
+          {(isLoading || isRefreshing) && <LoaderCircle size={12} className="chat-history-spinner" aria-hidden="true" />}
+          <span aria-hidden="true">{isLoading ? 'Loading…' : isRefreshing ? 'Refreshing…' : discoveryError ? 'Refresh failed' : isLastKnown ? 'Cached' : 'Loaded'}</span>
+        </span>
+      </div>
       {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
-      {resumeNotice && <div className="chat-history-empty" role="status">{resumeNotice}</div>}
+      {resumeNotice && <div className="chat-history-empty" role="status" aria-label="Conversation resume notice">{resumeNotice}</div>}
       {offer && (
         <PromptDialog title="Recreate worktree" workspaceId={workspaceId ?? undefined}
           description={`This conversation ran in the worktree ${offer.checkout.branch}, which was removed. ${HARNESS_OPTIONS.find((option) => option.id === offer.session.harness)?.label ?? offer.session.harness} can only continue in the directory it started in. Recreate the worktree from its branch and resume there?`}
           variant="primary" confirmLabel="Recreate and resume" busy={launching}
           onAnswer={(answer) => { if (answer) void resumeSession(offer.session, true); else setOffer(null); }} />
       )}
-      {(isLastKnown || isRefreshing && !isLoading) && <div className="chat-history-empty" role="status">
-        {isLastKnown ? 'Last known history · not freshly verified' : 'Refreshing history'}{isLastKnown && isRefreshing ? ' · Refreshing…' : ''}
-      </div>}
-      {discoveryError && <div className="chat-history-empty" role="alert">{discoveryError}</div>}
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions…</div>
       ) : sessions.length === 0 ? (
@@ -216,6 +226,7 @@ export default function ChatHistoryDropdown({
           />
         ))
       )}
+      {discoveryError && <div className="chat-history-empty" role="alert">{discoveryError}</div>}
     </div>
   );
 }
