@@ -83,7 +83,7 @@ describe('resuming isolated-agent conversations from chat history', () => {
     const onClose = renderHistory([removedSession]);
     fireEvent.click(screen.getByRole('button', { name: /Removed isolated agent/ }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(notice);
+    expect(await screen.findByRole('status', { name: 'Conversation resume notice' })).toHaveTextContent(notice);
     expect(onClose).not.toHaveBeenCalled();
     expect(state().terminals[0]).toMatchObject({ id: 'term-main', checkoutContextId: 'ws::main', workingDir: ROOT });
     expect(state().checkoutContexts).toEqual([MAIN]);
@@ -120,7 +120,7 @@ describe('resuming isolated-agent conversations from chat history', () => {
     expect(invoke).toHaveBeenLastCalledWith('ws', removedSession, false, { recreateCheckout: true, initialGeometry: { cols: 120, rows: 40 } });
     expect(state().terminals[0].checkoutContextId).toBe('ws::wt');
     expect(state().checkoutContexts).toContainEqual(WORKTREE_CONTEXT);
-    expect(await screen.findByRole('status')).toHaveTextContent('Recreated the worktree for feature/foo');
+    expect(await screen.findByRole('status', { name: 'Conversation resume notice' })).toHaveTextContent('Recreated the worktree for feature/foo');
   });
 
   it('surfaces a precise refusal when a harness cannot resume without its directory', async () => {

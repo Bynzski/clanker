@@ -54,7 +54,7 @@ export default function HeaderRightControls({ capabilities, panelToggles, fitAll
             <IconButton size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
               title="Chat history" aria-label="Chat history"><MessageSquare size={14} strokeWidth={2} /></IconButton>
           </PopoverTrigger>
-          <PopoverContent align="end" className="header-chat-popover" aria-label="Chat history" workspaceId={workspaceId ?? undefined}>
+          <PopoverContent align="end" sticky="always" className="header-chat-popover" aria-label="Chat history" workspaceId={workspaceId ?? undefined}>
             <ChatHistoryDropdown sessions={chatSessions} isLoading={isLoadingSessions} discoveryError={sessionDiscoveryError} isRefreshing={isRefreshingSessions} isLastKnown={isLastKnownSessions}
               workspacePath={workspacePath || '/'} workspaceId={workspaceId} onClose={onCloseChatHistory} />
           </PopoverContent>
