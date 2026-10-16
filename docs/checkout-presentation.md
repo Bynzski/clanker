@@ -263,6 +263,46 @@ and [remote VPS smoke](remote-vps-smoke-test.md) for a controlled SSH host (pres
   roots. Verify separate authority/description, no paths/foreign IDs/new grants and
   existing invalid-credential/closed-terminal rejection.
 
+## Diagnosing an unavailable main-checkout observation
+
+Debug-enabled builds write bounded `checkout-observation` transition records into
+`<userData>/attention-diagnostics/attention*.jsonl`, alongside the broker and
+publication records. They include terminal/revision, transport, provenance,
+launch kind and registration presence, and the relationship of the reported
+context to the launch context. `resolutionAgrees` compares the published context
+ID with a fresh lookup against that terminal's current workspace registrations.
+`lexicallyInsideLaunch` versus `resolvedInsideLaunch` can distinguish a local
+symlink spelling; remote comparisons remain lexical, not host realpath proof.
+No paths, workspace/context/session IDs, prompts or hook payloads are written by
+these records. Unchanged observations do not produce a record on every lifecycle
+revision; retirement clears the bounded in-memory transition key.
+
+These records are diagnostics only. Re-resolving for comparison never repairs a
+snapshot, adopts a directory, changes selection, or grants filesystem/Git access.
+A genuinely external report must remain unavailable. A false
+`resolutionAgrees` is a lead for investigating registration/event ordering, not
+permission to use the observed directory.
+
+For a recurrence, preserve the rotated diagnostics promptly and note the time,
+harness and visible action. In debug DevTools,
+`await window.clankerAttention.explain("<terminal-id>")` also provides the main
+snapshot and renderer `checkoutPresentation` (focused terminal, launch ID,
+selection, provenance and Git generation). That on-demand explanation **can
+contain private paths/IDs**: inspect it locally and sanitize before sharing.
+Correlate the transition revision with broker verdicts and renderer comparison;
+refocus, workspace switches and a fresh native report should be recorded separately.
+
+After `npm run build`, run `npm run smoke:attention:claude-checkout` for a
+provider-free native check using the installed Claude CLI, disposable repository,
+isolated HOME and loopback Anthropic response fixture. It executes real Bash/Git
+inventory, an intentional move outside the registered main checkout, then a return
+to main, and checks broker location/context/provenance after each turn. It makes
+no paid model requests and retains only categorical event facts. This is a native
+**print-mode CLI** check, not a real TUI or built-Electron reproduction of an
+intermittent field failure. Claude 2.1.301 passed these three transitions; that
+result does not establish a root cause or close #192. Keep the field issue open
+until its actual observed/registered mismatch is captured.
+
 ## Verification record
 
 On this branch's implementation host:
