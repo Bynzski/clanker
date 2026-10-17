@@ -155,7 +155,15 @@ let mainWindow: BrowserWindow | null = null;
 // Reported agent locations resolve against the checkout contexts main registered for the
 // reporting terminal's workspace. Read lazily: events only arrive after both exist.
 const agentAttentionBroker = new AgentAttentionBroker((change) => {
-  attentionTelemetry()?.publish(change.terminalId, change.revision, change.snapshot?.runtime.status ?? 'retired', isWindowAvailable(mainWindow));
+  const telemetry = attentionTelemetry();
+  telemetry?.publish(change.terminalId, change.revision, change.snapshot?.runtime.status ?? 'retired', isWindowAvailable(mainWindow));
+  if (telemetry) {
+    const terminal = terminals.get(change.terminalId);
+    const workspace = terminal?.workspaceId ? workspaceRegistry.getWorkspace(terminal.workspaceId) : null;
+    telemetry.checkoutObservations.observe(change.terminalId,
+      workspace && workspace.location.environmentId !== 'local' ? 'remote' : 'local', change.snapshot, terminal,
+      terminal?.workspaceId ? workspaceRegistry.getCheckoutContextsForWorkspace(terminal.workspaceId) : []);
+  }
   if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention-publish', JSON.stringify({
     terminalId: change.terminalId, revision: change.revision, status: change.snapshot?.runtime.status ?? 'retired',
     rendererAvailable: isWindowAvailable(mainWindow),

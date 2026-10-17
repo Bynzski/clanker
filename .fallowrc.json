@@ -34,6 +34,7 @@
       "files": [
         "scripts/app-close-guard-smoke.cjs",
         "scripts/claude-attention-smoke.cjs",
+        "scripts/claude-checkout-smoke.cjs",
         "scripts/codex-attention-smoke.cjs",
         "scripts/codex-attention-tui-smoke.cjs",
         "scripts/native-attention-smoke.cjs",

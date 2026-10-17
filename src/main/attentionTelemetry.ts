@@ -5,6 +5,7 @@ import type { AttentionReceipt } from '../shared/types/attentionReceipt';
 import type { AttentionVerdict } from '../shared/attentionProtocol';
 import type { AttentionTraceEntry, AuthRejectionAttribution } from './agentAttentionBroker';
 import { eventLoopDelay } from './eventLoopDelay';
+import { CheckoutObservationDiagnostics } from './checkoutObservationDiagnostics';
 
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_QUEUE = 256;
@@ -88,6 +89,7 @@ type RendererUnavailableReason = 'navigation' | 'gone' | 'closed' | 'shutdown' |
 
 /** Observation only. Receipts and diagnostic timers cannot mutate the broker or acknowledge UI. */
 export class AttentionTelemetry {
+  readonly checkoutObservations = new CheckoutObservationDiagnostics(record => this.writer.append(record), () => this.now());
   private pending = new Map<string, PendingPublication>();
   private recent = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
