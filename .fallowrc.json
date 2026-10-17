@@ -38,6 +38,7 @@
         "scripts/codex-attention-tui-smoke.cjs",
         "scripts/native-attention-smoke.cjs",
         "scripts/opencode-attention-smoke.cjs",
+        "scripts/opencode-bridge-smoke.cjs",
         "scripts/pi-bridge-smoke.cjs",
         "scripts/ssh-preview-session-smoke.cjs",
         "scripts/workspace-multi-browser-smoke.cjs",
