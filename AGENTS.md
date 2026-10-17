@@ -142,7 +142,7 @@ PTY processes in main via `node-pty`, stream via IPC to renderer (@xterm/xterm 6
 
 Browser visibility belongs to the workspace explicitly activated through `BROWSER_ACTIVATE`, which reconciles its renderer-selected tab. Background create/switch/close/reorder/bounds operations cannot claim visibility; bounds remain non-authoritative for established tab selection. Async tab actions must respect newer selections and workspace switches.
 
-Native `WebContentsView` in main, toolbar state in renderer. Web-initiated navigation is limited to `http:`/`https:`; trusted app navigation also accepts local `file:` URLs and absolute paths. External-open URLs are separately validated. Annotation: element selection with injected JS runtime; escape handling via main process and runtime; re-inject on navigation.
+Native `WebContentsView` in main, toolbar state in renderer. Web-initiated navigation allows `http:`/`https:` plus existing local file links when both the current and initiating documents and target are inside the registered local workspace root (realpath-checked). Local popup links reuse the same tab only when all frames are local within that root; redirects never grant file access. SSH/Assistant owners grant no desktop file-link root. Trusted app navigation also accepts explicit local `file:` URLs and absolute paths. External-open URLs are separately validated. Annotation: element selection with injected JS runtime; escape handling via main process and runtime; re-inject on navigation.
 
 ### Git Integration
 

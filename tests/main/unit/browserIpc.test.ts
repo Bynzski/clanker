@@ -116,6 +116,7 @@ vi.mock('electron', () => ({
 
 // Import after mocking
 import { ipcMain, Menu } from 'electron';
+import { BROWSER_URL_UPDATED } from '../../../src/shared/ipcChannels';
 import {
   registerBrowserIpc,
   createBrowserViewForTab,
@@ -123,7 +124,7 @@ import {
   clampBrowserZoomLevel,
 } from '../../../src/main/ipc/browserIpc';
 import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
-import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
+import { BrowserHistoryService, getBrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
 import { assistantBrowserOwners, resolveBrowserOwnerKind } from '../../../src/main/browserOwner';
 import { assistantBrowserOwnerId } from '../../../src/shared/browserOwner';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
@@ -189,6 +190,19 @@ describe('registerBrowserIpc', () => {
     attachedDidFailLoadHandler?.({}, -3, 'aborted', 'https://127.0.0.1:4000/', true);
     attachedDidFailLoadHandler?.({}, -202, 'iframe', 'https://127.0.0.1:4000/', false);
     expect(onBrowserNavigation).toHaveBeenCalledTimes(1);
+  });
+
+  test('reports committed local file URLs, titles and navigation state to the renderer', () => {
+    const { deps } = createMockDeps();
+    const entry = createBrowserViewForTab('files', 'one', deps);
+    attachedDidNavigateHandler?.({}, 'file:///tmp/page%20two.html#section');
+    expect(entry?.url).toBe('file:///tmp/page%20two.html#section');
+    expect(entry?.title).toBe('Navigated title');
+    expect(deps.getMainWindow().webContents.send).toHaveBeenLastCalledWith(BROWSER_URL_UPDATED, {
+      workspaceId: 'files', tabId: 'one', url: 'file:///tmp/page%20two.html#section',
+      title: 'Navigated title', canGoBack: false, canGoForward: false,
+    });
+    expect(getBrowserHistoryService().query()).toEqual([]);
   });
 
   test('routes actual SSH tab creation into private scopes and fails closed for unregistered workspaces', () => {

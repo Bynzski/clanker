@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const APP_BROWSER_PROTOCOLS = new Set(['http:', 'https:']);
 const TRUSTED_APP_BROWSER_PROTOCOLS = new Set(['http:', 'https:', 'file:']);
@@ -52,8 +52,8 @@ function normalizeFileBrowserUrl(parsedUrl: URL): string | null {
 /**
  * Normalize URLs initiated by trusted app UI/IPC browser navigation.
  *
- * Keep untrusted web-initiated navigation on normalizeAppBrowserUrl() so remote
- * pages cannot pivot into local file access, while still allowing the app's
+ * Web-initiated file navigation additionally requires workspace containment and
+ * a local source document (see browserNavigation.ts), while allowing the app's
  * address bar and tab APIs to load explicit file:// URLs or absolute paths.
  */
 export function normalizeTrustedAppBrowserUrl(rawUrl: string): string | null {
@@ -85,6 +85,17 @@ export function normalizeExternalUrl(rawUrl: string): string | null {
     return null;
   }
   return parsedUrl.toString();
+}
+
+/** Existing local document inside a main-owned native workspace root. */
+export function normalizeWorkspaceFileBrowserUrl(rawUrl: string, root: string | null): string | null {
+  const parsed = normalizeUrl(rawUrl);
+  if (!root || parsed?.protocol !== 'file:' || !normalizeFileBrowserUrl(parsed)) return null;
+  try {
+    return resolveExistingFileWithinDirectory(fileURLToPath(parsed), root) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveExistingDirectory(dirPath: string, fallback?: string): string | null {
