@@ -43,7 +43,8 @@ async function run() {
   await app.whenReady();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const remote = `http://127.0.0.1:${server.address().port}/`;
-  const { createBrowserViewForTab } = require('../dist/main/main/ipc/browserIpc.js');
+  const browserIpcPath = path.join(__dirname, '../dist/main/main/ipc/browserIpc.js');
+  const { createBrowserViewForTab } = require(browserIpcPath);
   window = new BrowserWindow({ show: false });
   const entry = createBrowserViewForTab('fixture', 'files', {
     getMainWindow: () => window,
