@@ -15,6 +15,9 @@ import { codexBridgeConflicts, codexDeveloperInstructionsConflict } from '../../
 import { bridgeInstructions } from '../../../src/main/agentBridge/instructions';
 import type { HarnessAgentBridgeContext } from '../../../src/main/harnesses/types';
 
+// Provider contracts below exercise legacy argv deterministically, independent of the host CLI.
+vi.mock('../../../src/main/harnesses/opencode/version', () => ({ openCodeMajorVersion: () => 1 }));
+
 const URL_ = 'http://127.0.0.1:41234/mcp';
 let root: string;
 const scratchDirs: string[] = [];

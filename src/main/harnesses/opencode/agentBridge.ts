@@ -2,11 +2,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { HarnessAgentBridgeCapability } from '../types';
+import { openCodeMajorVersion } from './version';
+import { openCodePrivateServerArgs } from './privateServer';
 
 /**
  * OpenCode: `OPENCODE_CONFIG_CONTENT`, which OpenCode deep-merges over every other config source,
  * so the user's own `mcp` entries stay. The credential is referenced as `{env:...}`, never inlined.
  * If the user already supplies this variable the launch is left alone rather than overwritten.
+ * Detected 2.x launches use a private --standalone server independently of attention: an already
+ * running shared service never sees this launch's config or token. An explicit server declines
+ * attachment rather than sending credentials to, or overriding, a user-selected server.
  *
  * Lifecycle guidance travels as one extra entry of the config's `instructions` array. OpenCode
  * concatenates that array across config sources (measured with 1.18.34: the user's own entries stay and
@@ -14,8 +19,10 @@ import type { HarnessAgentBridgeCapability } from '../types';
  * directory that `dispose` removes. It carries no credential. No project instruction file is touched.
  */
 export const agentBridge: HarnessAgentBridgeCapability = {
-  prepare({ url, serverName, tokenEnvVar, env, instructions }) {
+  prepare({ url, serverName, tokenEnvVar, args, env, platform, instructions }) {
     if (env.OPENCODE_CONFIG_CONTENT) return null;
+    const privateArgs = (openCodeMajorVersion(env, platform) ?? 1) >= 2 ? openCodePrivateServerArgs(args) : undefined;
+    if (privateArgs === null) return null;
     let directory: string | undefined;
     const config: { mcp: Record<string, unknown>; instructions?: string[] } = {
       mcp: { [serverName]: { type: 'remote', url, enabled: true, headers: { Authorization: `Bearer {env:${tokenEnvVar}}` } } },
@@ -34,6 +41,7 @@ export const agentBridge: HarnessAgentBridgeCapability = {
     }
     const owned = directory;
     return {
+      ...(privateArgs ? { args: privateArgs } : {}),
       env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) },
       dispose() { if (owned) rmSync(owned, { recursive: true, force: true }); },
     };
