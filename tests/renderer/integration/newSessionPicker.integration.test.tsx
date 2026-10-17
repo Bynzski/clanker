@@ -15,6 +15,7 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import type { GitWorktree } from '../../../src/shared/types/git';
+import NewSessionButton from '../../../src/renderer/components/NewSessionButton';
 
 vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => null }));
 
@@ -119,12 +120,51 @@ describe('New Agent: harness + working copy', () => {
     openWorkspace();
     render(<Header />);
     await openPicker();
-    await user.click(screen.getByRole('button', { name: 'Main checkout' }));
+    await user.click(screen.getByRole('button', { name: /^Project checkout/ }));
     await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
     expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
     expect(api.spawnTerminal.mock.calls[0][7]).toBeUndefined();
     expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
+
+  it.each(['local', 'ssh-fixture'])('identifies the project branch separately from the main branch on %s', async environmentId => {
+    branches = ['main', 'spbun-props-refinement'];
+    api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'spbun-props-refinement', isDetached: false,
+      branches: branches.map(name => ({ name, isCurrent: name === 'spbun-props-refinement' })) });
+    worktrees = [listed(ROOT, 'spbun-props-refinement', { isMain: true })];
+    // Workspace Git presentation can describe a focused agent's worktree; use the fresh root lookup instead.
+    openWorkspace({ environmentId, gitCurrentBranch: 'focused-agent-branch' });
+    render(<NewSessionButton workspace={workspace()} visibleHarnessIds={['codex']} />);
+    await openPicker();
+
+    const project = await screen.findByRole('button', { name: /^Project checkout · spbun-props-refinement/ });
+    expect(project).toHaveTextContent(ROOT);
+    expect(screen.getByRole('combobox', { name: 'New branch starts from' })).toHaveDisplayValue('Project checkout · spbun-props-refinement');
+    expect(api.gitGetBranchState).toHaveBeenCalledWith(ROOT, 'ws');
+    await user.click(await section('Existing branches').findByRole('button', { name: 'main' }));
+    expect(project).toHaveAttribute('aria-pressed', 'false');
+    await launch();
+    await waitFor(() => expect(api.gitCreateWorktree).toHaveBeenCalledWith(ROOT, 'main', 'main', 'ws', { attachCheckoutContext: true, requireExistingBranch: true }));
+  });
+
+  it('identifies a detached project checkout in both the launch target and the new-branch base', async () => {
+    api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: null, isDetached: true, branches: [] });
+    openWorkspace(); render(<Header />); await openPicker();
+    expect(await screen.findByRole('button', { name: /^Project checkout · Detached HEAD/ })).toHaveTextContent(ROOT);
+    expect(screen.getByRole('combobox', { name: 'New branch starts from' })).toHaveDisplayValue('Project checkout · Detached HEAD');
+  });
+
+  it('keeps the project branch visible when worktree listing fails and never substitutes the focused Git branch', async () => {
+    api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'project-feature', isDetached: false, branches: [] });
+    api.gitListWorktrees.mockResolvedValue({ success: false, error: 'Listing unavailable', worktrees: [] });
+    openWorkspace({ gitCurrentBranch: 'focused-agent-branch' }); render(<Header />); await openPicker();
+    expect(await screen.findByRole('button', { name: /^Project checkout · project-feature/ })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'New Agent' }));
+    api.gitGetBranchState.mockResolvedValue({ success: false, isRepo: false, currentBranch: null, isDetached: false, branches: [], error: 'Branch unavailable' });
+    await openPicker();
+    expect(await screen.findByRole('button', { name: /^Project checkout · Branch unavailable/ })).toBeEnabled();
+    expect(screen.queryByText('Project checkout · project-feature')).toBeNull();
   });
 
   it('has exactly one launch entry point and defaults to main despite an editor checkout pin', async () => {
@@ -134,7 +174,7 @@ describe('New Agent: harness + working copy', () => {
     expect(screen.getAllByRole('button', { name: 'New Agent' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
     await openPicker();
-    expect(screen.getByRole('button', { name: 'Main checkout' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Project checkout/ })).toHaveAttribute('aria-pressed', 'true');
     await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
     expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
@@ -391,7 +431,7 @@ describe('New Agent: harness + working copy', () => {
     await user.click(await section('Existing worktrees').findByRole('button', { name: /task-a/ }));
     await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(1));
     await openPicker();
-    expect(screen.getByRole('button', { name: 'Main checkout' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Project checkout/ })).toHaveAttribute('aria-pressed', 'true');
     await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(2));
     expect(api.spawnTerminal.mock.calls[1][0]).toBe(ROOT);
   });

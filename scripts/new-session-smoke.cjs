@@ -18,6 +18,8 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: 'pipe
 git(project, 'init', '-b', 'main'); git(project, 'config', 'user.name', 'Fixture'); git(project, 'config', 'user.email', 'fixture@example.invalid');
 fs.writeFileSync(path.join(project, 'same.txt'), 'main\n'); git(project, 'add', '.'); git(project, 'commit', '-m', 'Main');
 const mainHead = git(project, 'rev-parse', 'HEAD');
+git(project, 'branch', '-m', 'spbun-props-refinement');
+git(project, 'branch', 'main');
 git(project, 'worktree', 'add', '-b', 'external-agent', external);
 fs.writeFileSync(path.join(external, 'same.txt'), 'external committed\n'); git(external, 'add', '.'); git(external, 'commit', '-m', 'External');
 const externalHead = git(external, 'rev-parse', 'HEAD');
@@ -27,6 +29,15 @@ fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ worksp
 let app;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) { const end = Date.now() + 15000; while (!await check()) { if (Date.now() > end) throw new Error(message); await pause(50); } }
+async function closeFixture() {
+  if (!app) return;
+  const page = await app.firstWindow();
+  const closing = app.close();
+  // Live fixture shells correctly trigger the app close guard, including on restart.
+  await page.getByRole('button', { name: 'Close Anyway', exact: true }).click({ timeout: 5000 }).catch(() => {});
+  await closing;
+  app = undefined;
+}
 (async () => {
   try {
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
@@ -41,10 +52,14 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     const open = async () => {
       await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
-      assert.equal(await page.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.getByRole('button', { name: /^Project checkout/ }).getAttribute('aria-pressed'), 'true');
     };
     await open();
     await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).waitFor();
+    await page.getByRole('button', { name: /^Project checkout · spbun-props-refinement/ }).waitFor();
+    assert.equal(await page.getByLabel('New branch starts from', { exact: true }).locator('option:checked').textContent(), 'Project checkout · spbun-props-refinement');
+    assert.equal(await page.getByRole('group', { name: 'Existing branches', exact: true }).getByRole('button', { name: 'main', exact: true }).count(), 1);
+    assert((await page.locator('.new-session-project-path').textContent()).includes(project));
     // Native capture at normal/compact/zoomed window sizes, assert every action remains reachable.
     for (const [width, height, zoom] of [[1100, 760, 1], [640, 480, 1], [640, 480, 1.25]]) {
       await app.evaluate(({ BrowserWindow }, { width, height, zoom }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(width, height); win.webContents.setZoomFactor(zoom); }, { width, height, zoom });
@@ -81,7 +96,7 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     assert.deepEqual((await terminals()).find(value => value.id === original.id), original);
     for (const [name, base, expected] of [['from-main', '', mainHead], ['from-external', external, externalHead]]) {
       await open(); await page.getByLabel('New branch', { exact: true }).fill(name);
-      await page.getByLabel('Start from committed HEAD', { exact: true }).selectOption(base);
+      await page.getByLabel('New branch starts from', { exact: true }).selectOption(base);
       await page.getByRole('button', { name: 'Create worktree only', exact: true }).click();
       await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
       const listing = git(project, 'worktree', 'list', '--porcelain');
@@ -102,7 +117,7 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     assert.equal(git(project, 'rev-parse', 'HEAD'), mainHead); assert.equal(git(external, 'rev-parse', 'HEAD'), externalHead);
     assert.equal(fs.readFileSync(path.join(external, 'dirty.txt'), 'utf8'), 'keep in source\n');
     // Restart the same saved profile: Git discovery must still validate a selected external root.
-    await app.close(); app = undefined;
+    await closeFixture();
     app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
     const restarted = await app.firstWindow(); restarted.setDefaultTimeout(15000);
     await until(async () => await restarted.getByRole('button', { name: 'New Agent', exact: true }).count() > 0 || await restarted.getByRole('button', { name: 'Open Workspace', exact: true }).count() > 0, 'Restarted shell absent');
@@ -113,7 +128,7 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
       await restarted.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
     }
     await restarted.getByRole('button', { name: 'New Agent', exact: true }).click();
-    assert.equal(await restarted.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await restarted.getByRole('button', { name: /^Project checkout/ }).getAttribute('aria-pressed'), 'true');
     await restarted.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await restarted.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).click();
     const beforeRestartLaunch = (await terminals()).length;
@@ -122,5 +137,5 @@ async function until(check, message) { const end = Date.now() + 15000; while (!a
     assert((await terminals()).some(value => value.cwd === external && value.context));
     console.log(JSON.stringify({ builtElectron: true, realGit: true, realPTY: true, mainDefault: 'passed', externalAndSharedLaunch: 'passed', committedHeadBasesAndCreateOnly: 'passed', existingBranch: 'passed', closingRetainsWorktreeAndBranch: 'passed', restartExplicitAdoption: 'passed', compactWindowAndZoom: 'passed', screenshots }));
   } catch (error) { console.error(error.stack); process.exitCode = 1; }
-  finally { await app?.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  finally { await closeFixture(); fs.rmSync(root, { recursive: true, force: true }); }
 })();

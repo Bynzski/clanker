@@ -199,7 +199,7 @@ let app, server; let modelRequests = 0;
     const prior = await mainState(mainId);
     await page.getByRole('button', { name: 'New Agent', exact: true }).click();
     await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
-    assert.equal(await page.getByRole('button', { name: 'Main checkout', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('button', { name: /^Project checkout/ }).getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
     await until(async () => (await view()).root === project, 'Explicit main launch blocked by unregistered observation');
     assert.equal((await mainState(mainId)).launch, prior.launch, 'Old agent launch binding moved');
