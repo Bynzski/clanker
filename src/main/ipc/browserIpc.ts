@@ -54,6 +54,7 @@ import type { BrowserPresentation } from '../../shared/types/browserPresentation
 import { getBrowserHistoryService } from '../browserHistory';
 import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { probeRecipePreview } from '../recipePreview';
+import { attachBrowserSecurityHandlers } from '../browserNavigation';
 
 export interface BrowserViewEntry {
   /** Stable renderer pane association; native resource/security ownership stays workspace-scoped. */
@@ -77,6 +78,7 @@ interface RegisterBrowserIpcDeps {
   getMainWindow: () => BrowserWindow | null;
   onBrowserNavigation?: (workspaceId: string, url: string, errorCode?: number) => void;
   getWorkspaceEnvironmentKind?: (workspaceId: string) => 'local' | 'ssh' | null;
+  getLocalWorkspaceRoot?: (workspaceId: string) => string | null;
   getBrowserViews: () => BrowserViewsByWorkspace;
   getActiveBrowserWorkspaceId: () => string | null;
   setActiveBrowserWorkspaceId: (id: string | null) => void;
@@ -313,22 +315,6 @@ function attachBrowserContextMenuHandlers(view: WebContentsView, mainWindow: Bro
   });
 }
 
-function attachBrowserSecurityHandlers(view: WebContentsView) {
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    const externalUrl = normalizeExternalUrl(url);
-    if (externalUrl) {
-      void shell.openExternal(externalUrl);
-    }
-    return { action: 'deny' };
-  });
-
-  view.webContents.on('will-navigate', (event, url) => {
-    if (!normalizeAppBrowserUrl(url)) {
-      event.preventDefault();
-    }
-  });
-}
-
 function createBrowserViewForTab(
   workspaceId: string,
   tabId: string,
@@ -355,7 +341,7 @@ function createBrowserViewForTab(
       );
     });
   }
-  attachBrowserSecurityHandlers(view);
+  attachBrowserSecurityHandlers(view.webContents, () => deps.getLocalWorkspaceRoot?.(workspaceId) ?? null);
   attachBrowserShortcutHandlers(view, { workspaceId, tabId, deps });
   attachBrowserContextMenuHandlers(view, mainWindow);
   view.setVisible(false);
@@ -365,7 +351,7 @@ function createBrowserViewForTab(
   const entry: BrowserViewEntry = { view, url: DEFAULT_BROWSER_URL, title: '' };
 
   const reportUrlChange = (navigatedUrl: string) => {
-    const safeUrl = normalizeAppBrowserUrl(navigatedUrl);
+    const safeUrl = normalizeTrustedAppBrowserUrl(navigatedUrl);
     if (!safeUrl) return;
 
     deps.onBrowserNavigation?.(workspaceId, safeUrl);
@@ -390,7 +376,9 @@ function createBrowserViewForTab(
     if (isMainFrame && code !== -3 && normalizeAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
   });
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
-  view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));
+  view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) reportUrlChange(url);
+  });
 
   // A WebContents can be destroyed while its tab stays selected (field evidence: 762 navigation
   // queries against one dead tab in 195 s). Forget only that view, so the next activation recreates

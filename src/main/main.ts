@@ -1,4 +1,5 @@
 import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
+import { toNativePath } from '../shared/pathNormalize';
 /**
  * Clanker Grid - Main Process Entry Point
  *
@@ -494,6 +495,10 @@ app.whenReady().then(() => {
 
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
+    getLocalWorkspaceRoot: (id) => {
+      const workspace = workspaceRegistry.getWorkspace(id);
+      return workspace?.environment.kind === 'local' ? toNativePath(workspace.location.path, process.platform) : null;
+    },
     onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
     getWorkspaceEnvironmentKind: (id) => resolveBrowserOwnerKind(id, {
       hasAssistant: (assistantId) => assistantService?.hasAssistant(assistantId) ?? false,
