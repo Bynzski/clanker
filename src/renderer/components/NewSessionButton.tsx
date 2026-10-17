@@ -44,6 +44,7 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
   const [choices, setChoices] = useState<SessionLaunchChoices>(NO_CHOICES);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState('');
+  const [projectBranch, setProjectBranch] = useState<string | null>(null);
   const requestRef = useRef(0);
   const liveWorkspace = useWorkspaceStore((state) => state.getWorkspaceById(workspace.id));
   const effectiveHarness = options.find((option) => option.id === chosenHarnessId) ?? preferred;
@@ -63,12 +64,16 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
     try {
       const [branchState, listing] = await Promise.all([
         window.electronAPI.gitGetBranchState(current.workspacePath, current.id),
-        window.electronAPI.gitListWorktrees(current.workspacePath, current.id),
+        worktreesEnabled ? window.electronAPI.gitListWorktrees(current.workspacePath, current.id) : null,
       ]);
       if (request !== requestRef.current || !isWorktreeRemovalWorkspaceCurrent(current)) return;
-      if (!branchState.success || !listing.success) {
+      setProjectBranch(branchState.success && branchState.isRepo
+        ? branchState.isDetached ? 'Detached HEAD' : branchState.currentBranch || 'No branch'
+        : null);
+      if (!worktreesEnabled) return;
+      if (!branchState.success || !listing?.success) {
         setChoices(NO_CHOICES);
-        setListError(listing.error || branchState.error || 'Could not read branches and worktrees. Main checkout is still available.');
+        setListError(listing?.error || branchState.error || 'Could not read branches and worktrees. Project checkout is still available.');
         return;
       }
       setChoices(buildSessionLaunchChoices({
@@ -84,13 +89,13 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
     } finally {
       if (request === requestRef.current) setLoading(false);
     }
-  }, [workspace.id]);
+  }, [workspace.id, worktreesEnabled]);
 
   useEffect(() => {
-    if (!open || !worktreesEnabled) return;
+    if (!open || !workspace.gitIsRepo) return;
     void loadChoices();
     return () => { requestRef.current += 1; };
-  }, [open, worktreesEnabled, loadChoices]);
+  }, [open, workspace.gitIsRepo, loadChoices]);
 
   const view = liveWorkspace && !listError ? rebuildStates(choices, liveWorkspace) : choices;
   const handleOpenChange = (next: boolean) => {
@@ -102,8 +107,15 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
       setTaskBranch('');
       setBasePath('');
       setChoices(NO_CHOICES);
+      setProjectBranch(null);
+      setListError('');
+      setLoading(workspace.gitIsRepo);
     }
   };
+  const projectLabel = workspace.gitIsRepo
+    ? `Project checkout · ${projectBranch ?? (loading ? 'Reading branch…' : 'Branch unavailable')}`
+    : 'Project folder';
+  const projectPath = liveWorkspace?.workspacePath ?? '';
   const target = (): SessionLaunchTarget | null => {
     if (destination.kind === 'main') return { kind: 'main' };
     if (destination.kind === 'new') {
@@ -151,24 +163,33 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
             </div>}
             <div className="new-session-pane new-session-copies" role="group" aria-label="Working copy">
               <div className="new-session-heading">Working copy</div>
-              {!creationOnly && <button type="button" aria-pressed={destination.kind === 'main'} className={`new-session-choice${destination.kind === 'main' ? ' selected' : ''}`} disabled={busy} onClick={() => setDestination({ kind: 'main' })}>Main checkout</button>}
+              {!creationOnly && <>
+                <button type="button" aria-pressed={destination.kind === 'main'} className={`new-session-choice${destination.kind === 'main' ? ' selected' : ''}`} disabled={busy}
+                  title={`${projectLabel}\n${projectPath}`} onClick={() => setDestination({ kind: 'main' })}>
+                  <span className="new-session-project">
+                    <span className="new-session-choice-label">{projectLabel}</span>
+                    <span className="new-session-project-path">{projectPath}</span>
+                  </span>
+                </button>
+                <div className="new-session-note">Launches in this folder{workspace.gitIsRepo ? ' on its current branch' : ''}.</div>
+              </>}
               {worktreesEnabled ? <>
                 <div className={`new-session-new${destination.kind === 'new' ? ' selected' : ''}`}>
                   <label className="new-session-subheading" htmlFor="new-session-branch">New branch</label>
                   <Input id="new-session-branch" value={taskBranch} disabled={busy} placeholder="issue-123-fix-login" autoComplete="off" spellCheck={false}
                     onFocus={() => setDestination({ kind: 'new' })} onChange={(event) => { setTaskBranch(event.target.value); setDestination({ kind: 'new' }); }} />
-                  <label className="new-session-subheading" htmlFor="new-session-base">Start from committed HEAD</label>
+                  <label className="new-session-subheading" htmlFor="new-session-base">New branch starts from</label>
                   <Select id="new-session-base" value={basePath} disabled={busy} onChange={(event) => { setBasePath(event.target.value); setDestination({ kind: 'new' }); }}>
-                    <option value="">Main checkout</option>
+                    <option value="">{projectLabel}</option>
                     {view.worktrees.filter((entry) => !entry.disabled).map((entry) => <option key={entry.path} value={entry.path}>{entry.label}</option>)}
                   </Select>
-                  <div className="new-session-note">Creates a new worktree. Uncommitted changes stay in the source checkout.</div>
+                  <div className="new-session-note">Creates a new branch and worktree from the selected checkout’s latest commit. Uncommitted changes stay in the source checkout.</div>
                 </div>
                 <div className="new-session-scroll">
                   {listError && <div className="new-session-note" role="status">{listError}</div>}
                   {loading && choices === NO_CHOICES && <div className="new-session-note">Loading…</div>}
                   {view.branches.length > 0 && <div className="new-session-section" role="group" aria-label="Existing branches">
-                    <div className="new-session-subheading">New worktree for existing branch</div>
+                    <div className="new-session-subheading">Check out an existing branch in a new worktree</div>
                     {view.branches.map((name) => <button key={name} type="button" aria-pressed={destination.kind === 'branch' && destination.name === name}
                       className={`new-session-choice${destination.kind === 'branch' && destination.name === name ? ' selected' : ''}`} disabled={busy} title={`Create a worktree for ${name}`} onClick={() => setDestination({ kind: 'branch', name })}>
                       <span className="new-session-choice-label">{name}</span>
@@ -184,7 +205,7 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
                     </button>)}
                   </div>}
                 </div>
-              </> : <div className="new-session-note">{workspace.isLinkedWorktree ? 'This project is already a linked worktree. New sessions use its registered root.' : 'Worktree destinations require a Git repository.'}</div>}
+              </> : <div className="new-session-note">{workspace.isLinkedWorktree ? 'This project is already a linked worktree. New sessions use the folder shown above.' : 'Worktree destinations require a Git repository.'}</div>}
             </div>
           </div>
           {error && <FormMessage variant="error" role="alert">{error}</FormMessage>}

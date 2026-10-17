@@ -89,6 +89,16 @@
 }
 .new-session-copies .new-session-choice-label { font-family: var(--font-mono); }
 
+.new-session-project { display: flex; flex-direction: column; min-width: 0; }
+.new-session-project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
 .new-session-state {
   flex: none;
   color: var(--text-muted);

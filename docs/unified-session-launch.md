@@ -2,11 +2,11 @@
 
 ## Implemented workflow
 
-The toolbar harness pills and isolated-agent picker are replaced by one **New Agent** picker. It starts at the project checkout on every opening, supports Terminal and the same configured harness list, and retains the existing checkout-bound pane/spawn transaction. An explicit target never reads the focused agent's checkout selection. Git inventory describes choices; main validates/adopts the selected linked root before launch. A second session can share the same validated root.
+The toolbar harness pills and isolated-agent picker are replaced by one **New Agent** picker. It starts at the project checkout on every opening, showing its current branch and folder path (the branch need not be named `main`), supports Terminal and the same configured harness list, and retains the existing checkout-bound pane/spawn transaction. An explicit target never reads the focused agent's checkout selection. Git inventory describes choices; main validates/adopts the selected linked root before launch. A second session can share the same validated root.
 
 The sidebar `WorkspaceCheckouts` inventory, main-root pin, selection, removal and repair controls are removed. Agent rows and project services remain. Editor tab pins, absolute file identities, focus routing, Git snapshots and observation provenance remain. Source Control Worktrees keeps the established removal, unlock, prune and recovery implementation. Its manual Create worktree action reuses the launch form in creation-only mode, with no session launch or harness controls.
 
-New worktrees distinguish a new branch from an existing unoccupied branch. New branches use a committed HEAD from the project or a chosen Git-listed usable worktree. Main re-reads Git and validates the source, including physical identity for local Git-listed roots; no source branch switch or dirty-file copy is involved. Creation without a session uses the same transaction and keeps its output on failure.
+New worktrees distinguish a new branch from an existing unoccupied branch. The **New branch starts from** selector identifies the project checkout’s current branch or a chosen Git-listed usable worktree as the source of the latest committed HEAD. To use an existing branch such as `main` directly, choose it under **Check out an existing branch in a new worktree**. New branches use a committed HEAD from the project or a chosen Git-listed usable worktree. Main re-reads Git and validates the source, including physical identity for local Git-listed roots; no source branch switch or dirty-file copy is involved. Creation without a session uses the same transaction and keeps its output on failure.
 
 ## Compatibility audit
 

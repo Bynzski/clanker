@@ -28,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **New Agent checkout labels (#203)** — show the project checkout’s current branch and folder, identify the source of a new branch, and distinguish checking out an existing branch in a new worktree.
 - **Hermes appearance and task refresh (#182, #184)** — coordinate explicit refresh, preserve valid concurrent task reads during cosmetic saves, reject stale profile/connection results and redact known credentials/private profile homes before truncating display metadata.
 - **Agent-attention state handling (#152, #162)** — harden acknowledgements, foreground/native-session correlation and provisional Stop handoffs. Native hook gaps and intermittent missing updates remain under investigation.
 - **Checkout and session safety (#147, #159, #166)** — protect in-use checkouts against unsafe cleanup, refuse unregistered observed directories as launch authority, and validate repository initialization and worktree adoption.
