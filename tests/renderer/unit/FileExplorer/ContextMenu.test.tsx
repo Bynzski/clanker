@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../../setup/fixtures';
 import { installElectronApiMock } from '../../../setup/electron';
 import ContextMenu from '../../../../src/renderer/components/FileExplorer/ContextMenu';
 import FileExplorer from '../../../../src/renderer/components/FileExplorer';
 import type { FileExplorerEntry } from '../../../../src/shared/types/fileExplorer';
+import { useAssistantNavStore } from '../../../../src/renderer/store/assistantNavStore';
+import { useAssistantSurfaceStore } from '../../../../src/renderer/store/assistantSurfaceStore';
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -401,6 +403,65 @@ describe('ContextMenu integration (FileExplorer right-click)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+  });
+
+  it.each(['escape', 'outside', 'action', 'unmount'] as const)('suppresses Browser until menu dismissal by %s', async (dismissal) => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace', browserVisible: true });
+    installElectronApiMock({ fileListDirectory: vi.fn().mockResolvedValue({
+      success: true, entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+    }) });
+    const { unmount } = render(<FileExplorer />);
+    fireEvent.contextMenu(await screen.findByText('index.ts'));
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.browserOverlayCount).toBe(1);
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.browserVisible).toBe(true);
+    if (dismissal === 'escape') fireEvent.keyDown(document, { key: 'Escape' });
+    else if (dismissal === 'outside') fireEvent.click(document.querySelector('.context-menu-overlay')!);
+    else if (dismissal === 'action') fireEvent.click(screen.getByText('Copy Path'));
+    else unmount();
+    await waitFor(() => expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.browserOverlayCount).toBe(0));
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.browserVisible).toBe(true);
+  });
+
+  it.each([false, true])('releases the original workspace suppression on switching and preserves other overlay leases (scoped: %s)', async (scoped) => {
+    const first = setActiveWorkspace({ workspacePath: '/workspace', browserVisible: true, browserOverlayCount: 1 });
+    const second = createWorkspaceFixture({ id: 'other', workspacePath: '/other', explorerVisible: true });
+    act(() => useWorkspaceStore.setState({ workspaces: [first, second] }));
+    installElectronApiMock({ fileListDirectory: vi.fn().mockResolvedValue({
+      success: true, entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+    }) });
+    render(<FileExplorer workspaceId={scoped ? first.id : undefined} />);
+    fireEvent.contextMenu(await screen.findByText('index.ts'));
+    expect(useWorkspaceStore.getState().getWorkspaceById(first.id)?.browserOverlayCount).toBe(2);
+    act(() => useWorkspaceStore.getState().selectWorkspace(second.id));
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    expect(useWorkspaceStore.getState().getWorkspaceById(first.id)?.browserOverlayCount).toBe(1);
+    expect(useWorkspaceStore.getState().getWorkspaceById(second.id)?.browserOverlayCount).toBe(0);
+  });
+
+  it('dismisses a parked workspace menu without suppressing the newly active Assistant', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace', browserVisible: true });
+    installElectronApiMock({ fileListDirectory: vi.fn().mockResolvedValue({
+      success: true, entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+    }) });
+    render(<FileExplorer workspaceId={workspace.id} />);
+    fireEvent.contextMenu(await screen.findByText('index.ts'));
+    act(() => useAssistantNavStore.getState().openAssistantSurface('fixture'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.browserOverlayCount).toBe(0);
+    expect(useAssistantSurfaceStore.getState().byId.fixture?.browserOverlayCount ?? 0).toBe(0);
+    act(() => useAssistantNavStore.getState().clearAllAssistants());
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the active Assistant Browser and releases it when the menu unmounts', () => {
+    useAssistantNavStore.getState().openAssistantSurface('fixture');
+    useAssistantSurfaceStore.getState().setBrowserVisible('fixture', true);
+    const { unmount } = render(<ContextMenu x={0} y={0} entry={createEntry('index.ts', '/workspace/index.ts', false)} onAction={vi.fn()} onClose={vi.fn()} />);
+    expect(useAssistantSurfaceStore.getState().byId.fixture.browserOverlayCount).toBe(1);
+    unmount();
+    expect(useAssistantSurfaceStore.getState().byId.fixture.browserOverlayCount).toBe(0);
+    useAssistantNavStore.getState().clearAllAssistants();
+    useAssistantSurfaceStore.getState().clearAll();
   });
 
   it('right-clicking a file opens the context menu', async () => {

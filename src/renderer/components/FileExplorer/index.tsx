@@ -17,7 +17,7 @@ import { useExplorerDirectoryLoader } from '../../lib/useExplorerDirectoryLoader
 import { matchingCheckoutGit, useCheckoutGitStore, checkoutGitAvailability } from '../../store/checkoutGitStore';
 import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { useScopedWorkspaceSelector } from '../WorkspaceScope';
+import { useScopedWorkspaceActivity, useScopedWorkspaceSelector } from '../WorkspaceScope';
 import FileTree from './FileTree';
 import { useExplorerFilter } from './explorerFilterStore';
 import ContextMenu, { type ContextAction } from './ContextMenu';
@@ -76,6 +76,7 @@ interface FileExplorerProps {
 
 export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExplorerProps) {
   const isSection = variant === 'section';
+  const explorerActive = useScopedWorkspaceActivity(workspaceId);
   const scopedWorkspace = useScopedWorkspaceSelector((current) => current && ({
     id: current.id, workspacePath: current.workspacePath, environmentId: current.environmentId,
     checkoutContexts: current.checkoutContexts, terminals: current.terminals,
@@ -136,6 +137,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
     resolvedWorkspaceId ? checkoutSelectionToken(resolvedWorkspaceId) : -1, explorerVisible]);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
+  if (!explorerActive && contextMenu !== null) setContextMenu(null);
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
@@ -656,8 +658,9 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         />
       </div>
       {!isSection && <div className="edge-resize-handle explorer-resize-handle" onMouseDown={handleResizeStart} />}
-      {contextMenu && (
+      {contextMenu && explorerActive && (
         <ContextMenu
+          workspaceId={resolvedWorkspaceId ?? undefined}
           x={contextMenu.x}
           y={contextMenu.y}
           entry={contextMenu.entry}
