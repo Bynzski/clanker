@@ -865,9 +865,19 @@ The private-server behavior is verified against the
 and [standalone process](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/services/standalone.ts).
 Its [command declarations](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/commands/commands.ts)
 and installed help expose `-m` / `--fork` on `run` (not the default TUI), and no
-`run --pure`. Clanker's legacy model-selection, TUI fork and AI-commit invocations
-still require separate compatibility work; this MCP fix does not claim to resolve
-those #189 follow-ups or 2.x SSH attention.
+`run --pure`. For detected local 2.x, Clanker now refuses an explicit startup model
+with guidance to clear the Clanker selection and use `/models` in the TUI. A local
+fork request is refused before launching anything, never silently changed to resume;
+ordinary resume remains available. AI commit generation is refused before collecting
+diff context or spawning inference because no equivalent to `--pure` isolation has
+been verified. Select another AI commit provider in Settings. These are explicit
+compatibility limits, not implementations of native 2.x model/fork/commit support.
+Catalog projection never probes the installed binary. Local 1.x and unknown versions
+(including Windows) retain legacy behavior. SSH decisions never consult the desktop
+version and remain unchanged; 2.x SSH launch/attention compatibility is still a #189
+follow-up. Evidence: installed OpenCode 2.0.26 `--help`, `run --help`, `session --help`
+and the tagged command declarations above; no inference, user config writes or native
+fork operations were performed for this compatibility review.
 
 ### Opt-in
 

@@ -4,6 +4,7 @@ import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
+import { assertLocalOpenCodeOperation, modelArgs } from './compatibility';
 import { agentBridge } from './agentBridge';
 import { defineHarness, type HarnessProvider } from '../types';
 
@@ -19,15 +20,16 @@ export const opencodeProvider = defineHarness({
   sessions: {
     discoveryOrder: 0,
     remote: remoteSessions,
-    resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
-    fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
+    resume: { support: 'native', build: (session, flags, transport) => buildInvocation(session, false, flags, transport) },
+    fork: { support: 'native', build: (session, flags, transport) => buildInvocation(session, true, flags, transport) },
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
   },
   attention: { resumePreservesSessionId: true, source: 'native', prepareResources, local, remote },
   agentBridge,
   aiCommit: { modelArg: '-m', parseOutput: parseOpenCodeCommitOutput,
+    validateLocal: () => assertLocalOpenCodeOperation('commit'),
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: ['run', '--pure', '--format', 'json', ...(model ? ['-m', model] : [])], env: { OPENCODE_PERMISSION: JSON.stringify({ '*': 'deny' }) }, stdin: prompt, timeoutMs: 90000 }),
   },
-  launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
+  launch: { command: 'opencode', args: [], modelArg: '-m', modelArgs, env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
 } satisfies HarnessProvider);

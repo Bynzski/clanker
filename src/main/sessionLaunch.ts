@@ -22,10 +22,10 @@ export function assertSessionSelectionFlags(harness: HarnessSession['harness'], 
   }
 }
 
-/** Pure provider CLI arguments, shared by local and SSH session launches. */
+/** Provider CLI arguments and transport-specific compatibility checks for session launches. */
 export function buildSessionCommand(session: HarnessSession, options: { operation: 'resume' | 'fork'; transport: 'local' | 'ssh'; userFlags?: string }) {
   const capability = getHarnessProvider(session.harness).sessions;
   const operation = capability?.[options.operation];
   if (!operation || (operation.transports && !operation.transports.includes(options.transport))) throw new HarnessCapabilityError('unsupported', `${session.harness} session invocation is not supported`);
-  return operation.build(session, options.userFlags);
+  return operation.build(session, options.userFlags, options.transport);
 }

@@ -302,6 +302,22 @@ describe('canonical commit execution', () => {
   }
   beforeEach(() => { vi.mocked(executeLocalHarnessCommand).mockReset(); });
 
+  test('runs provider compatibility validation before collecting context or spawning inference', async () => {
+    const { deps, handler } = setup();
+    const capability: HarnessAiCommitCapability = getHarnessProvider('opencode').aiCommit;
+    const guard = vi.spyOn(capability, 'validateLocal').mockImplementation(() => { throw new Error('OpenCode 2.x has no verified pure mode'); });
+    const collect = vi.fn();
+    registerAiCommitIpc({ ...deps,
+      getStore: () => ({ get: (key: string) => key === 'aiCommitProvider' ? 'opencode' : true }) as never,
+      getGitService: () => ({ getCommitPromptContext: collect }) as never,
+    });
+    try {
+      expect(await handler()({} as never, testHome())).toEqual({ success: false, error: 'OpenCode 2.x has no verified pure mode' });
+      expect(collect).not.toHaveBeenCalled();
+      expect(executeLocalHarnessCommand).not.toHaveBeenCalled();
+    } finally { guard.mockRestore(); }
+  });
+
   test('uses the CLI default without model discovery and summarizes all changes', async () => {
     const { deps, handler } = setup();
     registerAiCommitIpc(deps);

@@ -75,6 +75,7 @@ export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): () => Promis
       if (!store.get('aiCommitEnabled')) return { success: false, error: 'AI commit message generation is disabled' };
       const provider = findHarnessProvider(store.get('aiCommitProvider'));
       if (!provider?.aiCommit) return { success: false, error: 'Unsupported AI commit provider' };
+      provider.aiCommit.validateLocal?.();
       const binding = deps.getHarnessAccountService?.().resolveBinding({
         environmentId: 'local', harness: provider.descriptor.id, forLaunch: true,
       });

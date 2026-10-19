@@ -28,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **OpenCode 2.x CLI compatibility (#189)** — report unsupported local startup-model, TUI-fork and AI-commit requests before execution instead of sending invalid flags, silently resuming a fork, or weakening commit isolation. Ordinary launch/resume and legacy 1.x behavior remain available; SSH compatibility is unchanged.
 - **Explorer context menus (#207)** — keep file actions visible above native Browser panes, restoring Browser visibility when the menu closes.
 - **Local Browser document links (#205)** — follow relative and file links within the local workspace, including links requesting a new window, while blocking remote pages and redirects from accessing local files. Keep the address bar in sync with local navigation.
 - **New Agent checkout labels (#203)** — show the project checkout’s current branch and folder, identify the source of a new branch, and distinguish checking out an existing branch in a new worktree.
