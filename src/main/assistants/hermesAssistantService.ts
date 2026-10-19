@@ -1,4 +1,5 @@
 import { StringDecoder } from 'node:string_decoder';
+import { HermesOwnedChild, HERMES_CLEANUP_ERROR } from './hermesOwnedChild';
 import { AssistantPresentationService, type PresentationBinding } from './assistantPresentation';
 import type { AvatarDecoder } from './assistantAvatar';
 import type { AssistantAvatar, AssistantPresentation, AssistantPresentationWriteResult } from '../../shared/types/assistantPresentation';
@@ -44,6 +45,8 @@ export interface HermesAssistantServiceDeps {
   now?: () => number;
   startTimeoutMs?: number;
   stopGraceMs?: number;
+  /** Bounded wait for exact-child exit acknowledgement after SIGKILL. */
+  stopKillMs?: number;
   /** A connected backend must survive this long before a later crash counts as a new failure episode. */
   stableAfterMs?: number;
   decodeAvatar?: AvatarDecoder;
@@ -97,9 +100,8 @@ export class HermesAssistantService {
   private roster: RosterEntry[] = [];
   private endpoint: Endpoint | undefined;
   private rpc: HermesRpcClient | undefined;
-  private child: ServeChild | undefined;
-  private childExited: Promise<void> | undefined;
-  private childReady = false;
+  private owned: HermesOwnedChild | undefined;
+  private shuttingDown = false;
   /** The latest in-flight owned-child stop. Discovery waits for it so a quick re-enable never races (or strands behind) an old stop. */
   private stopPromise: Promise<void> | undefined;
   private stopping = false;
@@ -139,7 +141,8 @@ export class HermesAssistantService {
       available: this.available,
       presentationRevision: this.presentation.revision,
       settings: { ...this.settings, ...(this.settings.hiddenAssistantIds ? { hiddenAssistantIds: [...this.settings.hiddenAssistantIds] } : {}) },
-      service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
+      service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}),
+        ...(this.owned?.cleanupIncomplete ? { cleanupIncomplete: true } : {}) },
       assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
       profiles: this.roster.map((entry) => ({ ...entry.public })),
       surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state })),
@@ -147,7 +150,7 @@ export class HermesAssistantService {
   }
 
   /** Shutdown stops only this exact owned child, never an adopted external service. */
-  hasRunningOwnedService(): boolean { return this.childAlive(); }
+  hasRunningOwnedService(): boolean { return !!this.owned; }
 
   private publish(): AssistantSnapshot {
     const snapshot = this.get();
@@ -173,8 +176,8 @@ export class HermesAssistantService {
     const previous = this.settings;
     this.settings = next;
     this.deps.writeSettings({ ...next });
-    if (previous.enabled && !next.enabled) {
-      void this.disable();
+    if (!next.enabled && (previous.enabled || this.owned?.stopRequested)) {
+      void this.disable().catch(() => undefined);
       return this.get();
     }
     if (!this.available) return this.publish();
@@ -197,11 +200,9 @@ export class HermesAssistantService {
     this.endpoint = undefined;
     this.roster = [];
     this.setState('disabled');
-    this.ownership = null;
+    this.ownership = this.owned ? 'clanker' : null;
     this.publish();
-    const generation = this.generation;
     await this.stopOwned();
-    if (generation === this.generation) this.ownership = null;
   }
 
   /** Window teardown: surfaces end, the backend (including an owned child) keeps running. */
@@ -211,6 +212,7 @@ export class HermesAssistantService {
 
   /** App quit: sockets close and only the exact owned child is stopped. */
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     this.generation++;
     this.refreshOp = undefined;
     this.closeAllSessions();
@@ -221,7 +223,11 @@ export class HermesAssistantService {
   // ── refresh (coalesced within one generation) ───────────────────────────────
 
   refresh(): Promise<AssistantSnapshot> {
-    if (!this.settings.enabled) return Promise.reject(new Error('Assistants integration is disabled'));
+    // Retry remains available when disabled if an exact owned child still needs cleanup.
+    if (!this.settings.enabled) return this.owned?.stopRequested
+      ? this.stopOwned().then(() => this.get())
+      : Promise.reject(new Error('Assistants integration is disabled'));
+    if (this.shuttingDown) return Promise.reject(new Error('Assistants integration is shutting down'));
     if (!this.available) return Promise.resolve(this.get());
     if (this.refreshOp) return this.refreshOp;
     const generation = this.generation;
@@ -233,27 +239,27 @@ export class HermesAssistantService {
   }
 
   private current(generation: number): boolean {
-    return generation === this.generation && this.settings.enabled && !this.deps.isShuttingDown() && !this.stopping;
+    return generation === this.generation && this.settings.enabled && !this.shuttingDown && !this.deps.isShuttingDown() && !this.stopping;
   }
 
   private async run(generation: number): Promise<AssistantSnapshot> {
     // Serialize behind any owned-child stop still in flight: no second backend starts while the old one is
     // stopping, and once it settles this attempt is revalidated against the LATEST generation/settings
     // (a newer disable makes it a no-op; a newer enable is the attempt that proceeds).
-    if (this.stopPromise) {
-      await this.stopPromise;
-      if (!this.current(generation)) return this.get();
-    }
-    this.setState(this.endpoint ? this.state : 'probing');
-    if (this.state === 'probing') this.publish();
     try {
+      if (this.stopPromise || this.owned?.stopRequested) {
+        await (this.stopPromise ?? this.stopOwned());
+        if (!this.current(generation)) return this.get();
+      }
+      this.setState(this.endpoint ? this.state : 'probing');
+      if (this.state === 'probing') this.publish();
       // 1. Reuse a healthy control connection for a plain roster refresh.
       if (this.rpc && !this.rpc.isClosed && this.endpoint) {
         try { await this.loadRoster(generation, this.rpc); return this.finishConnected(generation); }
         catch { this.dropRpc(); }
       }
       // 2. (Re)discover: adopt a compatible running backend, else optionally start our own.
-      let endpoint = this.child && this.child.exitCode === null && this.endpoint?.ownership === 'clanker' ? this.endpoint : undefined;
+      let endpoint = this.childAlive() && this.endpoint?.ownership === 'clanker' ? this.endpoint : undefined;
       if (!endpoint) {
         const probe = await discoverHermesBackend(this.fetcher, this.deps.readRendezvous);
         if (!this.current(generation)) return this.get();
@@ -278,7 +284,7 @@ export class HermesAssistantService {
       await this.loadRoster(generation, rpc);
       return this.finishConnected(generation);
     } catch (error) {
-      if (!this.current(generation)) return this.get();
+      if (!this.current(generation) || this.owned?.cleanupIncomplete) return this.get();
       this.dropRpc();
       return this.finish(generation, this.endpoint?.ownership === 'clanker' && !this.childAlive() ? 'error' : 'offline', safeMessage(error));
     }
@@ -301,33 +307,26 @@ export class HermesAssistantService {
 
   // ── Clanker-owned child ─────────────────────────────────────────────────────
 
-  private childAlive(): boolean { return !!this.child && this.child.exitCode === null; }
+  private childAlive(): boolean { return !!this.owned && !this.owned.hasExited; }
 
   private async startOwned(generation: number): Promise<Endpoint | undefined> {
+    if (!this.current(generation)) return undefined;
+    // Even an unexpectedly lost endpoint cannot authorize replacement of an owned child.
+    if (this.owned) throw new Error(HERMES_CLEANUP_ERROR);
     const token = (this.deps.generateToken ?? generateServiceToken)();
     let child: ServeChild;
     try { child = this.spawnServe(token); }
     catch { this.finish(generation, 'error', 'Hermes could not be started. Is the hermes command installed?'); return undefined; }
-    this.child = child;
-    this.childReady = false;
-    this.stopping = false;
-    this.childExited = new Promise<void>((resolve) => {
-      child.on('exit', (() => {
-        resolve();
-        if (this.child === child) this.onOwnedExit(child);
-      }) as never);
-      child.on('error', (() => resolve()) as never);
-    });
+    const owned = new HermesOwnedChild(child, () => this.onOwnedExit(child));
+    this.owned = owned;
+    this.ownership = 'clanker';
+    let port: number;
     try {
-      const port = await waitForServeReady(child, this.deps.startTimeoutMs ?? 30_000);
-      this.childReady = true;
-      if (!this.current(generation)) { await this.killChild(child); if (this.child === child) this.child = undefined; return undefined; }
-      return { port, token, ownership: 'clanker' };
+      port = await waitForServeReady(child, this.deps.startTimeoutMs ?? 30_000);
     } catch (error) {
       // Keep owning the failed child until its bounded termination finishes: this refresh stays pending
       // (so a Retry coalesces onto it) and no replacement can spawn beside a still-live failed child.
-      await this.killChild(child);
-      if (this.child === child) this.child = undefined;
+      await this.stopOwned(owned);
       if (!this.current(generation)) return undefined;
       // A host owner can appear between discovery and spawn. New Hermes then attaches and exits
       // instead of emitting READY. Rediscover after our failed child is cleaned; never claim it.
@@ -337,19 +336,27 @@ export class HermesAssistantService {
       this.finish(generation, probe.kind === 'unusable' ? 'detected-unusable' : 'error', probe.kind === 'unusable' ? probe.reason : safeMessage(error));
       return undefined;
     }
+    owned.ready = true;
+    if (!this.current(generation) || this.owned !== owned || owned.hasExited) {
+      await this.stopOwned(owned);
+      return undefined;
+    }
+    return { port, token, ownership: 'clanker' };
   }
 
   /** Unexpected exit of the owned child. At most one automatic restart per failure episode. */
   private onOwnedExit(child: ServeChild): void {
-    if (this.child !== child) return;
-    this.child = undefined;
-    // A startup failure is reported by startOwned; only a backend that was serving counts as a crash.
-    if (!this.childReady) return;
-    if (this.stopping || this.deps.isShuttingDown() || !this.settings.enabled) return;
+    const owned = this.owned;
+    if (owned?.child !== child) return;
+    // Startup failure/intentional stop is settled by its owning operation, never a crash restart.
+    if (!owned.ready || owned.stopRequested) return;
+    this.owned = undefined;
+    if (this.stopping || this.shuttingDown || this.deps.isShuttingDown() || !this.settings.enabled) return;
     this.dropRpc();
     this.markSessionsDisconnected();
     const wasEstablished = this.state === 'connected';
     this.endpoint = undefined;
+    this.ownership = null;
     if (wasEstablished && this.now() - this.connectedAt > (this.deps.stableAfterMs ?? 60_000)) this.episodeRestarts = 0;
     if (this.settings.autoStart && this.episodeRestarts < 1) {
       this.episodeRestarts++;
@@ -363,31 +370,38 @@ export class HermesAssistantService {
     this.publish();
   }
 
-  private async killChild(child: ServeChild): Promise<void> {
-    try { child.kill('SIGTERM'); } catch { /* already gone */ }
-    const grace = this.deps.stopGraceMs ?? 3000;
-    await Promise.race([this.childExited ?? Promise.resolve(), new Promise<void>((resolve) => setTimeout(resolve, grace).unref?.())]);
-    if (child.exitCode === null) { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
-  }
-
-  /** Records the stop so later discovery can wait for it; chained so overlapping stops settle together. */
-  private stopOwned(): Promise<void> {
-    const previous = this.stopPromise;
+  /** One exact-child cleanup attempt; overlapping disable/shutdown/startup cleanup shares it. */
+  private stopOwned(expected = this.owned): Promise<void> {
+    // An old startup completion must never stop a newer generation's child.
+    if (this.owned !== expected) return Promise.resolve();
+    if (this.stopPromise) return this.stopPromise;
     const operation = this.stopOwnedChild();
-    const combined: Promise<void> = Promise.all([previous, operation]).then(() => undefined).finally(() => {
-      if (this.stopPromise === combined) this.stopPromise = undefined;
-    });
-    this.stopPromise = combined;
-    return combined;
+    this.stopPromise = operation;
+    const clear = () => { if (this.stopPromise === operation) this.stopPromise = undefined; };
+    operation.then(clear, clear);
+    return operation;
   }
 
-  /** Stops exactly the child Clanker spawned. An adopted/external backend is never touched. */
+  /** Retain the exact handle on failure. No discovery/adoption/replacement until cleanup verifies. */
   private async stopOwnedChild(): Promise<void> {
-    const child = this.child;
-    if (!child) return;
+    const owned = this.owned;
+    if (!owned) return;
     this.stopping = true;
-    this.child = undefined;
-    try { await this.killChild(child); } finally { this.stopping = false; }
+    this.endpoint = undefined;
+    try {
+      await owned.stop(this.deps.stopGraceMs ?? 3000, this.deps.stopKillMs ?? 3000);
+      if (this.owned === owned) {
+        this.owned = undefined;
+        this.ownership = null;
+        this.setState(this.settings.enabled ? 'offline' : 'disabled');
+        this.publish();
+      }
+    } catch {
+      this.ownership = 'clanker';
+      this.setState('error', HERMES_CLEANUP_ERROR);
+      this.publish();
+      throw new Error(HERMES_CLEANUP_ERROR);
+    } finally { this.stopping = false; }
   }
 
   // ── control connection and roster ───────────────────────────────────────────

@@ -28,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Hermes owned-service shutdown (#187)** — wait for confirmed child exit after TERM/KILL, retain unverified cleanup ownership, block replacement until cleanup succeeds, and offer cleanup Retry even when Assistants are disabled. Adopted/Desktop-owned backends are never stopped; native descendant cleanup remains separate investigation work.
 - **OpenCode 2.x CLI compatibility (#189)** — report unsupported local startup-model, TUI-fork and AI-commit requests before execution instead of sending invalid flags, silently resuming a fork, or weakening commit isolation. Ordinary launch/resume and legacy 1.x behavior remain available; SSH compatibility is unchanged.
 - **Explorer context menus (#207)** — keep file actions visible above native Browser panes, restoring Browser visibility when the menu closes.
 - **Local Browser document links (#205)** — follow relative and file links within the local workspace, including links requesting a new window, while blocking remote pages and redirects from accessing local files. Keep the address bar in sync with local navigation.

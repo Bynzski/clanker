@@ -33,9 +33,11 @@ export default function AssistantsSettings({ initialAssistantId }: { initialAssi
   const { settings, service } = snapshot;
   const profiles = snapshot.profiles ?? snapshot.assistants;
   const connected = settings.enabled && service.state === 'connected';
-  const transition = settings.enabled ? TRANSITION[service.state] : undefined;
-  const problem = settings.enabled && !connected && !transition ? (error || service.error || PROBLEM[service.state]) : undefined;
-  const statusText = !settings.enabled ? 'Off'
+  const transition = settings.enabled && !service.cleanupIncomplete ? TRANSITION[service.state] : undefined;
+  const problem = service.cleanupIncomplete || (settings.enabled && !connected && !transition)
+    ? (error || service.error || PROBLEM[service.state]) : undefined;
+  const statusText = service.cleanupIncomplete ? 'Cleanup incomplete · Clanker-managed process retained'
+    : !settings.enabled ? 'Off'
     : connected ? `Connected${service.ownership === 'clanker' ? ' · Clanker-managed' : service.ownership === 'external' ? ' · External' : ''}`
     : transition ?? PROBLEM[service.state] ?? 'Not connected';
   const info = `Uses a local Hermes service (hermes serve). Ordinary Hermes harness usage is independent. Status: ${statusText}.`;
@@ -54,7 +56,7 @@ export default function AssistantsSettings({ initialAssistantId }: { initialAssi
         onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })}>Start Hermes service when needed</Checkbox>
       {transition && <AssistantNotice tone="info" message={transition} />}
       {problem && <AssistantNotice tone="error" message={problem} busy={busy} onRetry={() => void refresh()} />}
-      {(!settings.enabled || connected) && error && <AssistantNotice tone="error" message={error} />}
+      {!problem && (!settings.enabled || connected) && error && <AssistantNotice tone="error" message={error} />}
       <AssistantProfileSelector profiles={profiles} selectedId={selectedId} hiddenIds={settings.hiddenAssistantIds ?? []}
         connected={connected} enabled={settings.enabled} busy={busy} onSelect={setSelectedId}
         onRefresh={() => { void refresh().then(() => setProfilesRevision((value) => value + 1)); }}

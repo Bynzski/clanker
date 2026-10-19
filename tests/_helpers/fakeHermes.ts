@@ -21,6 +21,7 @@ export class FakeSocket implements WebSocketLike {
 
 export function fakeChild(): ServeChild & EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: ReturnType<typeof vi.fn>; exitCode: number | null; crash: (code?: number) => void } {
   const child = new EventEmitter() as never as ReturnType<typeof fakeChild>;
+  Object.defineProperty(child, 'pid', { value: 12345, configurable: true });
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.exitCode = null;

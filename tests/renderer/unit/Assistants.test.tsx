@@ -387,6 +387,22 @@ it.each([
   await waitFor(() => expect(window.electronAPI.refreshAssistants).toHaveBeenCalled());
 });
 
+it('Settings offers cleanup Retry even while Assistants are disabled, without claiming the retained process is Off', async () => {
+  const error = 'Hermes service cleanup could not be confirmed. Retry cleanup.';
+  mockMain(snap({ settings: { enabled: false, autoStart: true }, assistants: [],
+    service: { state: 'error', ownership: 'clanker', cleanupIncomplete: true, error } }));
+  vi.mocked(window.electronAPI.refreshAssistants).mockResolvedValue(snap({ settings: { enabled: false, autoStart: true },
+    service: { state: 'disabled', ownership: null }, assistants: [] }));
+  render(<AssistantsSettings />);
+  expect(await screen.findByText(error)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Hermes Assistants information' })).toHaveAttribute('title', expect.stringContaining('Cleanup incomplete'));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(window.electronAPI.refreshAssistants).toHaveBeenCalled());
+  expect(window.electronAPI.configureAssistants).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull());
+  expect(screen.getByRole('checkbox', { name: 'Enable Hermes Assistants' })).not.toBeChecked();
+});
+
 it('Settings, disabled: autoStart stays visible but subordinate, and toggling Assistants off keeps the autoStart preference', async () => {
   mockMain(snap({ settings: { enabled: true, autoStart: true } }));
   render(<AssistantsSettings />);
