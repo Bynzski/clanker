@@ -259,7 +259,8 @@ describe('Clanker-owned backend', () => {
     expect(snapshot.service.error).toMatch(message);
     expect(snapshot.service.error).not.toContain('owned-token');
     await flush(30);
-    expect(children[0].kill).toHaveBeenCalled();
+    if (_name === 'exit before ready') expect(children[0].kill).not.toHaveBeenCalled();
+    else expect(children[0].kill).toHaveBeenCalled();
   });
   it('reports a spawn failure (hermes not installed) as an error without a token in it', async () => {
     const { service, hermes } = setup({ enabled: true, autoStart: true }, { spawnServe: () => { throw new Error('hermes is not installed /secret/path owned-token'); } });

@@ -61,11 +61,15 @@ export async function probeExternalBackend(fetcher: FetchLike, port = HERMES_DEF
 export function generateServiceToken(): string { return randomBytes(32).toString('base64url'); }
 
 export interface ServeChild {
+  /** Undefined only when no native process was spawned. */
+  readonly pid?: number;
+  readonly signalCode?: NodeJS.Signals | null;
   stdout: NodeJS.ReadableStream | null;
   stderr: NodeJS.ReadableStream | null;
   kill(signal?: NodeJS.Signals): boolean;
-  on(event: 'exit' | 'error', listener: (...args: never[]) => void): unknown;
-  once(event: 'exit', listener: (...args: never[]) => void): unknown;
+  on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   exitCode: number | null;
 }
 

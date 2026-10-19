@@ -99,6 +99,7 @@ import { registerTerminalIpc, setAppShuttingDown } from '../../../src/main/ipc/t
 import { app } from 'electron';
 import { AppClosePrompt } from '../../../src/main/appClosePrompt';
 import { RemotePreviewManager } from '../../../src/main/remote/remotePreviewManager';
+import { AgentBridgeService } from '../../../src/main/agentBridge/service';
 
 describe('Terminal Shutdown Behavior', () => {
   beforeEach(() => {
@@ -107,10 +108,15 @@ describe('Terminal Shutdown Behavior', () => {
     setAppShuttingDown(false);
   });
 
-  test('quit cancellation preserves live PTYs; approval drains teardown once before final quit', async () => {
+  test('quit cancellation preserves live PTYs; cleanup rejection still drains teardown once before final quit', async () => {
     const { terminals } = await import('../../../src/main/main');
     let finish!: () => void;
     const close = vi.spyOn(RemotePreviewManager.prototype, 'close').mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    // Hermes shutdown can now reject on unverified cleanup. Any rejected owner
+    // must leave the other quit drains intact, so exercise the shared boundary.
+    const cleanupError = new Error('Owned service cleanup could not be confirmed');
+    const shutdown = vi.spyOn(AgentBridgeService.prototype, 'shutdown').mockRejectedValueOnce(cleanupError);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const handler = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === 'before-quit')![1] as (event: { preventDefault: () => void }) => void;
     const event = { preventDefault: vi.fn() };
     vi.mocked(app.quit).mockClear();
@@ -121,6 +127,7 @@ describe('Terminal Shutdown Behavior', () => {
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(close).not.toHaveBeenCalled();
+    expect(shutdown).not.toHaveBeenCalled();
     expect(kill).not.toHaveBeenCalled();
     expect(terminals.has('live')).toBe(true);
     expect(app.quit).not.toHaveBeenCalled();
@@ -131,14 +138,18 @@ describe('Terminal Shutdown Behavior', () => {
     vi.mocked(app.quit).mockClear();
     handler(event);
     handler(event);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(event.preventDefault).toHaveBeenCalledTimes(4);
     expect(kill).toHaveBeenCalledWith('SIGTERM');
     expect(terminals.size).toBe(0);
     expect(request).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledTimes(1);
+    expect(shutdown).toHaveBeenCalledTimes(1);
     expect(app.quit).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalledWith('[clanker-grid] shutdown cleanup failed:', cleanupError);
     finish();
     await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(1));
+    expect(warn).toHaveBeenCalledWith('[clanker-grid] shutdown cleanup failed:', cleanupError);
     handler(event);
     expect(event.preventDefault).toHaveBeenCalledTimes(4);
     close.mockRestore();

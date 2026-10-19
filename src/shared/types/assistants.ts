@@ -53,6 +53,8 @@ export interface AssistantSnapshot {
   service: {
     state: HermesAssistantServiceState;
     ownership: 'external' | 'clanker' | null;
+    /** An exact Clanker-owned child has not acknowledged cleanup; replacement is blocked. */
+    cleanupIncomplete?: boolean;
     /** Display-safe: never contains a token, URL or host path. */
     error?: string;
   };
