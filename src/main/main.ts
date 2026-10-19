@@ -698,7 +698,13 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped, attentionTelemetry()?.stop()]).then(() => undefined);
+  // A rejected owner (including failed Hermes cleanup) must not bypass the
+  // remaining drains. Report failures only after every cleanup has settled.
+  quitCleanup = Promise.allSettled([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped, attentionTelemetry()?.stop()]).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') console.warn('[clanker-grid] shutdown cleanup failed:', result.reason);
+    }
+  });
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();
