@@ -169,6 +169,8 @@ import {
   UNREGISTER_OPEN_WORKSPACE,
   RELEASE_CHECKOUT_CONTEXT,
   ADOPT_WORKTREE_CHECKOUT_CONTEXT,
+  INSPECT_OBSERVED_WORKTREE,
+  ATTACH_OBSERVED_WORKTREE,
   RECONCILE_CHECKOUT_CONTEXTS,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
@@ -507,6 +509,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>
     ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
+  inspectObservedWorktree: (terminalId: string, revision: number) => ipcRenderer.invoke(INSPECT_OBSERVED_WORKTREE, terminalId, revision),
+  attachObservedWorktree: (terminalId: string, revision: number, expected: { path: string; branch: string | null }) => ipcRenderer.invoke(ATTACH_OBSERVED_WORKTREE, terminalId, revision, expected),
   adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string, expectedBranch?: string | null) =>
     ipcRenderer.invoke(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath, expectedBranch),
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) =>

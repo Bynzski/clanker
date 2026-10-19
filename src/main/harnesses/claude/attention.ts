@@ -30,8 +30,10 @@ export const CLAUDE_HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolU
  * - Location: every hook carries `cwd`, Claude's tracked working directory, which a Bash `cd` moves
  *   while the process itself never changes directory (an agent can leave, and even remove, the
  *   worktree it was launched in). `CwdChanged` (`old_cwd`/`new_cwd`) reports each move as
- *   `location_changed`; the turn boundaries (`UserPromptSubmit`, `StopFailure`, `SessionEnd`)
- *   carry `cwd` too, so a reordered move is corrected at the latest when the turn ends. Mid-turn tool
+ *   `location_changed`; turn boundaries (`UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd`)
+ *   carry `cwd` too. Native EnterWorktree/ExitWorktree may omit CwdChanged; an outside Bash cd
+ *   may report new_cwd while the session stays in main. Stop's root cwd corrects both without
+ *   claiming completion (Stop remains provisional). Mid-turn tool
  *   hooks never carry it, and a subagent (`agent_id`) never moves the root agent's location. */
 export const INTERPRETER = `const text = (value) => typeof value === 'string' && value ? value : undefined;
 export default function interpret(input, hook, store) {
@@ -90,7 +92,7 @@ export default function interpret(input, hook, store) {
       // Publish uncertainty, keeping correlation without claiming work or actionable input.
       if (!current) return null;
       store.write({ ...state, provisional: true });
-      return event('turn_provisional', { turnId });
+      return event('turn_provisional', { turnId, cwd });
     case 'StopFailure':
       return settle('turn_failed');
     case 'SessionEnd':

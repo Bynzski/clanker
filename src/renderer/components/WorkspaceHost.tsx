@@ -12,6 +12,7 @@ import { assistantBrowserOwnerId } from '../../shared/browserOwner';
 import AssistantSurface from './assistants/AssistantSurface';
 import { terminalNeedsBootstrap } from '../lib/terminalRuntimeCache';
 import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
+import ObservedWorktreeNotice from './ObservedWorktreeNotice';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
 import {
   recordWorkspaceActivation,
@@ -102,6 +103,7 @@ function WorkspaceSurface({
     >
       {mountContents ? (
         <WorkspaceScopeProvider workspaceId={workspaceId}>
+          {isActive && <ObservedWorktreeNotice workspaceId={workspaceId} />}
           <div className="workspace-layout-row">
             {showExplorerDock && <FileExplorer workspaceId={workspaceId} />}
             <DynamicPaneLayout workspaceId={workspaceId} />

@@ -352,6 +352,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return true;
   },
 
+  pinFileCheckout: (workspaceId, checkoutContextId) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const context = workspace.checkoutContexts?.find((entry) => entry.id === checkoutContextId);
+    if (checkoutContextId !== null && (!context || context.missing || context.workspaceId !== workspaceId
+      || context.environmentId !== (workspace.environmentId ?? 'local'))) return false;
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, fileSurfaceContextId: checkoutContextId ?? undefined })));
+    return true;
+  },
+
   removeCheckoutContext: (workspaceId, checkoutContextId) => {
     const workspace = findWorkspaceById(get().workspaces, workspaceId);
     if (!workspace) return false;

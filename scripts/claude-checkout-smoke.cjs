@@ -69,14 +69,17 @@ async function until(check, label) { const deadline = Date.now() + 30000; while 
       assert(!exited, 'Claude exited before the fixture completed');
       await until(() => facts.filter(fact => fact.nativeEvent === 'Stop').length > previousStops, 'Native Stop missing');
       const snapshot = broker.snapshot('claude');
-      assert.equal(snapshot.location?.path, index === 1 ? external : main, `Unexpected location after fixture turn ${index + 1}`);
-      assert.equal(snapshot.location?.checkoutContextId, index === 1 ? null : context.id);
+      // Outside Bash cd can emit new_cwd while the native session remains in main.
+      // Root Stop.cwd must refresh that report rather than leave a tool directory selected.
+      assert.equal(snapshot.location?.path, main, `Unexpected root location after fixture turn ${index + 1}`);
+      assert.equal(snapshot.location?.checkoutContextId, context.id);
       assert.equal(snapshot.locationProvenance?.state, 'current');
     }
     assert.equal(requests, 6, 'Expected one Bash command and final response per turn');
     assert.equal(toolResults, 3, 'Expected all three native Bash results');
     assert.equal(toolErrors, 0, 'Native Bash fixture command failed');
-    console.log(JSON.stringify({ nativeCLI: true, model: 'loopback fixture (no inference)', mainGitInventory: 'passed', intentionalExternalMove: 'unregistered (correct)', returnToMain: 'passed', facts }));
+    assert(facts.some(fact => fact.nativeEvent === 'CwdChanged' && fact.location === 'external' && fact.context === 'unregistered'), 'Expected the outside Bash report before root correction');
+    console.log(JSON.stringify({ nativeCLI: true, model: 'loopback fixture (no inference)', mainGitInventory: 'passed', outsideBashReport: 'unregistered during tool execution; corrected by native Stop cwd', returnToMain: 'passed', facts }));
   } catch (error) { console.error(error.message); console.error(JSON.stringify({ facts })); process.exitCode = 1; }
   finally {
     child?.kill();

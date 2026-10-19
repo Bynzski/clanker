@@ -1,0 +1,11 @@
+.observed-worktree-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-preview);
+  font-size: 12px;
+}
+.observed-worktree-notice > span { flex: 1; min-width: 160px; overflow-wrap: anywhere; }

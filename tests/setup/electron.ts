@@ -64,6 +64,8 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     isAttentionDebugEnabled: createAsyncMock(false),
     getAgentAttentionDiagnostics: createAsyncMock(null),
     getAgentAttentionSnapshots: createAsyncMock([]),
+    inspectObservedWorktree: createAsyncMock({ success: true }),
+    attachObservedWorktree: createAsyncMock({ success: false, error: 'No observed worktree' }),
     onAgentAttentionChanged: vi.fn(() => () => undefined),
     onTerminalResized: vi.fn(() => () => undefined),
     terminalReady: createAsyncMock({ success: true }),
