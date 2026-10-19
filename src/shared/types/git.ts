@@ -165,7 +165,7 @@ export interface GitWorktreeListResult {
 export interface GitCreateWorktreeOptions {
   attachCheckoutContext?: boolean;
   /** Explicit creation mode: refuse a branch that already exists. Main resolves committed HEAD. */
-  newBranch?: { baseWorktree?: { path: string; branch: string | null } };
+  newBranch?: { baseBranch?: string; baseWorktree?: { path: string; branch: string | null } };
   /** Refuse a deleted branch instead of silently creating it. */
   requireExistingBranch?: boolean;
 }

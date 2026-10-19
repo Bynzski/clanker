@@ -802,8 +802,11 @@ describe('New Agent committed-HEAD creation and fresh target validation', () => 
     await execFileAsync('git', ['commit', '-m', 'Source commit'], { cwd: source });
     const sourceHead = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: source })).stdout.trim();
     fs.writeFileSync(path.join(source, 'dirty.txt'), 'never copied\n');
+    await git('branch', 'base-without-checkout', sourceHead);
     for (const [branch, options, expected] of [
       ['from-project-head', { newBranch: {} }, projectHead],
+      ['from-local-branch', { newBranch: { baseBranch: 'base-without-checkout' } }, sourceHead],
+      ['from-occupied-branch', { newBranch: { baseBranch: 'external-base' } }, sourceHead],
       ['from-worktree-head', { newBranch: { baseWorktree: { path: toPosixPath(source), branch: 'external-base' } } }, sourceHead],
     ] as const) {
       const created = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'ignored-renderer-base', branch, 'new-session', { attachCheckoutContext: true, ...options });
@@ -815,6 +818,24 @@ describe('New Agent committed-HEAD creation and fresh target validation', () => 
     expect((await execFileAsync('git', ['branch', '--show-current'], { cwd: source })).stdout.trim()).toBe('external-base');
     expect(fs.readFileSync(path.join(source, 'dirty.txt'), 'utf8')).toBe('never copied\n');
     expect(terminals.size).toBe(0); // Create-only creates no session.
+  });
+
+  it('refuses missing, revision-expression, remote and conflicting branch bases without creating output', async () => {
+    await call(REGISTER_OPEN_WORKSPACE, 'invalid-base', toPosixPath(repo));
+    for (const [index, newBranch] of [
+      { baseBranch: 'no-such-branch' },
+      { baseBranch: 'main~1' },
+      { baseBranch: 'refs/heads/main' },
+      { baseBranch: 'origin/main' },
+      { baseBranch: '' },
+      { baseBranch: 'main', baseWorktree: { path: repo, branch: 'main' } },
+    ].entries()) {
+      const branch = `invalid-base-${index}`;
+      const result = await call<GitWorktreeCreateResult>(GIT_CREATE_WORKTREE, toPosixPath(repo), 'HEAD', branch, 'invalid-base', { attachCheckoutContext: true, newBranch });
+      expect(result.success).toBe(false);
+      expect((await git('branch', '--list', branch)).stdout.trim()).toBe('');
+    }
+    expect(registry.getCheckoutContextsForWorkspace('invalid-base')).toHaveLength(1);
   });
 
   it('refuses a conflicting new-branch name and a deleted existing branch', async () => {

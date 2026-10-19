@@ -532,7 +532,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       }
       try {
         baseRef = await resolveNewWorktreeBase({ registry: getWorkspaceRegistry!(), workspace: ws, options: options.newBranch,
-          listWorktrees: () => gitService.listWorktrees(ws.location.path), getProjectHead: () => gitService.getHeadCommit(ws.location.path) });
+          listWorktrees: () => gitService.listWorktrees(ws.location.path), getProjectHead: () => gitService.getHeadCommit(ws.location.path),
+          getLocalBranchCommit: (branch) => gitService.getLocalBranchCommit(ws.location.path, branch) });
       } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Could not resolve worktree base' }; }
     }
     return createWorktreeInScope(ws, workspacePath, baseRef, branch, attachRequested,

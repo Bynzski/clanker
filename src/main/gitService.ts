@@ -360,6 +360,15 @@ export class GitService {
     return commit;
   }
 
+  /** Resolve only an exact local branch in the registered repository; never revision expressions. */
+  async getLocalBranchCommit(workspacePath: string, branch: string): Promise<string> {
+    await this.execGit(workspacePath, ['check-ref-format', `refs/heads/${branch}`]);
+    const { stdout } = await this.execGit(workspacePath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]);
+    const commit = stdout.trim();
+    if (!/^[0-9a-f]{40,64}$/i.test(commit)) throw new Error('Base branch does not resolve to a commit');
+    return commit;
+  }
+
   async createWorktree(workspacePath: string, baseRef: string, name: string, mode?: 'new' | 'existing'): Promise<GitWorktreeCreateResult> {
     const previous = this.worktreeCreateDrain;
     let release: () => void = () => undefined;
