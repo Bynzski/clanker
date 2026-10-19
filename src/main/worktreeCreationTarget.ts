@@ -9,11 +9,17 @@ export async function resolveNewWorktreeBase(params: {
   options: NonNullable<GitCreateWorktreeOptions['newBranch']>;
   listWorktrees(): Promise<GitWorktreeListResult>;
   getProjectHead(): Promise<string>;
+  getLocalBranchCommit(branch: string): Promise<string>;
 }): Promise<string> {
   const { registry, workspace, options, listWorktrees } = params;
   const source = options.baseWorktree;
   let commit: string;
-  if (source !== undefined) {
+  if (options.baseBranch !== undefined) {
+    if (source !== undefined || typeof options.baseBranch !== 'string' || !options.baseBranch.trim()) {
+      throw new Error('Choose exactly one valid new-branch base');
+    }
+    commit = await params.getLocalBranchCommit(options.baseBranch);
+  } else if (source !== undefined) {
     if (!source || typeof source.path !== 'string' || (source.branch !== null && typeof source.branch !== 'string')) throw new Error('Invalid base worktree');
     const adopted = await adoptListedWorktree({ registry, workspace, worktreePath: source.path, expectedBranch: source.branch, listWorktrees });
     if (!adopted.success || !adopted.checkoutContext) throw new Error(adopted.error || 'Base worktree is unavailable');

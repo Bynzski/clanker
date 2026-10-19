@@ -106,6 +106,13 @@ New Agent explicitly chooses a validated target without reading this presentatio
 selection; Explorer/Source Control still refuse unregistered observations. No
 terminal-text parsing, automatic adoption or SSH MCP was added.
 
+**Observed-worktree recovery (#210):** the active surface now offers confirmed attachment
+of a main-verified Git-listed checkout, including nested checkouts whose old observation
+still matches main. Detection alone grants nothing. Attachment explicitly pins files/Git;
+launch binding and old broker evidence remain unchanged. Locks are preserved and block
+attachment. See [observed worktree recovery](observed-worktrees.md) for the authority,
+identity checks, race handling and regression coverage.
+
 ## PR #160 review corrections and screenshot investigation
 
 Two independent defects were confirmed:
@@ -295,8 +302,9 @@ refocus, workspace switches and a fresh native report should be recorded separat
 After `npm run build`, run `npm run smoke:attention:claude-checkout` for a
 provider-free native check using the installed Claude CLI, disposable repository,
 isolated HOME and loopback Anthropic response fixture. It executes real Bash/Git
-inventory, an intentional move outside the registered main checkout, then a return
-to main, and checks broker location/context/provenance after each turn. It makes
+inventory, an outside Bash-directory excursion, then a return to main. It checks
+that the outside CwdChanged report remains unregistered during tool execution and
+that native root Stop.cwd corrects the retained location at the turn boundary. It makes
 no paid model requests and retains only categorical event facts. This is a native
 **print-mode CLI** check, not a real TUI or built-Electron reproduction of an
 intermittent field failure. Claude 2.1.301 passed these three transitions; that

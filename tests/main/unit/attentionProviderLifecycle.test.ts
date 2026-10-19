@@ -558,6 +558,29 @@ describe('Claude lifecycle', () => {
     expect(state()).toBe('provisional');
     expect(broker.snapshot('term')?.location).toEqual({ path: '/home/u/repo', checkoutContextId: null });
   });
+  it('corrects an outside Bash directory at provisional Stop using the native root cwd (field recurrence)', async () => {
+    const hook = await interpreter('claude');
+    const { feed, state, broker } = rig('claude');
+    feed(hook('UserPromptSubmit', { ...common, cwd: '/repo' }));
+    feed(hook('CwdChanged', { ...common, cwd: '/repo', old_cwd: '/repo', new_cwd: '/tmp/frames58' }));
+    expect(broker.snapshot('term')?.location?.path).toBe('/tmp/frames58');
+    feed(hook('Stop', { ...common, cwd: '/repo' }));
+    expect(broker.snapshot('term')?.location?.path).toBe('/repo');
+    expect(state()).toBe('provisional');
+    expect(broker.snapshot('term')?.lastCompletion).toBeNull();
+  });
+  it.each([['/repo', '/repo/.claude/worktrees/native'], ['/repo/.claude/worktrees/native', '/repo']])(
+    'reports native worktree moves from %s to %s without requiring CwdChanged', async (before, after) => {
+      const hook = await interpreter('claude');
+      const { feed, broker, state } = rig('claude');
+      feed(hook('UserPromptSubmit', { ...common, cwd: before }));
+      expect(hook('Stop', { ...common, agent_id: 'child', cwd: '/unrelated' })).toBeNull();
+      expect(hook('Stop', { ...common, prompt_id: 'stale', cwd: '/unrelated' })).toBeNull();
+      expect(broker.snapshot('term')?.location?.path).toBe(before);
+      feed(hook('Stop', { ...common, cwd: after }));
+      expect(broker.snapshot('term')?.location?.path).toBe(after);
+      expect(state()).toBe('provisional');
+    });
   it('ignores a subagent changing directory and never reports location from mid-turn tool hooks', async () => {
     const hook = await interpreter('claude');
     const { feed, broker } = rig('claude');

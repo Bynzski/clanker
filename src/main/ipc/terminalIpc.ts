@@ -1,5 +1,8 @@
 import type { NativeAttentionCapability } from '../../shared/types/attentionSignal';
 import { remoteAttentionCapability } from '../attentionCapability';
+import { ObservedWorktreeService } from '../observedWorktree';
+import type { RegisteredWorkspace } from '../workspaceRegistry';
+import type { GitWorktreeListResult } from '../../shared/types/git';
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
 import { attentionLaunchStep, localAttentionCapability, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { retireTerminal } from '../terminalRetirement';
@@ -43,6 +46,8 @@ import {
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   RELEASE_CHECKOUT_CONTEXT,
+  INSPECT_OBSERVED_WORKTREE,
+  ATTACH_OBSERVED_WORKTREE,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { resolveTerminalLaunchTarget } from './terminalLaunchTarget';
@@ -97,6 +102,7 @@ interface RegisterTerminalIpcDeps {
   getSafeWorkspacePath: (workingDir: string) => string;
   getOpenWorkspacePath?: (workspaceId: string) => string | null;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  listObservedWorktrees?: (workspace: RegisteredWorkspace) => Promise<GitWorktreeListResult>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
@@ -459,6 +465,22 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     return ok(); // no-op for missing terminal
   });
+
+  const registry = deps.getWorkspaceRegistry?.();
+  const observedWorktrees = registry && agentAttentionBroker && deps.listObservedWorktrees ? new ObservedWorktreeService({
+    registry, getTerminal: id => getTerminals().get(id), snapshot: id => agentAttentionBroker.snapshot(id), listWorktrees: deps.listObservedWorktrees,
+    isAvailable: () => !appShuttingDown && !deps.getAppShuttingDown?.(),
+  }) : null;
+  for (const channel of [INSPECT_OBSERVED_WORKTREE, ATTACH_OBSERVED_WORKTREE]) {
+    ipcMain.handle(channel, (event, terminalId: unknown, revision: unknown, expected: unknown) => {
+      const window = getMainWindow();
+      if (!observedWorktrees || appShuttingDown || deps.getAppShuttingDown?.() || !isWindowAvailable(window)
+        || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
+        return { success: false, error: 'Checkout discovery is unavailable' };
+      }
+      return channel === ATTACH_OBSERVED_WORKTREE ? observedWorktrees.attach(terminalId, revision, expected) : observedWorktrees.inspect(terminalId, revision);
+    });
+  }
 
   ipcMain.handle(GET_AGENT_HANDOFF_STATUSES, () => Object.fromEntries(
     [...getTerminals()].filter(([, terminal]) => terminal.harnessId).map(([id]) => [

@@ -1,4 +1,5 @@
 import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
+import { toNativePath } from '../shared/pathNormalize';
 /**
  * Clanker Grid - Main Process Entry Point
  *
@@ -465,6 +466,10 @@ app.whenReady().then(() => {
     getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
     getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
+    listObservedWorktrees: (workspace) => gitService.withWorkspace({
+      workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId, workspacePath: workspace.location.path,
+      validateIdentity: () => { if (workspaceRegistry.getWorkspace(workspace.workspaceId) !== workspace) throw new Error('Workspace changed during checkout discovery'); },
+    }, () => gitService.listWorktrees(workspace.location.path)),
     agentAttentionBroker,
     agentBridge,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
@@ -494,6 +499,10 @@ app.whenReady().then(() => {
 
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
+    getLocalWorkspaceRoot: (id) => {
+      const workspace = workspaceRegistry.getWorkspace(id);
+      return workspace?.environment.kind === 'local' ? toNativePath(workspace.location.path, process.platform) : null;
+    },
     onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
     getWorkspaceEnvironmentKind: (id) => resolveBrowserOwnerKind(id, {
       hasAssistant: (assistantId) => assistantService?.hasAssistant(assistantId) ?? false,
@@ -689,7 +698,13 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped, attentionTelemetry()?.stop()]).then(() => undefined);
+  // A rejected owner (including failed Hermes cleanup) must not bypass the
+  // remaining drains. Report failures only after every cleanup has settled.
+  quitCleanup = Promise.allSettled([servicesStopped, previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped, commitGenerationStopped, attentionTelemetry()?.stop()]).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') console.warn('[clanker-grid] shutdown cleanup failed:', result.reason);
+    }
+  });
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

@@ -10,7 +10,7 @@ Switching tabs keeps the other tabs' pages alive. Closing an active tab selects 
 
 ## Navigation and history
 
-The toolbar provides Back, Forward, Refresh, Stop, a URL field, an external-browser button, and annotation mode. The address bar can open HTTP(S) URLs and local `file:` URLs or absolute paths. Pages cannot navigate themselves to local files; web-initiated navigation is limited to HTTP(S). Page URLs and titles from HTTP(S) navigation are stored in a global history across workspaces and app restarts. History keeps the most recent 100 distinct URLs and returns up to 8 suggestions; local files are not stored.
+The toolbar provides Back, Forward, Refresh, Stop, a URL field, an external-browser button, and annotation mode. The address bar can open HTTP(S) URLs and local `file:` URLs or absolute paths. A local document inside a registered local workspace can follow links to existing files within that same workspace root; symlink escapes are rejected. Local links requesting a new window open in the same browser tab, provided every embedded frame is also a local document within the root. Remote pages, remote frames, and server redirects cannot navigate to local files. SSH workspaces and Assistants do not grant file-link navigation within desktop directories. Page URLs and titles from HTTP(S) navigation are stored in a global history across workspaces and app restarts. History keeps the most recent 100 distinct URLs and returns up to 8 suggestions; local files are not stored.
 
 The browser runs in the desktop app even when the workspace is on SSH. A `file:` URL refers to a local desktop file. Workspace-owned remote HTTP(S) services can be discovered and forwarded automatically while Browser is active; ambiguous listeners require selection. See [SSH browser previews](workspaces.md#ssh-browser-previews). Local checkout servers use the explicit [dev-server Browser action](dev-services.md).
 
@@ -34,3 +34,5 @@ Switching tabs or closing the active tab disables annotation mode. Enable it aga
 ## Implementation
 
 Main-process tab views, navigation, and bounds live in `src/main/ipc/browserIpc.ts`; history lives in `src/main/browserHistory.ts`. Renderer tab state is in `src/renderer/store/workspaceStore.ts`, and the tab strip is `src/renderer/components/BrowserTabStrip.tsx`. IPC channel constants live in `src/shared/ipcChannels.ts`. The tab state contracts are in [Workspace State Invariants](../src/renderer/store/INVARIANTS.md).
+
+After building, `npm run smoke:browser-file-links` exercises real local-document links, popup routing, URL reporting, workspace confinement and remote/iframe/redirect pivot protection using a temporary profile and fixture. A working desktop display is required; on Linux an explicit `--ozone-platform=x11 --disable-gpu` can be used when needed.

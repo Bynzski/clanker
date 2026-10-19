@@ -750,7 +750,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     if (harnessConfig && params.harness) {
       let harnessArgs = params.resumeSession
         ? buildSessionCommand(params.resumeSession.session, { operation: params.resumeSession.fork ? 'fork' : 'resume', transport: 'ssh', userFlags: params.flags }).args
-        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs);
+        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs, 'ssh');
       if (params.attentionToken) {
         if (!findHarnessProvider(params.harness)?.attention?.remote) {
           attentionCapability = { requested: true, attachment: 'unavailable', reason: 'unsupported' };

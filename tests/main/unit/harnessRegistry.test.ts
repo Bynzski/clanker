@@ -1,5 +1,8 @@
 import { buildSessionCommand } from '../../../src/main/sessionLaunch';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Legacy invocation fixtures must not depend on the developer's installed CLI.
+vi.mock('../../../src/main/harnesses/opencode/version', () => ({ openCodeMajorVersion: () => 1 }));
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { findHarnessProvider, getHarnessProvider, getHarnessProviders, isHarnessId } from '../../../src/main/harnesses/registry';
 

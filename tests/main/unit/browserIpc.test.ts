@@ -88,8 +88,6 @@ vi.mock('electron', () => ({
         }
       }),
       getTitle: vi.fn(() => 'Navigated title'),
-      getURL: vi.fn(() => 'file:///tmp/index.html'),
-      mainFrame: { framesInSubtree: [{ url: 'file:///tmp/index.html' }] },
       getZoomLevel: vi.fn(() => 0),
       setZoomLevel: vi.fn(),
       openDevTools: vi.fn(),
@@ -118,6 +116,7 @@ vi.mock('electron', () => ({
 
 // Import after mocking
 import { ipcMain, Menu } from 'electron';
+import { BROWSER_URL_UPDATED } from '../../../src/shared/ipcChannels';
 import {
   registerBrowserIpc,
   createBrowserViewForTab,
@@ -125,10 +124,9 @@ import {
   clampBrowserZoomLevel,
 } from '../../../src/main/ipc/browserIpc';
 import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
-import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
+import { BrowserHistoryService, getBrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
 import { assistantBrowserOwners, resolveBrowserOwnerKind } from '../../../src/main/browserOwner';
 import { assistantBrowserOwnerId } from '../../../src/shared/browserOwner';
-import { BROWSER_URL_UPDATED } from '../../../src/shared/ipcChannels';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
 
 class MemoryHistoryStore {
@@ -194,55 +192,32 @@ describe('registerBrowserIpc', () => {
     expect(onBrowserNavigation).toHaveBeenCalledTimes(1);
   });
 
-  test('follows local document links but blocks remote or unknown initiating frames', () => {
+  test('reports committed local file URLs, titles and navigation state to the renderer', () => {
     const { deps } = createMockDeps();
-    const entry = createBrowserViewForTab('local-links', 'one', deps)!;
-    const calls = vi.mocked(entry.view.webContents.on).mock.calls as unknown as [string, unknown][];
-    const handler = calls.find(([name]) => name === 'will-frame-navigate')?.[1] as (event: { url: string; isMainFrame: boolean; initiator: { url: string } | null; preventDefault: () => void }) => void;
-    for (const source of ['file:///tmp/index.html', 'https://example.com/frame', '']) {
-      const preventDefault = vi.fn();
-      handler({ url: 'file:///tmp/next.html', isMainFrame: true, initiator: source ? { url: source } : null, preventDefault });
-      expect(preventDefault).toHaveBeenCalledTimes(source.startsWith('file:') ? 0 : 1);
-    }
-    for (const [url, isMainFrame, blocked] of [
-      ['data:text/html,embedded', false, false],
-      ['file:///tmp/next.html', false, true],
-      ['javascript:alert(1)', true, true],
-      ['https://example.com/', true, false],
-    ] as const) {
-      const preventDefault = vi.fn();
-      handler({ url, isMainFrame, initiator: { url: 'https://example.com/' }, preventDefault });
-      expect(preventDefault).toHaveBeenCalledTimes(blocked ? 1 : 0);
-    }
+    const entry = createBrowserViewForTab('files', 'one', deps);
+    attachedDidNavigateHandler?.({}, 'file:///tmp/page%20two.html#section');
+    expect(entry?.url).toBe('file:///tmp/page%20two.html#section');
+    expect(entry?.title).toBe('Navigated title');
+    expect(deps.getMainWindow().webContents.send).toHaveBeenLastCalledWith(BROWSER_URL_UPDATED, {
+      workspaceId: 'files', tabId: 'one', url: 'file:///tmp/page%20two.html#section',
+      title: 'Navigated title', canGoBack: false, canGoForward: false,
+    });
+    expect(getBrowserHistoryService().query()).toEqual([]);
   });
 
-  test('opens local target=_blank links in the browser and denies remote file popups', () => {
-    const { deps } = createMockDeps();
-    const entry = createBrowserViewForTab('local-popup', 'one', deps)!;
-    vi.mocked(entry.view.webContents.loadURL).mockResolvedValue(undefined);
-    vi.mocked(entry.view.webContents.loadURL).mockClear();
-    const handler = vi.mocked(entry.view.webContents.setWindowOpenHandler).mock.calls[0]![0];
-    const details = { url: 'file:///tmp/next.html', frameName: '_blank', features: '', disposition: 'new-window' as const, referrer: { url: 'file:///tmp/index.html', policy: 'default' as const } };
-    expect(handler(details)).toEqual({ action: 'deny' });
-    expect(entry.view.webContents.loadURL).toHaveBeenCalledExactlyOnceWith(details.url);
-    handler({ ...details, referrer: { ...details.referrer, url: 'https://example.com' } });
-    handler({ ...details, referrer: { ...details.referrer, url: '' } });
-    expect(entry.view.webContents.loadURL).toHaveBeenCalledTimes(2);
-    const frameTree = entry.view.webContents.mainFrame.framesInSubtree;
-    Object.defineProperty(entry.view.webContents.mainFrame, 'framesInSubtree', { value: [...frameTree, { url: 'https://example.com/frame' }] });
-    handler({ ...details, referrer: { ...details.referrer, url: '' } });
-    expect(entry.view.webContents.loadURL).toHaveBeenCalledTimes(2);
-  });
-
-  test('reports local document navigation and file load failures to the toolbar', () => {
+  test('reports local document load failures while excluding aborts, subframes and unsafe URLs', () => {
     const { deps } = createMockDeps();
     const onBrowserNavigation = vi.fn();
-    const entry = createBrowserViewForTab('file-reporting', 'one', { ...deps, onBrowserNavigation })!;
-    attachedDidNavigateHandler?.({}, 'file:///tmp/next.html');
-    expect(entry.url).toBe('file:///tmp/next.html');
-    expect(deps.getMainWindow()!.webContents.send).toHaveBeenCalledWith(BROWSER_URL_UPDATED, expect.objectContaining({ url: entry.url }));
+    createBrowserViewForTab('file-failures', 'one', { ...deps, onBrowserNavigation });
     attachedDidFailLoadHandler?.({}, -6, 'missing', 'file:///tmp/missing.html', true);
-    expect(onBrowserNavigation).toHaveBeenLastCalledWith('file-reporting', 'file:///tmp/missing.html', -6);
+    expect(onBrowserNavigation).toHaveBeenCalledExactlyOnceWith('file-failures', 'file:///tmp/missing.html', -6);
+    for (const [code, url, isMainFrame] of [
+      [-3, 'file:///tmp/missing.html', true],
+      [-6, 'file:///tmp/missing.html', false],
+      [-6, 'file://server/share/file.html', true],
+      [-6, 'javascript:alert(1)', true],
+    ] as const) attachedDidFailLoadHandler?.({}, code, 'ignored', url, isMainFrame);
+    expect(onBrowserNavigation).toHaveBeenCalledTimes(1);
   });
 
   test('routes actual SSH tab creation into private scopes and fails closed for unregistered workspaces', () => {

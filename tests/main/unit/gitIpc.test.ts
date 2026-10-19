@@ -1297,8 +1297,9 @@ describe('Git IPC workspace identity routing', () => {
     const LOCKED = 'worktree /srv/Repo-locked\0branch refs/heads/locked\0locked\0\0';
     const GONE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gone\0\0';
     const wire = (remote: ReturnType<typeof setup>['remote'], list: string) => {
-      remote.execGit.mockImplementation(async (_cwd: string, args: string[]) =>
-        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? list : '', stderr: '' }));
+      remote.execGit.mockImplementation(async (cwd: string, args: string[]) =>
+        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? list
+          : args[0] === 'rev-parse' ? `${cwd}\n/srv/repo/.git\n` : '', stderr: '' }));
     };
 
     test('registers the listed linked worktree as its own validated context without widening the workspace root', async () => {
@@ -1314,8 +1315,9 @@ describe('Git IPC workspace identity routing', () => {
       expect(remote.validateWorkspacePath).toHaveBeenCalledWith('/srv/Repo-task');
       expect(registry.getWorkspace('ssh-tab')!.location.path).toBe(workspacePath);
       expect(registry.getCheckoutContextsForWorkspace('ssh-tab').map((entry) => entry.path)).toEqual([workspacePath, '/srv/Repo-task']);
-      // Read-only on the host: only the worktree list ran.
-      expect(remote.execGit.mock.calls.every(([, args]) => args[0] === 'worktree' && args[1] === 'list')).toBe(true);
+      // Read-only on the host: listing plus fixed physical-repository identity probes.
+      expect(remote.execGit.mock.calls.every(([, args]) => (args[0] === 'worktree' && args[1] === 'list') || args[0] === 'rev-parse')).toBe(true);
+      expect(remote.execGit).toHaveBeenCalledWith('/srv/Repo-task', ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir']);
     });
 
     test.each([

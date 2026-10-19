@@ -7,7 +7,6 @@
 
 import { ipcMain, BrowserWindow, Menu, WebContentsView, shell, type Rectangle } from 'electron';
 import {
-  normalizeBrowserLinkUrl,
   normalizeExternalUrl,
   normalizeTrustedAppBrowserUrl,
 } from '../security';
@@ -54,6 +53,7 @@ import type { BrowserPresentation } from '../../shared/types/browserPresentation
 import { getBrowserHistoryService } from '../browserHistory';
 import { WORKSPACE_RECIPES_ENABLED, RECIPES_DISABLED_MESSAGE } from '../../shared/recipeAvailability';
 import { probeRecipePreview } from '../recipePreview';
+import { attachBrowserSecurityHandlers } from '../browserNavigation';
 
 export interface BrowserViewEntry {
   /** Stable renderer pane association; native resource/security ownership stays workspace-scoped. */
@@ -77,6 +77,7 @@ interface RegisterBrowserIpcDeps {
   getMainWindow: () => BrowserWindow | null;
   onBrowserNavigation?: (workspaceId: string, url: string, errorCode?: number) => void;
   getWorkspaceEnvironmentKind?: (workspaceId: string) => 'local' | 'ssh' | null;
+  getLocalWorkspaceRoot?: (workspaceId: string) => string | null;
   getBrowserViews: () => BrowserViewsByWorkspace;
   getActiveBrowserWorkspaceId: () => string | null;
   setActiveBrowserWorkspaceId: (id: string | null) => void;
@@ -313,37 +314,6 @@ function attachBrowserContextMenuHandlers(view: WebContentsView, mainWindow: Bro
   });
 }
 
-function attachBrowserSecurityHandlers(view: WebContentsView) {
-  view.webContents.setWindowOpenHandler(({ url, referrer }) => {
-    // Keep local target=_blank links in the sandboxed browser, never the OS shell.
-    // Chromium omits file referrers. Without one, require an entirely local
-    // frame tree: this API does not identify the frame that opened the popup.
-    const currentUrl = view.webContents.getURL();
-    const localFramesOnly = view.webContents.mainFrame.framesInSubtree.every((frame) =>
-      normalizeBrowserLinkUrl(frame.url, currentUrl)?.startsWith('file:'));
-    const localUrl = normalizeBrowserLinkUrl(url, referrer.url || (localFramesOnly ? currentUrl : ''));
-    if (localUrl?.startsWith('file:') && normalizeBrowserLinkUrl(localUrl, currentUrl)) {
-      void view.webContents.loadURL(localUrl).catch(() => {});
-      return { action: 'deny' };
-    }
-    const externalUrl = normalizeExternalUrl(url);
-    if (externalUrl) {
-      void shell.openExternal(externalUrl);
-    }
-    return { action: 'deny' };
-  });
-
-  view.webContents.on('will-frame-navigate', (event) => {
-    // Preserve ordinary embedded content; file access is checked in every frame.
-    if (!event.isMainFrame && !/^file:/i.test(event.url)) return;
-    // Use the initiating frame, so a remote iframe inside local HTML cannot
-    // borrow the top-level document's permission to navigate to local files.
-    if (!normalizeBrowserLinkUrl(event.url, event.initiator?.url ?? '')) {
-      event.preventDefault();
-    }
-  });
-}
-
 function createBrowserViewForTab(
   workspaceId: string,
   tabId: string,
@@ -370,7 +340,7 @@ function createBrowserViewForTab(
       );
     });
   }
-  attachBrowserSecurityHandlers(view);
+  attachBrowserSecurityHandlers(view.webContents, () => deps.getLocalWorkspaceRoot?.(workspaceId) ?? null);
   attachBrowserShortcutHandlers(view, { workspaceId, tabId, deps });
   attachBrowserContextMenuHandlers(view, mainWindow);
   view.setVisible(false);
@@ -405,7 +375,9 @@ function createBrowserViewForTab(
     if (isMainFrame && code !== -3 && normalizeTrustedAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
   });
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
-  view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));
+  view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) reportUrlChange(url);
+  });
 
   // A WebContents can be destroyed while its tab stays selected (field evidence: 762 navigation
   // queries against one dead tab in 195 s). Forget only that view, so the next activation recreates

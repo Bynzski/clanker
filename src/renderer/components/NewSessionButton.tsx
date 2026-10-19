@@ -39,6 +39,7 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
   const [destination, setDestination] = useState<Destination>({ kind: 'main' });
   const [taskBranch, setTaskBranch] = useState('');
   const [basePath, setBasePath] = useState('');
+  const [baseBranches, setBaseBranches] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [choices, setChoices] = useState<SessionLaunchChoices>(NO_CHOICES);
@@ -76,6 +77,7 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
         setListError(listing?.error || branchState.error || 'Could not read branches and worktrees. Project checkout is still available.');
         return;
       }
+      setBaseBranches(branchState.branches.map((entry: { name: string }) => entry.name));
       setChoices(buildSessionLaunchChoices({
         workspace: useWorkspaceStore.getState().getWorkspaceById(workspace.id)!,
         branchNames: branchState.branches.map((entry: { name: string }) => entry.name),
@@ -106,6 +108,7 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
       setDestination({ kind: creationOnly ? 'new' : 'main' });
       setTaskBranch('');
       setBasePath('');
+      setBaseBranches([]);
       setChoices(NO_CHOICES);
       setProjectBranch(null);
       setListError('');
@@ -119,9 +122,10 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
   const target = (): SessionLaunchTarget | null => {
     if (destination.kind === 'main') return { kind: 'main' };
     if (destination.kind === 'new') {
-      const base = basePath ? view.worktrees.find((entry) => entry.path === basePath && !entry.disabled) : null;
-      if (!taskBranch.trim() || (basePath && !base)) return null;
-      return { kind: 'new-branch', branch: taskBranch.trim(), ...(base ? { baseWorktree: { path: base.path, branch: base.branch } } : {}) };
+      const branch = basePath.startsWith('branch:') ? basePath.slice(7) : null;
+      const base = basePath.startsWith('worktree:') ? view.worktrees.find((entry) => entry.path === basePath.slice(9) && !entry.disabled) : null;
+      if (!taskBranch.trim() || (branch !== null ? !baseBranches.includes(branch) : basePath && !base)) return null;
+      return { kind: 'new-branch', branch: taskBranch.trim(), ...(branch !== null ? { baseBranch: branch } : {}), ...(base ? { baseWorktree: { path: base.path, branch: base.branch } } : {}) };
     }
     if (destination.kind === 'branch') return { kind: 'existing-branch', branch: destination.name };
     return { kind: 'worktree', path: destination.path, expectedBranch: destination.branch };
@@ -181,9 +185,14 @@ export default function NewSessionButton({ workspace, visibleHarnessIds, creatio
                   <label className="new-session-subheading" htmlFor="new-session-base">New branch starts from</label>
                   <Select id="new-session-base" value={basePath} disabled={busy} onChange={(event) => { setBasePath(event.target.value); setDestination({ kind: 'new' }); }}>
                     <option value="">{projectLabel}</option>
-                    {view.worktrees.filter((entry) => !entry.disabled).map((entry) => <option key={entry.path} value={entry.path}>{entry.label}</option>)}
+                    <optgroup label="Local branches">
+                      {baseBranches.map((branch) => <option key={branch} value={`branch:${branch}`}>{branch}</option>)}
+                    </optgroup>
+                    <optgroup label="Working copies">
+                      {view.worktrees.filter((entry) => !entry.disabled).map((entry) => <option key={entry.path} value={`worktree:${entry.path}`}>{entry.label}</option>)}
+                    </optgroup>
                   </Select>
-                  <div className="new-session-note">Creates a new branch and worktree from the selected checkout’s latest commit. Uncommitted changes stay in the source checkout.</div>
+                  <div className="new-session-note">Creates a new branch in a new worktree from the selected branch or checkout’s committed HEAD. Existing sessions and uncommitted changes stay where they are. No fetch or pull is performed.</div>
                 </div>
                 <div className="new-session-scroll">
                   {listError && <div className="new-session-note" role="status">{listError}</div>}

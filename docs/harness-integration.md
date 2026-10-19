@@ -367,7 +367,7 @@ carry a location):
 
 | Provider | Can the location move? | Reported from |
 | --- | --- | --- |
-| Claude | Yes, a Bash `cd` persists (the process never moves) | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed` |
+| Claude | Tracked session cwd may move without the process moving; an outside Bash excursion can report `new_cwd` while root cwd stays put | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed`. Root Stop refreshes native entry/exit moves that omit CwdChanged; see [observed worktrees](observed-worktrees.md). |
 | Codex | Only `/cd` or a worktree switch, while idle (commands run one-shot) | hook `cwd` on `UserPromptSubmit`/`Stop`/`Interrupt`/`SessionEnd` |
 | Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; native `session_start` as `session_started` (root binding before any prompt) |
 | OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`agent_end`; `session_start`/`session_switch` as `location_changed` |
@@ -865,9 +865,19 @@ The private-server behavior is verified against the
 and [standalone process](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/services/standalone.ts).
 Its [command declarations](https://github.com/anomalyco/opencode/blob/v2.0.26/packages/cli/src/commands/commands.ts)
 and installed help expose `-m` / `--fork` on `run` (not the default TUI), and no
-`run --pure`. Clanker's legacy model-selection, TUI fork and AI-commit invocations
-still require separate compatibility work; this MCP fix does not claim to resolve
-those #189 follow-ups or 2.x SSH attention.
+`run --pure`. For detected local 2.x, Clanker now refuses an explicit startup model
+with guidance to clear the Clanker selection and use `/models` in the TUI. A local
+fork request is refused before launching anything, never silently changed to resume;
+ordinary resume remains available. AI commit generation is refused before collecting
+diff context or spawning inference because no equivalent to `--pure` isolation has
+been verified. Select another AI commit provider in Settings. These are explicit
+compatibility limits, not implementations of native 2.x model/fork/commit support.
+Catalog projection never probes the installed binary. Local 1.x and unknown versions
+(including Windows) retain legacy behavior. SSH decisions never consult the desktop
+version and remain unchanged; 2.x SSH launch/attention compatibility is still a #189
+follow-up. Evidence: installed OpenCode 2.0.26 `--help`, `run --help`, `session --help`
+and the tagged command declarations above; no inference, user config writes or native
+fork operations were performed for this compatibility review.
 
 ### Opt-in
 
@@ -1846,8 +1856,42 @@ Sources checked against upstream Hermes (`0.21.5`, September 2026): the headless
 - `autoStart=false` only adopts an already-running compatible backend. A bounded `GET /api/status` must look like Hermes, and the loopback token is read only from the exact `window.__HERMES_SESSION_TOKEN__="…";` assignment in a size-bounded root response. Discovery HTTP requests reject redirects. A running service that cannot be authenticated (auth-gated, no token) is reported `detected-unusable`: it is never killed and no second backend is started.
 - `autoStart=true` may start `hermes serve --host 127.0.0.1 --port 0` (no shell, through the shared local launch planner) with a fresh random token supplied through `HERMES_DASHBOARD_SESSION_TOKEN`. Readiness is the exact `HERMES_BACKEND_READY port=<n>` line on stdout or stderr, bounded by time, line length and total output; `BACKEND_PORT_IN_USE`, early exit and timeouts are failures.
 - Clanker owns and stops only the exact child it started (on disable and quit); an external backend is never stopped. One bounded automatic restart per crash episode.
-- If a backend appears between discovery and owned startup, newer Hermes can attach to it and exit without READY. After cleaning that exact failed child, Clanker re-discovers and may adopt the existing backend as **external**, using its verified token, never the attempted child's token or ownership. Failed-startup cleanup finishes (bounded termination) before a Retry can spawn again; a coalesced Retry waits on the same operation. Fast disable → re-enable is serialized behind any in-flight stop, so a newer enable is never stranded and an older enable never resurrects a newer disable.
+- Owned-child cleanup (#187) sends SIGTERM, waits up to three seconds for exit acknowledgement, then sends SIGKILL if needed and waits up to three more seconds. Signal delivery, a failed signal, or a runtime `error` event does not prove exit. Native signal exits (`exitCode=null`) count through the exact handle's `exit` event; a failed spawn with no PID has no process to clean. Overlapping stop callers share one attempt. Only confirmed termination releases the owned handle; a bounded failure retains ownership, reports `cleanupIncomplete`, rejects shutdown and blocks discovery/adoption/replacement. Settings shows **Retry** even with Assistants disabled: disabled Retry performs cleanup only; re-enabling retries cleanup before discovery. Later acknowledgement is safe to settle on Retry without sending another signal or automatically restarting the old service. Failed-start cleanup uses the same path; old startup completions cannot stop newer children. Quit waits for every resource cleanup to settle before reporting failures and exiting; a rejected Hermes stop cannot bypass the other cleanup drains.
+- This guarantee concerns the **direct child**, not every native Hermes descendant. No process-group/tree scavenger is added. Hermes' graceful backend shutdown owns its PTY registry cleanup; native descendant survival on forced backend termination and full Desktop ordering remain investigation work in #187. Native process regression tests (`tests/main/integration/hermesOwnedChild.real.test.ts`) use disposable Node children for real SIGTERM/SIGKILL/failed-spawn evidence, not the user's Hermes profiles or a claim of full Hermes/Desktop validation.
+- If a backend appears between discovery and owned startup, newer Hermes can attach to it and exit without READY. After cleaning that exact failed child, Clanker re-discovers and may adopt the existing backend as **external**, using its verified token, never the attempted child's token or ownership. Failed-startup cleanup must confirm termination before a Retry can spawn again; an unverified cleanup remains owned and a coalesced Retry waits on the same operation. Fast disable → re-enable is serialized behind any in-flight stop, so a newer enable is never stranded and an older enable never resurrects a newer disable.
 - If only the control WebSocket drops, the service publishes offline with surfaces disconnected and keeps a live owned child; Retry reconnects to it instead of spawning another.
+
+### Disposable native lifecycle smoke
+
+After `npm run build`, run:
+
+```bash
+HERMES_TEST_SOURCE=/absolute/path/to/installed/hermes-agent npm run smoke:hermes:lifecycle
+```
+
+This opt-in smoke currently targets the managed source-install layout inspected on
+Linux with Hermes 0.21.5. `HERMES_TEST_PYTHON` optionally selects the Python used for
+stdlib-only dependency metadata discovery (default `python3`). The source checkout
+must match the installed `hermes` launcher on PATH. No installer or upgrade runs.
+
+A fresh `HERMES_HOME` hides **dependency selection as well as profile data**. The
+previous empty-home probe therefore failed with missing `ruamel` even though the
+real committed environment already contained it. The smoke clones that existing
+dependency generation into the fixture (copy-on-write where available), writes a
+fixture-only selection record, and sets `HERMES_DISABLE_LAZY_INSTALLS=1` to prevent
+source-update completion/dependency sync. It does not copy profiles, credentials,
+chats or user configuration. Allow disk space for the dependency copy (333 MiB in
+the measured installation; other versions vary). Set `TMPDIR` to a spacious local
+filesystem if the default temporary mount is full or too small.
+
+HOME/XDG/rendezvous state is private, inherited launch credentials are stripped,
+and discovery HTTP is restricted to the spawned fixture's loopback port, including
+rejection of default-port fallback. The smoke checks real native readiness, private
+rendezvous/authenticated host identity and the exact child's verified stop, then
+removes the fixture only after acknowledged exit. Failed cleanup retains the fixture
+rather than claiming success. Raw upstream output, tokens and paths are not printed.
+This performs no inference or PTY/chat creation; it does **not** validate native
+reattachment, Desktop ordering or descendant cleanup after forced termination.
 
 ### Roster
 

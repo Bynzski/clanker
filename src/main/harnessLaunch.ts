@@ -88,7 +88,8 @@ export function buildHarnessSpawnArgs(
   config: HarnessConfig,
   model?: string,
   userFlags?: string,
-  modelArgsForLaunch?: (model: string, modelArg?: string) => string[] | undefined,
+  modelArgsForLaunch?: (model: string, modelArg?: string, transport?: 'local' | 'ssh') => string[] | undefined,
+  transport: 'local' | 'ssh' = 'local',
 ): string[] {
   const args = [...config.args];
 
@@ -97,7 +98,7 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    const modelArgs = modelArgsForLaunch?.(model, config.modelArg);
+    const modelArgs = modelArgsForLaunch?.(model, config.modelArg, transport);
     if (modelArgs) {
       args.unshift(...modelArgs);
       return args;
