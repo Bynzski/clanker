@@ -1861,6 +1861,38 @@ Sources checked against upstream Hermes (`0.21.5`, September 2026): the headless
 - If a backend appears between discovery and owned startup, newer Hermes can attach to it and exit without READY. After cleaning that exact failed child, Clanker re-discovers and may adopt the existing backend as **external**, using its verified token, never the attempted child's token or ownership. Failed-startup cleanup must confirm termination before a Retry can spawn again; an unverified cleanup remains owned and a coalesced Retry waits on the same operation. Fast disable → re-enable is serialized behind any in-flight stop, so a newer enable is never stranded and an older enable never resurrects a newer disable.
 - If only the control WebSocket drops, the service publishes offline with surfaces disconnected and keeps a live owned child; Retry reconnects to it instead of spawning another.
 
+### Disposable native lifecycle smoke
+
+After `npm run build`, run:
+
+```bash
+HERMES_TEST_SOURCE=/absolute/path/to/installed/hermes-agent npm run smoke:hermes:lifecycle
+```
+
+This opt-in smoke currently targets the managed source-install layout inspected on
+Linux with Hermes 0.21.5. `HERMES_TEST_PYTHON` optionally selects the Python used for
+stdlib-only dependency metadata discovery (default `python3`). The source checkout
+must match the installed `hermes` launcher on PATH. No installer or upgrade runs.
+
+A fresh `HERMES_HOME` hides **dependency selection as well as profile data**. The
+previous empty-home probe therefore failed with missing `ruamel` even though the
+real committed environment already contained it. The smoke clones that existing
+dependency generation into the fixture (copy-on-write where available), writes a
+fixture-only selection record, and sets `HERMES_DISABLE_LAZY_INSTALLS=1` to prevent
+source-update completion/dependency sync. It does not copy profiles, credentials,
+chats or user configuration. Allow disk space for the dependency copy (333 MiB in
+the measured installation; other versions vary). Set `TMPDIR` to a spacious local
+filesystem if the default temporary mount is full or too small.
+
+HOME/XDG/rendezvous state is private, inherited launch credentials are stripped,
+and discovery HTTP is restricted to the spawned fixture's loopback port, including
+rejection of default-port fallback. The smoke checks real native readiness, private
+rendezvous/authenticated host identity and the exact child's verified stop, then
+removes the fixture only after acknowledged exit. Failed cleanup retains the fixture
+rather than claiming success. Raw upstream output, tokens and paths are not printed.
+This performs no inference or PTY/chat creation; it does **not** validate native
+reattachment, Desktop ordering or descendant cleanup after forced termination.
+
 ### Roster
 
 `profiles.list` is authoritative: every valid named profile except the raw `default`. `ui_meta["hermes-bots"]` is optional presentation metadata (title, description, `hidden`), not eligibility, and no messaging gateway is required. Display precedence is Bot title, profile `display_name`, then a prettified slug. The renderer receives `{id, displayName, description?, activity?}` with an opaque id; `activity` projects bounded model/provider, last-known roster skill count, last human-visible session title/time and a background-worker timestamp. A worker timestamp is a historical hint, never lifecycle or attention authority. The raw session identity, profile home and backend credentials stay main-only.
