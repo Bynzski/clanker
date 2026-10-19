@@ -205,6 +205,21 @@ describe('registerBrowserIpc', () => {
     expect(getBrowserHistoryService().query()).toEqual([]);
   });
 
+  test('reports local document load failures while excluding aborts, subframes and unsafe URLs', () => {
+    const { deps } = createMockDeps();
+    const onBrowserNavigation = vi.fn();
+    createBrowserViewForTab('file-failures', 'one', { ...deps, onBrowserNavigation });
+    attachedDidFailLoadHandler?.({}, -6, 'missing', 'file:///tmp/missing.html', true);
+    expect(onBrowserNavigation).toHaveBeenCalledExactlyOnceWith('file-failures', 'file:///tmp/missing.html', -6);
+    for (const [code, url, isMainFrame] of [
+      [-3, 'file:///tmp/missing.html', true],
+      [-6, 'file:///tmp/missing.html', false],
+      [-6, 'file://server/share/file.html', true],
+      [-6, 'javascript:alert(1)', true],
+    ] as const) attachedDidFailLoadHandler?.({}, code, 'ignored', url, isMainFrame);
+    expect(onBrowserNavigation).toHaveBeenCalledTimes(1);
+  });
+
   test('routes actual SSH tab creation into private scopes and fails closed for unregistered workspaces', () => {
     const { deps } = createMockDeps();
     const scoped = { ...deps, getWorkspaceEnvironmentKind: (id: string) => id === 'missing' ? null : id === 'local' ? 'local' as const : 'ssh' as const };

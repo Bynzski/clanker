@@ -7,7 +7,6 @@
 
 import { ipcMain, BrowserWindow, Menu, WebContentsView, shell, type Rectangle } from 'electron';
 import {
-  normalizeAppBrowserUrl,
   normalizeExternalUrl,
   normalizeTrustedAppBrowserUrl,
 } from '../security';
@@ -373,7 +372,7 @@ function createBrowserViewForTab(
   };
 
   view.webContents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
-    if (isMainFrame && code !== -3 && normalizeAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
+    if (isMainFrame && code !== -3 && normalizeTrustedAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
   });
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
   view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
