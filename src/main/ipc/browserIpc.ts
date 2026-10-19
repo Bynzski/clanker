@@ -7,7 +7,7 @@
 
 import { ipcMain, BrowserWindow, Menu, WebContentsView, shell, type Rectangle } from 'electron';
 import {
-  normalizeAppBrowserUrl,
+  normalizeBrowserLinkUrl,
   normalizeExternalUrl,
   normalizeTrustedAppBrowserUrl,
 } from '../security';
@@ -314,7 +314,18 @@ function attachBrowserContextMenuHandlers(view: WebContentsView, mainWindow: Bro
 }
 
 function attachBrowserSecurityHandlers(view: WebContentsView) {
-  view.webContents.setWindowOpenHandler(({ url }) => {
+  view.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    // Keep local target=_blank links in the sandboxed browser, never the OS shell.
+    // Chromium omits file referrers. Without one, require an entirely local
+    // frame tree: this API does not identify the frame that opened the popup.
+    const currentUrl = view.webContents.getURL();
+    const localFramesOnly = view.webContents.mainFrame.framesInSubtree.every((frame) =>
+      normalizeBrowserLinkUrl(frame.url, currentUrl)?.startsWith('file:'));
+    const localUrl = normalizeBrowserLinkUrl(url, referrer.url || (localFramesOnly ? currentUrl : ''));
+    if (localUrl?.startsWith('file:') && normalizeBrowserLinkUrl(localUrl, currentUrl)) {
+      void view.webContents.loadURL(localUrl).catch(() => {});
+      return { action: 'deny' };
+    }
     const externalUrl = normalizeExternalUrl(url);
     if (externalUrl) {
       void shell.openExternal(externalUrl);
@@ -322,8 +333,12 @@ function attachBrowserSecurityHandlers(view: WebContentsView) {
     return { action: 'deny' };
   });
 
-  view.webContents.on('will-navigate', (event, url) => {
-    if (!normalizeAppBrowserUrl(url)) {
+  view.webContents.on('will-frame-navigate', (event) => {
+    // Preserve ordinary embedded content; file access is checked in every frame.
+    if (!event.isMainFrame && !/^file:/i.test(event.url)) return;
+    // Use the initiating frame, so a remote iframe inside local HTML cannot
+    // borrow the top-level document's permission to navigate to local files.
+    if (!normalizeBrowserLinkUrl(event.url, event.initiator?.url ?? '')) {
       event.preventDefault();
     }
   });
@@ -365,7 +380,7 @@ function createBrowserViewForTab(
   const entry: BrowserViewEntry = { view, url: DEFAULT_BROWSER_URL, title: '' };
 
   const reportUrlChange = (navigatedUrl: string) => {
-    const safeUrl = normalizeAppBrowserUrl(navigatedUrl);
+    const safeUrl = normalizeTrustedAppBrowserUrl(navigatedUrl);
     if (!safeUrl) return;
 
     deps.onBrowserNavigation?.(workspaceId, safeUrl);
@@ -387,7 +402,7 @@ function createBrowserViewForTab(
   };
 
   view.webContents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
-    if (isMainFrame && code !== -3 && normalizeAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
+    if (isMainFrame && code !== -3 && normalizeTrustedAppBrowserUrl(url)) deps.onBrowserNavigation?.(workspaceId, url, code);
   });
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
   view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));

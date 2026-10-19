@@ -79,6 +79,16 @@ export function normalizeTrustedAppBrowserUrl(rawUrl: string): string | null {
   return parsedUrl.toString();
 }
 
+/** Local documents may follow local links; web documents never gain file access. */
+export function normalizeBrowserLinkUrl(rawUrl: string, sourceUrl: string): string | null {
+  const webUrl = normalizeAppBrowserUrl(rawUrl);
+  if (webUrl) return webUrl;
+  const source = normalizeUrl(sourceUrl);
+  const target = normalizeUrl(rawUrl);
+  if (source?.protocol !== 'file:' || !normalizeFileBrowserUrl(source) || target?.protocol !== 'file:') return null;
+  return normalizeFileBrowserUrl(target);
+}
+
 export function normalizeExternalUrl(rawUrl: string): string | null {
   const parsedUrl = normalizeUrl(rawUrl);
   if (!parsedUrl || !EXTERNAL_PROTOCOLS.has(parsedUrl.protocol)) {
