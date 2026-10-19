@@ -5,6 +5,7 @@ import { LOCAL_ENVIRONMENT_ID } from '../shared/types/environments';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { RegisteredWorkspace, WorkspaceRegistry } from './workspaceRegistry';
+import { verifyListedWorktreeIdentity } from './worktreeIdentity';
 
 /**
  * Git's listed worktree whose root is `worktreePath`, compared by environment path identity (local
@@ -100,9 +101,11 @@ export async function adoptListedWorktree(params: {
   workspace: RegisteredWorkspace;
   worktreePath: unknown;
   expectedBranch?: unknown;
+  /** Optional live-observation guard, evaluated again before registration commits. */
+  isCurrent?: () => boolean;
   listWorktrees: () => Promise<GitWorktreeListResult>;
 }): Promise<AdoptWorktreeCheckoutContextResult> {
-  const { registry, workspace, worktreePath, expectedBranch, listWorktrees } = params;
+  const { registry, workspace, worktreePath, expectedBranch, listWorktrees, isCurrent } = params;
   const fail = (error: string): AdoptWorktreeCheckoutContextResult => ({ success: false, error });
   if (typeof worktreePath !== 'string' || !worktreePath.trim()) return fail('Choose a worktree to use');
 
@@ -129,19 +132,21 @@ export async function adoptListedWorktree(params: {
       requireCanonicalPath: true,
       branch: listed.branch ?? undefined,
       mainCheckoutPath: main?.path,
+      isCurrent,
+      validateBeforeRegister: async () => {
+        await verifyListedWorktreeIdentity(workspace, toPosixPath(listed.path));
+        const latest = await listWorktrees();
+        const verified = latest.success ? findListedWorktree(latest, environmentId, listed.path) : null;
+        if (!verified || verified.isMain || verified.isPrunable || verified.isLocked || verified.branch !== listed.branch) {
+          throw new Error('The worktree changed during validation; refresh worktrees before launching');
+        }
+      },
     });
     if (!registration.success || !registration.checkoutContext) {
       return fail(registration.error || 'The checkout could not be registered');
     }
-    // Validation awaited: check Git again before accepting a stale path/branch or a newly locked root.
-    const latest = await listWorktrees();
-    const verified = latest.success ? findListedWorktree(latest, environmentId, registration.checkoutContext.path) : null;
-    if (!verified || verified.isMain || verified.isPrunable || verified.isLocked || verified.branch !== listed.branch) {
-      return fail('The worktree changed during validation; refresh worktrees before launching');
-    }
-    if (registry.getWorkspace(workspace.workspaceId) !== workspace) return fail('Workspace changed during validation');
-    registry.describeCheckoutContext(registration.checkoutContext.id, { branch: verified.branch, missing: false });
-    return { success: true, checkoutContext: { ...registration.checkoutContext, branch: verified.branch, missing: false } };
+    registry.describeCheckoutContext(registration.checkoutContext.id, { branch: listed.branch, missing: false });
+    return { success: true, checkoutContext: { ...registration.checkoutContext, branch: listed.branch, missing: false } };
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'The checkout could not be registered');
   }

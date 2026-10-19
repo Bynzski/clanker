@@ -36,6 +36,9 @@ export interface CheckoutContextRegistrationInput {
   mainCheckoutPath?: string;
   /** Git already supplied a canonical entry; a replaced symlink must not redirect its grant. */
   requireCanonicalPath?: boolean;
+  /** Main-owned transaction guards; never accepted from IPC. Run before publishing a new root. */
+  isCurrent?: () => boolean;
+  validateBeforeRegister?: (canonicalPath: string) => Promise<void>;
 }
 
 export interface CheckoutContextRegistrationResult {
@@ -232,13 +235,21 @@ export class WorkspaceRegistry {
     }
 
     const { environmentId } = workspace.location;
-    const root = await this.validateRoot(workspace.environment, environmentId, input.path,
-      () => this.workspaces.get(input.workspaceId) !== workspace, 'Checkout');
+    const cancelled = () => this.workspaces.get(input.workspaceId) !== workspace || input.isCurrent?.() === false;
+    if (cancelled()) return { success: false, error: 'Checkout registration was cancelled' };
+    const root = await this.validateRoot(workspace.environment, environmentId, input.path, cancelled, 'Checkout');
     if ('error' in root) return { success: false, error: root.error };
-    if (this.workspaces.get(input.workspaceId) !== workspace) {
+    const removalRevision = this.getLocalRemovalRevision?.();
+    try { await input.validateBeforeRegister?.(root.canonicalPath); }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Checkout validation failed' }; }
+    if (cancelled()) {
       return { success: false, error: 'Workspace was closed during checkout registration' };
     }
 
+    if (this.isCheckoutPathReserved(environmentId, root.canonicalPath)
+      || (environmentId === LOCAL_ENVIRONMENT_ID && removalRevision !== this.getLocalRemovalRevision?.())) {
+      return { success: false, error: 'A worktree removal occurred during checkout validation; retry registration' };
+    }
     if (input.requireCanonicalPath) {
       // Local directory validation establishes accessibility, but retains the lexical path.
       // Git-listed roots must also retain their physical identity before granting authority.

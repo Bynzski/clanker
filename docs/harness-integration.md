@@ -367,7 +367,7 @@ carry a location):
 
 | Provider | Can the location move? | Reported from |
 | --- | --- | --- |
-| Claude | Yes, a Bash `cd` persists (the process never moves) | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed` |
+| Claude | Tracked session cwd may move without the process moving; an outside Bash excursion can report `new_cwd` while root cwd stays put | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed`. Root Stop refreshes native entry/exit moves that omit CwdChanged; see [observed worktrees](observed-worktrees.md). |
 | Codex | Only `/cd` or a worktree switch, while idle (commands run one-shot) | hook `cwd` on `UserPromptSubmit`/`Stop`/`Interrupt`/`SessionEnd` |
 | Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; native `session_start` as `session_started` (root binding before any prompt) |
 | OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`agent_end`; `session_start`/`session_switch` as `location_changed` |

@@ -171,7 +171,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(14);
+    expect(mockHandle.mock.calls.length).toBe(16);
   });
 
   test('registers terminal events and diagnostic receipt IPC', () => {
@@ -207,7 +207,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(28);
+    expect(mockHandle.mock.calls.length).toBe(32);
   });
 });
 

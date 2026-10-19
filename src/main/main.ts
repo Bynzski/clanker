@@ -466,6 +466,10 @@ app.whenReady().then(() => {
     getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
     getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
+    listObservedWorktrees: (workspace) => gitService.withWorkspace({
+      workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId, workspacePath: workspace.location.path,
+      validateIdentity: () => { if (workspaceRegistry.getWorkspace(workspace.workspaceId) !== workspace) throw new Error('Workspace changed during checkout discovery'); },
+    }, () => gitService.listWorktrees(workspace.location.path)),
     agentAttentionBroker,
     agentBridge,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
