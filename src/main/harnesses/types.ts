@@ -11,7 +11,7 @@ export interface HarnessLaunchCapability {
   readonly args: string[];
   readonly modelArg: string;
   readonly env?: Record<string, string>;
-  readonly modelArgs?: (model: string, modelArg?: string) => string[] | undefined;
+  readonly modelArgs?: (model: string, modelArg?: string, transport?: 'local' | 'ssh') => string[] | undefined;
   readonly localEnvironment?: (flags?: string) => Record<string, string>;
 }
 
@@ -94,7 +94,7 @@ export interface HarnessSessionOperation {
   readonly support: CapabilitySupport;
   /** Omission means both transports. Agy's emulated fork is local only. */
   readonly transports?: readonly ('local' | 'ssh')[];
-  build(session: HarnessSession, userFlags?: string): { command: string; args: string[] };
+  build(session: HarnessSession, userFlags?: string, transport?: 'local' | 'ssh'): { command: string; args: string[] };
 }
 
 export interface HarnessRemoteSessions {
@@ -201,6 +201,8 @@ export interface HarnessAiCommitInvocation {
   env?: Record<string, string>;
 }
 export interface HarnessAiCommitCapability {
+  /** Execution-only compatibility guard; catalog projections must not probe installed CLIs. */
+  validateLocal?(): void;
   parseOutput(output: string): string;
   buildInvocation(context: { model?: string; prompt: string }): HarnessAiCommitInvocation;
   /** Descriptive model flag for the legacy catalog; execution uses buildInvocation. */
