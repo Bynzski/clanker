@@ -20,7 +20,7 @@ export type SessionLaunchResult =
 export type SessionLaunchTarget =
   | { kind: 'main' }
   /** A new branch from the explicitly chosen committed HEAD, in a new linked worktree. */
-  | { kind: 'new-branch'; branch: string; baseWorktree?: { path: string; branch: string | null } }
+  | { kind: 'new-branch'; branch: string; baseBranch?: string; baseWorktree?: { path: string; branch: string | null } }
   /** An existing local branch that has no worktree yet, in a new linked worktree. */
   | { kind: 'existing-branch'; branch: string }
   /** A linked worktree Git lists: freshly validated by main, including an already registered root. */
@@ -159,7 +159,7 @@ async function resolveContext(workspace: WorkspaceTab, target: SessionLaunchTarg
   try {
     created = await window.electronAPI.gitCreateWorktree(
       workspace.workspacePath, baseRef, branch, workspace.id, { attachCheckoutContext: true,
-        ...(target.kind === 'new-branch' ? { newBranch: { ...(target.baseWorktree ? { baseWorktree: target.baseWorktree } : {}) } } : { requireExistingBranch: true }),
+        ...(target.kind === 'new-branch' ? { newBranch: { ...(target.baseBranch !== undefined ? { baseBranch: target.baseBranch } : {}), ...(target.baseWorktree ? { baseWorktree: target.baseWorktree } : {}) } } : { requireExistingBranch: true }),
       },
     );
   } catch (cause) {

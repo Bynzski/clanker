@@ -148,6 +148,31 @@ describe('New Agent: harness + working copy', () => {
     await waitFor(() => expect(api.gitCreateWorktree).toHaveBeenCalledWith(ROOT, 'main', 'main', 'ws', { attachCheckoutContext: true, requireExistingBranch: true }));
   });
 
+  it.each(['local', 'ssh-fixture'])('launches a new Terminal branch from main without first creating a main worktree on %s', async environmentId => {
+    branches = ['main', 'feature/current'];
+    api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'feature/current', isDetached: false,
+      branches: branches.map(name => ({ name, isCurrent: name === 'feature/current' })) });
+    worktrees = [listed(ROOT, 'feature/current', { isMain: true })];
+    api.gitCreateWorktree.mockImplementation(async (_p: string, _base: string, branch: string) => ({
+      success: true, worktree: listed(WT(branch), branch), checkoutContext: { ...ctx(branch), environmentId },
+    }));
+    openWorkspace({ environmentId });
+    render(<NewSessionButton workspace={workspace()} visibleHarnessIds={['codex']} />);
+    await openPicker();
+    const base = screen.getByRole('combobox', { name: 'New branch starts from' });
+    await waitFor(() => expect(within(base).getByRole('option', { name: 'main' })).toBeInTheDocument());
+    await user.type(screen.getByLabelText('New branch'), 'independent-task');
+    await user.selectOptions(base, 'branch:main');
+    await launch('Terminal');
+    await waitFor(() => expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'HEAD', 'independent-task', 'ws', {
+      attachCheckoutContext: true, newBranch: { baseBranch: 'main' },
+    }));
+    await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+    expect(api.spawnTerminal.mock.calls[0][0]).toBe(WT('independent-task'));
+    expect(workspace().workspacePath).toBe(ROOT);
+    expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
+  });
+
   it('identifies a detached project checkout in both the launch target and the new-branch base', async () => {
     api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: null, isDetached: true, branches: [] });
     openWorkspace(); render(<Header />); await openPicker();
