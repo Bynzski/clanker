@@ -9,6 +9,7 @@ import {
   FolderOutput,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { BrowserOverlayLease } from '../ui/dialogLifecycle';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import './ContextMenu.css';
 
@@ -22,6 +23,7 @@ export type ContextAction =
   | 'reveal-in-files';
 
 export interface ContextMenuProps {
+  workspaceId?: string;
   x: number;
   y: number;
   entry: FileExplorerEntry;
@@ -29,7 +31,7 @@ export interface ContextMenuProps {
   onClose: () => void;
 }
 
-export default function ContextMenu({ x, y, entry, onAction, onClose }: ContextMenuProps) {
+export default function ContextMenu({ workspaceId, x, y, entry, onAction, onClose }: ContextMenuProps) {
   const isRemote = useWorkspaceStore((state) => {
     const ws = state.getActiveWorkspace();
     return Boolean(ws?.environmentId && ws.environmentId !== 'local');
@@ -59,6 +61,7 @@ export default function ContextMenu({ x, y, entry, onAction, onClose }: ContextM
 
   return (
     <>
+      <BrowserOverlayLease workspaceId={workspaceId} />
       {/* Invisible overlay to capture clicks outside */}
       <div className="context-menu-overlay" onClick={onClose} />
       <div
