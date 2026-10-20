@@ -548,6 +548,43 @@ async function flushUi() { await act(async () => { await new Promise((resolve) =
 const withFredSurface = (state: 'open' | 'disconnected', service: AssistantSnapshot['service'] = { state: 'connected', ownership: 'external' }) =>
   snap({ service, assistants: service.state === 'connected' ? [fred, reviewer] : [], surfaces: [{ assistantId: 'hermes:fred', state }] });
 
+it('refreshes a healthy Assistant explicitly, blocking duplicate clicks and keeping its terminal and workspace intact', async () => {
+  mockMain(withFredSurface('open'));
+  let finish!: (value: { state: 'connecting'; replay: string }) => void;
+  vi.mocked(window.electronAPI.refreshAssistantSession).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  const workspace = useWorkspaceStore.getState().workspaces[0];
+  render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh session' }));
+  expect(screen.getByRole('button', { name: 'Refreshing…' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Refreshing…' }));
+  expect(window.electronAPI.refreshAssistantSession).toHaveBeenCalledExactlyOnceWith('hermes:fred');
+  await act(async () => { finish({ state: 'connecting', replay: 'do not append twice' }); });
+  act(() => pushData({ assistantId: 'hermes:fred', data: 'native redraw' }));
+  expect(xterms).toHaveLength(1);
+  expect(xterms[0].dispose).not.toHaveBeenCalled();
+  expect(xterms[0].write).toHaveBeenCalledWith('native redraw');
+  expect(xterms[0].write).not.toHaveBeenCalledWith('do not append twice');
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  expect(window.electronAPI.refreshAssistants).not.toHaveBeenCalled();
+  expect(useWorkspaceStore.getState().workspaces[0]).toBe(workspace);
+});
+
+it('allows refresh during a stuck connection and offline, and shows a safe, retryable failure', async () => {
+  mockMain(snap({ surfaces: [{ assistantId: 'hermes:fred', state: 'connecting' }] }));
+  render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: 'Refresh session' })).toBeEnabled();
+  act(() => pushSnapshot(withFredSurface('disconnected', { state: 'offline', ownership: null })));
+  vi.mocked(window.electronAPI.refreshAssistantSession).mockRejectedValueOnce(new Error('private backend details'));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh session' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh Bot Chat. Try again.');
+  expect(screen.queryByText(/private backend/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh session' }));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  expect(window.electronAPI.refreshAssistantSession).toHaveBeenCalledTimes(2);
+});
+
 it('a PTY-only disconnect while the service stays connected never auto-reopens; Reconnect is a single user-initiated attempt', async () => {
   mockMain(withFredSurface('open'));
   render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);

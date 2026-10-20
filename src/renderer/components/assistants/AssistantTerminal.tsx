@@ -111,7 +111,7 @@ export default function AssistantTerminal({ assistantId, isActive }: { assistant
     const timer = setTimeout(() => { fitAndResize(); xtermRef.current?.focus(); }, 30);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive]);
+  }, [isActive, surfaceState]);
 
   const overlay = !serviceConnected
     ? (snapshot?.service.state === 'probing' || snapshot?.service.state === 'starting' ? 'Connecting to Hermes…' : 'Hermes service is not running.')

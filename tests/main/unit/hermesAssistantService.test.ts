@@ -732,6 +732,82 @@ describe('Bot Chat PTY surfaces', () => {
     expect([first.state, second.state]).toEqual(['connecting', 'open']);
     expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open' }]);
   });
+  it('refreshes only the requested viewer, preserving canonical/attach identity and size, and ignores its old socket', async () => {
+    const { service, hermes, ptyData, spawnServe } = await open();
+    await service.openSurface('hermes:reviewer');
+    await service.openSurface('hermes:ops-agent');
+    await flush();
+    const [old, other] = hermes.ptySockets();
+    old.emit('message', { data: new Uint8Array([0xc3]).buffer });
+    service.resizePty('hermes:reviewer', 100, 30);
+    const before = hermes.calls.length;
+    await service.refreshSurface('hermes:reviewer');
+    await flush();
+    const replacement = hermes.ptySockets()[2];
+    expect(old.closed).toBe(true);
+    expect(other.closed).toBe(false);
+    expect(replacement.url).toBe(old.url);
+    expect(replacement.sent).toEqual(['\x1b[RESIZE:100;30]']);
+    old.emit('message', { data: 'stale' });
+    old.emit('close', { code: 4410 });
+    replacement.emit('message', { data: new TextEncoder().encode('fresh').buffer });
+    expect(ptyData).toEqual([['hermes:reviewer', 'fresh']]);
+    expect(service.get().surfaces.every((surface) => surface.state === 'open')).toBe(true);
+    expect(hermes.calls.slice(before).map((call) => call.method)).toEqual(['session.list']);
+    expect(spawnServe).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+  it('coalesces concurrent refresh/open requests and fails closed when the canonical chat cannot be confirmed', async () => {
+    const { service, hermes } = await open();
+    await service.openSurface('hermes:reviewer'); await flush();
+    // Even a newer roster that stops advertising the chat cannot turn Refresh into Create.
+    hermes.profiles.find((profile) => profile.name === 'reviewer')!.canonical_session = null;
+    await service.refresh();
+    let release!: () => void;
+    hermes.holds.set('session.list', new Promise<void>((resolve) => { release = resolve; }));
+    const first = service.refreshSurface('hermes:reviewer');
+    expect(service.refreshSurface('hermes:reviewer')).toBe(first);
+    expect(service.openSurface('hermes:reviewer')).toBe(first);
+    hermes.listEmpty = true;
+    release();
+    expect((await first).state).toBe('unavailable');
+    expect(hermes.ptySockets()).toHaveLength(1);
+    expect(hermes.rpcCalls).not.toContain('session.create');
+    await service.shutdown();
+  });
+  it('refresh recovers an offline service and reattaches the same viewer without starting another backend', async () => {
+    const { service, hermes, spawnServe } = await open();
+    await service.openSurface('hermes:reviewer'); await flush();
+    hermes.wsSockets()[0].close(1006);
+    await service.refreshSurface('hermes:reviewer'); await flush();
+    expect(hermes.ptySockets()).toHaveLength(2);
+    expect(hermes.ptySockets()[1].url).toBe(hermes.ptySockets()[0].url);
+    expect(service.get().surfaces[0].state).toBe('open');
+    expect(spawnServe).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+  it.each(['reset', 'disable', 'shutdown'] as const)('a pending refresh cannot resurrect a viewer after %s', async (action) => {
+    const { service, hermes } = await open();
+    await service.openSurface('hermes:reviewer'); await flush();
+    let release!: () => void;
+    hermes.holds.set('session.list', new Promise<void>((resolve) => { release = resolve; }));
+    const pending = service.refreshSurface('hermes:reviewer');
+    if (action === 'disable') service.configure({ enabled: false, autoStart: false });
+    else await service[action]();
+    release();
+    await pending;
+    expect(hermes.ptySockets()).toHaveLength(1);
+    expect(service.get().surfaces).toEqual([]);
+    await service.shutdown();
+  });
+  it('refresh refuses malformed ids and unopened profiles without probing or creating a chat', async () => {
+    const { service, hermes } = await open();
+    const calls = hermes.calls.length;
+    for (const id of ['../x', 'hermes:default', 'hermes:reviewer', 'hermes:unknown']) await expect(service.refreshSurface(id)).rejects.toThrow();
+    expect(hermes.calls).toHaveLength(calls);
+    expect(hermes.ptySockets()).toHaveLength(0);
+    await service.shutdown();
+  });
   it('forwards input, output (text and binary, split multi-byte) and Hermes resize framing', async () => {
     const { service, hermes, ptyData } = await open();
     await service.openSurface('hermes:reviewer');

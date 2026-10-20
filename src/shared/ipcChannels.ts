@@ -256,6 +256,7 @@ export const ASSISTANTS_GET = 'assistants:get';
 export const ASSISTANTS_CONFIGURE = 'assistants:configure';
 export const ASSISTANTS_REFRESH = 'assistants:refresh';
 export const ASSISTANTS_OPEN = 'assistants:open';
+export const ASSISTANTS_REFRESH_SESSION = 'assistants:refresh-session';
 export const ASSISTANTS_PTY_WRITE = 'assistants:pty-write';
 export const ASSISTANTS_PTY_RESIZE = 'assistants:pty-resize';
 export const ASSISTANTS_CHANGED = 'assistants:changed';
@@ -526,6 +527,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ASSISTANTS_CONFIGURE,
   ASSISTANTS_REFRESH,
   ASSISTANTS_OPEN,
+  ASSISTANTS_REFRESH_SESSION,
   ASSISTANTS_PTY_WRITE,
   ASSISTANTS_PTY_RESIZE,
   ASSISTANTS_CHANGED,

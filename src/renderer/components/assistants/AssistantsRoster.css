@@ -40,7 +40,9 @@
 .assistants-roster-strip .assistants-roster-status, .assistants-roster-strip .assistants-roster-error { margin: 0; }
 .assistant-surface { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--surface-app); }
 .assistant-surface.parked { display: none; }
-.assistant-surface-header { display: flex; align-items: center; justify-content: space-between; padding: 4px var(--space-md); border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.assistant-surface-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-xs); padding: 4px var(--space-md); border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.assistant-surface-actions { display: flex; align-items: center; gap: var(--space-xs); }
+.assistant-surface-error { padding: var(--space-xs) var(--space-md); color: var(--status-error); font-size: var(--font-size-sm); }
 .assistant-surface-body { flex: 1; min-height: 0; min-width: 0; }
 .assistant-terminal { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
 .assistant-surface-terminal { flex: 1; min-height: 0; padding: 4px; }
