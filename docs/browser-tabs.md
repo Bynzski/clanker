@@ -14,7 +14,11 @@ The toolbar provides Back, Forward, Refresh, Stop, a URL field, an external-brow
 
 The browser runs in the desktop app even when the workspace is on SSH. A `file:` URL refers to a local desktop file. Workspace-owned remote HTTP(S) services can be discovered and forwarded automatically while Browser is active; ambiguous listeners require selection. See [SSH browser previews](workspaces.md#ssh-browser-previews). Local checkout servers use the explicit [dev-server Browser action](dev-services.md).
 
-Type at least two characters in the URL field to see matching history entries. Suggestions appear after a 300 ms debounce. Use the arrow keys and Enter, click a suggestion, or press Escape to dismiss them. History matches URL and hostname prefixes, including hostnames without `www.`.
+The address bar accepts Google searches as well as addresses, in new tabs and on existing pages. Domains open with HTTPS; localhost and loopback addresses default to HTTP. Ordinary words, phrases, and bare numbers search Google. Explicit malformed addresses and unsupported schemes show an error. Absolute local paths preserve spaces and URL-special characters. Search text is sent to Google only on submission; there is no network autocomplete.
+
+The dropdown starts with the explicit Search/Open action. Enter and Go execute that action unless a history suggestion was selected with the arrow keys or pointer. Escape dismisses the dropdown and cancels pending suggestions. Focusing an empty field shows recent history; typing at least two characters queries history after a 150 ms debounce. Changes discard old results immediately, and replies from dismissed or replaced queries cannot reopen the dropdown.
+
+Document title updates refresh searchable metadata without changing visit order. History ranks URL/hostname intent ahead of title/path words, substring matches and conservative one-edit fuzzy matches, using recency within each tier. `localhost` finds recent IPv4/IPv6 loopback endpoints too; a bare port such as `8000` prioritizes exact local port matches over numbers in page paths or titles. Broad hostname searches such as `chat` put site homepages ahead of deep conversation URLs. If only a deep URL was visited, a website suggestion can be derived from its origin without recording a visit; local endpoints and credential-bearing URLs do not generate these site suggestions. Path-specific queries keep their path intent. Titles and URLs display matching text, and the combobox supports keyboard navigation and independent accessible IDs across panes.
 
 ## Notifications
 

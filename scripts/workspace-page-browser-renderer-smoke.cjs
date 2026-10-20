@@ -8,10 +8,10 @@ const path = require('node:path');
 const http = require('node:http');
 const repo = path.resolve(__dirname, '..');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-browser-renderer-'));
-for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
+for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project', 'tmp']) fs.mkdirSync(path.join(root, name));
 fs.writeFileSync(path.join(root, 'profile/config.json'), JSON.stringify({ harnessDefaults: Object.fromEntries(['codex', 'claude', 'pi', 'opencode', 'omp', 'hermes', 'agy'].map(id => [id, { model: '', favorites: [], flags: '', visible: false, usageVisible: false }])) }));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
-Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
+Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', TMPDIR: path.join(root, 'tmp'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const server = http.createServer((request, response) => {
   const identity = request.url?.includes('/B') ? 'B' : 'A';
   response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -37,7 +37,13 @@ async function until(check, message) {
     await page.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
     await page.getByRole('button', { name: 'New Agent', exact: true }).waitFor();
     await app.evaluate(({ session }, base) => {
-      session.fromPartition('persist:browser-global').webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith(base) }));
+      globalThis.browserAddressSearchRequests = [];
+      session.fromPartition('persist:browser-global').webRequest.onBeforeRequest((details, callback) => {
+        if (details.url.startsWith('https://www.google.com/search?')) {
+          globalThis.browserAddressSearchRequests.push(details.url);
+          callback({ redirectURL: `${base}/search${new URL(details.url).search}` });
+        } else callback({ cancel: !details.url.startsWith(base) && !details.url.startsWith('file:') });
+      });
     }, base);
     await app.evaluate(({ ipcMain }, channelsPath) => {
       const channels = process.getBuiltinModule('module').createRequire(channelsPath)(channelsPath);
@@ -63,6 +69,54 @@ async function until(check, message) {
       await until(async () => (await views()).some(view => view.visible && view.url === `${base}/${identity}`), `Browser ${identity} failed to navigate`);
     };
     await toggle(); await navigate('A');
+    const initialVisit = await page.evaluate(async base => (await window.electronAPI.browserHistoryGet()).find(entry => entry.url === `${base}/A`).lastVisited, base);
+    await app.evaluate(({ webContents }, base) => webContents.getAllWebContents().find(contents => contents.getURL() === `${base}/A`).executeJavaScript('document.title="Updated searchable fixture"'), base);
+    await until(() => page.evaluate(async base => (await window.electronAPI.browserHistoryGet('updated searchable')).some(entry => entry.url === `${base}/A`), base), 'Late page title was not searchable');
+    assert.equal(await page.evaluate(async () => (await window.electronAPI.browserHistoryGet('updated searchable'))[0].lastVisited), initialVisit, 'Title update changed visit recency');
+    const address = page.getByRole('combobox', { name: 'Search Google or enter address' });
+    await page.evaluate(async () => {
+      for (const [url, title] of [
+        ['https://chatgpt.com/c/old-hash', 'Old conversation'],
+        ['https://chatgpt.com/c/new-hash#message', 'New conversation'],
+        ['http://localhost:8000/old', 'Older local app'],
+        ['http://127.0.0.1:8000/recent', 'Recent local app'],
+        ['https://example.com/posts/8000', '8000 localhost tips'],
+      ]) await window.electronAPI.browserHistoryAdd(url, title);
+    });
+    const firstHistory = page.getByRole('listbox', { name: 'Browser suggestions' }).getByRole('option').nth(1);
+    await address.fill('chat');
+    await until(() => firstHistory.getAttribute('aria-label').then(label => label === 'Website chatgpt.com https://chatgpt.com/'), 'Site homepage was buried behind conversation hashes');
+    await until(() => views().then(items => items.every(view => !view.visible)), 'Native Browser covered search suggestions');
+    if (process.env.CLANKER_SMOKE_ADDRESS_SCREENSHOT) await page.screenshot({ path: process.env.CLANKER_SMOKE_ADDRESS_SCREENSHOT });
+    await address.fill('localhost');
+    await until(() => firstHistory.getAttribute('aria-label').then(label => label === 'Recent local app http://127.0.0.1:8000/recent'), 'Localhost did not prioritize recent loopback services');
+    await address.fill('8000');
+    await until(() => firstHistory.getAttribute('aria-label').then(label => label === 'Recent local app http://127.0.0.1:8000/recent'), 'Port query did not rank exact local ports first');
+    await address.press('Escape');
+    await until(() => views().then(items => items.some(view => view.visible && view.url === `${base}/A`)), 'Escape did not restore native Browser');
+    await address.fill(String(server.address().port));
+    await until(() => firstHistory.getAttribute('aria-label').then(label => label?.includes(`${base}/A`)), 'Current fixture port not found in history');
+    await address.press('ArrowDown');
+    await page.getByRole('button', { name: 'Go', exact: true }).click();
+    await until(() => views().then(items => items.some(view => view.visible && view.url === `${base}/A`)), 'Go ignored explicitly selected history');
+    for (const [query, method] of [['react effect cleanup', 'Enter'], ['8000', 'Go']]) {
+      await address.fill(query);
+      // Wait for history to arrive before submitting: it must never steal the default action.
+      await pause(200);
+      if (method === 'Enter') await address.press('Enter');
+      else await page.getByRole('button', { name: 'Go', exact: true }).click();
+      await until(() => app.evaluate((_electron, query) => globalThis.browserAddressSearchRequests.includes(`https://www.google.com/search?q=${encodeURIComponent(query)}`), query), `${method} did not submit the typed Google search`);
+      await until(() => views().then(items => items.some(view => view.visible && view.url === `${base}/search?q=${encodeURIComponent(query)}`)), 'Search results did not open in the same native Browser');
+    }
+    const localFile = path.join(root, 'project', 'report #1.html');
+    fs.writeFileSync(localFile, '<title>Local report</title><h1>Local path with hash</h1>');
+    await address.fill(localFile); await address.press('Enter');
+    await until(() => views().then(items => items.some(view => view.visible && view.url.endsWith('/report%20%231.html'))), 'Local path characters were not preserved');
+    await address.fill('javascript:alert(1)'); await address.press('Enter');
+    await page.getByRole('alert').filter({ hasText: 'Enter a valid HTTP(S)' }).waitFor();
+    assert.equal(await app.evaluate(() => globalThis.browserAddressSearchRequests.length), 2);
+    await address.press('Escape');
+    await navigate('A');
     const aId = (await views()).find(view => view.url === `${base}/A`).id;
     await app.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript('window.counter=111;document.querySelector("input").value="A retained"'), aId);
     const aBounds = await app.evaluate(() => globalThis.browserSmokeBounds.at(-1));
@@ -92,7 +146,7 @@ async function until(check, message) {
     assert.equal(await page.locator('.browser-tab').count(), 1);
     // URL autocomplete is a real overlay lease; switching pages must retire it safely.
     await page.locator('.browser-toolbar input').fill(`${base}/`);
-    await page.getByRole('listbox', { name: 'URL history suggestions' }).waitFor();
+    await page.getByRole('listbox', { name: 'Browser suggestions' }).waitFor();
     await until(() => views().then(items => items.every(view => !view.visible)), 'Browser overlaid URL suggestions');
     await select(1);
     await until(async () => (await views()).some(view => view.visible && view.id === aId), 'Overlay page switch lost A');
@@ -155,7 +209,7 @@ async function until(check, message) {
     assert(await page.evaluate(() => Object.entries(window.localStorage).some(([key, value]) => key.startsWith('clanker-grid:workspace-pages:v2:') && JSON.parse(value).browsers.length === 2)));
     await page.getByRole('button', { name: 'Close workspace', exact: true }).click();
     await until(() => views().then(items => items.length === 0), 'Workspace closure orphaned native Browser views');
-    console.log('PASS: full renderer leases; independent tabs/native JS/forms; 24 page transitions; delayed creation/stale geometry/overlay cleanup; minimize/restore/maximize/hide; occupied pointer drop rejection; Browser movement; V2 persistence; workspace view disposal');
+    console.log('PASS: late searchable titles without visit churn; Google search via Enter/Go; local port/homepage ranking; explicit history selection; escaped local files; invalid schemes; full renderer leases; independent tabs/native JS/forms; 24 page transitions; delayed creation/stale geometry/overlay cleanup; minimize/restore/maximize/hide; occupied pointer drop rejection; Browser movement; V2 persistence; workspace view disposal');
   } finally {
     await app?.close();
     await new Promise(resolve => server.close(resolve));

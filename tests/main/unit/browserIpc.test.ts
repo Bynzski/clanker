@@ -11,6 +11,8 @@ let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, in
 let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
 let attachedZoomChangedHandler: ((event: unknown, direction: string) => void) | null = null;
 let attachedDidFailLoadHandler: ((event: unknown, code: number, description: string, url: string, isMainFrame: boolean) => void) | null = null;
+let currentDocumentUrl = '';
+let attachedTitleUpdatedHandler: ((event: unknown, title: string) => void) | null = null;
 let attachedDidNavigateHandler: ((event: unknown, url: string) => void) | null = null;
 let attachedDestroyedHandler: (() => void) | null = null;
 
@@ -83,11 +85,13 @@ vi.mock('electron', () => ({
           attachedContextMenuHandler = handler as typeof attachedContextMenuHandler;
         }
         if (eventName === 'did-fail-load') attachedDidFailLoadHandler = handler as unknown as typeof attachedDidFailLoadHandler;
+        if (eventName === 'page-title-updated') attachedTitleUpdatedHandler = handler as unknown as typeof attachedTitleUpdatedHandler;
         if (eventName === 'did-navigate') {
           attachedDidNavigateHandler = handler as unknown as typeof attachedDidNavigateHandler;
         }
       }),
       getTitle: vi.fn(() => 'Navigated title'),
+      getURL: vi.fn(() => currentDocumentUrl),
       getZoomLevel: vi.fn(() => 0),
       setZoomLevel: vi.fn(),
       openDevTools: vi.fn(),
@@ -1607,6 +1611,7 @@ describe('registerBrowserIpc — browser history handlers (Phase 4)', () => {
     };
     return {
       mockBrowserViews,
+      mockMainWindow,
       deps: {
         getMainWindow: () => mockMainWindow as never,
         getBrowserViews: () => mockBrowserViews as never,
@@ -1641,10 +1646,33 @@ describe('registerBrowserIpc — browser history handlers (Phase 4)', () => {
     expect(await add(null, 'about:blank', 'Blank')).toBe(false);
     expect(await add(null, 'https://github.com/clanker-grid', 'Grid')).toBe(true);
     expect(await get(null, 'git')).toEqual([
+      expect.objectContaining({ url: 'https://github.com/', source: 'site' }),
       expect.objectContaining({ url: 'https://github.com/clanker-grid', title: 'Grid' }),
     ]);
     expect(await clear(null)).toBe(true);
     expect(await get(null, 'git')).toEqual([]);
+  });
+
+  test('late document titles update searchable metadata without creating visits', async () => {
+    const { deps, mockMainWindow } = createMockDeps();
+    registerBrowserIpc(deps);
+    await findHandler('browser-create-tab')(null, 'ws-1', 'tab-a');
+    currentDocumentUrl = 'https://example.com/article';
+    attachedDidNavigateHandler?.(null, currentDocumentUrl);
+    const service = getBrowserHistoryService();
+    const visitedAt = service.getAll()[0].lastVisited;
+    service.add('https://other.example/', 'Other', visitedAt + 1);
+    attachedTitleUpdatedHandler?.(null, 'Searchable document title');
+    expect(service.query('searchable document')).toEqual([
+      { url: currentDocumentUrl, title: 'Searchable document title', lastVisited: visitedAt },
+    ]);
+    expect(service.query()[0].url).toBe('https://other.example/');
+    expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(BROWSER_URL_UPDATED,
+      expect.objectContaining({ workspaceId: 'ws-1', tabId: 'tab-a', title: 'Searchable document title' }));
+    // A document whose URL is not the committed entry cannot rewrite its title.
+    currentDocumentUrl = 'https://uncommitted.example/';
+    attachedTitleUpdatedHandler?.(null, 'Uncommitted');
+    expect(service.query('uncommitted')).toEqual([]);
   });
 
   test('committed navigation events record HTTP(S) URLs in history', async () => {
@@ -1660,6 +1688,7 @@ describe('registerBrowserIpc — browser history handlers (Phase 4)', () => {
     attachedDidNavigateHandler?.(null, 'about:blank');
 
     expect(await get(null, 'github.com')).toEqual([
+      expect.objectContaining({ url: 'https://github.com/', source: 'site' }),
       expect.objectContaining({ url: 'https://github.com/clanker-grid', title: 'Navigated title' }),
     ]);
   });
@@ -1898,14 +1927,14 @@ describe('registerBrowserIpc — integration hardening (Phase 6)', () => {
 
     await add(null, 'https://example.com/page1', 'Page 1');
     await add(null, 'https://example.com/page2', 'Page 2');
-    expect(await get(null, 'example')).toHaveLength(2);
+    expect(await get(null, 'example')).toHaveLength(3);
 
     await clear(null);
     expect(await get(null, 'example')).toHaveLength(0);
 
     // Re-add after clear
     await add(null, 'https://example.com/page3', 'Page 3');
-    expect(await get(null, 'example')).toHaveLength(1);
+    expect(await get(null, 'example')).toHaveLength(2);
   });
 
   test('BROWSER_GET_URL returns the active tab URL', async () => {

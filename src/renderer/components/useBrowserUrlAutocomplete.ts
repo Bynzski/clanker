@@ -1,27 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent } from 'react';
-import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
+import type { ChangeEvent, FocusEvent, KeyboardEvent } from 'react';
+import type { BrowserHistorySuggestion } from '../../shared/types/browserHistory';
+import { resolveBrowserAddress } from '../lib/browserAddress';
 
 interface UseBrowserUrlAutocompleteOptions {
   displayedUrl: string;
   activeTabId: string | null;
-  getHistory: (query: string) => Promise<BrowserHistoryEntry[]>;
+  getHistory: (query: string) => Promise<BrowserHistorySuggestion[]>;
   onNavigate: (url: string) => Promise<string | null>;
-}
-
-interface UseBrowserUrlAutocompleteResult {
-  inputUrl: string;
-  historySuggestions: BrowserHistoryEntry[];
-  highlightedSuggestionIndex: number;
-  handleInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  handleInputFocus: () => void;
-  handleInputBlur: () => void;
-  handleInputKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
-  setHighlightedSuggestionIndex: (index: number) => void;
-  handleSuggestionClick: (entry: BrowserHistoryEntry) => void;
-  submitUrl: () => Promise<void>;
-  syncDisplayedUrl: (url: string) => void;
-  resetAutocompleteState: () => void;
 }
 
 export function useBrowserUrlAutocomplete({
@@ -29,140 +15,145 @@ export function useBrowserUrlAutocomplete({
   activeTabId,
   getHistory,
   onNavigate,
-}: UseBrowserUrlAutocompleteOptions): UseBrowserUrlAutocompleteResult {
+}: UseBrowserUrlAutocompleteOptions) {
   const [inputUrl, setInputUrl] = useState(displayedUrl);
-  const [urlInputFocused, setUrlInputFocused] = useState(false);
-  const [historySuggestions, setHistorySuggestions] = useState<BrowserHistoryEntry[]>([]);
-  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
-  const urlUserEditedRef = useRef(false);
-  const blurSuggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [historySuggestions, setHistorySuggestions] = useState<BrowserHistorySuggestion[]>([]);
+  // -1 is the typed Search/Open action. History always requires explicit selection.
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
+  const [inputError, setInputError] = useState('');
+  const interactionRef = useRef(0);
+  const queryRef = useRef(0);
+  const addressAction = resolveBrowserAddress(inputUrl);
+  const primaryAction = suggestionsOpen && addressAction?.kind !== 'invalid' ? addressAction : null;
 
   const clearSuggestions = useCallback(() => {
+    queryRef.current++;
     setHistorySuggestions([]);
-    setHighlightedSuggestionIndex(0);
+    setHighlightedSuggestionIndex(-1);
   }, []);
 
-  const navigateTo = useCallback(async (url: string) => {
-    const navigatedUrl = await onNavigate(url);
-    if (!navigatedUrl) {
-      return;
-    }
-
+  const dismissSuggestions = useCallback(() => {
     clearSuggestions();
-    setInputUrl(navigatedUrl);
-    urlUserEditedRef.current = false;
-  }, [clearSuggestions, onNavigate]);
+    setSuggestionsOpen(false);
+  }, [clearSuggestions]);
+
+  const navigateTo = useCallback(async (url: string) => {
+    const interaction = ++interactionRef.current;
+    dismissSuggestions();
+    setInputError('');
+    try {
+      const navigatedUrl = await onNavigate(url);
+      if (interaction !== interactionRef.current) return;
+      if (navigatedUrl) setInputUrl(navigatedUrl);
+      else setInputError('Could not open this address. Check the URL or file path.');
+    } catch {
+      if (interaction === interactionRef.current) setInputError('Could not open this address. Try again.');
+    }
+  }, [dismissSuggestions, onNavigate]);
 
   const submitUrl = useCallback(async () => {
-    await navigateTo(inputUrl);
-  }, [inputUrl, navigateTo]);
+    const highlighted = historySuggestions[highlightedSuggestionIndex];
+    if (highlighted) {
+      await navigateTo(highlighted.url);
+    } else if (addressAction?.kind === 'invalid') {
+      dismissSuggestions();
+      setInputError(addressAction.error);
+    } else if (addressAction) {
+      await navigateTo(addressAction.url);
+    }
+  }, [addressAction, dismissSuggestions, highlightedSuggestionIndex, historySuggestions, navigateTo]);
 
-  const handleSuggestionClick = useCallback((entry: BrowserHistoryEntry) => {
+  const handleSuggestionClick = useCallback((entry: BrowserHistorySuggestion) => {
     void navigateTo(entry.url);
   }, [navigateTo]);
 
+  const handlePrimaryActionClick = useCallback(() => {
+    if (addressAction && addressAction.kind !== 'invalid') void navigateTo(addressAction.url);
+  }, [addressAction, navigateTo]);
+
   const handleInputKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    const keyHandlers: Partial<Record<string, () => void>> = {
-      ArrowDown: () => {
-        if (historySuggestions.length === 0) return;
-        setHighlightedSuggestionIndex((index) => (index + 1) % historySuggestions.length);
-      },
-      ArrowUp: () => {
-        if (historySuggestions.length === 0) return;
-        setHighlightedSuggestionIndex((index) => (index - 1 + historySuggestions.length) % historySuggestions.length);
-      },
-      Escape: () => {
-        clearSuggestions();
-      },
-      Enter: () => {
-        const highlighted = historySuggestions[highlightedSuggestionIndex];
-        if (highlighted) {
-          void navigateTo(highlighted.url);
-          return;
-        }
-
-        void submitUrl();
-      },
-    };
-
-    const handler = keyHandlers[event.key];
-    if (handler) {
+    // Enter during an IME composition must finish composing, never navigate.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      handler();
+      setSuggestionsOpen(true);
+      const first = primaryAction ? -1 : 0;
+      if (historySuggestions.length) {
+        setHighlightedSuggestionIndex(index => event.key === 'ArrowDown'
+          ? index >= historySuggestions.length - 1 ? first : index + 1
+          : index <= first ? historySuggestions.length - 1 : index - 1);
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      dismissSuggestions();
+      setInputError('');
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      void submitUrl();
     }
-  }, [clearSuggestions, highlightedSuggestionIndex, historySuggestions, navigateTo, submitUrl]);
+  }, [dismissSuggestions, historySuggestions.length, primaryAction, submitUrl]);
 
   const handleInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const nextValue = event.target.value;
-    urlUserEditedRef.current = true;
-    setInputUrl(nextValue);
-    if (nextValue.trim().length < 2) {
-      clearSuggestions();
-    }
+    interactionRef.current++;
+    clearSuggestions();
+    setInputError('');
+    setInputUrl(event.target.value);
+    setSuggestionsOpen(true);
   }, [clearSuggestions]);
 
   const handleInputFocus = useCallback(() => {
-    if (blurSuggestionsTimerRef.current != null) {
-      clearTimeout(blurSuggestionsTimerRef.current);
-      blurSuggestionsTimerRef.current = null;
-    }
-    setUrlInputFocused(true);
+    setSuggestionsOpen(true);
   }, []);
 
-  const handleInputBlur = useCallback(() => {
-    blurSuggestionsTimerRef.current = setTimeout(() => {
-      setUrlInputFocused(false);
-      clearSuggestions();
-    }, 120);
-  }, [clearSuggestions]);
+  const handleInputBlur = useCallback((event: FocusEvent<HTMLElement>) => {
+    // Suggestion mousedown keeps input focus; no delayed blur or lost Go selection.
+    if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest('.browser-go-btn')) return;
+    dismissSuggestions();
+    setInputError('');
+  }, [dismissSuggestions]);
 
   useEffect(() => {
     const query = inputUrl.trim();
-    if (!urlInputFocused || !urlUserEditedRef.current || query.length < 2) {
-      return;
-    }
-
+    if (!suggestionsOpen || (query.length > 0 && query.length < 2)) return;
+    const version = ++queryRef.current;
     let cancelled = false;
     const timeoutId = setTimeout(() => {
-      getHistory(query)
-        .then((entries) => {
-          if (cancelled) return;
-          setHistorySuggestions(entries);
-          setHighlightedSuggestionIndex(0);
-        })
-        .catch(() => {
-          if (!cancelled) {
-            clearSuggestions();
-          }
-        });
-    }, 300);
-
+      getHistory(query).then(entries => {
+        if (cancelled || queryRef.current !== version) return;
+        setHistorySuggestions(entries);
+        setHighlightedSuggestionIndex(-1);
+      }).catch(() => {
+        if (!cancelled && queryRef.current === version) clearSuggestions();
+      });
+    }, 150);
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [activeTabId, clearSuggestions, getHistory, inputUrl, urlInputFocused]);
+  }, [activeTabId, clearSuggestions, getHistory, inputUrl, suggestionsOpen]);
 
   useEffect(() => {
-    return () => {
-      if (blurSuggestionsTimerRef.current != null) {
-        clearTimeout(blurSuggestionsTimerRef.current);
-      }
-    };
+    const interaction = interactionRef;
+    return () => { interaction.current++; };
   }, []);
 
   const syncDisplayedUrl = useCallback((url: string) => {
+    interactionRef.current++;
     setInputUrl(url);
   }, []);
 
   const resetAutocompleteState = useCallback(() => {
-    clearSuggestions();
-    urlUserEditedRef.current = false;
-  }, [clearSuggestions]);
+    interactionRef.current++;
+    dismissSuggestions();
+    setInputError('');
+  }, [dismissSuggestions]);
 
   return {
     inputUrl,
     historySuggestions,
+    primaryAction,
+    inputError,
     highlightedSuggestionIndex,
     handleInputChange,
     handleInputFocus,
@@ -170,6 +161,7 @@ export function useBrowserUrlAutocomplete({
     handleInputKeyDown,
     setHighlightedSuggestionIndex,
     handleSuggestionClick,
+    handlePrimaryActionClick,
     submitUrl,
     syncDisplayedUrl,
     resetAutocompleteState,

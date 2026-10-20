@@ -231,8 +231,8 @@
 .browser-history-suggestion {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   color: var(--text-primary);
   background: transparent;
@@ -256,15 +256,16 @@
 }
 
 .browser-history-suggestion-url {
+  display: block;
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
 .browser-history-suggestion-title {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  opacity: 0.86;
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
 }
 
 .browser-go-btn {
@@ -292,3 +293,34 @@
 .remote-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; }
 .remote-preview-controls label { display: flex; align-items: center; gap: 4px; }
 .remote-preview-controls input { width: 70px; }
+
+.browser-suggestion-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.browser-history-suggestion > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.browser-suggestion-heading {
+  padding: 8px 10px 4px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.browser-history-suggestion mark {
+  color: var(--text-primary);
+  background: transparent;
+  font-weight: 700;
+}
+
+.browser-address-error {
+  padding: 10px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}

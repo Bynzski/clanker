@@ -235,10 +235,10 @@ function index(error) {
       await click('Expand Files'); await page.getByText('src', { exact: true }).last().click();
       await page.getByText('projects.ts', { exact: true }).dblclick(); await pause(500);
       await shot(theme, 'editor-browser', 'Editor and native Browser together, with service controls in the sidebar');
-      const previewUrl = await page.getByPlaceholder('Enter URL…').inputValue();
+      const previewUrl = await page.getByPlaceholder('Search Google or enter address…').inputValue();
       await click('New tab');
-      await page.getByPlaceholder('Enter URL…').fill(new URL('/guide', previewUrl).href);
-      await page.getByPlaceholder('Enter URL…').press('Enter');
+      await page.getByPlaceholder('Search Google or enter address…').fill(new URL('/guide', previewUrl).href);
+      await page.getByPlaceholder('Search Google or enter address…').press('Enter');
       await page.locator('.browser-pane-title').click(); await pause(1800);
       await shot(theme, 'browser-tabs', 'Native Browser tabs for the local dashboard and project guide');
       await clip(theme, 'browser-annotation', 'Entering and leaving native Browser annotation mode', async () => {

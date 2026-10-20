@@ -1,6 +1,7 @@
 import Store from 'electron-store';
 import { normalizeAppBrowserUrl } from './security';
-import type { BrowserHistoryEntry } from '../shared/types/browserHistory';
+import { rankBrowserHistory } from './browserHistoryRanking';
+import type { BrowserHistoryEntry, BrowserHistorySuggestion } from '../shared/types/browserHistory';
 
 export type { BrowserHistoryEntry } from '../shared/types/browserHistory';
 
@@ -23,34 +24,6 @@ function sanitizeTitle(title?: string): string | undefined {
 
 function normalizeHistoryUrl(url: string): string | null {
   return normalizeAppBrowserUrl(url);
-}
-
-function stripWww(hostname: string): string {
-  return hostname.startsWith('www.') ? hostname.slice(4) : hostname;
-}
-
-function createSearchKeys(url: string): string[] {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname.toLowerCase();
-    const hostAndPath = `${hostname}${parsed.pathname === '/' ? '' : parsed.pathname}`.toLowerCase();
-    const strippedHostname = stripWww(hostname);
-    const strippedHostAndPath = stripWww(hostAndPath);
-
-    return Array.from(new Set([
-      url.toLowerCase(),
-      hostname,
-      hostAndPath,
-      strippedHostname,
-      strippedHostAndPath,
-    ]));
-  } catch {
-    return [url.toLowerCase()];
-  }
-}
-
-function normalizeQuery(prefix?: string): string {
-  return (prefix ?? '').trim().toLowerCase();
 }
 
 export class BrowserHistoryService {
@@ -82,16 +55,18 @@ export class BrowserHistoryService {
     return true;
   }
 
-  query(prefix?: string): BrowserHistoryEntry[] {
-    const query = normalizeQuery(prefix);
-    const entries = this.getAll();
-    if (!query) {
-      return entries.slice(0, MAX_QUERY_RESULTS);
-    }
+  query(query?: string): BrowserHistorySuggestion[] {
+    return rankBrowserHistory(this.getAll(), query ?? '', MAX_QUERY_RESULTS);
+  }
 
-    return entries
-      .filter((entry) => createSearchKeys(entry.url).some((key) => key.startsWith(query)))
-      .slice(0, MAX_QUERY_RESULTS);
+  /** A document title change is metadata, not a new visit. */
+  updateTitle(url: string, title: string): boolean {
+    const safeUrl = normalizeHistoryUrl(url);
+    const cleanTitle = sanitizeTitle(title);
+    const entries = this.getAll();
+    if (!safeUrl || !cleanTitle || !entries.some(entry => entry.url === safeUrl)) return false;
+    this.store.set('entries', entries.map(entry => entry.url === safeUrl ? { ...entry, title: cleanTitle } : entry));
+    return true;
   }
 
   clear(): boolean {
@@ -110,6 +85,8 @@ export class BrowserHistoryService {
       && typeof entry === 'object'
       && typeof entry.url === 'string'
       && typeof entry.lastVisited === 'number'
+      && Number.isFinite(entry.lastVisited)
+      && (entry.title === undefined || typeof entry.title === 'string')
       && normalizeHistoryUrl(entry.url) === entry.url
     ));
   }
@@ -126,4 +103,4 @@ export function __resetBrowserHistoryServiceForTests(service: BrowserHistoryServ
   defaultHistoryService = service;
 }
 
-export { MAX_HISTORY_ENTRIES, MAX_QUERY_RESULTS, normalizeHistoryUrl, createSearchKeys };
+export { MAX_HISTORY_ENTRIES, MAX_QUERY_RESULTS, normalizeHistoryUrl };

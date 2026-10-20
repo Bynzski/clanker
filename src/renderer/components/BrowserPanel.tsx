@@ -18,7 +18,8 @@ import { useAssistantNavStore } from '../store/assistantNavStore';
 import type { BrowserTab } from '../store/workspaceTypes';
 import { createAndActivateBrowserTab, syncSelectedBrowserTab } from '../lib/browserTabActions';
 import { useActiveBrowserOwner } from '../lib/activeDestination';
-import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
+import type { BrowserAddressAction } from '../lib/browserAddress';
+import type { BrowserHistorySuggestion } from '../../shared/types/browserHistory';
 import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
@@ -76,30 +77,6 @@ export interface BrowserPanelModel {
   renderRemotePreview?: (navigate: (url: string) => Promise<string | null>) => ReactNode;
 }
 
-function isWindowsDrivePath(value: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(value);
-}
-
-function normalizeBrowserInputUrl(rawUrl: string): string {
-  const navigateUrl = rawUrl.trim();
-  const lowerUrl = navigateUrl.toLowerCase();
-
-  if (lowerUrl.startsWith('file://') || lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
-    return navigateUrl;
-  }
-
-  if (navigateUrl.startsWith('/')) {
-    return `file://${navigateUrl}`;
-  }
-
-  if (isWindowsDrivePath(navigateUrl)) {
-    return `file:///${navigateUrl.replace(/\\/g, '/')}`;
-  }
-
-  if (/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(navigateUrl)) return `http://${navigateUrl}`;
-  return `https://${navigateUrl}`;
-}
-
 interface BrowserToolbarProps {
   remotePreviewControl?: ReactNode;
   canGoBack: boolean;
@@ -109,14 +86,17 @@ interface BrowserToolbarProps {
   handleRefresh: () => void;
   handleStop: () => void;
   inputUrl: string;
-  historySuggestions: BrowserHistoryEntry[];
+  primaryAction: Exclude<BrowserAddressAction, { kind: 'invalid' }> | null;
+  inputError: string;
+  handlePrimaryActionClick: () => void;
+  historySuggestions: BrowserHistorySuggestion[];
   highlightedSuggestionIndex: number;
   handleInputChange: ChangeEventHandler<HTMLInputElement>;
   handleInputFocus: FocusEventHandler<HTMLInputElement>;
-  handleInputBlur: FocusEventHandler<HTMLInputElement>;
+  handleInputBlur: FocusEventHandler<HTMLElement>;
   handleInputKeyDown: KeyboardEventHandler<HTMLInputElement>;
   setHighlightedSuggestionIndex: (index: number) => void;
-  handleSuggestionClick: (entry: BrowserHistoryEntry) => void;
+  handleSuggestionClick: (entry: BrowserHistorySuggestion) => void;
   submitUrl: () => Promise<void>;
   handleOpenExternal: () => void;
   annotationActive: boolean;
@@ -133,6 +113,9 @@ function BrowserToolbar({
   handleRefresh,
   handleStop,
   inputUrl,
+  primaryAction,
+  inputError,
+  handlePrimaryActionClick,
   historySuggestions,
   highlightedSuggestionIndex,
   handleInputChange,
@@ -165,6 +148,9 @@ function BrowserToolbar({
       <BrowserUrlInput
         inputRef={urlInputRef}
         inputUrl={inputUrl}
+        primaryAction={primaryAction}
+        inputError={inputError}
+        onPrimaryActionClick={handlePrimaryActionClick}
         historySuggestions={historySuggestions}
         highlightedSuggestionIndex={highlightedSuggestionIndex}
         onInputChange={handleInputChange}
@@ -175,7 +161,7 @@ function BrowserToolbar({
         onSuggestionClick={handleSuggestionClick}
       />
 
-      <Button variant="primary" className="browser-go-btn" onClick={() => void submitUrl()}>
+      <Button variant="primary" className="browser-go-btn" onBlur={handleInputBlur} onMouseDown={(event) => event.preventDefault()} onClick={() => void submitUrl()}>
         Go
       </Button>
 
@@ -249,16 +235,17 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
   }, [activeTab]);
 
   const handleNavigate = useCallback(async (rawUrl: string): Promise<string | null> => {
-    let navigateUrl = rawUrl.trim();
+    const navigateUrl = rawUrl.trim();
     if (!navigateUrl) return null;
 
-    navigateUrl = normalizeBrowserInputUrl(navigateUrl);
-
-    const paneId = modelRef.current.paneId;
+    const navigationModel = modelRef.current;
+    const paneId = navigationModel.paneId;
+    const stillSelected = () => modelRef.current.ownerId === ownerId
+      && modelRef.current.paneId === paneId && modelRef.current.activeTabId === activeTabId;
     if (paneId && activeTabId) {
       const exists = () => browserResourceExists(ownerId, paneId, activeTabId);
       await ensureBrowserResource(ownerId, paneId, activeTabId, displayedUrl, exists);
-      if (!exists()) return null;
+      if (!exists() || !stillSelected()) return null;
     }
     const success = activeTabId
       ? await window.electronAPI.browserTabNavigate(ownerId, activeTabId, navigateUrl)
@@ -269,7 +256,7 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
     }
 
     if (activeTabId) {
-      modelRef.current.updateTab(activeTabId, { url: navigateUrl });
+      navigationModel.updateTab(activeTabId, { url: navigateUrl });
     }
 
     return navigateUrl;
@@ -277,6 +264,9 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
 
   const {
     inputUrl,
+    primaryAction,
+    inputError,
+    handlePrimaryActionClick,
     historySuggestions,
     highlightedSuggestionIndex,
     handleInputChange,
@@ -298,16 +288,22 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
   useEffect(() => {
     syncDisplayedUrl(displayedUrl);
     resetAutocompleteState();
-  }, [activeTabId, displayedUrl, resetAutocompleteState, syncDisplayedUrl]);
+  }, [ownerId, model.paneId, activeTabId, displayedUrl, resetAutocompleteState, syncDisplayedUrl]);
 
   useEffect(() => {
-    if (historySuggestions.length === 0) {
+    if (!isActiveOwner) resetAutocompleteState();
+  }, [isActiveOwner, resetAutocompleteState]);
+
+  const autocompleteVisible = Boolean(primaryAction || historySuggestions.length || inputError);
+  useEffect(() => {
+    if (!autocompleteVisible) {
       return;
     }
 
-    modelRef.current.pushOverlay();
-    return () => modelRef.current.popOverlay();
-  }, [historySuggestions.length]);
+    const overlayOwner = modelRef.current;
+    overlayOwner.pushOverlay();
+    return () => overlayOwner.popOverlay();
+  }, [autocompleteVisible, ownerId, model.paneId]);
 
   const handleAnnotationActions = useCallback((state: Awaited<ReturnType<typeof window.electronAPI.annotationGetState>>) => {
     const pendingMessages = state.actions.flatMap((action) =>
@@ -527,6 +523,9 @@ export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanel
         handleRefresh={handleRefresh}
         handleStop={handleStop}
         inputUrl={inputUrl}
+        primaryAction={primaryAction}
+        inputError={inputError}
+        handlePrimaryActionClick={handlePrimaryActionClick}
         historySuggestions={historySuggestions}
         highlightedSuggestionIndex={highlightedSuggestionIndex}
         handleInputChange={handleInputChange}
