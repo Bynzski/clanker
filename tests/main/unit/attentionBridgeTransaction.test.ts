@@ -117,6 +117,71 @@ describe('attention bridge state transactions', () => {
     expect(fs.existsSync(`${stateBase}.json.lock`)).toBe(false);
   });
 
+  it.each(['missing', 'empty'])('recovers an expired lock with %s owner metadata and processes Codex Stop', async (owner) => {
+    const { run, stateBase, broker, updates } = await bridge({}, OBSERVER, 'codex', { requested: true, attachment: 'prepared' });
+    await run('codex.mjs', 'UserPromptSubmit', turn);
+    const lock = `${stateBase}.json.lock`;
+    fs.mkdirSync(lock);
+    if (owner === 'empty') fs.writeFileSync(path.join(lock, 'owner'), '');
+    const expired = new Date(Date.now() - 60000);
+    fs.utimesSync(lock, expired, expired);
+
+    expect(await run('codex.mjs', 'Stop', turn)).toBe(0);
+
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'provisional' }, signal: { health: 'observed' } });
+    expect(updates).toEqual(['turn_started', 'turn_provisional']);
+    expect(fs.existsSync(lock)).toBe(false);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+  });
+
+  it.each(['missing', 'empty'])('preserves a fresh lock with %s owner metadata while its creator may still be writing', async (owner) => {
+    const { run, stateBase, broker, updates } = await bridge({}, OBSERVER, 'codex', { requested: true, attachment: 'prepared' });
+    await run('codex.mjs', 'UserPromptSubmit', turn);
+    const lock = `${stateBase}.json.lock`;
+    fs.mkdirSync(lock);
+    if (owner === 'empty') fs.writeFileSync(path.join(lock, 'owner'), '');
+
+    expect(await run('codex.mjs', 'Stop', turn)).toBe(0);
+
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'running' }, signal: { health: 'degraded', reason: 'lock-unavailable' } });
+    expect(updates).toEqual(['turn_started', 'changed']); // signal degradation, no turn settlement
+    expect(fs.existsSync(lock)).toBe(true);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    if (owner === 'empty') expect(fs.readFileSync(path.join(lock, 'owner'), 'utf8')).toBe('');
+    else expect(fs.existsSync(path.join(lock, 'owner'))).toBe(false);
+  });
+
+  it.each(['before', 'after'])('cleans up when writing the lock owner fails %s creating its file, then recovers on a fresh turn', async (stage) => {
+    // Inject ENOSPC in the child process without exhausting the host's filesystem.
+    const observer = `import fs from 'node:fs';
+import path from 'node:path';
+const write = fs.writeFileSync;
+fs.writeFileSync = (file, ...args) => {
+  if (path.basename(String(file)) === 'owner' && fs.existsSync(new URL('./fail-owner', import.meta.url))) {
+    if (${JSON.stringify(stage)} === 'after') write(file, '', args[1]);
+    throw Object.assign(new Error('fixture disk full'), { code: 'ENOSPC' });
+  }
+  return write(file, ...args);
+};
+${OBSERVER}`;
+    const { run, dir, stateBase, broker } = await bridge({ 'fail-owner': '' }, observer, 'codex', { requested: true, attachment: 'prepared' });
+
+    expect(await run('codex.mjs', 'UserPromptSubmit', turn)).toBe(0);
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'running' }, signal: { health: 'degraded', reason: 'lock-unavailable' } });
+    expect(fs.existsSync(`${stateBase}.json.lock`)).toBe(false);
+    expect(fs.existsSync(`${stateBase}.json`)).toBe(false);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+
+    fs.unlinkSync(path.join(dir, 'fail-owner'));
+    const next = { ...turn, turn_id: 't2' };
+    expect(await run('codex.mjs', 'UserPromptSubmit', next)).toBe(0);
+    expect(broker.snapshot('term')?.signal?.health).toBe('observed');
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+    expect(await run('codex.mjs', 'Stop', next)).toBe(0);
+    expect(broker.snapshot('term')?.runtime.status).toBe('provisional');
+    expect(fs.existsSync(`${stateBase}.json.lock`)).toBe(false);
+  });
+
   it('fails closed when a live holder keeps the lock: bounded wait, poison, no input_resolved until a turn boundary', async () => {
     const { run, stateBase, updates, diagnostics } = await bridge();
     expect(await run('echo.mjs', 'x', { type: 'turn_started' })).toBe(0);

@@ -148,22 +148,33 @@ function staleOwner() {
   const record = owner();
   let age = 0;
   try { age = Date.now() - fs.statSync(lockPath).mtimeMs; } catch { return null; }
-  const pid = Number((record ?? '').split(':')[0]);
-  return record === null ? (age > LOCK_STALE_MS ? '' : null) : (!Number.isInteger(pid) || !alive(pid) || age > LOCK_STALE_MS ? record : null);
+  // Missing and empty owners can both be a creator still writing. Retain their exact
+  // value for the recheck, and reclaim them only after the initialization grace period.
+  if (!record) return age > LOCK_STALE_MS ? { record } : null;
+  const pid = Number(record.split(':')[0]);
+  return !Number.isInteger(pid) || !alive(pid) || age > LOCK_STALE_MS ? { record } : null;
 }
 async function acquire() {
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     try {
       fs.mkdirSync(lockPath, { mode: 0o700 });
-      fs.writeFileSync(path.join(lockPath, 'owner'), nonce, { mode: 0o600 });
+      try {
+        fs.writeFileSync(path.join(lockPath, 'owner'), nonce, { mode: 0o600 });
+      } catch {
+        // A failed write (for example ENOSPC) can leave an empty owner. Only clean up
+        // the directory we just created; never remove another holder's lock recursively.
+        try { fs.unlinkSync(path.join(lockPath, 'owner')); } catch { /* absent or unavailable */ }
+        try { fs.rmdirSync(lockPath); } catch { /* best effort; stale recovery can retry */ }
+        return false;
+      }
       return true;
     } catch (error) {
       if (error.code !== 'EEXIST') return false;
     }
     const stale = staleOwner();
     // Replace a dead/expired holder only if its record is unchanged, by an atomic rename.
-    if (stale !== null && owner() === (stale === '' ? null : stale)) {
+    if (stale !== null && owner() === stale.record) {
       try { fs.renameSync(lockPath, lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* another waiter won */ }
       try { fs.unlinkSync(path.join(lockPath + '.stale-' + nonce.replace(':', '-'), 'owner')); } catch { /* absent */ }
       try { fs.rmdirSync(lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* absent */ }
