@@ -77,13 +77,14 @@ describe('explicit sessions from New Agent', () => {
 
   async function openPopover() {
     await user.click(await screen.findByRole('button', { name: 'New Agent' }));
+    await user.click(screen.getByRole('button', { name: 'New worktree' }));
     return screen.findByLabelText('New branch');
   }
   async function submit(branch = 'issue-90-x', harness?: string) {
     const input = await openPopover();
     if (harness) await user.click(screen.getByRole('radio', { name: new RegExp('^' + harness + '$', 'i') }));
     await user.type(input, branch);
-    await user.click(screen.getByRole('button', { name: /^Launch/ }));
+    await user.click(screen.getByRole('button', { name: /^Create worktree & launch/ }));
   }
 
   describe('creating a session in a new worktree', () => {

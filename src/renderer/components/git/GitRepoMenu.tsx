@@ -82,7 +82,7 @@ export interface GitRepoMenuProps {
   onClearStashes: () => void;
   onLoadMoreHistory?: () => void;
   onRestoreFocus: () => void;
-  onCreateBranch: (event: React.FormEvent) => void;
+  onCreateBranch: (event: React.FormEvent, baseBranch?: string) => void;
   onDeleteBranch: (branchName: string) => void;
   onDropStash: (stash: GitStash) => void;
   onFetch: () => void;
@@ -231,7 +231,8 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
       <div className="source-control-page-heading"><h2 className="clanker-dialog-title">Branches</h2>
         <Button size="xs" disabled={busy} onClick={props.onRefresh}>Refresh branches</Button></div>
       {checkoutContext}
-      <p>Switch or create a branch in the selected checkout. Branches checked out elsewhere are protected by Git; the current branch cannot be deleted.</p>
+      <p>Work in this folder by switching branches here. No additional worktree is needed. To use a branch open elsewhere, view its working folder, then select it in New Agent → Existing folder.</p>
+      {props.resources?.branch.dataCurrent && props.resources.branch.data?.worktreesError && <p role="status">{props.resources.branch.data.worktreesError}</p>}
       {notices(['branch', 'provider'])}
       {providerContext && props.resources && props.resources.provider.phase !== 'ready' && <p>Provider (last known / partial): {providerContext.owner}/{providerContext.repo}</p>}
       {branchError && <FormMessage variant="error">{branchError}</FormMessage>}
@@ -239,6 +240,9 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
         emptyMessage={unavailable('branch') ? 'Branches unavailable' : undefined}
         activeAction={activeAction}
         branches={branches}
+        worktrees={props.resources?.branch.dataCurrent ? props.resources.branch.data?.worktrees : undefined}
+        workingFolderPath={props.scope.path}
+        onViewWorktree={() => setPage('worktrees')}
         createBranchInputRef={createBranchInputRef}
         currentBranch={currentBranch}
         isBusy={isBusy || isLoadingBranches || unavailable('branch') || !props.statusKnown}
@@ -262,7 +266,7 @@ export function GitRepoMenu(props: GitRepoMenuProps) {
       </div> : page === 'worktrees' ? <div className="source-control-page">
         <h2 className="clanker-dialog-title">Worktrees</h2>
         {checkoutContext}
-        <p>Main and in-use checkouts are protected. Worktrees persist until you explicitly remove them.</p>
+        <p>Worktrees are additional working folders, not required for ordinary branch work. The repository’s original folder and folders in use are protected. Removing a worktree keeps its branch.</p>
         {remoteError && <FormMessage variant="error">{remoteError}</FormMessage>}
         <GitWorktreesSection management workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey}
           isScopeCurrent={props.isScopeCurrent} onBusyChange={setWorktreeBusy} onChanged={props.onWorktreesChanged} />

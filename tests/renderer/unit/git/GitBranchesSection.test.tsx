@@ -151,8 +151,8 @@ describe('GitBranchesSection', () => {
         { name: 'feature-test', isCurrent: false },
       ]} />);
       
-      expect(screen.getByText('main')).toBeTruthy();
-      expect(screen.getByText('feature-test')).toBeTruthy();
+      expect(screen.getAllByText('main')).toHaveLength(2);
+      expect(screen.getAllByText('feature-test')).toHaveLength(2);
       expect(screen.getAllByText('Switch').length).toBe(2);
       expect(screen.getAllByText('Delete').length).toBe(2);
     });
@@ -171,7 +171,7 @@ describe('GitBranchesSection', () => {
         { name: 'main', isCurrent: true },
       ]} />);
       
-      const switchButton = screen.getByRole('button', { name: /switch/i });
+      const switchButton = screen.getByRole('button', { name: /^switch$/i });
       expect(switchButton).toBeDisabled();
     });
 
@@ -190,7 +190,7 @@ describe('GitBranchesSection', () => {
         { name: 'feature', isCurrent: false },
       ]} />);
       
-      const switchButtons = screen.getAllByRole('button', { name: /switch/i });
+      const switchButtons = screen.getAllByRole('button', { name: /^switch$/i });
       expect(switchButtons[1]).not.toBeDisabled(); // feature branch
     });
 
@@ -209,7 +209,7 @@ describe('GitBranchesSection', () => {
         { name: 'feature', isCurrent: false },
       ]} />);
       
-      const switchButton = screen.getByRole('button', { name: /switch/i });
+      const switchButton = screen.getByRole('button', { name: /^switch$/i });
       const deleteButton = screen.getByRole('button', { name: /delete/i });
       expect(switchButton).toBeDisabled();
       expect(deleteButton).toBeDisabled();
@@ -220,7 +220,7 @@ describe('GitBranchesSection', () => {
         { name: 'feature', isCurrent: false },
       ]} />);
       
-      fireEvent.click(screen.getByRole('button', { name: /switch/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^switch$/i }));
       expect(mockOnSwitchBranch).toHaveBeenCalledWith('feature');
     });
 
@@ -239,7 +239,7 @@ describe('GitBranchesSection', () => {
       ]} />);
       
       // Should show loading state for the switch action
-      const buttons = screen.getAllByRole('button', { name: /switch/i });
+      const buttons = screen.getAllByRole('button', { name: /^switch$/i });
       expect(buttons[0].querySelector('.spin')).toBeTruthy();
     });
 

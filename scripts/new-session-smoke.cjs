@@ -12,7 +12,7 @@ const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-new-session-v
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
 const project = path.join(root, 'project');
 const external = path.join(root, 'external');
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'TMPDIR', 'LANG', 'LC_ALL'].includes(key)));
 Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: 'pipe' }).toString().trim();
 git(project, 'init', '-b', 'main'); git(project, 'config', 'user.name', 'Fixture'); git(project, 'config', 'user.email', 'fixture@example.invalid');
@@ -52,14 +52,21 @@ async function closeFixture() {
     const open = async () => {
       await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).click();
-      assert.equal(await page.getByRole('button', { name: /^Project checkout/ }).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.getByRole('button', { name: /^Project folder/ }).getAttribute('aria-pressed'), 'true');
     };
     await open();
     await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).waitFor();
-    await page.getByRole('button', { name: /^Project checkout · spbun-props-refinement/ }).waitFor();
-    assert.equal(await page.getByLabel('New branch starts from', { exact: true }).locator('option:checked').textContent(), 'Project checkout · spbun-props-refinement');
-    assert.equal(await page.getByRole('group', { name: 'Existing branches', exact: true }).getByRole('button', { name: 'main', exact: true }).count(), 1);
-    assert((await page.locator('.new-session-project-path').textContent()).includes(project));
+    await page.getByRole('button', { name: /^Project folder · spbun-props-refinement/ }).waitFor();
+    assert.equal(await page.getByLabel('New branch', { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Create worktree only', exact: true }).count(), 0);
+    assert((await page.locator('.new-session-project-path').first().textContent()).includes(project));
+    const info = page.getByLabel('Working folder information', { exact: true });
+    const help = page.getByText('Launches in the selected folder as it is. No new branch or worktree.', { exact: true });
+    assert.equal(await help.isVisible(), false);
+    await info.focus(); await page.keyboard.press('Enter');
+    assert.equal(await help.isVisible(), true);
+    await page.keyboard.press('Enter');
+    assert.equal(await help.isVisible(), false);
     // Native capture at normal/compact/zoomed window sizes, assert every action remains reachable.
     for (const [width, height, zoom] of [[1100, 760, 1], [640, 480, 1], [640, 480, 1.25]]) {
       await app.evaluate(({ BrowserWindow }, { width, height, zoom }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(0, 0); win.setSize(width, height); win.webContents.setZoomFactor(zoom); }, { width, height, zoom });
@@ -68,14 +75,26 @@ async function closeFixture() {
       await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).waitFor();
-      await page.getByRole('button', { name: 'Create worktree only', exact: true }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: 'Launch Terminal', exact: true }).scrollIntoViewIfNeeded();
       assert(await page.locator('.new-session-panes').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Picker has horizontal overflow');
       const bounds = await page.getByRole('button', { name: 'Launch Terminal', exact: true }).boundingBox();
       const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
       const closeBounds = await page.getByRole('button', { name: 'Close window', exact: true }).boundingBox();
       assert(closeBounds && closeBounds.x + closeBounds.width <= viewport.width, `Window controls outside viewport: ${JSON.stringify({ closeBounds, viewport })}`);
       assert(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height, 'Launch action outside viewport');
-      await app.evaluate(async ({ BrowserWindow }, file) => { const win = BrowserWindow.getAllWindows()[0]; process.getBuiltinModule('fs').writeFileSync(file, (await win.webContents.capturePage()).toPNG()); }, path.join(screenshots, `${width}-${height}-${zoom}.png`));
+      const capture = file => app.evaluate(async ({ BrowserWindow }, file) => { const win = BrowserWindow.getAllWindows()[0]; process.getBuiltinModule('fs').writeFileSync(file, (await win.webContents.capturePage()).toPNG()); }, path.join(screenshots, file));
+      await capture(`${width}-${height}-${zoom}.png`);
+      await page.getByRole('button', { name: 'New worktree', exact: true }).click();
+      await page.getByLabel('New branch', { exact: true }).fill('experiment/visual');
+      await page.getByRole('button', { name: 'Create worktree only', exact: true }).scrollIntoViewIfNeeded();
+      await capture(`${width}-${height}-${zoom}-new-worktree.png`);
+      await page.getByRole('button', { name: 'Existing folder', exact: true }).click();
+      await page.getByRole('button', { name: 'Change branch…', exact: true }).click();
+      await page.getByLabel('Branch action', { exact: true }).selectOption('create');
+      await page.getByLabel('Branch name', { exact: true }).fill('experiment/visual');
+      await page.getByRole('button', { name: 'Create and switch', exact: true }).scrollIntoViewIfNeeded();
+      await capture(`${width}-${height}-${zoom}-same-folder.png`);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setSize(1100, 760); win.webContents.setZoomFactor(1); });
     await page.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
@@ -84,6 +103,25 @@ async function closeFixture() {
     assert.equal((await terminals())[0].cwd, project);
     const original = (await terminals())[0];
     await pause(600);
+    // Ordinary branch work is an explicit change to the existing folder, not a worktree creation.
+    await open();
+    await page.getByRole('button', { name: 'Change branch…', exact: true }).click();
+    await page.getByLabel('Branch action', { exact: true }).selectOption('create');
+    await page.getByLabel('Branch name', { exact: true }).fill('experiment/same-folder');
+    await page.getByLabel('Start from', { exact: true }).selectOption('main');
+    assert(await page.getByRole('button', { name: 'Create and switch', exact: true }).isDisabled());
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Create and switch', exact: true }).click();
+    await page.getByRole('button', { name: /^Project folder · experiment\/same-folder/ }).waitFor();
+    assert.equal(git(project, 'branch', '--show-current'), 'experiment/same-folder');
+    assert.equal(git(project, 'worktree', 'list', '--porcelain').split('worktree ').length - 1, 2);
+    assert.equal((await terminals()).length, 1);
+    await page.getByRole('button', { name: 'Change branch…', exact: true }).click();
+    await page.getByLabel('Switch to branch', { exact: true }).selectOption('spbun-props-refinement');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Switch branch', exact: true }).click();
+    await page.getByRole('button', { name: /^Project folder · spbun-props-refinement/ }).waitFor();
+    await page.keyboard.press('Escape');
     for (let index = 0; index < 2; index++) {
       await open();
       await page.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).click();
@@ -95,8 +133,9 @@ async function closeFixture() {
     assert.equal(shared.length, 2); assert.equal(shared[0].context, shared[1].context);
     assert.deepEqual((await terminals()).find(value => value.id === original.id), original);
     for (const [name, base, expected] of [['from-main', '', mainHead], ['from-external', external, externalHead]]) {
-      await open(); await page.getByLabel('New branch', { exact: true }).fill(name);
-      await page.getByLabel('New branch starts from', { exact: true }).selectOption(base);
+      await open(); await page.getByRole('button', { name: 'New worktree', exact: true }).click();
+      await page.getByLabel('New branch', { exact: true }).fill(name);
+      await page.getByLabel('Start from', { exact: true }).selectOption(base ? `worktree:${base}` : '');
       await page.getByRole('button', { name: 'Create worktree only', exact: true }).click();
       await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
       const listing = git(project, 'worktree', 'list', '--porcelain');
@@ -107,7 +146,9 @@ async function closeFixture() {
       assert.equal((await terminals()).length, 3, 'Create-only started a process');
     }
     await open();
-    await page.getByRole('group', { name: 'Existing branches', exact: true }).getByRole('button', { name: 'unoccupied', exact: true }).click();
+    await page.getByRole('button', { name: 'New worktree', exact: true }).click();
+    await page.getByRole('button', { name: 'Existing branch', exact: true }).click();
+    await page.getByLabel('Branch to check out', { exact: true }).selectOption('unoccupied');
     await page.getByRole('button', { name: 'Create worktree only', exact: true }).click();
     await page.locator('.new-session-popover').waitFor({ state: 'hidden' });
     assert(git(project, 'worktree', 'list', '--porcelain').includes('branch refs/heads/unoccupied'));
@@ -128,14 +169,23 @@ async function closeFixture() {
       await restarted.getByRole('dialog').getByRole('button', { name: /^Open(?: Workspace)?$/ }).click();
     }
     await restarted.getByRole('button', { name: 'New Agent', exact: true }).click();
-    assert.equal(await restarted.getByRole('button', { name: /^Project checkout/ }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await restarted.getByRole('button', { name: /^Project folder/ }).getAttribute('aria-pressed'), 'true');
     await restarted.getByRole('radio', { name: 'Terminal', exact: true }).click();
     await restarted.getByRole('group', { name: 'Existing worktrees', exact: true }).getByRole('button', { name: /external-agent/ }).click();
     const beforeRestartLaunch = (await terminals()).length;
     await restarted.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
     await until(async () => (await terminals()).length === beforeRestartLaunch + 1, 'Restarted explicit launch absent');
     assert((await terminals()).some(value => value.cwd === external && value.context));
-    console.log(JSON.stringify({ builtElectron: true, realGit: true, realPTY: true, mainDefault: 'passed', externalAndSharedLaunch: 'passed', committedHeadBasesAndCreateOnly: 'passed', existingBranch: 'passed', closingRetainsWorktreeAndBranch: 'passed', restartExplicitAdoption: 'passed', compactWindowAndZoom: 'passed', screenshots }));
-  } catch (error) { console.error(error.stack); process.exitCode = 1; }
+    console.log(JSON.stringify({ builtElectron: true, realGit: true, realPTY: true, projectFolderDefault: 'passed', sameFolderBranchWork: 'passed', externalAndSharedLaunch: 'passed', committedHeadBasesAndCreateOnly: 'passed', existingBranch: 'passed', closingRetainsWorktreeAndBranch: 'passed', restartExplicitAdoption: 'passed', compactWindowAndZoom: 'passed', screenshots }));
+  } catch (error) {
+    console.error(error.stack);
+    if (app) {
+      const page = await app.firstWindow();
+      console.error('Failure page:', await page.locator('body').innerText().catch(() => 'unavailable'));
+      await page.screenshot({ path: path.join(screenshots, 'failure.png') }).catch(() => {});
+      console.error('Screenshots:', screenshots);
+    }
+    process.exitCode = 1;
+  }
   finally { await closeFixture(); fs.rmSync(root, { recursive: true, force: true }); }
 })();

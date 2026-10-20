@@ -169,9 +169,10 @@ function index(error) {
       await clip(theme, 'isolated-checkout-launch', 'Creating an isolated branch and launching a real Pi pane (unconfigured model)', async () => {
         await click('New Agent');
         await page.getByRole('radio', { name: 'Pi', exact: true }).click();
+        await click('New worktree');
         await page.getByLabel('New branch', { exact: true }).fill(`feat/keyboard-${theme}`);
-        await pause(900); await click('Launch Pi');
-        await button('Launch Pi').waitFor({ state: 'hidden', timeout: 30000 });
+        await pause(900); await click('Create worktree & launch Pi');
+        await button('Create worktree & launch Pi').waitFor({ state: 'hidden', timeout: 30000 });
         await pause(1800); await shot(theme, 'isolated-checkout-agent', 'Real created branch, attached checkout and Pi startup; no model task');
       });
       await button('Close terminal').last().click(); await pause(500);

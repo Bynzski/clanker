@@ -24,10 +24,15 @@
 }
 
 .git-create-branch-form {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 4px;
 }
+.git-create-branch-form > .git-create-branch-input { grid-column: 1 / -1; }
+.git-branch-base { display: flex; flex-direction: column; min-width: 0; gap: 4px; }
+.git-branch-note { color: var(--text-muted); font-size: var(--font-size-sm); }
+.git-branch-location { color: var(--text-muted); font-family: var(--font-ui); font-size: var(--font-size-2xs); }
 
 .git-create-branch-input {
   flex: 1;

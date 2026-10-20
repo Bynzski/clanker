@@ -28,7 +28,7 @@ export function useGitBranchActions({
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
   const [newBranchName, setNewBranchName] = useState('');
 
-  const handleCreateBranch = async (event: React.FormEvent) => {
+  const handleCreateBranch = async (event: React.FormEvent, baseBranch?: string) => {
     event.preventDefault();
     if (!canAct()) return;
     if (!newBranchName.trim()) {
@@ -44,7 +44,7 @@ export function useGitBranchActions({
       const result = await window.electronAPI.gitCreateBranch(
         workspacePath,
         newBranchName,
-        currentBranch ?? undefined,
+        baseBranch ?? currentBranch ?? undefined,
         workspaceId,
         ...(checkoutContextId ? [checkoutContextId] : [])
       );
