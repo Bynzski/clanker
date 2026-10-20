@@ -187,7 +187,7 @@ describe('Permanent Branches and Worktrees', () => {
   beforeEach(() => {
     api.gitGetBranchState.mockImplementation(async () => ({ success: true, isRepo: true, currentBranch: status.currentBranch, isDetached: status.isDetached,
       branches: ['main', 'feature'].map((name) => ({ name, isCurrent: name === status.currentBranch && !status.isDetached })) }));
-    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false }, { path: '/repo-worktrees/feature', branch: 'feature', isMain: false, isLocked: false, isPrunable: false }] });
+    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false }, { path: '/repo-worktrees/existing-task', branch: 'existing-task', isMain: false, isLocked: false, isPrunable: false }] });
   });
   async function branchesPage() {
     const result = await open();
@@ -196,8 +196,8 @@ describe('Permanent Branches and Worktrees', () => {
   }
   it('navigates without mutations, duplicate polling or branch/worktree interfaces in the transitional page', async () => {
     const { user, dialog } = await branchesPage(); expect(screen.getByRole('button', { name: 'Delete branch main' })).toBeDisabled();
-    await user.click(within(dialog).getByRole('button', { name: 'Worktrees' })); await screen.findByText('Main checkout');
-    expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull(); expect(api.gitListWorktrees).toHaveBeenCalledTimes(1);
+    await user.click(within(dialog).getByRole('button', { name: 'Worktrees' })); await screen.findByText('Original folder');
+    expect(screen.queryByRole('button', { name: 'Remove checkout for branch main' })).toBeNull(); expect(api.gitListWorktrees).toHaveBeenCalledTimes(2);
     await user.click(within(dialog).getByRole('button', { name: 'History' })); expect(screen.queryByRole('button', { name: 'Delete branch feature' })).toBeNull();
     expect(screen.queryByText('Listed checkouts')).toBeNull(); expect(api.gitStartPolling).toHaveBeenCalledTimes(1);
     expect(api.gitCreateBranch).not.toHaveBeenCalled(); expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
@@ -226,15 +226,33 @@ describe('Permanent Branches and Worktrees', () => {
     await act(async () => finish({ success: true })); await waitFor(() => expect(api.gitListWorktrees).toHaveBeenCalledTimes(2));
     expect(api.gitRemoveWorktree).not.toHaveBeenCalled(); expect(api.gitGetBranchState).not.toHaveBeenCalled();
   });
+  it('shows a working-folder action instead of attempting to switch a branch used elsewhere', async () => {
+    api.gitListWorktrees.mockResolvedValue({ success: true, worktrees: [{ path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false }, { path: '/repo-worktrees/feature', branch: 'feature', isMain: false, isLocked: false, isPrunable: false }] });
+    const { user } = await open(); await user.click(screen.getByRole('button', { name: 'Branches' }));
+    const view = await screen.findByRole('button', { name: 'View working folder for feature' });
+    expect(view).toHaveAttribute('title', '/repo-worktrees/feature');
+    expect(screen.queryByRole('button', { name: 'Switch to branch feature' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete branch feature' })).toBeDisabled();
+    await user.click(view); await screen.findByText('Original folder');
+    expect(api.gitSwitchBranch).not.toHaveBeenCalled(); expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
+  it('creates and switches in the same folder from an explicitly selected branch', async () => {
+    const { user } = await branchesPage();
+    await user.selectOptions(screen.getByLabelText('Start from'), 'feature');
+    await user.type(screen.getByLabelText('Create and switch branch'), 'experiment/idea');
+    await user.click(screen.getByRole('button', { name: 'Create and switch' }));
+    expect(api.gitCreateBranch).toHaveBeenCalledWith('/repo', 'experiment/idea', 'refs/heads/feature', 'ws');
+    expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
   it('creates through existing branch validation and keeps failed drafts', async () => {
     api.gitCreateBranch.mockResolvedValue({ success: false, error: 'Invalid branch name' }); const { user } = await branchesPage();
-    await user.type(screen.getByLabelText('Create Branch'), 'bad name'); await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(api.gitCreateBranch).toHaveBeenCalledWith('/repo', 'bad name', 'main', 'ws'); expect(await screen.findByText('Invalid branch name')).toBeVisible(); expect(screen.getByLabelText('Create Branch')).toHaveValue('bad name');
+    await user.type(screen.getByLabelText('Create and switch branch'), 'bad name'); await user.click(screen.getByRole('button', { name: 'Create and switch' }));
+    expect(api.gitCreateBranch).toHaveBeenCalledWith('/repo', 'bad name', 'main', 'ws'); expect(await screen.findByText('Invalid branch name')).toBeVisible(); expect(screen.getByLabelText('Create and switch branch')).toHaveValue('bad name');
   });
   it('creates successfully and refreshes authoritative branch state without switching optimistically', async () => {
     const { user } = await branchesPage(); const before = api.gitGetBranchState.mock.calls.length;
-    await user.type(screen.getByLabelText('Create Branch'), 'new-task'); await user.click(screen.getByRole('button', { name: 'Create' }));
-    await waitFor(() => expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(before)); expect(screen.getByLabelText('Create Branch')).toHaveValue(''); expect(screen.getByText(/Current branch: main/)).toBeVisible();
+    await user.type(screen.getByLabelText('Create and switch branch'), 'new-task'); await user.click(screen.getByRole('button', { name: 'Create and switch' }));
+    await waitFor(() => expect(api.gitGetBranchState.mock.calls.length).toBeGreaterThan(before)); expect(screen.getByLabelText('Create and switch branch')).toHaveValue(''); expect(screen.getByText(/Current branch: main/)).toBeVisible();
   });
   it('switches only on native acknowledgement and refreshes the shared controller', async () => {
     let finish!: (value: unknown) => void; api.gitSwitchBranch.mockReturnValue(new Promise((resolve) => { finish = resolve; }));

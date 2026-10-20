@@ -82,13 +82,19 @@ describe('New Agent: harness + working copy', () => {
 
   const openPicker = async () => {
     await user.click(await screen.findByRole('button', { name: 'New Agent' }));
-    await screen.findByLabelText('New branch');
+    await screen.findByRole('button', { name: /^Project folder · (?!Reading)/ });
   };
   const launch = async (harnessLabel?: string) => {
     if (harnessLabel) await user.click(screen.getByRole('radio', { name: harnessLabel }));
-    await user.click(screen.getByRole('button', { name: /^Launch/ }));
+    await user.click(screen.getByRole('button', { name: /^(Launch|Create worktree & launch)/ }));
   };
   const section = (name: string) => within(screen.getByRole('group', { name }));
+  const newWorktree = async () => user.click(screen.getByRole('button', { name: 'New worktree' }));
+  const existingBranch = async (name: string) => {
+    await newWorktree();
+    await user.click(screen.getByRole('button', { name: 'Existing branch' }));
+    await user.selectOptions(screen.getByLabelText('Branch to check out'), name);
+  };
 
   it('reuses the creation form in Source Control without exposing another session launcher', async () => {
     openWorkspace();
@@ -96,7 +102,7 @@ describe('New Agent: harness + working copy', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Create worktree' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Create worktree' }));
     await user.type(await screen.findByLabelText('New branch'), 'manual-management');
-    expect(screen.queryByRole('radiogroup', { name: 'Harness' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Agent or terminal' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Launch/ })).toBeNull();
     const form = screen.getByLabelText('Create worktree', { selector: '.new-session-popover' });
     await user.click(within(form).getByRole('button', { name: 'Create worktree' }));
@@ -108,6 +114,7 @@ describe('New Agent: harness + working copy', () => {
     openWorkspace();
     render(<Header />);
     await openPicker();
+    await newWorktree();
     await user.type(screen.getByLabelText('New branch'), 'precreated');
     await user.click(screen.getByRole('button', { name: 'Create worktree only' }));
     await waitFor(() => expect(workspace().checkoutContexts?.some((context) => context.branch === 'precreated')).toBe(true));
@@ -120,7 +127,7 @@ describe('New Agent: harness + working copy', () => {
     openWorkspace();
     render(<Header />);
     await openPicker();
-    await user.click(screen.getByRole('button', { name: /^Project checkout/ }));
+    await user.click(screen.getByRole('button', { name: /^Project folder/ }));
     await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
     expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
@@ -138,12 +145,13 @@ describe('New Agent: harness + working copy', () => {
     render(<NewSessionButton workspace={workspace()} visibleHarnessIds={['codex']} />);
     await openPicker();
 
-    const project = await screen.findByRole('button', { name: /^Project checkout · spbun-props-refinement/ });
+    const project = await screen.findByRole('button', { name: /^Project folder · spbun-props-refinement/ });
     expect(project).toHaveTextContent(ROOT);
-    expect(screen.getByRole('combobox', { name: 'New branch starts from' })).toHaveDisplayValue('Project checkout · spbun-props-refinement');
     expect(api.gitGetBranchState).toHaveBeenCalledWith(ROOT, 'ws');
-    await user.click(await section('Existing branches').findByRole('button', { name: 'main' }));
-    expect(project).toHaveAttribute('aria-pressed', 'false');
+    await newWorktree();
+    expect(screen.getByRole('combobox', { name: 'Start from' })).toHaveDisplayValue('Project folder · spbun-props-refinement');
+    await user.click(screen.getByRole('button', { name: 'Existing branch' }));
+    await user.selectOptions(screen.getByLabelText('Branch to check out'), 'main');
     await launch();
     await waitFor(() => expect(api.gitCreateWorktree).toHaveBeenCalledWith(ROOT, 'main', 'main', 'ws', { attachCheckoutContext: true, requireExistingBranch: true }));
   });
@@ -159,7 +167,8 @@ describe('New Agent: harness + working copy', () => {
     openWorkspace({ environmentId });
     render(<NewSessionButton workspace={workspace()} visibleHarnessIds={['codex']} />);
     await openPicker();
-    const base = screen.getByRole('combobox', { name: 'New branch starts from' });
+    await newWorktree();
+    const base = screen.getByRole('combobox', { name: 'Start from' });
     await waitFor(() => expect(within(base).getByRole('option', { name: 'main' })).toBeInTheDocument());
     await user.type(screen.getByLabelText('New branch'), 'independent-task');
     await user.selectOptions(base, 'branch:main');
@@ -176,20 +185,21 @@ describe('New Agent: harness + working copy', () => {
   it('identifies a detached project checkout in both the launch target and the new-branch base', async () => {
     api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: null, isDetached: true, branches: [] });
     openWorkspace(); render(<Header />); await openPicker();
-    expect(await screen.findByRole('button', { name: /^Project checkout · Detached HEAD/ })).toHaveTextContent(ROOT);
-    expect(screen.getByRole('combobox', { name: 'New branch starts from' })).toHaveDisplayValue('Project checkout · Detached HEAD');
+    expect(await screen.findByRole('button', { name: /^Project folder · Detached HEAD/ })).toHaveTextContent(ROOT);
+    await newWorktree();
+    expect(screen.getByRole('combobox', { name: 'Start from' })).toHaveDisplayValue('Project folder · Detached HEAD');
   });
 
   it('keeps the project branch visible when worktree listing fails and never substitutes the focused Git branch', async () => {
     api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'project-feature', isDetached: false, branches: [] });
     api.gitListWorktrees.mockResolvedValue({ success: false, error: 'Listing unavailable', worktrees: [] });
     openWorkspace({ gitCurrentBranch: 'focused-agent-branch' }); render(<Header />); await openPicker();
-    expect(await screen.findByRole('button', { name: /^Project checkout · project-feature/ })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /^Project folder · project-feature/ })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'New Agent' }));
     api.gitGetBranchState.mockResolvedValue({ success: false, isRepo: false, currentBranch: null, isDetached: false, branches: [], error: 'Branch unavailable' });
     await openPicker();
-    expect(await screen.findByRole('button', { name: /^Project checkout · Branch unavailable/ })).toBeEnabled();
-    expect(screen.queryByText('Project checkout · project-feature')).toBeNull();
+    expect(await screen.findByRole('button', { name: /^Project folder · Branch unavailable/ })).toBeEnabled();
+    expect(screen.queryByText('Project folder · project-feature')).toBeNull();
   });
 
   it('has exactly one launch entry point and defaults to main despite an editor checkout pin', async () => {
@@ -199,12 +209,124 @@ describe('New Agent: harness + working copy', () => {
     expect(screen.getAllByRole('button', { name: 'New Agent' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
     await openPicker();
-    expect(screen.getByRole('button', { name: /^Project checkout/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Project folder/ })).toHaveAttribute('aria-pressed', 'true');
     await launch();
     await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
     expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
     expect(api.spawnTerminal.mock.calls[0][7]).toBeUndefined();
     expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+  });
+
+  it('keeps explanations behind the info disclosure without selecting or launching anything', async () => {
+    openWorkspace(); render(<Header />); await openPicker();
+    const info = screen.getByLabelText('Working folder information');
+    const existingHelp = screen.getByText('Launches in the selected folder as it is. No new branch or worktree.');
+    expect(existingHelp).not.toBeVisible();
+    expect(info.closest('details')).not.toHaveAttribute('open');
+    await user.click(info);
+    expect(existingHelp).toBeVisible();
+    expect(screen.getByRole('button', { name: /^Project folder/ })).toHaveAttribute('aria-pressed', 'true');
+    await newWorktree();
+    expect(screen.getByText(/Uncommitted changes and existing sessions stay where they are/)).toBeVisible();
+    await user.click(info);
+    expect(screen.getByText(/Uncommitted changes and existing sessions stay where they are/)).not.toBeVisible();
+    expect(api.gitCreateWorktree).not.toHaveBeenCalled(); expect(api.spawnTerminal).not.toHaveBeenCalled();
+  });
+
+  describe('ordinary branch work in the project folder', () => {
+    it('keeps worktree creation out of the default flow', async () => {
+      openWorkspace(); render(<Header />); await openPicker();
+      expect(screen.queryByLabelText('New branch')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create worktree only' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Existing folder' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Launch Codex' })).toBeEnabled();
+    });
+
+    it.each(['local', 'ssh-fixture'])('creates an experiment from main in the same folder on %s, only after confirmation', async environmentId => {
+      branches = ['main', 'dev'];
+      api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'dev', isDetached: false,
+        branches: branches.map(name => ({ name, isCurrent: name === 'dev' })) });
+      worktrees = [listed(ROOT, 'dev', { isMain: true }), listed(WT('main'), 'main')];
+      api.gitCreateBranch.mockResolvedValue({ success: true });
+      openWorkspace({ environmentId }); render(<NewSessionButton workspace={workspace()} visibleHarnessIds={['codex']} />); await openPicker();
+      await user.click(screen.getByRole('radio', { name: 'Terminal' }));
+      await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      await user.selectOptions(screen.getByLabelText('Branch action'), 'create');
+      await user.type(screen.getByLabelText('Branch name'), 'experiment/idea');
+      await user.selectOptions(screen.getByLabelText('Start from'), 'main');
+      expect(screen.getByRole('button', { name: 'Create and switch' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Launch Terminal' })).toBeDisabled();
+      expect(api.gitCreateBranch).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('checkbox'));
+      await user.click(screen.getByRole('button', { name: 'Create and switch' }));
+      await waitFor(() => expect(api.gitCreateBranch).toHaveBeenCalledExactlyOnceWith(ROOT, 'experiment/idea', 'refs/heads/main', 'ws'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Terminal' })).toBeEnabled());
+      expect(api.gitCreateWorktree).not.toHaveBeenCalled(); expect(api.spawnTerminal).not.toHaveBeenCalled();
+      await launch('Terminal');
+      await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+      expect(api.spawnTerminal.mock.calls[0][0]).toBe(ROOT);
+    });
+
+    it('switches this folder explicitly without launching, then offers the refreshed branch', async () => {
+      branches = ['main', 'dev']; openWorkspace(); render(<Header />); await openPicker();
+      api.gitSwitchBranch.mockImplementation(async () => {
+        api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'dev', isDetached: false, branches: [{ name: 'main', isCurrent: false }, { name: 'dev', isCurrent: true }] });
+        return { success: true };
+      });
+      await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      await user.selectOptions(screen.getByLabelText('Switch to branch'), 'dev');
+      await user.click(screen.getByRole('checkbox')); await user.click(screen.getByRole('button', { name: 'Switch branch' }));
+      expect(api.gitSwitchBranch).toHaveBeenCalledWith(ROOT, 'dev', 'ws');
+      expect(await screen.findByRole('button', { name: /^Project folder · dev/ })).toBeEnabled();
+      expect(api.spawnTerminal).not.toHaveBeenCalled(); expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+    });
+
+    it('directs a branch already checked out elsewhere to its existing folder', async () => {
+      branches = ['main', 'dev']; worktrees = [MAIN_ENTRY, listed(WT('dev'), 'dev')];
+      openWorkspace(); render(<Header />); await openPicker();
+      await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      expect(screen.getByRole('option', { name: 'dev · open in another folder' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await user.click(section('Existing worktrees').getByRole('button', { name: /dev/ })); await launch();
+      await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+      expect(api.spawnTerminal.mock.calls[0][0]).toBe(WT('dev'));
+      expect(api.gitSwitchBranch).not.toHaveBeenCalled(); expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+    });
+
+    it('retains errors and requires a fresh confirmation after editing the choice', async () => {
+      branches = ['main', 'dev']; api.gitSwitchBranch.mockResolvedValue({ success: false, error: 'Commit or stash your changes' });
+      openWorkspace(); render(<Header />); await openPicker(); await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      await user.selectOptions(screen.getByLabelText('Switch to branch'), 'dev'); await user.click(screen.getByRole('checkbox'));
+      await user.click(screen.getByRole('button', { name: 'Switch branch' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Commit or stash');
+      expect(screen.getByRole('button', { name: 'Launch Codex' })).toBeDisabled();
+      await user.selectOptions(screen.getByLabelText('Branch action'), 'create');
+      expect(screen.getByRole('checkbox')).not.toBeChecked();
+      expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+    });
+
+    it('does not switch a parked project after focus changes during preflight', async () => {
+      branches = ['main', 'dev']; openWorkspace(); render(<Header />); await openPicker();
+      await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      await user.selectOptions(screen.getByLabelText('Switch to branch'), 'dev'); await user.click(screen.getByRole('checkbox'));
+      api.gitGetBranchState.mockImplementationOnce(async () => {
+        useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({ id: 'other', workspacePath: '/other', terminals: [], panes: [], activeTerminalId: null }));
+        return { success: true, isRepo: true, currentBranch: 'main', isDetached: false, branches: [{ name: 'dev', isCurrent: false }] };
+      });
+      await user.click(screen.getByRole('button', { name: 'Switch branch' }));
+      expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('other');
+      expect(api.gitSwitchBranch).not.toHaveBeenCalled(); expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+    });
+
+    it('does not mutate when the project branch changed during the preflight read', async () => {
+      branches = ['main', 'dev']; openWorkspace(); render(<Header />); await openPicker();
+      await user.click(screen.getByRole('button', { name: 'Change branch…' }));
+      await user.selectOptions(screen.getByLabelText('Switch to branch'), 'dev'); await user.click(screen.getByRole('checkbox'));
+      api.gitGetBranchState.mockResolvedValue({ success: true, isRepo: true, currentBranch: 'external-change', isDetached: false, branches: [] });
+      await user.click(screen.getByRole('button', { name: 'Switch branch' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('branch changed');
+      expect(api.gitSwitchBranch).not.toHaveBeenCalled();
+    });
   });
 
   describe('harness pane', () => {
@@ -221,6 +343,7 @@ describe('New Agent: harness + working copy', () => {
       expect(screen.getByRole('radio', { name: 'Claude' })).toHaveAttribute('aria-checked', 'true');
       expect(screen.getByRole('radio', { name: 'Codex' })).toHaveAttribute('aria-checked', 'false');
 
+      await newWorktree();
       await user.type(screen.getByLabelText('New branch'), 'issue-1');
       await launch();
       await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
@@ -233,18 +356,19 @@ describe('New Agent: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
+      await newWorktree();
       await user.type(screen.getByLabelText('New branch'), 'issue-7');
 
       // Terminal's id is the empty string; it is a valid selection, not "no harness".
       await user.click(screen.getByRole('radio', { name: 'Terminal' }));
       expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
-      expect(screen.getByRole('button', { name: 'Launch Terminal' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Create worktree & launch Terminal' })).toBeEnabled();
 
       // Back to an AI harness: label and launch behaviour follow it.
       await user.click(screen.getByRole('radio', { name: 'Claude' }));
-      expect(screen.getByRole('button', { name: 'Launch Claude' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Create worktree & launch Claude' })).toBeEnabled();
       await user.click(screen.getByRole('radio', { name: 'Terminal' }));
-      await user.click(screen.getByRole('button', { name: 'Launch Terminal' }));
+      await user.click(screen.getByRole('button', { name: 'Create worktree & launch Terminal' }));
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
       expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'HEAD', 'issue-7', 'ws', { attachCheckoutContext: true, newBranch: {} });
@@ -258,6 +382,7 @@ describe('New Agent: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
+      await newWorktree();
       await user.type(screen.getByLabelText('New branch'), 'issue-8');
       await launch('OpenCode');
       await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
@@ -270,6 +395,7 @@ describe('New Agent: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
+      await newWorktree();
       await user.type(screen.getByLabelText('New branch'), 'issue-123');
       await launch();
 
@@ -282,8 +408,9 @@ describe('New Agent: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
+      await newWorktree();
       await user.click(screen.getByLabelText('New branch'));
-      expect(screen.getByRole('button', { name: /^Launch/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /^Create worktree & launch/ })).toBeDisabled();
     });
   });
 
@@ -298,19 +425,19 @@ describe('New Agent: harness + working copy', () => {
       render(<Header />);
       await openPicker();
 
-      const existing = await screen.findByRole('group', { name: 'Existing branches' });
-      expect(within(existing).getAllByRole('button').map((el) => el.textContent)).toEqual(['feature/foo']);
-      expect(within(existing).queryByText('main')).toBeNull();
-      // feature/bar is represented once, as its worktree.
-      expect(within(existing).queryByText('feature/bar')).toBeNull();
       expect(section('Existing worktrees').getByText('feature/bar')).toBeTruthy();
+      await existingBranch('feature/foo');
+      const existing = screen.getByLabelText('Branch to check out');
+      expect(within(existing).getAllByRole('option').map((el) => el.textContent)).toEqual(['feature/foo']);
+      expect(within(existing).queryByText('main')).toBeNull();
+      expect(within(existing).queryByText('feature/bar')).toBeNull();
     });
 
     it('selecting a branch only selects it; launching creates a worktree for that existing branch', async () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
-      await user.click(await section('Existing branches').findByRole('button', { name: 'feature/foo' }));
+      await existingBranch('feature/foo');
       expect(api.gitCreateWorktree).not.toHaveBeenCalled();
       expect(api.spawnTerminal).not.toHaveBeenCalled();
 
@@ -326,7 +453,7 @@ describe('New Agent: harness + working copy', () => {
       openWorkspace();
       render(<Header />);
       await openPicker();
-      await user.click(await section('Existing branches').findByRole('button', { name: 'feature/foo' }));
+      await existingBranch('feature/foo');
       branches = ['main', 'feature/bar'];
       await launch();
 
@@ -456,7 +583,7 @@ describe('New Agent: harness + working copy', () => {
     await user.click(await section('Existing worktrees').findByRole('button', { name: /task-a/ }));
     await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(1));
     await openPicker();
-    expect(screen.getByRole('button', { name: /^Project checkout/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Project folder/ })).toHaveAttribute('aria-pressed', 'true');
     await launch(); await waitFor(() => expect(workspace().terminals).toHaveLength(2));
     expect(api.spawnTerminal.mock.calls[1][0]).toBe(ROOT);
   });

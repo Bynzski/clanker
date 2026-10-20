@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { GitBranchStateResult, GitOperationStateResult, GitHistoryEntry, GitStash, GitRemotesResult } from '../../../shared/types/git';
+import type { GitBranchStateResult, GitOperationStateResult, GitHistoryEntry, GitStash, GitRemotesResult, GitWorktree } from '../../../shared/types/git';
 import type { ProviderContextResult } from '../../../shared/types/vcs';
 import { useGitMenuResource } from './useGitMenuResource';
 import type { gitManagementScope } from './gitManagementScope';
@@ -7,7 +7,7 @@ import type { gitManagementScope } from './gitManagementScope';
 export type GitMenuPage = 'changes' | 'history' | 'overview' | 'branches' | 'worktrees' | 'stashes' | 'remotes' | 'merge';
 export function useGitMenuResources(scope: ReturnType<typeof gitManagementScope>, workspacePath: string,
   workspaceId: string | undefined, isCurrent: () => boolean) {
-  const branch = useGitMenuResource<GitBranchStateResult>(isCurrent);
+  const branch = useGitMenuResource<GitBranchStateResult & { worktrees?: GitWorktree[]; worktreesError?: string }>(isCurrent);
   const operation = useGitMenuResource<GitOperationStateResult>(isCurrent);
   const history = useGitMenuResource<GitHistoryEntry[]>(isCurrent);
   const stash = useGitMenuResource<GitStash[]>(isCurrent);
@@ -22,8 +22,11 @@ export function useGitMenuResources(scope: ReturnType<typeof gitManagementScope>
   const readBranches = useCallback((force = false) => loadBranches(async () => {
     const data = await window.electronAPI.gitGetBranchState(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
     if (!data.success) throw new Error(data.error || 'Unable to load branch state');
-    return { data };
-  }, force), [loadBranches, scope.path, scope.checkoutContextId, workspaceId]);
+    // Inventory is descriptive only; Git still validates every mutation.
+    const listing = await window.electronAPI.gitListWorktrees(workspacePath, workspaceId).catch(() => null);
+    return { data: { ...data, worktrees: listing?.success ? listing.worktrees : undefined,
+      worktreesError: listing?.success ? undefined : 'Working folders unavailable. Git will check whether a branch is already in use.' } };
+  }, force), [loadBranches, scope.path, scope.checkoutContextId, workspacePath, workspaceId]);
   const readOperation = useCallback((force = false) => loadOperation(async () => {
     const data = await window.electronAPI.gitGetOperationState(scope.path, workspaceId, ...(scope.checkoutContextId ? [scope.checkoutContextId] : []));
     if (!data.success) throw new Error(data.error || data.message || 'Unable to load operation state');

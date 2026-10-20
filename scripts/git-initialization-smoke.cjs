@@ -83,6 +83,7 @@ async function until(check, message) { const end = Date.now() + 20000; while (!a
       // Main workspace repository state updates immediately; no closing/reopening needed.
       await page.getByRole('button', { name: 'New Agent', exact: true }).click();
       await page.getByRole('radio', { name: 'Terminal', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'New worktree', exact: true }).click();
       await page.getByLabel('New branch', { exact: true }).fill('init-worktree');
       await page.getByRole('button', { name: 'Create worktree only', exact: true }).click();
       await page.locator('.new-session-popover').waitFor({ state: 'hidden' });

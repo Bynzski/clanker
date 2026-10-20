@@ -70,6 +70,7 @@ for (const environmentId of ['local', 'ssh-fixture']) describe(`${environmentId}
     expect(api.gitRefresh).toHaveBeenCalledWith('ws');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Source Control' })).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'New Agent' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New worktree' }));
     expect(await screen.findByLabelText('New branch', { exact: true })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Terminal' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New Session' })).toBeNull();

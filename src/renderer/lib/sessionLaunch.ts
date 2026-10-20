@@ -106,7 +106,7 @@ export async function launchSession(request: LaunchSessionRequest): Promise<Sess
     if (target.kind === 'main') await launchWorkspaceTerminal(workspace, workspace.workspacePath, options);
     else await launchTerminalInCheckoutContext(workspace, context, options);
   } catch (cause) {
-    if (target.kind === 'main') return fail(`Could not start a session in main: ${messageOf(cause, 'launch failed')}`);
+    if (target.kind === 'main') return fail(`Could not start a session in the project folder: ${messageOf(cause, 'launch failed')}`);
     return fail(`The worktree for "${label}" ${resolved.created ? 'was created' : 'is attached'} but the agent could not be started: ${messageOf(cause, 'launch failed')}. Find it in New Agent or Source Control → Worktrees.`, resolved.created);
   }
   return { ok: true };
@@ -116,8 +116,8 @@ async function resolveContext(workspace: WorkspaceTab, target: SessionLaunchTarg
   if (target.kind === 'main') {
     const context = workspace.checkoutContexts?.find((entry) => entry.id === mainCheckoutContextId(workspace.id))
       ?? createMainCheckoutContext({ workspaceId: workspace.id, environmentId: workspace.environmentId, path: workspace.workspacePath });
-    return context ? { ok: true, context, label: 'main checkout', created: false, attached: false }
-      : { ok: false, error: 'The main checkout is not registered', created: false };
+    return context ? { ok: true, context, label: 'project folder', created: false, attached: false }
+      : { ok: false, error: 'The project folder is not registered', created: false };
   }
   if (target.kind === 'worktree') {
     try {

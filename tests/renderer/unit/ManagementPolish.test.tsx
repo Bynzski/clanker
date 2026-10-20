@@ -77,8 +77,8 @@ describe('management polish without new execution paths', () => {
     const user = await open();
     await user.click(screen.getByRole('button', { name: 'Branches' }));
     if (action === 'create') {
-      await user.type(await screen.findByLabelText('Create Branch'), 'new-a');
-      await user.click(screen.getByRole('button', { name: 'Create' }));
+      await user.type(await screen.findByLabelText('Create and switch branch'), 'new-a');
+      await user.click(screen.getByRole('button', { name: 'Create and switch' }));
       expect(api.gitCreateBranch).toHaveBeenCalledWith(isolated.path, 'new-a', 'old-a', 'ws', isolated.id);
     } else {
       await user.click(await screen.findByRole('button', { name: 'Switch to branch new-a' }));

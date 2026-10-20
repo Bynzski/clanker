@@ -226,7 +226,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
           const managed = findRegisteredWorktreeContext(workspace, entry.path);
           const inUse = isCheckoutContextInUse(workspace, managed ?? { id: '', path: entry.path });
           const isThisWorkspace = isSameWorkspaceIdentity({ environmentId, path: entry.path }, { environmentId, path: workspace.workspacePath });
-          const ownership = entry.isMain ? 'Main checkout' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : 'Available';
+          const ownership = entry.isMain ? 'Original folder' : isThisWorkspace ? 'This workspace' : inUse ? 'In use' : 'Available';
 
           // The tag describes checkout availability and why it cannot be removed: a missing directory is
           // cleaned up by the section-level prune, a lock is cleared by Unlock (removal stays separate).
@@ -241,7 +241,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
               <div className="git-worktree-meta">
                 <span className="git-worktree-branch">{branch}</span>
                 <span className="git-worktree-path">{entry.path}</span>
-                {entry.isMain && <span className="git-worktree-explanation">Main checkout · cannot be removed.</span>}
+                {entry.isMain && <span className="git-worktree-explanation">Original repository folder · cannot be removed. Its branch need not be main.</span>}
                 {entry.isPrunable && entry.pruneReason && <span className="git-worktree-explanation" title={entry.pruneReason}>Directory missing</span>}
                 {entry.isLocked && <span className="git-worktree-explanation" title={entry.lockReason}>Unlock before cleanup{entry.lockReason ? ` · ${entry.lockReason}` : ''}</span>}
                 {inUse && <span className="git-worktree-explanation">Close terminals and stop dev servers to remove.</span>}

@@ -722,7 +722,7 @@ function GitController({ workspacePath, workspaceId, scope, trigger }: GitButton
             onClearStashes={() => { if (isCurrent() && statusKnown && resources.stash.phase === 'ready') handleClearStashes(); }}
             onLoadMoreHistory={handleLoadMoreHistory}
             onRestoreFocus={() => trigger.current?.focus()}
-            onCreateBranch={(event) => { if (isCurrent() && statusKnown && resources.branch.phase === 'ready') void handleCreateBranch(event); }}
+            onCreateBranch={(event, baseBranch) => { if (isCurrent() && statusKnown && resources.branch.phase === 'ready') void handleCreateBranch(event, baseBranch); }}
             onDeleteBranch={(branchName) => { if (isCurrent() && statusKnown && resources.branch.phase === 'ready') handleDeleteBranch(branchName); }}
             onDropStash={(stash) => { if (isCurrent() && statusKnown && resources.stash.phase === 'ready') handleDropStash(stash); }}
             onFetch={() => { if (isCurrent()) void handleFetch(); }}

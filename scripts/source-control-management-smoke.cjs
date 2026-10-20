@@ -14,7 +14,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-source-control-smoke
 const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-source-control-visual-'));
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
 const project = path.join(root, 'project');
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'TMPDIR', 'LANG', 'LC_ALL'].includes(key)));
 Object.assign(env, { [owner.key]: owner.value, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'pipe' });
 git('init', '-b', 'main'); git('config', 'user.name', 'Smoke'); git('config', 'user.email', 'smoke@example.invalid');
