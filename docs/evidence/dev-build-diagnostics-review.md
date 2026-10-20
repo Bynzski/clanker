@@ -1,5 +1,7 @@
 # Dev-build diagnostics review: `0.12.0-dev.f7602b0` (#186, #152)
 
+The later bounded capture and native verification for #189 are recorded in [Next dev-build review](dev-build-review-189.md). The findings below describe the earlier build and remain historical evidence.
+
 Read-only review of the owner's running Linux AppImage, its persisted attention diagnostics, its systemd user journal and the native harness stores on the same machine, followed by fixes for every stage that could be reproduced. Times are UTC. Terminals are aliased; no session/turn identity, credential, prompt, response or checkout path is reproduced here.
 
 ## Sources and coverage

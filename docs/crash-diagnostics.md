@@ -27,3 +27,9 @@ A minidump needs native stack analysis with symbols matching the **exact Electro
 The renderer recovery prompt addresses the frozen-window aftermath. It stops existing workspace resources and reloads through normal startup on consent; it neither preserves live PTYs nor fixes the native fault. A symbolized stack or reproducible workload is needed before attributing the fault to V8, GPU/Wayland, or application event pressure.
 
 Reference: [Electron crashReporter API](https://www.electronjs.org/docs/latest/api/crash-reporter).
+
+## Repeatable native recovery check
+
+After `npm run build`, run `npm run smoke:crash-recovery` on Linux with an X11 display (`DISPLAY`) and `xdotool` installed. It launches a separate built Electron app with a private disposable profile and no workspaces, forces **that fixture's** renderer to crash, accepts its real native Reload dialog, verifies one reload restores the shell, and checks a local minidump's signature. It reuses the fixture-owned process cleanup and removes successful fixtures, including their dumps. Failed fixtures remain private in the reported temporary directory for inspection.
+
+This is an explicit native smoke, not part of the headless validation gate. It uses the built unpackaged app with production renderer loading, X11, GPU disabled and capture explicitly enabled; it does not verify packaged defaults, Wayland/GPU behavior, restoration of live terminals/unsaved buffers, dump symbolization or the cause of the field segfault. Each observation allows up to 60 seconds for native crash handling. It never touches the running user instance or uploads a dump.
