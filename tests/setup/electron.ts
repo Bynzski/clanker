@@ -25,6 +25,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     configureAssistants: vi.fn(async (settings) => ({ ...{ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }, settings })),
     refreshAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, assistants: [], surfaces: [] }),
     openAssistant: vi.fn().mockResolvedValue({ state: 'open', replay: '' }),
+    refreshAssistantSession: vi.fn().mockResolvedValue({ state: 'connecting', replay: '' }),
     writeAssistantPty: vi.fn().mockResolvedValue(undefined),
     resizeAssistantPty: vi.fn().mockResolvedValue(undefined),
     onAssistantPtyData: vi.fn(() => () => undefined),

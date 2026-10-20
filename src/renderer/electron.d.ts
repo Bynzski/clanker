@@ -115,6 +115,7 @@ export interface ElectronAPI {
   configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
   refreshAssistants: () => Promise<AssistantSnapshot>;
   openAssistant: (assistantId: string) => Promise<AssistantOpenResult>;
+  refreshAssistantSession: (assistantId: string) => Promise<AssistantOpenResult>;
   writeAssistantPty: (assistantId: string, data: string) => Promise<void>;
   resizeAssistantPty: (assistantId: string, cols: number, rows: number) => Promise<void>;
   onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => () => void;

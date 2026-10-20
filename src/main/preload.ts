@@ -34,6 +34,7 @@ import {
   ASSISTANTS_CONFIGURE,
   ASSISTANTS_REFRESH,
   ASSISTANTS_OPEN,
+  ASSISTANTS_REFRESH_SESSION,
   ASSISTANTS_PTY_WRITE,
   ASSISTANTS_PTY_RESIZE,
   ASSISTANTS_CHANGED,
@@ -268,6 +269,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
   refreshAssistants: () => ipcRenderer.invoke(ASSISTANTS_REFRESH),
   openAssistant: (assistantId: string) => ipcRenderer.invoke(ASSISTANTS_OPEN, assistantId),
+  refreshAssistantSession: (assistantId: string) => ipcRenderer.invoke(ASSISTANTS_REFRESH_SESSION, assistantId),
   writeAssistantPty: (assistantId: string, data: string) => ipcRenderer.invoke(ASSISTANTS_PTY_WRITE, assistantId, data),
   resizeAssistantPty: (assistantId: string, cols: number, rows: number) => ipcRenderer.invoke(ASSISTANTS_PTY_RESIZE, assistantId, cols, rows),
   onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => {

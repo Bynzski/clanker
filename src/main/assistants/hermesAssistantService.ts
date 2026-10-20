@@ -558,7 +558,34 @@ export class HermesAssistantService {
     return operation;
   }
 
-  private async openResolved(assistantId: string): Promise<AssistantOpenResult> {
+  /** Reattach an existing viewer to the canonical chat, preserving Hermes' keep-alive PTY identity. */
+  refreshSurface(assistantId: unknown): Promise<AssistantOpenResult> {
+    if (!isValidAssistantId(assistantId)) return Promise.reject(new Error('Invalid assistant'));
+    const session = this.sessions.get(assistantId);
+    if (!session || !this.current(this.generation)) return Promise.reject(new Error('Assistant is not open'));
+    const inflight = this.opening.get(assistantId);
+    if (inflight) return inflight;
+
+    // Invalidate before closing: late output/close events from this viewer cannot affect its replacement.
+    const socket = session.socket;
+    session.generation++;
+    session.socket = null;
+    session.decoder = new StringDecoder('utf8');
+    session.state = 'connecting';
+    try { socket?.close(); } catch { /* already closed */ }
+    this.publish();
+    const generation = this.generation;
+    const operation = (async () => {
+      if (this.state !== 'connected') await this.refresh();
+      // Window reset/disable/shutdown while recovering must never resurrect a viewer.
+      if (!this.current(generation) || this.sessions.get(assistantId) !== session) return { state: session.state, replay: session.replay };
+      return this.openResolved(assistantId, true);
+    })().finally(() => { if (this.opening.get(assistantId) === operation) this.opening.delete(assistantId); });
+    this.opening.set(assistantId, operation);
+    return operation;
+  }
+
+  private async openResolved(assistantId: string, requireExistingChat = false): Promise<AssistantOpenResult> {
     const entry = this.entry(assistantId);
     const rpc = this.rpc;
     const endpoint = this.endpoint;
@@ -574,7 +601,7 @@ export class HermesAssistantService {
     this.publish();
     let sessionId: string;
     try {
-      sessionId = await this.resolveCanonicalChat(entry, rpc);
+      sessionId = await this.resolveCanonicalChat(entry, rpc, requireExistingChat);
     } catch {
       // Fail closed: nothing was created on a lookup failure, and no scratch conversation is substituted.
       if (this.sessions.get(assistantId) === session && this.current(generation)) { session.state = 'unavailable'; this.publish(); }
@@ -595,7 +622,7 @@ export class HermesAssistantService {
    * is materialized with `session.title`, and a lost title race adopts the winner. The profile's own
    * `terminal.cwd` applies — Clanker never passes a workspace cwd.
    */
-  private async resolveCanonicalChat(entry: RosterEntry, rpc: HermesRpcClient): Promise<string> {
+  private async resolveCanonicalChat(entry: RosterEntry, rpc: HermesRpcClient, requireExistingChat: boolean): Promise<string> {
     const lookup = async (): Promise<string | null> => {
       const result = await rpc.call('session.list', { profile: entry.slug, title: CANONICAL_CHAT_TITLE, limit: CANONICAL_LIST_LIMIT, include_hidden: true });
       const rows = result && typeof result === 'object' ? (result as { sessions?: unknown }).sessions : undefined;
@@ -614,7 +641,7 @@ export class HermesAssistantService {
     };
     const existing = await lookup();
     if (existing) return existing;
-    if (entry.hadCanonical) throw new Error('Bot Chat registry could not be confirmed');
+    if (entry.hadCanonical || requireExistingChat) throw new Error('Bot Chat registry could not be confirmed');
     const created = await rpc.call('session.create', {
       profile: entry.slug, title: CANONICAL_CHAT_TITLE, hidden: true, follow_profile_config: true,
     }, 30_000) as { session_id?: unknown; stored_session_id?: unknown } | undefined;
