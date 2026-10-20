@@ -23,13 +23,14 @@ async function run() {
   execFileSync('xdotool', ['version'], { timeout: 2000, stdio: 'ignore' });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-renderer-crash-'));
   const owner = createSmokeOwner();
-  for (const name of ['home', 'config', 'cache', 'data', 'profile']) fs.mkdirSync(path.join(root, name));
+  for (const name of ['home', 'config', 'cache', 'data', 'profile', 'tmp']) fs.mkdirSync(path.join(root, name));
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     ['PATH', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL'].includes(key)));
   Object.assign(env, { [owner.key]: owner.value, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '',
     HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'),
     XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'),
-    CLANKER_CRASH_DUMPS: '1', SHELL: '/bin/bash' });
+    // Keep Chromium temporary files off the system /tmp, even with a sanitized env.
+    TMPDIR: path.join(root, 'tmp'), CLANKER_CRASH_DUMPS: '1', SHELL: '/bin/bash' });
   let app;
   let passed = false;
   try {
