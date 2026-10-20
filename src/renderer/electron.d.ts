@@ -58,7 +58,7 @@ import type { HarnessSession, SessionInvokeOptions, SessionInvokeResult } from '
 import type { SessionDiscoveryResult } from '../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountChange, HarnessAccountList } from '../../shared/types/harnessAccounts';
-import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
+import type { BrowserHistorySuggestion } from '../../shared/types/browserHistory';
 import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { ThemeId } from '../../shared/types/theme';
 import type { WorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
@@ -214,7 +214,7 @@ export interface ElectronAPI {
     paneId?: string,
   ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) => Promise<boolean>;
-  browserHistoryGet: (prefix?: string) => Promise<BrowserHistoryEntry[]>;
+  browserHistoryGet: (prefix?: string) => Promise<BrowserHistorySuggestion[]>;
   browserHistoryAdd: (url: string, title?: string) => Promise<boolean>;
   browserHistoryClear: () => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;

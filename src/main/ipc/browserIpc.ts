@@ -378,6 +378,13 @@ function createBrowserViewForTab(
   view.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (isMainFrame) reportUrlChange(url);
   });
+  view.webContents.on('page-title-updated', (_event, title) => {
+    const url = normalizeTrustedAppBrowserUrl(view.webContents.getURL());
+    if (!url || url !== entry.url) return;
+    entry.title = title;
+    getBrowserHistoryService().updateTitle(url, title);
+    deps.getMainWindow()?.webContents.send(BROWSER_URL_UPDATED, { workspaceId, tabId, url, title });
+  });
 
   // A WebContents can be destroyed while its tab stays selected (field evidence: 762 navigation
   // queries against one dead tab in 195 s). Forget only that view, so the next activation recreates
