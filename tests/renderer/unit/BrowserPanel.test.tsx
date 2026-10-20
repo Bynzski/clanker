@@ -1686,6 +1686,8 @@ describe('BrowserPanel', () => {
     });
 
     it('debounces history queries by 150ms', async () => {
+      // Exact debounce boundaries must not advance with wall time on a busy CI worker.
+      vi.useFakeTimers({ shouldAdvanceTime: false });
       render(<BrowserPanel layoutVersion={1} />);
       const input = screen.getByPlaceholderText('Search Google or enter address…');
 
@@ -1694,6 +1696,10 @@ describe('BrowserPanel', () => {
       expect(input).toHaveFocus();
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'lo' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(mockBrowserHistoryGet).not.toHaveBeenCalled();
       fireEvent.change(input, { target: { value: 'local' } });
 
       expect(mockBrowserHistoryGet).not.toHaveBeenCalled();
@@ -1705,10 +1711,8 @@ describe('BrowserPanel', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1);
       });
-      await waitFor(() => {
-        expect(mockBrowserHistoryGet).toHaveBeenCalledTimes(1);
-        expect(mockBrowserHistoryGet).toHaveBeenCalledWith('local');
-      });
+      expect(mockBrowserHistoryGet).toHaveBeenCalledTimes(1);
+      expect(mockBrowserHistoryGet).toHaveBeenCalledWith('local');
     });
 
     it('does not query for fewer than 2 characters', async () => {
