@@ -59,6 +59,7 @@
     "smoke:bridge:opencode": "node scripts/opencode-bridge-smoke.cjs",
     "smoke:hermes:lifecycle": "node scripts/hermes-native-lifecycle-smoke.cjs",
     "smoke:attention:electron": "node scripts/attention-electron-smoke.cjs",
+    "smoke:crash-recovery": "node scripts/renderer-crash-smoke.cjs",
     "smoke:dialogs": "node scripts/app-dialog-smoke.cjs",
     "smoke:browser-file-links": "electron scripts/browser-local-links-smoke.cjs",
     "smoke:explorer-context-menu": "node scripts/explorer-context-menu-smoke.cjs"
