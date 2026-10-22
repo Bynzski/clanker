@@ -53,6 +53,7 @@
     "smoke:attention:pi-tui": "node scripts/native-attention-smoke.cjs pi-tui",
     "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
     "smoke:attention:claude-checkout": "node scripts/claude-checkout-smoke.cjs",
+    "smoke:attention:claude-checkout-electron": "node scripts/claude-checkout-recovery-smoke.cjs",
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
     "smoke:attention:codex-tui": "node scripts/codex-attention-tui-smoke.cjs",
     "smoke:attention:opencode": "node scripts/opencode-attention-smoke.cjs",
@@ -119,7 +120,7 @@
     "sharp": "0.35.5",
     "typescript": "6.0.2",
     "typescript-eslint": "^8.46.1",
-    "vite": "^8.0.8",
+    "vite": "^8.1.6",
     "vitest": "^4.1.11"
   },
   "build": {
