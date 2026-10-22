@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 import { openCodeMajorVersion } from './version';
-import { openCodePrivateServerArgs } from './privateServer';
+import { openCodePrivateServerArgs, isOpenCodeTuiInvocation } from './privateServer';
+import { SOURCE as TUI_SOURCE } from './attentionTui';
 
 /** The plugin proves each session's parentage from native metadata (or the trusted
  * resumed ID) before reporting it. Child sessions are reported as child scope, and a
@@ -125,16 +126,15 @@ export const ClankerAttention = async ({ client, directory }) => {
  */
 export const SOURCE_V2 = `import { emit } from '../observer.mjs';
 const trusted = process.env.CLANKER_ATTENTION_SESSION_ID || null;
-const instance = Math.random().toString(36).slice(2, 10);
-const turnOf = (n) => instance + '.' + n;
 const MAX_SESSIONS = 256;
 const bounded = (map, key, value) => {
   if (!map.has(key) && map.size >= MAX_SESSIONS) map.delete(map.keys().next().value);
   map.set(key, value);
 };
-export default {
-  id: 'clanker-attention',
-  setup(ctx) {
+export function createObserver(ctx, publish = emit) {
+    // A TUI plugin reload can reuse this imported module: nonce belongs to the observer, not the module.
+    const instance = Math.random().toString(36).slice(2, 10);
+    const turnOf = (n) => instance + '.' + n;
     const parentage = new Map();
     const directories = new Map();
     const turns = new Map();
@@ -182,7 +182,7 @@ export default {
         const directory = data.location?.directory ?? data.directory;
         if (typeof id !== 'string' || typeof directory !== 'string' || !directory || directories.get(id) === directory) return;
         bounded(directories, id, directory);
-        if (await isRoot(id) === true) await emit('location_changed', { scope: 'root', sessionId: id, nativeEvent: type, cwd: directory });
+        if (await isRoot(id) === true) await publish('location_changed', { scope: 'root', sessionId: id, nativeEvent: type, cwd: directory });
         return;
       }
       let [kind, sessionId, inputId, requestKind] = classify(type, data) ?? [];
@@ -190,8 +190,8 @@ export default {
       const root = await isRoot(sessionId);
       if (root === undefined) return;
       const fields = { scope: root ? 'root' : 'child', sessionId, nativeEvent: type };
-      if (!root) return emit(kind, fields);
-      if (kind === 'session_ended') { turns.delete(sessionId); directories.delete(sessionId); return emit(kind, fields); }
+      if (!root) return publish(kind, fields);
+      if (kind === 'session_ended') { turns.delete(sessionId); directories.delete(sessionId); return publish(kind, fields); }
       const turn = turns.get(sessionId) ?? { epoch: 0, open: false };
       bounded(turns, sessionId, turn);
       if (kind === 'turn_started') {
@@ -199,8 +199,14 @@ export default {
       } else if (!turn.open) return;
       if (kind === 'turn_completed' || kind === 'turn_failed' || kind === 'turn_interrupted') turn.open = false;
       const cwd = kind === 'turn_started' || kind === 'turn_completed' ? located(sessionId) : undefined;
-      await emit(kind, { ...fields, turnId: turnOf(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
+      await publish(kind, { ...fields, turnId: turnOf(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
     };
+    return handle;
+}
+export default {
+  id: 'clanker-attention',
+  setup(ctx) {
+    const handle = createObserver(ctx);
     const controller = new AbortController();
     let queue = Promise.resolve();
     (async () => {
@@ -215,6 +221,8 @@ export default {
 
 const V2_CONFIG = 'opencode-v2.json';
 const V2_PLUGIN_DIRECTORY = 'v2-plugin';
+const V2_TUI_CONFIG = 'opencode-v2-tui.json';
+const V2_TUI_DIRECTORY = 'v2-tui-plugin';
 
 function resourceDirectory(files: AttentionAdapterFiles): string {
   return path.join(files.resourceRoot ?? path.dirname(files.command), 'opencode');
@@ -231,7 +239,7 @@ export const local = localAttention(({ args, env, files: adapterFiles, rootSessi
       return {
         args: privateArgs,
         // Additive: OpenCode merges this file over the user's global and project config.
-        env: { OPENCODE_CONFIG: path.join(directory, V2_CONFIG), ...session },
+        env: { OPENCODE_CONFIG: path.join(directory, isOpenCodeTuiInvocation(args) ? V2_TUI_CONFIG : V2_CONFIG), ...session },
       };
     }
     if (env.OPENCODE_CONFIG_DIR || args.includes('--pure')) return null;
@@ -249,4 +257,12 @@ export function prepareResources(files: AttentionAdapterFiles, observer: string)
   fs.writeFileSync(path.join(v2Plugin, 'package.json'), `${JSON.stringify({ name: 'clanker-attention', private: true, type: 'module', main: 'index.js' })}\n`, { mode: 0o600 });
   fs.writeFileSync(path.join(v2Plugin, 'index.js'), SOURCE_V2, { mode: 0o600 });
   fs.writeFileSync(path.join(directory, V2_CONFIG), `${JSON.stringify({ plugins: [v2Plugin] })}\n`, { mode: 0o600 });
+  const tuiPlugin = path.join(directory, V2_TUI_DIRECTORY);
+  fs.mkdirSync(tuiPlugin, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(tuiPlugin, 'package.json'), `${JSON.stringify({ name: 'clanker-attention', private: true, type: 'module' })}\n`, { mode: 0o600 });
+  // TUI launches have exactly one lifecycle observer, in the selected native client.
+  // Non-TUI launches retain the server observer; neither can impersonate TUI selection.
+  fs.writeFileSync(path.join(tuiPlugin, 'server.js'), "export default { id: 'clanker-attention', setup() {} };\n", { mode: 0o600 });
+  fs.writeFileSync(path.join(tuiPlugin, 'tui.js'), TUI_SOURCE, { mode: 0o600 });
+  fs.writeFileSync(path.join(directory, V2_TUI_CONFIG), `${JSON.stringify({ plugins: [tuiPlugin] })}\n`, { mode: 0o600 });
 }

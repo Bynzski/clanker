@@ -473,15 +473,33 @@ service never sees a launch's environment, so the 1.x plugin, loaded through `OP
 1.x path). On 2.x a local launch gets `--standalone` (a private server that inherits the launch environment)
 and `OPENCODE_CONFIG` naming a launch-owned file `{ "plugins": ["<dir>"] }`, which OpenCode merges over the
 user's global and project config (`OPENCODE_CONFIG_DIR` would replace the global directory on 2.x). A
-user-chosen `--server`, or the user's own `OPENCODE_CONFIG`, declines attention instead. The 2.x plugin is a
-`{ id, setup(ctx) }` default export that consumes `ctx.event.subscribe()` (`{ type, data }`):
+user-chosen `--server`, or the user's own `OPENCODE_CONFIG`, declines attention instead. The non-TUI 2.x
+plugin is a `{ id, setup(ctx) }` default export that consumes `ctx.event.subscribe()` (`{ type, data }`):
 `session.execution.started` / `succeeded` / `failed` / `interrupted` (`reason` user or inactivity →
 interrupted; `superseded` is continued by the next execution; `shutdown` is left to the launch wrapper),
 `permission.asked` (`id`) / `permission.replied` (`requestID`), `form.created` (`form.id`) / `form.replied` /
 `form.cancelled` (`id`), `session.created` (`parentID`, `location.directory`), `session.moved` (location) and
-`session.deleted`. Parentage proof and the per-root epoch are the 1.x rules. Verified end to end against the
-real 2.0.26 binary with a local OpenAI-compatible stub (repeated turns and a failed turn reach the broker);
-permission/form events are verified by schema and fixture only. SSH launches still use the 1.x contract.
+`session.deleted`. Parentage proof and the per-root epoch are the 1.x rules. The server observer was
+verified against the real 2.0.26 binary with a local OpenAI-compatible stub (repeated turns and a failed turn).
+SSH launches still use the 1.x contract.
+
+For verified local interactive argv (ordinary launch, `--session`/`--continue`, `--prompt`, `--auto`,
+`--standalone` and logging flags), the launch-owned package instead runs its observer in the native TUI,
+with a no-op server entry to prevent duplicate/racing lifecycle sources. It uses native
+`ctx.ui.router.current()` plus `ctx.data.session.get()` root metadata to prove selection, and consumes
+`ctx.data.listen()` events through the same serialized queue. A changed selected root emits an explicit
+`session_replaced` naming the exact previous root; session creation/start alone never grants that right.
+Children and missing metadata cannot select a root. Background events advance bounded epoch state without
+publishing; selecting an active root can replay its bounded native start/wait facts, but returning to an
+idle root never reannounces an old completion. No PTY parsing, new IPC, launch rebinding, checkout grant,
+shared-broker relaxation, or polling is introduced. Other argv keep server-only observation and do not
+claim client-local selection support.
+
+`npm run smoke:attention:opencode-tui` verifies installed 2.0.26 over a real PTY with isolated configuration
+and loopback model responses: repeated turns, native permission/question replies, Esc interruption,
+`/new`, `--session` resume and credential revocation. This is real TUI/native-hook evidence, not paid
+inference, built-Electron rendering, Windows or SSH proof. See
+[the #189 native TUI receipt](evidence/opencode-native-tui-189.md).
 
 Pi attention (checked against 1.1.0). The shared local/SSH observer uses authenticated extension events,
 not the new unauthenticated OSC 7501 program-status reports. `ui_prompt_start` / `ui_prompt_end`
