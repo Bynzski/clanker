@@ -100,6 +100,12 @@ not a claim that an old observation has become current registered evidence.
   HOME, real Bash/Git and loopback responses (no paid inference). It asserts the outside
   Bash observation is corrected at root Stop. It is print-mode CLI, not built-Electron
   proof and not a claim about every installed harness version.
+- `npm run smoke:attention:claude-checkout-electron` adds built-Electron verification
+  with native print-mode Claude, a fixture-only stdin pipe and loopback responses.
+  It checks main Git/Explorer recovery, unavailable scratch-directory observations,
+  workspace switching, refocus and saved-workspace restart without rebinding launch
+  identity. It is not packaged-AppImage or interactive-TUI proof. See
+  [the #192 verification receipt](evidence/checkout-recovery-192.md).
 
 Existing bounded `checkout-observation` logs now capture a root correction alongside
 its native Stop publication when location changes, so field triage need not reproduce

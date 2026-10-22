@@ -44,6 +44,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Checkout relocation via MCP (#166)** — retire agent-requested checkout create/complete lifecycle tools and the automated session-relocation chain. The opt-in authenticated Clanker MCP bridge remains read-only workspace context; normal Git tools and native history/resume are unchanged.
 - **Obsolete checkout launch surfaces (#166)** — retire the sidebar worktree inventory, old isolated-agent picker and separate harness pills in favor of New Agent and Source Control.
 
+### Security
+
+- **Build tooling (#222)** — update Vite to 8.1.6 to address development-server/editor middleware advisories and restore the dependency audit's high/critical gate without exceptions.
 
 ## [0.12.0] - 2026-10-08
 
