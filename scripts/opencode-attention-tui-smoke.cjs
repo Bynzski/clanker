@@ -8,11 +8,14 @@ const http = require('node:http');
 const { execFileSync } = require('node:child_process');
 const pty = require('node-pty');
 const { createSmokeOwner, cleanupSmokeFixture } = require('./lib/smoke-fixture-cleanup.cjs');
-const { AgentAttentionBroker } = require('../dist/main/main/agentAttentionBroker');
-const { attentionLaunchStep } = require('../dist/main/main/attentionLaunchStep');
-const { prepareLaunchAttachments } = require('../dist/main/main/launchAttachments');
-const { removeAttentionAdapterFiles } = require('../dist/main/main/agentAttentionAdapters');
 const repo = path.resolve(__dirname, '..');
+// This manual native smoke runs AFTER build; CI's pre-build source analysis has no dist/.
+// Resolve only these fixed generated modules at runtime, without adding baseline exemptions.
+const requireBuilt = require('node:module').createRequire(path.join(repo, 'dist/main/main/main.js'));
+const { AgentAttentionBroker } = requireBuilt('./agentAttentionBroker');
+const { attentionLaunchStep } = requireBuilt('./attentionLaunchStep');
+const { prepareLaunchAttachments } = requireBuilt('./launchAttachments');
+const { removeAttentionAdapterFiles } = requireBuilt('./agentAttentionAdapters');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-opencode-tui-'));
 const owner = createSmokeOwner();
 const env = { PATH: process.env.PATH, HOME: path.join(root, 'home'),

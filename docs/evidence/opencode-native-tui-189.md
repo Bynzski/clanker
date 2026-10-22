@@ -92,6 +92,17 @@ security-check (zero high/critical; the existing 12 moderate findings remain),
 build and **426 files / 8,245 tests**. The unrelated untracked fixture described
 below was temporarily moved aside and restored unchanged for lint/validation.
 
+## Clean-source CI ordering
+
+The initial CI run caught four unresolved static imports from this manual smoke
+into generated `dist/main/main` files: CI runs Fallow before build, whereas the
+local checkout already had those artifacts. The smoke now uses a runtime
+`createRequire` rooted at the generated main entrypoint, consistent with its
+explicit after-build execution requirement. No baseline exemptions or workflow
+ordering changes were added. Full and production Fallow checks pass in an archived
+source-only checkout with no `dist/` directory (dependencies linked separately),
+and the native smoke still runs against the built modules.
+
 ## Limits and issue disposition
 
 This is native standalone TUI/PTY/broker evidence, not built-Electron pixel evidence,
