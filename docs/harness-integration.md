@@ -528,6 +528,16 @@ error) is explicit failure evidence: it is reported as `turn_failed` (Failed), n
 completion, and the error text is never forwarded. Claude has no user-interrupt hook,
 so interruption without a native Stop or failure boundary stays Running until the next prompt or explicit session end. A native Stop instead shows provisional settlement. `Stop` is not final settlement: another hook can block it. It reports `turn_provisional`: the identified turn is retained, but execution and any old request resolution are unknown. Neither Working nor actionable Needs Input is claimed until fresh correlated evidence arrives.
 
+`npm run smoke:attention:claude-tui` verifies installed Claude 2.1.304 over a real PTY with
+isolated configuration and loopback responses: ten turns, native permission/AskUserQuestion
+waits and PostToolBatch resolution, manual `/compact` with the same session identity, and
+subsequent-turn recovery. Esc cancels the held fixture request, but no settlement hook is
+observed in the one-second window: the broker correctly retains Running until the next
+native prompt rather than inferring completion from terminal text, keys or HTTP cancellation.
+Every native Stop remains provisional and refuses handoff. This is not automatic mid-turn
+compaction, paid inference, built-Electron pixel, Windows or SSH proof. See
+[the Claude TUI verification receipt](evidence/claude-native-tui-189.md).
+
 Continuation after candidate Stop. Claude and Codex root `PreToolUse` with the already-bound
 `session_id` and current `prompt_id`/`turn_id` emits `turn_activity`. Unlike `turn_started`,
 this event cannot bind a root or open/replace a turn: the broker requires the live matching

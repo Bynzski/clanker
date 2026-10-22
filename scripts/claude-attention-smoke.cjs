@@ -5,6 +5,7 @@ const fs = require('node:fs'); const os = require('node:os'); const path = requi
 const { AgentAttentionBroker } = require('../dist/main/main/agentAttentionBroker');
 const { attentionLaunchStep } = require('../dist/main/main/attentionLaunchStep'); const { prepareLaunchAttachments } = require('../dist/main/main/launchAttachments');
 const { removeAttentionAdapterFiles } = require('../dist/main/main/agentAttentionAdapters');
+const { anthropicStream } = require('./lib/anthropic-stream-fixture.cjs');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-claude-native-'));
 let child, attachments, requests = 0, results = 0, failure = false, stops = 0;
 const transitions = [];
@@ -21,18 +22,14 @@ const server = http.createServer((request, response) => {
     requests++;
     if (failure) { response.writeHead(401, { 'Content-Type': 'application/json' }); response.end('{"type":"error","error":{"type":"authentication_error","message":"fixture failure"}}'); return; }
     response.writeHead(200, { 'Content-Type': 'text/event-stream' });
-    const event = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
     if (requests === 2) {
       // The other Stop hook requested continuation. Make that SAME foreground prompt
       // execute a real, permission-free Read tool through the installed CLI.
-      response.end(event('message_start', { message: { id: 'msg_tool', type: 'message', role: 'assistant', content: [], model: 'claude-haiku-4-5', usage: { input_tokens: 1, output_tokens: 0 } } })
-        + event('content_block_start', { index: 0, content_block: { type: 'tool_use', id: 'fixture_read', name: 'Read', input: {} } })
-        + event('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify({ file_path: path.join(root, 'fixture.txt') }) } })
-        + event('content_block_stop', { index: 0 })
-        + event('message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 1 } }) + event('message_stop', {}));
+      response.end(anthropicStream({ id: 'msg_tool', inputTokens: 1,
+        content: [{ type: 'tool_use', id: 'fixture_read', name: 'Read', input: { file_path: path.join(root, 'fixture.txt') } }] }));
       return;
     }
-    response.end(event('message_start', { message: { id: 'msg_fixture', type: 'message', role: 'assistant', content: [], model: 'claude-haiku-4-5', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } }) + event('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }) + event('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'ok' } }) + event('content_block_stop', { index: 0 }) + event('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } }) + event('message_stop', {}));
+    response.end(anthropicStream({ id: 'msg_fixture', inputTokens: 1 }));
   });
 });
 async function until(check, label) { const deadline = Date.now() + 20000; while (!check()) { if (Date.now() > deadline) throw new Error(label); await new Promise(resolve => setTimeout(resolve, 30)); } }
