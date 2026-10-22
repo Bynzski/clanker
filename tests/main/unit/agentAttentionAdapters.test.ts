@@ -103,7 +103,8 @@ describe('agent attention launch adapters', () => {
       const directory = path.join(resources.resourceRoot!, 'opencode');
       const options = attentionLaunchOptions('opencode', ['--session', 'ses_1'], { OPENCODE_CONFIG_DIR: '/user-dir' }, files);
       expect(options?.args).toEqual(['--standalone', '--session', 'ses_1']);
-      expect(options?.env).toEqual({ OPENCODE_CONFIG: path.join(directory, 'opencode-v2.json') });
+      expect(options?.env).toEqual({ OPENCODE_CONFIG: path.join(directory, 'opencode-v2-tui.json') });
+      expect(attentionLaunchOptions('opencode', ['serve'], {}, files)?.env.OPENCODE_CONFIG).toBe(path.join(directory, 'opencode-v2.json'));
       expect(attentionLaunchOptions('opencode', ['--standalone'], {}, files)?.args).toEqual(['--standalone']);
       // A server the user chose, or their own config file, is never overridden.
       expect(attentionLaunchOptions('opencode', ['--server', 'http://127.0.0.1:4096'], {}, files)).toBeNull();
@@ -112,6 +113,10 @@ describe('agent attention launch adapters', () => {
       const config = JSON.parse(fs.readFileSync(path.join(directory, 'opencode-v2.json'), 'utf8'));
       expect(config).toEqual({ plugins: [path.join(directory, 'v2-plugin')] });
       expect(JSON.parse(fs.readFileSync(path.join(directory, 'v2-plugin', 'package.json'), 'utf8')).main).toBe('index.js');
+      const tui = JSON.parse(fs.readFileSync(path.join(directory, 'opencode-v2-tui.json'), 'utf8'));
+      expect(tui.plugins).toEqual([path.join(directory, 'v2-tui-plugin')]);
+      expect(fs.readFileSync(path.join(tui.plugins[0], 'server.js'), 'utf8')).not.toContain('createObserver');
+      expect(fs.readFileSync(path.join(tui.plugins[0], 'tui.js'), 'utf8')).toContain('tui.session.selected');
     } finally {
       openCodeVersion.major = 1;
     }

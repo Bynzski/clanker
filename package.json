@@ -57,6 +57,7 @@
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
     "smoke:attention:codex-tui": "node scripts/codex-attention-tui-smoke.cjs",
     "smoke:attention:opencode": "node scripts/opencode-attention-smoke.cjs",
+    "smoke:attention:opencode-tui": "node scripts/opencode-attention-tui-smoke.cjs",
     "smoke:bridge:opencode": "node scripts/opencode-bridge-smoke.cjs",
     "smoke:hermes:lifecycle": "node scripts/hermes-native-lifecycle-smoke.cjs",
     "smoke:attention:electron": "node scripts/attention-electron-smoke.cjs",

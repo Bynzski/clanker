@@ -28,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **OpenCode 2.x session attention (#189)** — follow the native TUI's verified selected root after `/new` and session switches, preserving permission/question waits and interruption tracking without letting unrelated server sessions claim the terminal.
 - **Hermes owned-service shutdown (#187)** — wait for confirmed child exit after TERM/KILL, retain unverified cleanup ownership, block replacement until cleanup succeeds, and offer cleanup Retry even when Assistants are disabled. App quit drains all resource cleanups before reporting failures and exiting. Adopted/Desktop-owned backends are never stopped; native descendant cleanup remains separate investigation work.
 - **OpenCode 2.x CLI compatibility (#189)** — report unsupported local startup-model, TUI-fork and AI-commit requests before execution instead of sending invalid flags, silently resuming a fork, or weakening commit isolation. Ordinary launch/resume and legacy 1.x behavior remain available; SSH compatibility is unchanged.
 - **Explorer context menus (#207)** — keep file actions visible above native Browser panes, restoring Browser visibility when the menu closes.
