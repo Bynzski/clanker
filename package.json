@@ -52,6 +52,7 @@
     "smoke:attention:native": "node scripts/native-attention-smoke.cjs",
     "smoke:attention:pi-tui": "node scripts/native-attention-smoke.cjs pi-tui",
     "smoke:attention:claude": "node scripts/claude-attention-smoke.cjs",
+    "smoke:attention:claude-tui": "node scripts/claude-attention-tui-smoke.cjs",
     "smoke:attention:claude-checkout": "node scripts/claude-checkout-smoke.cjs",
     "smoke:attention:claude-checkout-electron": "node scripts/claude-checkout-recovery-smoke.cjs",
     "smoke:attention:codex": "node scripts/codex-attention-smoke.cjs",
