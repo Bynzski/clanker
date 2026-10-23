@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
@@ -6,6 +6,7 @@ import { isWorkspaceSidebarCollapsed } from '../../shared/types/workspaceNavigat
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
+import SidebarFilesDivider from './SidebarFilesDivider';
 import AssistantsRoster from './assistants/AssistantsRoster';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import './WorkspaceSidebar.css';
@@ -27,6 +28,8 @@ interface WorkspaceSidebarProps {
  */
 export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarProps) {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const filesExpanded = useWorkspaceStore((state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.explorerVisible ?? false);
+  const [filesPercent, setFilesPercent] = useState(50);
   const width = useWorkspaceNavigationStore((state) => state.sidebarWidth);
   const setSidebarWidth = useWorkspaceNavigationStore((state) => state.setSidebarWidth);
   const persistSidebarWidth = useWorkspaceNavigationStore((state) => state.persistSidebarWidth);
@@ -69,11 +72,14 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
     >
       {collapsed && <WorkspaceRail onOpenWorkspace={onOpenWorkspace} onExpand={expandSidebar} />}
       {/* The navigator stays mounted while collapsed so per-workspace expansion survives the rail. */}
-      <div className="workspace-sidebar-sections" hidden={collapsed}>
+      <div className="workspace-sidebar-sections" hidden={collapsed} style={{ '--sidebar-files-size': `${filesPercent}%` } as React.CSSProperties}>
         <div className="workspace-sidebar-upper" data-testid="workspace-sidebar-upper">
           <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
           <AssistantsRoster />
         </div>
+        {activeWorkspaceId && !collapsed && !assistantActive && filesExpanded && (
+          <SidebarFilesDivider percent={filesPercent} onChange={setFilesPercent} />
+        )}
         {activeWorkspaceId && !collapsed && !assistantActive && (
           <Suspense fallback={null}>
             <WorkspaceScopeProvider workspaceId={activeWorkspaceId}>

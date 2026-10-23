@@ -55,3 +55,19 @@
 }
 
 .workspace-sidebar-sections[hidden] { display: none; }
+
+/* Dedicated hit target between the independently scrolling sections. */
+.sidebar-files-divider {
+  flex: 0 0 6px;
+  cursor: row-resize;
+  background: var(--surface-raised);
+  position: relative;
+  touch-action: none;
+}
+
+.sidebar-files-divider:hover,
+.sidebar-files-divider:active,
+.sidebar-files-divider:focus-visible {
+  background: var(--control-primary-bg);
+  outline: none;
+}

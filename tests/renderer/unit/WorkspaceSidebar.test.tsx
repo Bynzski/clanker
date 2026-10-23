@@ -29,6 +29,21 @@ describe('WorkspaceSidebar global width', () => {
   });
   afterEach(() => { cleanup(); useWorkspaceNavigationStore.setState({ mode: 'tabs', sidebarWidth: 280, lastExpandedWidth: 280 }); });
 
+  it('offers height resizing only for expanded Files and retains the split across workspaces', () => {
+    render(<WorkspaceSidebar />);
+    expect(screen.queryByRole('separator', { name: 'Resize Files section' })).toBeNull();
+    act(() => { useWorkspaceStore.getState().setExplorerVisible(true, 'a'); });
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize Files section' }), { key: 'ArrowUp' });
+    const sections = screen.getByTestId('workspace-sidebar-upper').parentElement!;
+    expect(sections.style.getPropertyValue('--sidebar-files-size')).toBe('55%');
+    act(() => { useWorkspaceStore.getState().selectWorkspace('b'); });
+    expect(screen.queryByRole('separator', { name: 'Resize Files section' })).toBeNull();
+    act(() => { useWorkspaceStore.getState().setExplorerVisible(true, 'b'); });
+    expect(screen.getByRole('separator', { name: 'Resize Files section' })).toHaveAttribute('aria-valuenow', '55');
+    act(() => { useWorkspaceNavigationStore.getState().collapseSidebar(); });
+    expect(screen.queryByRole('separator', { name: 'Resize Files section' })).toBeNull();
+  });
+
   it('uses the application-global width and ignores per-workspace explorer widths', async () => {
     render(<WorkspaceSidebar />);
     const sidebar = screen.getByTestId('workspace-sidebar');
