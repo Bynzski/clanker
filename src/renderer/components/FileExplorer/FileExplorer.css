@@ -218,12 +218,11 @@
 }
 
 /* Embedded FILES section inside the workspace sidebar shell. */
-/* FILES is pinned to the bottom of the sidebar and grows upward when opened;
-   WORKSPACES keeps the rest. It is deliberately capped so it never takes focus. */
+/* The sidebar divider controls FILES height; WORKSPACES keeps the rest. */
 .file-explorer-section {
-  flex: 0 0 50%;
-  min-height: 160px;
-  max-height: calc(100% - 96px);
+  flex: 0 0 var(--sidebar-files-size, 50%);
+  min-height: 0;
+  max-height: none;
   height: auto;
   margin-top: auto;
   border-right: none;
