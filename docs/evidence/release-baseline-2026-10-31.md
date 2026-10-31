@@ -157,3 +157,13 @@ installed app, profile or launcher was replaced.
 Final fresh-dependency `npm run validate` passed branding, lint, typecheck, both
 Fallow gates, the no-high/critical security gate, build and all 428 test files /
 8,255 tests. The remaining lower-severity audit findings are reported, not excepted.
+
+The first Node 22 CI run passed all gates through build, but one test file failed
+to load because parallel workers raced Electron 43 lazy runtime extraction
+(`File exists`); 427 files / 8,139 tests passed. Test, watch and coverage commands
+now run the shipped `install-electron` binary once before starting Vitest workers.
+This addresses fresh-install ordering without changing the application or mocks.
+
+With the downloaded Electron dist moved out of the checkout, the corrected final
+`npm run validate` installed the runtime before workers and passed all gates and
+428 files / 8,255 tests again.

@@ -97,6 +97,10 @@ src/
 
 ## Testing
 
+The test commands prepare the Electron runtime once before starting Vitest workers.
+Electron 43 downloads lazily; this prevents concurrent first-import downloads on a
+fresh install, including in CI.
+
 ```bash
 npm run test          # Run all tests (Vitest)
 npm run test:watch    # Watch mode
