@@ -88,6 +88,7 @@ export class AssistantAttentionObserver {
     if (frame.method === 'event' && params.type === 'session.info' && payload?.stored_session_id === this.storedId) {
       if (this.root && this.root !== params.session_id) return;
       this.root = params.session_id;
+      this.touch();
       if (typeof payload.running === 'boolean' && (payload.running || (this.state !== 'finished' && this.state !== 'error'))) this.set(this.requests.size ? 'needs-input' : payload.running ? 'working' : 'idle');
       return;
     }
