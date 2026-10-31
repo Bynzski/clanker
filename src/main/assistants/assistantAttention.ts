@@ -1,6 +1,10 @@
 import type { AssistantAttention } from '../../shared/types/assistants';
 import { frameByteLength, type WebSocketFactory, type WebSocketLike } from './hermesTransport';
 
+const HUMAN_INPUT_METHODS = new Set([
+  'approval', 'clarify', 'sudo', 'secret', 'vault.unlock_prompt', 'vault.save_login', 'vault.code',
+]);
+
 /** Read-only Hermes PTY sidecar. Never forwards prompts, tool arguments or native session IDs. */
 export class AssistantAttentionObserver {
   private socket: WebSocketLike | undefined;
@@ -94,7 +98,7 @@ export class AssistantAttentionObserver {
     }
     if (!this.root || params.session_id !== this.root) return;
     this.touch();
-    if ((frame.method === 'approval' || frame.method === 'clarify') && typeof frame.id === 'string' && frame.id.length <= 256) {
+    if (typeof frame.method === 'string' && HUMAN_INPUT_METHODS.has(frame.method) && typeof frame.id === 'string' && frame.id.length <= 256) {
       if (this.requests.size >= 64) { this.set('unknown'); return; }
       this.requests.add(frame.id); this.set('needs-input'); return;
     }

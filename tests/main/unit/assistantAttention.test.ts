@@ -44,6 +44,40 @@ it('recognizes mirrored resume identity and waits for every human request to set
   observer.dispose();
 });
 
+it.each(['approval', 'clarify', 'sudo', 'secret', 'vault.unlock_prompt', 'vault.save_login', 'vault.code'])(
+  'tracks root %s prompts until all requests are cancelled', (method) => {
+    const { observer, changed, send, bind, sockets } = setup();
+    const request = (id: string, session_id = 'runtime-root') => sockets[0].emit('message', {
+      data: JSON.stringify({ id, method, params: { session_id, prompt: 'private prompt' } }),
+    });
+    bind(); send('message.start');
+    request('child-request', 'child');
+    expect(changed).toHaveBeenLastCalledWith('working');
+    request('first');
+    expect(changed).toHaveBeenLastCalledWith('needs-input');
+    request('second');
+    send('request.cancel', { id: 'first' }, 'child');
+    send('request.cancel', { id: 'second' });
+    expect(changed).toHaveBeenLastCalledWith('needs-input');
+    send('request.cancel', { id: 'untracked' });
+    expect(changed).toHaveBeenLastCalledWith('needs-input');
+    send('request.cancel', { id: 'first' });
+    expect(changed).toHaveBeenLastCalledWith('working');
+    expect(JSON.stringify(changed.mock.calls)).not.toContain('private prompt');
+    observer.dispose();
+  },
+);
+
+it('ignores unknown request methods and malformed native request IDs', () => {
+  const { observer, changed, send, bind, sockets } = setup();
+  bind(); send('message.start');
+  for (const [method, id] of [['vault.unknown', 'a'], ['sudo', 1], ['secret', 'x'.repeat(257)]]) {
+    sockets[0].emit('message', { data: JSON.stringify({ id, method, params: { session_id: 'runtime-root' } }) });
+  }
+  expect(changed.mock.calls).toEqual([['idle'], ['working']]);
+  observer.dispose();
+});
+
 it('clears on disconnect, reconnects without declaring completion, and rejects old sockets', async () => {
   vi.useFakeTimers();
   const { observer, changed, send, sockets, bind } = setup();
