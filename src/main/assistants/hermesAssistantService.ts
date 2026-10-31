@@ -1,3 +1,5 @@
+import { AssistantAttentionObserver } from './assistantAttention';
+import type { AssistantAttention } from '../../shared/types/assistants';
 import { StringDecoder } from 'node:string_decoder';
 import { HermesOwnedChild, HERMES_CLEANUP_ERROR } from './hermesOwnedChild';
 import { AssistantPresentationService, type PresentationBinding } from './assistantPresentation';
@@ -67,6 +69,8 @@ const CANONICAL_LIST_LIMIT = 200;
 interface RosterEntry { public: HermesAssistant; slug: string; home?: string; sessionId?: string; hadCanonical: boolean }
 
 interface PtySession {
+  attention?: AssistantAttention;
+  observer?: AssistantAttentionObserver;
   assistantId: string;
   attach: string;
   socket: WebSocketLike | null;
@@ -145,7 +149,7 @@ export class HermesAssistantService {
         ...(this.owned?.cleanupIncomplete ? { cleanupIncomplete: true } : {}) },
       assistants: this.roster.filter((entry) => !entry.public.hiddenInHermes && !this.settings.hiddenAssistantIds?.includes(entry.public.id)).map((entry) => ({ ...entry.public })),
       profiles: this.roster.map((entry) => ({ ...entry.public })),
-      surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state })),
+      surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state, attention: session.attention ?? 'unknown' })),
     };
   }
 
@@ -570,6 +574,8 @@ export class HermesAssistantService {
     const socket = session.socket;
     session.generation++;
     session.socket = null;
+    session.observer?.dispose();
+    session.attention = 'unknown';
     session.decoder = new StringDecoder('utf8');
     session.state = 'connecting';
     try { socket?.close(); } catch { /* already closed */ }
@@ -610,7 +616,7 @@ export class HermesAssistantService {
     if (!this.current(generation) || this.sessions.get(assistantId) !== session || !this.endpoint) return { state: session.state, replay: session.replay };
     entry.sessionId = sessionId;
     entry.hadCanonical = true;
-    this.attach(session, entry, this.endpoint);
+    await this.attach(session, entry, this.endpoint);
     this.publish();
     return { state: session.state, replay: session.replay };
   }
@@ -670,11 +676,22 @@ export class HermesAssistantService {
     };
   }
 
-  private attach(session: PtySession, entry: RosterEntry, endpoint: Endpoint): void {
+  private async attach(session: PtySession, entry: RosterEntry, endpoint: Endpoint): Promise<void> {
     session.state = 'connecting';
     session.generation++;
     const generation = session.generation;
-    const params = new URLSearchParams({ token: endpoint.token, profile: entry.slug, resume: entry.sessionId!, attach: session.attach });
+    session.observer?.dispose();
+    const channel = session.attach;
+    const eventParams = new URLSearchParams({ token: endpoint.token, channel });
+    const observer = new AssistantAttentionObserver(`ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/events?${eventParams}`, entry.sessionId!, this.createWebSocket, (attention) => {
+      if (session.generation !== generation || this.sessions.get(session.assistantId) !== session) return;
+      session.attention = attention;
+      this.publish();
+    });
+    session.observer = observer;
+    await observer.ready;
+    if (session.generation !== generation || this.sessions.get(session.assistantId) !== session) { observer.dispose(); return; }
+    const params = new URLSearchParams({ token: endpoint.token, profile: entry.slug, resume: entry.sessionId!, attach: session.attach, channel });
     const socket = this.createWebSocket(`ws://${endpoint.host ?? HERMES_LOOPBACK_HOST}:${endpoint.port}/api/pty?${params.toString()}`);
     socket.binaryType = 'arraybuffer';
     session.socket = socket;
@@ -698,6 +715,8 @@ export class HermesAssistantService {
     socket.addEventListener('close', ((event: { code?: number }) => {
       if (!live()) return;
       session.socket = null;
+      session.observer?.dispose();
+      session.attention = 'unknown';
       session.state = event.code === PTY_CLOSE_CHILD_EXITED ? 'ended' : 'disconnected';
       this.publish();
     }) as never);
@@ -707,6 +726,8 @@ export class HermesAssistantService {
   private endSocket(session: PtySession, socket: WebSocketLike, state: AssistantSurfaceState): void {
     if (session.socket !== socket) return;
     session.socket = null;
+    session.observer?.dispose();
+    session.attention = 'unknown';
     session.state = state;
     try { socket.close(); } catch { /* already closed */ }
     this.publish();
@@ -740,6 +761,8 @@ export class HermesAssistantService {
       session.generation++;
       try { session.socket?.close(); } catch { /* already closed */ }
       session.socket = null;
+      session.observer?.dispose();
+      session.attention = 'unknown';
       session.state = 'disconnected';
     }
   }
@@ -749,6 +772,8 @@ export class HermesAssistantService {
       session.generation++;
       try { session.socket?.close(); } catch { /* already closed */ }
       session.socket = null;
+      session.observer?.dispose();
+      session.attention = 'unknown';
     }
     this.sessions.clear();
   }
