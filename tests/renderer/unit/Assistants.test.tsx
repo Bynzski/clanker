@@ -658,3 +658,14 @@ it('adding a workspace parks the active Assistant (kept warm) and makes the new 
   expect(xterms).toHaveLength(1);
   expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
 });
+
+it('shows native Assistant attention and removes it on connection loss', async () => {
+  mockMain(snap({ surfaces: [{ assistantId: fred.id, state: 'open', attention: 'working' }] }));
+  render(<AssistantsRoster />);
+  expect(await screen.findByRole('button', { name: 'Fred · Working' })).toBeInTheDocument();
+  act(() => pushSnapshot(snap({ surfaces: [{ assistantId: fred.id, state: 'open', attention: 'needs-input' }] })));
+  expect(screen.getByRole('button', { name: 'Fred · Needs input' })).toBeInTheDocument();
+  act(() => pushSnapshot(snap({ service: { state: 'offline', ownership: null }, surfaces: [{ assistantId: fred.id, state: 'disconnected', attention: 'unknown' }] })));
+  expect(screen.queryByText('Working')).toBeNull();
+  expect(screen.queryByText('Needs input')).toBeNull();
+});

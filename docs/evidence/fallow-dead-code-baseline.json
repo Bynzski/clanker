@@ -5,7 +5,6 @@
   ],
   "unused_exports": [
     "tests/_helpers/attentionChanges.ts:labelChange",
-    "tests/_helpers/fakeHermes.ts:FakeSocket",
     "tests/_helpers/fakeHermes.ts:defaultProfiles"
   ],
   "unused_types": [

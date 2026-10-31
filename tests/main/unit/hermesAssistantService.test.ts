@@ -416,13 +416,13 @@ describe('control connection loss', () => {
     hermes.running = false;
     const first = service.refresh(); await flush(); hermes.running = true; ready(children[0]); await first;
     await service.openSurface('hermes:reviewer'); await flush();
-    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open' }]);
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open', attention: 'unknown' }]);
     const before = snapshots.length;
     hermes.wsSockets()[0].close(1006); // only the control socket dies; the child process survives
     expect(snapshots.length).toBeGreaterThan(before);
     const published = snapshots[snapshots.length - 1];
     expect(published.service).toMatchObject({ state: 'offline', ownership: 'clanker' });
-    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected' }]);
+    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected', attention: 'unknown' }]);
     expect(published.assistants).toEqual([]);
     expect(children[0].kill).not.toHaveBeenCalled();
     expect(spawnServe).toHaveBeenCalledTimes(1);
@@ -444,7 +444,7 @@ describe('control connection loss', () => {
     hermes.wsSockets()[0].close(1006);
     const published = snapshots[snapshots.length - 1];
     expect(published.service.state).toBe('offline');
-    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected' }]);
+    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected', attention: 'unknown' }]);
     expect(spawnServe).not.toHaveBeenCalled();
     expect((await service.refresh()).service.state).toBe('offline');
   });
@@ -650,7 +650,7 @@ describe('canonical Bot Chat resolution', () => {
     expect(await service.openSurface('hermes:fred')).toMatchObject({ state: 'unavailable' });
     expect(methods(hermes)).toEqual(['session.list']);
     expect(hermes.ptySockets()).toHaveLength(0);
-    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:fred', state: 'unavailable' }]);
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:fred', state: 'unavailable', attention: 'unknown' }]);
     // Retry after the registry recovers resolves normally.
     hermes.listFails = false;
     expect((await service.openSurface('hermes:fred')).state).toBe('connecting');
@@ -730,7 +730,7 @@ describe('Bot Chat PTY surfaces', () => {
     expect(url.searchParams.has('cwd')).toBe(false);
     expect(url.searchParams.has('fresh')).toBe(false);
     expect([first.state, second.state]).toEqual(['connecting', 'open']);
-    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open' }]);
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open', attention: 'unknown' }]);
   });
   it('refreshes only the requested viewer, preserving canonical/attach identity and size, and ignores its old socket', async () => {
     const { service, hermes, ptyData, spawnServe } = await open();
@@ -856,7 +856,7 @@ describe('Bot Chat PTY surfaces', () => {
     hermes.running = false;
     hermes.wsSockets()[0].close(1006);
     expect(service.get().service.state).toBe('offline');
-    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected' }]);
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected', attention: 'unknown' }]);
     expect(hermes.ptySockets()).toHaveLength(1);
     hermes.running = true;
     hermes.canonical.reviewer = 'sess-rev-tip';
@@ -871,7 +871,7 @@ describe('Bot Chat PTY surfaces', () => {
     const { service, hermes } = await open();
     await service.openSurface('hermes:reviewer'); await flush();
     hermes.ptySockets()[0].close(4410);
-    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'ended' }]);
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'ended', attention: 'unknown' }]);
   });
   it('disable closes every surface', async () => {
     const { service, hermes } = await open();
@@ -880,4 +880,23 @@ describe('Bot Chat PTY surfaces', () => {
     expect(hermes.ptySockets().every((socket) => socket.closed)).toBe(true);
     expect(service.get().surfaces).toEqual([]);
   });
+});
+
+it('owns one channel-bound attention observer per surface and disposes it with the PTY', async () => {
+  const { service, hermes } = setup({ enabled: true, autoStart: false });
+  await service.refresh();
+  await service.openSurface('hermes:reviewer');
+  await flush();
+  const events = hermes.sockets.find((socket) => new URL(socket.url).pathname === '/api/events')!;
+  const pty = hermes.ptySockets()[0];
+  expect(new URL(events.url).searchParams.get('channel')).toBe(new URL(pty.url).searchParams.get('channel'));
+  const send = (type: string, payload?: object) => events.emit('message', { data: JSON.stringify({ method: 'event', params: { type, session_id: 'root', payload } }) });
+  send('session.info', { stored_session_id: 'sess-rev-tip', running: false });
+  send('message.start');
+  expect(service.get().surfaces[0].attention).toBe('working');
+  pty.close(4410);
+  expect(events.closed).toBe(true);
+  send('message.start');
+  expect(service.get().surfaces[0]).toMatchObject({ state: 'ended', attention: 'unknown' });
+  await service.shutdown();
 });

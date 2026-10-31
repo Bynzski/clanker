@@ -52,14 +52,17 @@ export function AssistantNotice({ tone, message, onRetry, busy = false }: { tone
 export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon'; disabled?: boolean }) {
   const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
   const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
-  const label = `${assistant.displayName} · Hermes Assistant`;
+  const attention = useAssistantsStore((state) => state.snapshot?.surfaces.find((surface) => surface.assistantId === assistant.id)?.attention);
+  const attentionLabel = live && attention && attention !== 'unknown' && attention !== 'idle'
+    ? ({ working: 'Working', 'needs-input': 'Needs input', finished: 'Finished', error: 'Error' } as const)[attention] : undefined;
+  const label = `${assistant.displayName} · Hermes Assistant${attentionLabel ? ` · ${attentionLabel}` : ''}`;
   const title = assistant.description ? `${label}\n${assistant.description}` : label;
   return (
     <button
       type="button"
       className={`assistant-${variant}${active ? ' active' : ''}${live ? '' : ' offline'}`}
       aria-current={active ? 'true' : undefined}
-      aria-label={variant === 'icon' ? label : assistant.displayName}
+      aria-label={variant === 'icon' ? label : `${assistant.displayName}${attentionLabel ? ` · ${attentionLabel}` : ''}`}
       title={title}
       disabled={disabled}
       onClick={() => openAssistantSurface(assistant.id)}
@@ -69,12 +72,12 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
           <AssistantAvatar assistantId={assistant.id} connected={live} />
           <span className="assistant-text">
             <span className="assistant-name">{assistant.displayName}</span>
-            <span className="assistant-sub">{assistant.description || 'Hermes Assistant'}</span>
+            <span className="assistant-sub">{attentionLabel || assistant.description || 'Hermes Assistant'}</span>
           </span>
           {/* Listed means available, so only the exception is shown. */}
           {!live && <span className="assistant-offline">offline</span>}
         </>
-        : <AssistantAvatar assistantId={assistant.id} connected={live} />}
+        : <><AssistantAvatar assistantId={assistant.id} connected={live} />{attentionLabel && <span className={`assistant-attention-dot ${attention}`} aria-hidden="true" />}</>}
     </button>
   );
 }

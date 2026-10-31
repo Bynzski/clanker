@@ -56,3 +56,9 @@
 .assistants-settings-header .settings-section-title { margin: 0; }
 .assistants-settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
 .settings-section .assistants-roster-notice { margin: var(--space-xs) 0 0; }
+
+.assistant-icon { position: relative; }
+.assistant-attention-dot { position: absolute; right: 2px; bottom: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--status-success); }
+.assistant-attention-dot.working { background: var(--accent-interactive); }
+.assistant-attention-dot.needs-input { background: var(--status-warning); }
+.assistant-attention-dot.error { background: var(--status-error); }

@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Assistant attention** — opened Hermes Bot Chats show native Working, Needs input, Finished and Error status; lost event connections clear status rather than implying completion.
+
 - **Workspace pages and presentation (#89, #151)** — use up to nine pages per workspace, move panes between them, minimize/restore live panes, and open independent Browser panes. Saved page preferences never recreate ended processes or Browser sessions.
 - **Unified New Agent launch (#166)** — choose Terminal or a supported harness, default to the project checkout, or explicitly select/create a validated linked worktree. Source Control can also create a worktree without launching a session.
 - **Settings and Source Control management (#154)** — dedicated Settings destinations for appearance, layout, shortcuts, harnesses, accounts, Assistants, Git preferences, authentication and SSH targets. Source Control exposes Changes, History, Overview, Branches, Worktrees, Stashes, Remotes and Merge, with checkout-aware diff review, staging and commits.

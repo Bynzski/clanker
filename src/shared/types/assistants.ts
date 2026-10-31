@@ -39,7 +39,10 @@ export interface HermesAssistant {
 
 export type AssistantSurfaceState = 'connecting' | 'open' | 'disconnected' | 'ended' | 'unavailable';
 
+export type AssistantAttention = 'unknown' | 'idle' | 'working' | 'needs-input' | 'finished' | 'error';
+
 export interface AssistantSurfaceStatus {
+  attention?: AssistantAttention;
   assistantId: string;
   state: AssistantSurfaceState;
 }
