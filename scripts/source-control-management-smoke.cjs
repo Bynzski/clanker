@@ -115,6 +115,7 @@ async function until(check, message) { for (let i = 0; i < 150; i++) { if (await
         await dialog.getByRole('button', { name: 'Unstage All', exact: true }).click();
         await dialog.getByRole('button', { name: 'Stage README.md', exact: true }).waitFor();
         await mark('unstaged-all');
+        await until(() => dialog.getByRole('button', { name: 'Refresh changes' }).isEnabled(), 'Unstage All operation did not settle');
         assert(await dialog.getByRole('button', { name: 'Commit Staged', exact: true }).isDisabled());
         assert(await dialog.getByRole('button', { name: 'Stage All & Commit', exact: true }).isEnabled());
         assert.equal(await dialog.getByRole('textbox', { name: 'Commit Message' }).inputValue(), 'feat: reviewed agent changes');

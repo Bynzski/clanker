@@ -93,11 +93,15 @@ jobs:
         run: npm audit --audit-level=high --json > audit.json
 
       - name: Upload npm audit report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: npm-audit
           path: audit.json
           retention-days: 7
+
+      - name: Branding
+        run: npm run branding:check
 
       - name: Lint
         run: npm run lint
@@ -107,6 +111,9 @@ jobs:
 
       - name: Fallow full + production regression and stale-baseline checks
         run: npm run fallow:check
+
+      - name: Security gate (no high or critical findings)
+        run: npm run security-check
 
       - name: Build
         run: npm run build

@@ -4,7 +4,7 @@ Navigate and manage files in your workspace with the integrated file explorer.
 
 ## Opening the Explorer
 
-In **Sidebar** navigation (the default), files live in the **FILES** section pinned to the bottom of the workspace sidebar. It starts collapsed; click **Files** to open it, and it grows upward to at most half the sidebar. FILES shows the active workspace's focused checkout. From the collapsed sidebar rail, **Show Files** expands the sidebar and opens FILES.
+In **Sidebar** navigation (the default), files live in the **FILES** section pinned to the bottom of the workspace sidebar. It starts collapsed; click **Files** to open it. Drag the divider above Files to adjust its height between 15% and 85% of the sidebar; the initial split is 50%. With the divider focused, Up/Down adjust the split and Home/End select its limits. The height is kept for the current sidebar session, not across app restarts. FILES shows the active workspace's focused checkout. From the collapsed sidebar rail, **Show Files** expands the sidebar and opens FILES.
 
 In **Tabs** navigation, click the **Explorer** button in the header toolbar to toggle a separate, resizable Explorer dock.
 
@@ -12,7 +12,9 @@ In **Tabs** navigation, click the **Explorer** button in the header toolbar to t
 
 ## Checkout selection
 
-Focusing a terminal selects its registered launch checkout for Explorer; focusing an editor tab selects that tab's pinned checkout instead. Terminal focus clears the editor override. Missing, released or unknown checkout contexts fall back to the workspace root. A harness's printed or reported cwd does not grant Explorer access to another directory.
+Focusing an editor tab selects that tab's pinned checkout. Terminal focus clears that override and follows the agent's current authenticated location when it belongs to a registered checkout. Without an observation, Explorer uses the terminal's registered launch checkout. A last-reported location can use that launch checkout only when both identify the same registered checkout; the UI labels this fallback. With no terminal or pin, Explorer uses the workspace root.
+
+Missing, released, unregistered or otherwise unverifiable checkout selections show **Checkout unavailable**; they do not silently fall back to the workspace root. A printed directory does not grant access. When a current authenticated location identifies an eligible Git-listed worktree, **Attach and browse…** offers explicit validation and confirmation. This pins Files and Source Control without moving the agent or changing its launch checkout. **Follow agent** clears the pin. See [observed worktrees](observed-worktrees.md).
 
 Editor tabs pin their checkout when opened: saving, reloading and relative Markdown links use that root regardless of later focus changes. Files with the same relative name in different checkouts remain separate tabs. If a checkout is released, dirty buffers remain available with an unavailable-checkout notice; operations cannot silently switch to the main checkout.
 

@@ -1,19 +1,24 @@
 /* global window */
 // Disposable Git repositories/profile, built Electron, real shell PTYs/IPC/React. No native model or SSH.
 const { _electron: electron } = require('playwright');
+const { createSmokeOwner, cleanupSmokeFixture } = require('./lib/smoke-fixture-cleanup.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const repo = path.resolve(__dirname, '..');
+// Optional explicit packaged executable; all data and Git operations still use disposable fixtures.
+const packagedExecutable = process.env.CLANKER_SMOKE_EXECUTABLE;
+const owner = createSmokeOwner();
+let appRoot = repo;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-new-session-'));
 const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-new-session-visual-'));
 for (const name of ['home', 'config', 'cache', 'data', 'profile', 'project']) fs.mkdirSync(path.join(root, name));
 const project = path.join(root, 'project');
 const external = path.join(root, 'external');
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'TMPDIR', 'LANG', 'LC_ALL'].includes(key)));
-Object.assign(env, { NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
+Object.assign(env, { [owner.key]: owner.value, NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '', HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), SHELL: '/bin/bash', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' });
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: 'pipe' }).toString().trim();
 git(project, 'init', '-b', 'main'); git(project, 'config', 'user.name', 'Fixture'); git(project, 'config', 'user.email', 'fixture@example.invalid');
 fs.writeFileSync(path.join(project, 'same.txt'), 'main\n'); git(project, 'add', '.'); git(project, 'commit', '-m', 'Main');
@@ -31,18 +36,20 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) { const end = Date.now() + 15000; while (!await check()) { if (Date.now() > end) throw new Error(message); await pause(50); } }
 async function closeFixture() {
   if (!app) return;
-  const page = await app.firstWindow();
-  const closing = app.close();
-  // Live fixture shells correctly trigger the app close guard, including on restart.
-  await page.getByRole('button', { name: 'Close Anyway', exact: true }).click({ timeout: 5000 }).catch(() => {});
-  await closing;
+  const workspaceRoots = git(project, 'worktree', 'list', '--porcelain').split('\n')
+    .filter(line => line.startsWith('worktree ')).map(line => line.slice(9));
+  assert(workspaceRoots.every(directory => directory.startsWith(`${root}${path.sep}`)), 'Unexpected non-fixture worktree');
+  await cleanupSmokeFixture({ app, repo: appRoot, owner, workspaceRoots });
   app = undefined;
 }
 (async () => {
   try {
-    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    app = await electron.launch({ executablePath: packagedExecutable ? path.resolve(packagedExecutable) : path.join(repo, 'node_modules/electron/dist/electron'), args: [...(packagedExecutable ? [] : [repo]), `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    appRoot = await app.evaluate(({ app }) => app.getAppPath());
+    const runtime = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion(), electron: process.versions.electron }));
+    assert.equal(runtime.packaged, !!packagedExecutable);
     const page = await app.firstWindow(); page.setDefaultTimeout(15000);
-    const terminals = () => app.evaluate((_electron, entry) => [...process.getBuiltinModule('module').createRequire(entry)(entry).terminals].map(([id, terminal]) => ({ id, cwd: terminal.cwd, context: terminal.checkoutContextId })), path.join(repo, 'dist/main/main/main.js'));
+    const terminals = () => app.evaluate((_electron, entry) => [...process.getBuiltinModule('module').createRequire(entry)(entry).terminals].map(([id, terminal]) => ({ id, cwd: terminal.cwd, context: terminal.checkoutContextId })), path.join(appRoot, 'dist/main/main/main.js'));
     await page.getByRole('button', { name: 'Open Workspace', exact: true }).first().click();
     await page.getByRole('textbox', { name: 'Local Directory Path' }).fill(project);
     await page.getByRole('dialog').getByText('Where are we working today?').click();
@@ -159,7 +166,8 @@ async function closeFixture() {
     assert.equal(fs.readFileSync(path.join(external, 'dirty.txt'), 'utf8'), 'keep in source\n');
     // Restart the same saved profile: Git discovery must still validate a selected external root.
     await closeFixture();
-    app = await electron.launch({ executablePath: path.join(repo, 'node_modules/electron/dist/electron'), args: [repo, `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    app = await electron.launch({ executablePath: packagedExecutable ? path.resolve(packagedExecutable) : path.join(repo, 'node_modules/electron/dist/electron'), args: [...(packagedExecutable ? [] : [repo]), `--user-data-dir=${path.join(root, 'profile')}`, '--ozone-platform=headless'], env });
+    appRoot = await app.evaluate(({ app }) => app.getAppPath());
     const restarted = await app.firstWindow(); restarted.setDefaultTimeout(15000);
     await until(async () => await restarted.getByRole('button', { name: 'New Agent', exact: true }).count() > 0 || await restarted.getByRole('button', { name: 'Open Workspace', exact: true }).count() > 0, 'Restarted shell absent');
     if (await restarted.getByRole('button', { name: 'New Agent', exact: true }).count() === 0) {
@@ -176,7 +184,7 @@ async function closeFixture() {
     await restarted.getByRole('button', { name: 'Launch Terminal', exact: true }).click();
     await until(async () => (await terminals()).length === beforeRestartLaunch + 1, 'Restarted explicit launch absent');
     assert((await terminals()).some(value => value.cwd === external && value.context));
-    console.log(JSON.stringify({ builtElectron: true, realGit: true, realPTY: true, projectFolderDefault: 'passed', sameFolderBranchWork: 'passed', externalAndSharedLaunch: 'passed', committedHeadBasesAndCreateOnly: 'passed', existingBranch: 'passed', closingRetainsWorktreeAndBranch: 'passed', restartExplicitAdoption: 'passed', compactWindowAndZoom: 'passed', screenshots }));
+    console.log(JSON.stringify({ runtime, builtElectron: true, realGit: true, realPTY: true, projectFolderDefault: 'passed', sameFolderBranchWork: 'passed', externalAndSharedLaunch: 'passed', committedHeadBasesAndCreateOnly: 'passed', existingBranch: 'passed', closingRetainsWorktreeAndBranch: 'passed', restartExplicitAdoption: 'passed', compactWindowAndZoom: 'passed', screenshots }));
   } catch (error) {
     console.error(error.stack);
     if (app) {

@@ -49,7 +49,7 @@ New Agent does not use this presentation selection. Main is independently resolv
 
 Verified on Linux on 2026-10-12 using disposable repositories and profiles. Owner-smoke follow-up: full validation passed with 391 test files and 7,700 tests.
 
-- `npm run validate`: branding, lint, TypeScript, Fallow regression, security audit, production build and all Vitest tests. The existing documented dev-only audit exception is unchanged.
+- `npm run validate`: branding, lint, TypeScript, Fallow regression, security audit, production build and all Vitest tests. This historical run used the then-documented dev-only audit exception, since removed. Current validation allows no high/critical findings.
 - Real Git/main IPC tests cover project/worktree committed-HEAD sources, strict new/existing branch modes, fresh validation of existing registrations, changed branches/locks and symlink replacement. Existing removal/recovery, reservations, occupancy, history and editor identity suites remain.
 - SSH worktree tests execute the real Python host script against POSIX Git fixtures, including explicit branch modes and committed-HEAD creation. They exercise host logic without a live SSH transport.
 - `npm run smoke:new-session`: built Electron, real Git/PTYs and UI; main default, external adoption, two sessions sharing one checkout, both committed-HEAD bases, existing branches, create-only, close retention, saved-profile restart, compact windows and 125% zoom. Screenshots are captured for visual review.
