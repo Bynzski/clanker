@@ -8,7 +8,7 @@ function setup() {
   const observer = new AssistantAttentionObserver('ws://localhost/api/events?channel=test', 'stored-root', (url) => {
     const socket = new FakeSocket(url); sockets.push(socket); return socket;
   }, changed);
-  const send = (type: string, payload?: object, sid = 'runtime-root', socket = sockets.at(-1)!) => socket.emit('message', {
+  const send = (type: string, payload?: object, sid = 'runtime-root', socket = sockets[sockets.length - 1]) => socket.emit('message', {
     data: JSON.stringify({ method: 'event', params: { type, session_id: sid, payload } }),
   });
   const bind = () => send('session.info', { stored_session_id: 'stored-root', running: false });
@@ -25,6 +25,8 @@ it('binds only the canonical root, projects lifecycle and ignores child turns an
   send('message.complete', { status: 'complete' }, 'child'); expect(changed).toHaveBeenLastCalledWith('working');
   sockets[0].emit('message', { data: 'Working... Finished' }); expect(changed).toHaveBeenLastCalledWith('working');
   send('message.complete', { status: 'complete', text: 'secret' }); expect(changed).toHaveBeenLastCalledWith('finished');
+  send('session.info', { stored_session_id: 'stored-root', running: false }); expect(changed).toHaveBeenLastCalledWith('finished');
+  send('session.info', { stored_session_id: 'stored-root', running: true }); expect(changed).toHaveBeenLastCalledWith('working');
   send('message.complete', { status: 'error' }); expect(changed).toHaveBeenLastCalledWith('error');
   send('message.complete', { status: 'interrupted' }); expect(changed).toHaveBeenLastCalledWith('idle');
   observer.dispose();
@@ -63,5 +65,15 @@ it('bounds frames and connection waits without blocking the PTY indefinitely', a
   await vi.advanceTimersByTimeAsync(5000); sockets[1].emit('open'); bind(); send('message.start');
   sockets[1].emit('message', { data: 'x'.repeat(1024 * 1024 + 1) });
   expect(changed).toHaveBeenLastCalledWith('unknown'); expect(sockets[1].closed).toBe(true);
+  observer.dispose();
+});
+
+it('expires a silently lost publisher without inventing completion', async () => {
+  vi.useFakeTimers();
+  const { observer, sockets, bind, send, changed } = setup();
+  sockets[0].emit('open'); bind(); send('message.start');
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(changed).toHaveBeenLastCalledWith('unknown');
+  send('message.delta', { text: 'private' }); expect(changed).toHaveBeenLastCalledWith('working');
   observer.dispose();
 });

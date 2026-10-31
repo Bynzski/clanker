@@ -5,6 +5,7 @@ import { frameByteLength, type WebSocketFactory, type WebSocketLike } from './he
 export class AssistantAttentionObserver {
   private socket: WebSocketLike | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private staleTimer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
   private root: string | undefined;
   private state: AssistantAttention = 'unknown';
@@ -22,6 +23,14 @@ export class AssistantAttentionObserver {
     if (state === this.state) return;
     this.state = state;
     this.changed(state);
+    this.touch();
+  }
+
+  private touch(): void {
+    clearTimeout(this.staleTimer);
+    if (this.state === 'working' || this.state === 'needs-input') {
+      this.staleTimer = setTimeout(() => { this.requests.clear(); this.set('unknown'); }, 120_000);
+    }
   }
 
   private connect(): void {
@@ -79,10 +88,11 @@ export class AssistantAttentionObserver {
     if (frame.method === 'event' && params.type === 'session.info' && payload?.stored_session_id === this.storedId) {
       if (this.root && this.root !== params.session_id) return;
       this.root = params.session_id;
-      if (typeof payload.running === 'boolean' && this.state !== 'finished' && this.state !== 'error') this.set(this.requests.size ? 'needs-input' : payload.running ? 'working' : 'idle');
+      if (typeof payload.running === 'boolean' && (payload.running || (this.state !== 'finished' && this.state !== 'error'))) this.set(this.requests.size ? 'needs-input' : payload.running ? 'working' : 'idle');
       return;
     }
     if (!this.root || params.session_id !== this.root) return;
+    this.touch();
     if ((frame.method === 'approval' || frame.method === 'clarify') && typeof frame.id === 'string' && frame.id.length <= 256) {
       if (this.requests.size >= 64) { this.set('unknown'); return; }
       this.requests.add(frame.id); this.set('needs-input'); return;
@@ -106,6 +116,7 @@ export class AssistantAttentionObserver {
 
   dispose(): void {
     this.disposed = true;
+    clearTimeout(this.staleTimer);
     clearTimeout(this.timer);
     this.readyResolve?.(); this.readyResolve = undefined;
     const socket = this.socket; this.socket = undefined;
