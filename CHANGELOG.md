@@ -6,8 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-31
+
 ### Added
 
+- **Checkout dev-server settings (#143)** — save non-secret environment variables for a checkout's dev command without editing project files or starting the server. Stop the server before changing its settings; port selection remains project-controlled.
 - **Browser address search (#220)** — search Google from the address bar, with explicit Search/Open actions and better-ranked local and website history suggestions. Search text is sent only when submitted.
 - **Assistant session refresh (#218)** — reconnect to the same Hermes Bot Chat from its surface without starting a new conversation.
 - **Observed worktree attachment (#211)** — confirm Attach and browse for an eligible Git-listed worktree reported by an agent, opening its Files and Source Control without moving or rebinding the agent.
@@ -22,6 +25,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Linux-only release artifact** — `0.13.0` ships as a Linux x64 AppImage. No Windows binary is produced for this tag; Windows remains best-effort supported with compatibility tests in Ubuntu CI.
+- **Upgrade behavior** — saved workspace identities reopen, but live terminals, agents, Browser views and editor buffers are not restored after quitting. New Agent replaces the previous launch controls; saved recipe definitions remain stored while recipe execution is disabled.
 - **Sidebar Files sizing (#226)** — drag the divider above Files, or use its keyboard controls, to adjust the vertical split while keeping workspace navigation accessible.
 - **Agent and checkout workflow (#166)** — replace toolbar harness pills and the separate isolated-agent picker with New Agent; keep Git inventory authoritative and checkout contexts as scoped execution grants rather than worktree ownership.
 - **Usage (#149, #161)** — move access to the status bar, share eligible local cached readings with Assistants, and offer compact quota/reset display with account-email masking.
@@ -54,7 +59,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Security
 
 - **Runtime and dependency updates** — upgrade Electron to 43.8.6 and update body-parser, undici and zod to resolve high-severity dependency findings, including compromised-certificate mitigation. No audit exceptions or packaging-tool downgrades.
-
 - **Build tooling (#222)** — update Vite to 8.1.6 to address development-server/editor middleware advisories and restore the dependency audit's high/critical gate without exceptions.
 
 ## [0.12.0] - 2026-10-08
@@ -486,7 +490,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Bynzski/clanker/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Bynzski/clanker/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Bynzski/clanker/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Bynzski/clanker/compare/v0.9.0...v0.10.0
