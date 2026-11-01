@@ -7,6 +7,8 @@
 git clone <repo-url>
 cd <repo-directory>
 npm install
+npm exec -- electron --version
+npm exec -- electron-rebuild -f -w node-pty
 
 # Run in development mode
 npm run dev
@@ -25,7 +27,7 @@ npm run validate
 
 Clanker Grid's primary development and required CI platform is **Linux (x64)**. **Windows 10 1809+ / Windows 11 (x64)** remains **best-effort supported, not CI-gated**. Preserve Windows platform abstractions, packaging and useful regression tests, review new filesystem/process/path code for Windows assumptions, and fix reproducible Windows bugs when practical. Windows artifacts may lag Linux releases; native Windows runner availability or test status does not automatically block PRs or releases.
 
-The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), lint, typecheck, the Fallow dead-code regression check, build, and the full Vitest suite with coverage. This includes deterministic Windows compatibility tests using `path.win32`, mocked platforms and injected subprocess/path seams, plus the jsdom renderer suite. There is no automatic per-PR Windows runner. The final `validate` job is the stable check to require in branch protection: code changes require Ubuntu success; docs-only changes require the heavy job to be skipped. A failed/cancelled Ubuntu job or invalid change-detection result fails the gate. CI does not run `npm run branding:check` or the `security-check` policy gate, so run `npm run validate` locally, where high/critical audit findings fail the run apart from the documented exception in [RELEASING.md](RELEASING.md#security-gate).
+The `ubuntu-validation` job runs dependency review (PRs only), an informational `npm audit` report (uploaded as an artifact), branding verification, lint, typecheck, the Fallow dead-code regression check, the blocking security check, build, and the full Vitest suite with coverage. This includes deterministic Windows compatibility tests using `path.win32`, mocked platforms and injected subprocess/path seams, plus the jsdom renderer suite. There is no automatic per-PR Windows runner. The final `validate` job is the stable check to require in branch protection: code changes require Ubuntu success; docs-only changes require the heavy job to be skipped. A failed/cancelled Ubuntu job or invalid change-detection result fails the gate. Both CI and local `npm run validate` reject high/critical audit findings or an audit failure, with no advisory exceptions. The informational audit artifact does not replace this gate; see [RELEASING.md](RELEASING.md#security-gate).
 
 When adding code that touches the filesystem, terminals, harness launch, credentials, or paths, follow the platform patterns in [AGENTS.md](AGENTS.md#windows-support) and [docs/windows.md](docs/windows.md). Key rules:
 
@@ -39,7 +41,7 @@ When adding code that touches the filesystem, terminals, harness launch, credent
 
 - **Install Git for Windows.** Husky pre-commit hooks (`.husky/pre-commit`) execute through the `sh` bundled with Git for Windows. Without it, hooks silently skip and lint/typecheck are not enforced locally.
 - **Recommended:** `git config --global core.autocrlf input` so working trees stay LF on disk while Windows tooling sees what it expects.
-- **Native modules:** `node-pty` is rebuilt against the Electron ABI on `npm install` via `electron-builder` / `@electron/rebuild`. If `npm run dev` errors with a node-pty load failure, run `npx electron-rebuild -f -w node-pty` and retry.
+- **Electron and native modules:** Electron 43 downloads its runtime on first CLI invocation, rather than during `npm install`. Run `npm exec -- electron --version`, then `npm exec -- electron-rebuild -f -w node-pty` before the first development launch or after changing Electron. Packaging also rebuilds native modules through electron-builder.
 - **Polling watchers:** to test the UNC polling fallback locally (or to debug watcher issues on any path), set `CLANKER_GRID_WATCHER_POLLING=1` before launching.
 
 ## Code Standards
@@ -94,6 +96,10 @@ src/
 ```
 
 ## Testing
+
+The test commands prepare the Electron runtime once before starting Vitest workers.
+Electron 43 downloads lazily; this prevents concurrent first-import downloads on a
+fresh install, including in CI.
 
 ```bash
 npm run test          # Run all tests (Vitest)

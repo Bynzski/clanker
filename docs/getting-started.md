@@ -40,6 +40,8 @@ Run `Clanker Grid X.Y.Z.exe` directly. No installation step. SmartScreen will st
 git clone https://github.com/Bynzski/clanker.git
 cd clanker
 npm install
+npm exec -- electron --version
+npm exec -- electron-rebuild -f -w node-pty
 npm run dev
 ```
 

@@ -24,7 +24,7 @@ While the project is pre-1.0, MINOR releases may break compatibility. When they 
 
 Linux is the primary validation platform. Windows remains best-effort supported; native Windows CI or smoke testing is not an automatic release gate. Preserve Windows packaging and compatibility tests. Maintainers may still delay a release for a concrete severe Windows regression.
 
-Releases are cut from `main`. The working tree must be clean before starting.
+Normal releases are cut from `main`, which remains the development integration branch. Stable releases are identified by version tags and deliberately published artifacts; a permanent `dev` branch is not required. The working tree must be clean before starting. Hotfixes based on an existing release follow the separate procedure below.
 
 A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
@@ -42,7 +42,8 @@ Linux-only releases are allowed at any semantic version when the artifact scope 
 ### 2. Build the Linux artifact (Linux host)
 
 1. Run `npm run build:dist -- --linux AppImage --x64` to select only the Linux x64 target explicitly. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`; the `build:dist` script disables electron-builder publishing, so this step creates only a local artifact.
-2. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
+2. Run the disposable packaged launch/worktree smoke: `CLANKER_SMOKE_EXECUTABLE="$(pwd)/release/Clanker Grid-X.Y.Z.AppImage" npm run smoke:new-session`. It verifies the packaged runtime, real Git/PTY launch, worktree choices and saved-profile restart using temporary data, and saves screenshots for review.
+3. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
 
 ### 3. Build the Windows artifacts (Windows host, full releases only)
 
@@ -97,11 +98,11 @@ Mention in the release notes that no Windows build was produced for this tag.
 
 ## Security gate
 
-`npm run security-check` runs `npm audit --audit-level=high` and fails on any high or critical finding, or if the audit cannot complete. There are no advisory exceptions. Development and packaging dependencies are included: build tooling produces the release artifacts. CI uploads a raw `npm audit` report as an informational artifact; the gate itself runs locally through `npm run validate`.
+`npm run security-check` runs `npm audit --audit-level=high` and fails on any high or critical finding, or if the audit cannot complete. There are no advisory exceptions. Development and packaging dependencies are included: build tooling produces the release artifacts. CI uploads a raw `npm audit` report as an informational artifact and separately runs the blocking `npm run security-check`. The same gate runs locally through `npm run validate`.
 
 **Resolved exception.** The lockfile now uses `http-cache-semantics` 4.3.0, outside the affected range for `GHSA-ch52-4w7c-c8xp` (<= 4.2.0). The temporary dev-only electron-builder-chain exception and its custom audit script have been removed.
 
-**Do not downgrade to clear the audit.** Keep `app-builder-lib` and `electron-builder` >= 26.15.0 (fixes `GHSA-7g7r-gx96-252g`, an AppImage vulnerability; Clanker ships an AppImage) and `builder-util-runtime` >= 9.7.0 (fixes `GHSA-p2f4-r6v6-j797`). The remaining moderate `sprintf-js` advisory is in development-only build tooling and has no patched release; track upstream rather than accepting npm's suggested builder downgrade.
+**Do not downgrade to clear the audit.** Keep `app-builder-lib` and `electron-builder` >= 26.15.0 (fixes `GHSA-7g7r-gx96-252g`, an AppImage vulnerability; Clanker ships an AppImage) and `builder-util-runtime` >= 9.7.0 (fixes `GHSA-p2f4-r6v6-j797`). Review the current audit for lower-severity findings and upstream fixes rather than accepting npm's suggested builder downgrade.
 
 ## Platform targets
 

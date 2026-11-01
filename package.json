@@ -25,9 +25,9 @@
     "fallow:check:full": "node scripts/check-fallow.cjs --full",
     "fallow:check:production": "node scripts/check-fallow.cjs --production",
     "typecheck": "tsc -p tsconfig.json && npm run build:shared && tsc -b tsconfig.main.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "install-electron && vitest run",
+    "test:watch": "install-electron && vitest",
+    "test:coverage": "install-electron && vitest run --coverage",
     "diagnose:gpu": "electron scripts/gpu-smoke.cjs",
     "diagnose:workspace-switch": "node scripts/workspace-switch-measure.cjs",
     "diagnose:explorer-refresh": "node scripts/explorer-refresh-smoke.cjs",
@@ -110,7 +110,7 @@
     "concurrently": "^9.2.3",
     "conf": "10.2.0",
     "cross-env": "10.1.0",
-    "electron": "41.10.7",
+    "electron": "43.8.6",
     "electron-builder": "^26.15.3",
     "eslint": "^9.38.0",
     "eslint-plugin-react-hooks": "^7.0.0",
@@ -169,10 +169,10 @@
     }
   },
   "allowScripts": {
-    "electron@41.10.7": true,
     "node-pty@1.1.0": true,
     "electron-winstaller@5.4.0": true,
-    "fallow@2.56.0": true
+    "fallow@2.56.0": true,
+    "electron@43.8.6": true
   },
   "overrides": {
     "concurrently": {

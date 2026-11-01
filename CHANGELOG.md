@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Browser address search (#220)** — search Google from the address bar, with explicit Search/Open actions and better-ranked local and website history suggestions. Search text is sent only when submitted.
+- **Assistant session refresh (#218)** — reconnect to the same Hermes Bot Chat from its surface without starting a new conversation.
+- **Observed worktree attachment (#211)** — confirm Attach and browse for an eligible Git-listed worktree reported by an agent, opening its Files and Source Control without moving or rebinding the agent.
 - **Workspace pages and presentation (#89, #151)** — use up to nine pages per workspace, move panes between them, minimize/restore live panes, and open independent Browser panes. Saved page preferences never recreate ended processes or Browser sessions.
 - **Unified New Agent launch (#166)** — choose Terminal or a supported harness, default to the project checkout, or explicitly select/create a validated linked worktree. Source Control can also create a worktree without launching a session.
 - **Settings and Source Control management (#154)** — dedicated Settings destinations for appearance, layout, shortcuts, harnesses, accounts, Assistants, Git preferences, authentication and SSH targets. Source Control exposes Changes, History, Overview, Branches, Worktrees, Stashes, Remotes and Merge, with checkout-aware diff review, staging and commits.
@@ -19,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Sidebar Files sizing (#226)** — drag the divider above Files, or use its keyboard controls, to adjust the vertical split while keeping workspace navigation accessible.
 - **Agent and checkout workflow (#166)** — replace toolbar harness pills and the separate isolated-agent picker with New Agent; keep Git inventory authoritative and checkout contexts as scoped execution grants rather than worktree ownership.
 - **Usage (#149, #161)** — move access to the status bar, share eligible local cached readings with Assistants, and offer compact quota/reset display with account-email masking.
 - **Workspace switching and refresh (#176)** — narrow activation subscriptions, retain checkout-scoped snapshots, load Source Control resources on demand, coalesce equivalent session discovery and bound SSH refresh. Progressive startup restoration is only an assessment, not a shipped change.
@@ -28,6 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Renderer crash recovery (#197, #217)** — offer a Reload window prompt after abnormal renderer loss and log the failure in production. Reload restores saved workspace identities, not live terminals or unsaved editor buffers. The underlying native crash remains under investigation; local crash capture is available for diagnosis.
+- **Conversation history refresh (#200)** — preserve the open dropdown and usable results while history refreshes.
 - **OpenCode 2.x session attention (#189)** — follow the native TUI's verified selected root after `/new` and session switches, preserving permission/question waits and interruption tracking without letting unrelated server sessions claim the terminal.
 - **Hermes owned-service shutdown (#187)** — wait for confirmed child exit after TERM/KILL, retain unverified cleanup ownership, block replacement until cleanup succeeds, and offer cleanup Retry even when Assistants are disabled. App quit drains all resource cleanups before reporting failures and exiting. Adopted/Desktop-owned backends are never stopped; native descendant cleanup remains separate investigation work.
 - **OpenCode 2.x CLI compatibility (#189)** — report unsupported local startup-model, TUI-fork and AI-commit requests before execution instead of sending invalid flags, silently resuming a fork, or weakening commit isolation. Ordinary launch/resume and legacy 1.x behavior remain available; SSH compatibility is unchanged.
@@ -46,6 +52,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Obsolete checkout launch surfaces (#166)** — retire the sidebar worktree inventory, old isolated-agent picker and separate harness pills in favor of New Agent and Source Control.
 
 ### Security
+
+- **Runtime and dependency updates** — upgrade Electron to 43.8.6 and update body-parser, undici and zod to resolve high-severity dependency findings, including compromised-certificate mitigation. No audit exceptions or packaging-tool downgrades.
 
 - **Build tooling (#222)** — update Vite to 8.1.6 to address development-server/editor middleware advisories and restore the dependency audit's high/critical gate without exceptions.
 

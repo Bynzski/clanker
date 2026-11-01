@@ -20,6 +20,8 @@ These guides document **current `main`**, including features not yet in a publis
 
 - [Contributing](../CONTRIBUTING.md), [agent/architecture guidance](../AGENTS.md) and [releasing](../RELEASING.md)
 - [Harness integration](harness-integration.md) — provider contracts, accounts, attention, read-only MCP and verification limits
+- [Observed worktrees](observed-worktrees.md) — confirmed attachment without rebinding agents
+- [Crash diagnostics](crash-diagnostics.md) — recovery behavior, local dumps and native smoke testing
 - [Unified session launch](unified-session-launch.md) — current New Agent and worktree adoption contract
 - [Attention field diagnostics](attention-field-diagnostics.md) — bounded development logging and evidence limitations
 - [Workspace startup](workspace-startup.md) — persisted identities, empty shells and hydration

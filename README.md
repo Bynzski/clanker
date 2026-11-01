@@ -6,7 +6,7 @@
 
 Clanker Grid is a single-window desktop app that brings your terminals, AI coding agents, git tools, and a browser together in one focused workspace. It's built for developers who live in the terminal and want their tools to live there too.
 
-[![Electron](https://img.shields.io/badge/Electron-41.x-47848F?logo=electron)](https://electronjs.org/)
+[![Electron](https://img.shields.io/badge/Electron-43.x-47848F?logo=electron)](https://electronjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -52,12 +52,14 @@ See [docs/getting-started.md](docs/getting-started.md) for first-launch walkthro
 git clone https://github.com/Bynzski/clanker.git
 cd clanker
 npm install
+npm exec -- electron --version
+npm exec -- electron-rebuild -f -w node-pty
 npm run dev
 ```
 
 Requires **Node.js 22.12+** and **npm 10+**.
 
-**Windows contributors:** install **Git for Windows**. Husky pre-commit hooks execute through the `sh` that ships with Git for Windows. Native modules (`node-pty`) are rebuilt against the Electron ABI on first `npm install`.
+**Windows contributors:** install **Git for Windows**. Husky pre-commit hooks execute through the `sh` that ships with Git for Windows. Before the first development launch, run `npm exec -- electron --version` to download the Electron runtime, then `npm exec -- electron-rebuild -f -w node-pty` to build the terminal module for its ABI.
 
 To build a distributable for the current platform:
 

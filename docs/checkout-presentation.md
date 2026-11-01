@@ -375,9 +375,9 @@ smoke was re-run after the mapping change: new/resume/fork, native UI wait, fail
 and interruption passed without paid inference.
 
 `npm run validate`: **passed — 390 test files / 7,909 tests**, including branding,
-lint, typecheck, Fallow regression, security gate and build. The only audit exception
-is the already documented dev-only electron-builder chain; no new dependency or
-exception was added.
+lint, typecheck, Fallow regression, security gate and build. At the time, this run used the then-documented dev-only electron-builder
+audit exception. That exception has since been removed; current validation permits
+no high/critical findings (see [release policy](../RELEASING.md#security-gate)).
 
 CI follow-up: GitHub coverage run `38144536776` reached the final editor-pin portion
 of the nine-dialog Darling/Pi–Dozin/OpenCode journey, then exceeded its aggregate
